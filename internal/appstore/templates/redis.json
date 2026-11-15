@@ -1,0 +1,39 @@
+{
+  "id": "redis",
+  "slug": "redis",
+  "name": "Redis",
+  "description": "In-memory data store for cache, queues, and lightweight coordination.",
+  "category": "database",
+  "icon": "/app-templates/icons/redis.svg",
+  "officialWebsite": "https://redis.io/",
+  "officialRepository": "https://github.com/redis/redis",
+  "popularityWeight": 95,
+  "featured": true,
+  "image": "redis:7-alpine",
+  "version": "7-alpine",
+  "servicePort": 6379,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "containerCommand": "/bin/sh\n-ec",
+  "containerArgs": "if [ -n \"${REDIS_PASSWORD:-}\" ]; then exec /usr/local/bin/docker-entrypoint.sh redis-server --requirepass \"$REDIS_PASSWORD\"; else exec /usr/local/bin/docker-entrypoint.sh redis-server; fi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/data"
+    }
+  ],
+  "secretEnv": {
+    "REDIS_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "password",
+      "label": "Password",
+      "description": "Optional Redis authentication password. A long, random value is recommended.",
+      "secret": true,
+      "required": false
+    }
+  ]
+}

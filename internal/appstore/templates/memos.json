@@ -1,0 +1,25 @@
+{
+  "id": "memos",
+  "slug": "memos",
+  "name": "Memos",
+  "description": "Lightweight self-hosted notes and knowledge snippets for small teams.",
+  "category": "collaboration",
+  "icon": "/app-templates/icons/memos.svg",
+  "officialWebsite": "https://www.usememos.com/",
+  "officialRepository": "https://github.com/usememos/memos",
+  "popularityWeight": 70,
+  "image": "ghcr.io/usememos/memos:stable",
+  "version": "stable",
+  "servicePort": 5230,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/opt/memos"
+    }
+  ],
+  "values": []
+}

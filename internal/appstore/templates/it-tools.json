@@ -1,0 +1,19 @@
+{
+  "id": "it-tools",
+  "slug": "it-tools",
+  "name": "IT-Tools",
+  "description": "Handy browser-based utility toolbox for developers and operators.",
+  "category": "developerTool",
+  "icon": "/app-templates/icons/it-tools.svg",
+  "officialWebsite": "https://it-tools.tech/",
+  "officialRepository": "https://github.com/CorentinTh/it-tools",
+  "popularityWeight": 68,
+  "image": "corentinth/it-tools:latest",
+  "version": "latest",
+  "servicePort": 80,
+  "defaultReplicas": 1,
+  "defaultCPU": "250m",
+  "defaultMemory": "256Mi",
+  "dataVolumes": [],
+  "values": []
+}

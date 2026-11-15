@@ -1,0 +1,40 @@
+{
+  "id": "vaultwarden",
+  "slug": "vaultwarden",
+  "name": "Vaultwarden",
+  "description": "Lightweight self-hosted password manager compatible with Bitwarden clients.",
+  "category": "security",
+  "icon": "/app-templates/icons/vaultwarden.svg",
+  "officialWebsite": "https://github.com/dani-garcia/vaultwarden",
+  "officialRepository": "https://github.com/dani-garcia/vaultwarden",
+  "popularityWeight": 77,
+  "image": "vaultwarden/server:latest",
+  "version": "latest",
+  "servicePort": 80,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/data"
+    }
+  ],
+  "env": {
+    "SIGNUPS_ALLOWED": "true",
+    "WEBSOCKET_ENABLED": "true"
+  },
+  "secretEnv": {
+    "ADMIN_TOKEN": "{{adminToken}}"
+  },
+  "values": [
+    {
+      "key": "adminToken",
+      "label": "Admin token",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

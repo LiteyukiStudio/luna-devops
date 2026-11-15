@@ -1,0 +1,25 @@
+{
+  "id": "valkey",
+  "slug": "valkey",
+  "name": "Valkey",
+  "description": "Redis-compatible in-memory data store for cache and lightweight queues.",
+  "category": "database",
+  "icon": "/app-templates/icons/valkey.svg",
+  "officialWebsite": "https://valkey.io/",
+  "officialRepository": "https://github.com/valkey-io/valkey",
+  "popularityWeight": 88,
+  "image": "valkey/valkey:8-alpine",
+  "version": "8-alpine",
+  "servicePort": 6379,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/data"
+    }
+  ],
+  "values": []
+}

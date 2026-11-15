@@ -33,3 +33,22 @@ type AppTemplateInstallationComponent struct {
 	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
+
+// PlatformAppTemplate 保存平台管理员维护的平台级应用商城模板，spec_json 与内置模板运行规格同构。
+type PlatformAppTemplate struct {
+	ID               string    `gorm:"primaryKey" json:"id"`
+	Slug             string    `gorm:"not null;uniqueIndex:idx_platform_app_templates_slug" json:"slug"`
+	Name             string    `gorm:"not null" json:"name"`
+	Description      string    `gorm:"type:text;not null;default:''" json:"description"`
+	Category         string    `gorm:"not null;index:idx_platform_app_templates_enabled_category,priority:2" json:"category"`
+	Icon             string    `gorm:"not null;default:''" json:"icon"`
+	Version          string    `gorm:"not null;default:''" json:"version"`
+	IsMultiComponent bool      `gorm:"not null;default:false" json:"isMultiComponent"`
+	Enabled          bool      `gorm:"not null;default:true;index:idx_platform_app_templates_enabled_category,priority:1" json:"enabled"`
+	Featured         bool      `gorm:"not null;default:false" json:"featured"`
+	PopularityWeight int       `gorm:"not null;default:0" json:"popularityWeight"`
+	SpecJSON         string    `gorm:"column:spec_json;type:jsonb;not null;default:'{}'" json:"specJson"`
+	CreatedBy        string    `gorm:"index;not null;default:''" json:"createdBy"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}

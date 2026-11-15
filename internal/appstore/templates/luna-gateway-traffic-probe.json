@@ -1,0 +1,36 @@
+{
+  "id": "luna-gateway-traffic-probe",
+  "slug": "gateway-traffic-probe",
+  "name": "Luna Gateway Traffic Probe",
+  "description": "Optional platform component that collects Gateway API traffic windows and reports settled usage to Luna DevOps billing.",
+  "category": "observability",
+  "kind": "system_component",
+  "systemComponent": "gateway-traffic-probe",
+  "icon": "/app-templates/icons/fallback.svg",
+  "officialWebsite": "https://luna.org/",
+  "officialRepository": "https://github.com/LiteyukiStudio/devops",
+  "popularityWeight": 78,
+  "image": "liteyukistudio/devops-gateway-traffic-probe:nightly",
+  "version": "nightly",
+  "servicePort": 9090,
+  "defaultReplicas": 1,
+  "defaultCPU": "100m",
+  "defaultMemory": "128Mi",
+  "dataVolumes": [],
+  "values": [
+    {
+      "key": "apiBaseUrl",
+      "label": "Luna DevOps API base URL",
+      "description": "Public or cluster-reachable Luna DevOps API endpoint used by the probe to report traffic windows.",
+      "default": "",
+      "required": true
+    },
+    {
+      "key": "traefikMetricsUrl",
+      "label": "Traefik metrics URL",
+      "description": "Optional Prometheus metrics endpoint reachable from the probe Pod. Leave blank to use http://traefik.<Gateway namespace>.svc.cluster.local:9100/metrics.",
+      "default": "",
+      "required": false
+    }
+  ]
+}

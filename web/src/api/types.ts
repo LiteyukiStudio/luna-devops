@@ -363,6 +363,13 @@ export interface AppTemplateValueDefinition {
   autoGenerate: boolean
 }
 
+export interface AppTemplateConfigFile {
+  path: string
+  content: string
+}
+
+export type AppTemplateSource = 'builtin' | 'platform'
+
 export type AppTemplateDataVolume
   = | {
     logicalName: string
@@ -391,6 +398,7 @@ export interface AppTemplateComponent {
   defaultCPU: string
   defaultMemory: string
   dataVolumes: AppTemplateDataVolume[]
+  dependencies?: string[]
 }
 
 export interface AppTemplate {
@@ -401,6 +409,7 @@ export interface AppTemplate {
   category: string
   kind?: 'application' | 'system_component' | string
   systemComponent?: string
+  source?: AppTemplateSource
   icon: string
   officialWebsite: string
   officialRepository: string
@@ -420,6 +429,115 @@ export interface AppTemplate {
 export type AppTemplateSummary = Omit<AppTemplate, 'values'> & {
   valueCount: number
   requiredValueCount: number
+}
+
+export interface PlatformAppTemplateComponentInput {
+  key: string
+  name: string
+  image: string
+  servicePort: number
+  defaultReplicas?: number
+  defaultCPU?: string
+  defaultMemory?: string
+  containerCommand?: string
+  containerArgs?: string
+  fsGroup?: string
+  dataVolumes?: AppTemplateDataVolume[]
+  env?: Record<string, string>
+  secretEnv?: Record<string, string>
+  configFiles?: AppTemplateConfigFile[]
+  secretFiles?: AppTemplateConfigFile[]
+}
+
+export interface PlatformAppTemplateComponent {
+  key: string
+  name: string
+  image: string
+  servicePort: number
+  defaultReplicas: number
+  defaultCPU: string
+  defaultMemory: string
+  containerCommand: string
+  containerArgs: string
+  fsGroup: string
+  dataVolumes: AppTemplateDataVolume[]
+  env: Record<string, string>
+  secretEnv: Record<string, string>
+  configFiles: AppTemplateConfigFile[]
+  secretFiles: AppTemplateConfigFile[]
+  dependencies: string[]
+}
+
+export interface PlatformAppTemplateWritePayload {
+  slug: string
+  name: string
+  description?: string
+  category: string
+  icon?: string
+  version?: string
+  enabled?: boolean
+  featured?: boolean
+  popularityWeight?: number
+  officialWebsite?: string
+  officialRepository?: string
+  image?: string
+  servicePort?: number
+  defaultReplicas?: number
+  defaultCPU?: string
+  defaultMemory?: string
+  containerCommand?: string
+  containerArgs?: string
+  fsGroup?: string
+  dataVolumes?: AppTemplateDataVolume[]
+  env?: Record<string, string>
+  secretEnv?: Record<string, string>
+  configFiles?: AppTemplateConfigFile[]
+  secretFiles?: AppTemplateConfigFile[]
+  components?: PlatformAppTemplateComponentInput[]
+  values?: AppTemplateValueDefinition[]
+}
+
+export interface PlatformAppTemplateBundle extends PlatformAppTemplateWritePayload {
+  schemaVersion?: string
+}
+
+export interface PlatformAppTemplateImportPayload {
+  overwrite?: boolean
+  bundle: PlatformAppTemplateBundle
+}
+
+export interface PlatformAppTemplate {
+  id: string
+  slug: string
+  name: string
+  description: string
+  category: string
+  icon: string
+  version: string
+  isMultiComponent: boolean
+  enabled: boolean
+  featured: boolean
+  popularityWeight: number
+  officialWebsite: string
+  officialRepository: string
+  image: string
+  servicePort: number
+  defaultReplicas: number
+  defaultCPU: string
+  defaultMemory: string
+  containerCommand: string
+  containerArgs: string
+  fsGroup: string
+  dataVolumes: AppTemplateDataVolume[]
+  env: Record<string, string>
+  secretEnv: Record<string, string>
+  configFiles: AppTemplateConfigFile[]
+  secretFiles: AppTemplateConfigFile[]
+  components: PlatformAppTemplateComponent[]
+  values: AppTemplateValueDefinition[]
+  createdBy: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface AppTemplateInstallation {

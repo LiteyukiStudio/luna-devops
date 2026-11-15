@@ -1,0 +1,48 @@
+{
+  "id": "mongo-express",
+  "slug": "mongo-express",
+  "name": "Mongo Express",
+  "description": "Web administration interface for MongoDB databases.",
+  "category": "database",
+  "icon": "/app-templates/icons/fallback.svg",
+  "officialWebsite": "https://github.com/mongo-express/mongo-express",
+  "officialRepository": "https://github.com/mongo-express/mongo-express",
+  "popularityWeight": 61,
+  "image": "mongo-express:1.0.2-20",
+  "version": "1.0.2-20",
+  "servicePort": 8081,
+  "defaultReplicas": 1,
+  "defaultCPU": "250m",
+  "defaultMemory": "256Mi",
+  "dataVolumes": [],
+  "env": {
+    "ME_CONFIG_BASICAUTH_ENABLED": "true",
+    "ME_CONFIG_BASICAUTH_USERNAME": "{{username}}"
+  },
+  "secretEnv": {
+    "ME_CONFIG_MONGODB_URL": "{{mongodbUrl}}",
+    "ME_CONFIG_BASICAUTH_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "mongodbUrl",
+      "label": "MongoDB URL",
+      "default": "mongodb://root:password@mongo:27017/",
+      "secret": true,
+      "required": true
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "admin",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "id": "mariadb",
+  "slug": "mariadb",
+  "name": "MariaDB",
+  "description": "MySQL-compatible relational database with a lightweight single-container setup.",
+  "category": "database",
+  "icon": "/app-templates/icons/mariadb.svg",
+  "officialWebsite": "https://mariadb.org/",
+  "officialRepository": "https://github.com/MariaDB/server",
+  "popularityWeight": 82,
+  "image": "mariadb:11.4",
+  "version": "11.4",
+  "servicePort": 3306,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/mysql"
+    }
+  ],
+  "env": {
+    "MARIADB_DATABASE": "{{database}}",
+    "MARIADB_USER": "{{username}}"
+  },
+  "secretEnv": {
+    "MARIADB_ROOT_PASSWORD": "{{rootPassword}}",
+    "MARIADB_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "database",
+      "label": "Database",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "rootPassword",
+      "label": "Root password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

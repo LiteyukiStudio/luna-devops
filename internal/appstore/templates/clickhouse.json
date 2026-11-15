@@ -1,0 +1,52 @@
+{
+  "id": "clickhouse",
+  "slug": "clickhouse",
+  "name": "ClickHouse",
+  "description": "Column-oriented analytics database for logs, events, and real-time reporting.",
+  "category": "database",
+  "icon": "/app-templates/icons/clickhouse.svg",
+  "officialWebsite": "https://clickhouse.com/",
+  "officialRepository": "https://github.com/ClickHouse/ClickHouse",
+  "popularityWeight": 83,
+  "image": "clickhouse/clickhouse-server:24.12-alpine",
+  "version": "24.12-alpine",
+  "servicePort": 8123,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "2Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/clickhouse"
+    }
+  ],
+  "env": {
+    "CLICKHOUSE_DB": "{{database}}",
+    "CLICKHOUSE_USER": "{{username}}"
+  },
+  "secretEnv": {
+    "CLICKHOUSE_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "database",
+      "label": "Database",
+      "default": "default",
+      "required": true
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

@@ -7425,6 +7425,173 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/configs/app-templates:
+    get:
+      operationId: listPlatformAppTemplates
+      x-luna-cli:
+        requiredScopes: ["config:read"]
+      tags:
+        - AppTemplates
+      summary: List platform-managed app templates
+      x-luna-agent:
+        purpose: { zh: 查询平台管理员维护的数据库应用商城模板列表（含未启用项）。, en: List platform-managed database app marketplace templates including disabled entries. }
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: query, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: category, in: query, required: false, schema: { type: string, maxLength: 80 } }
+        - { name: enabled, in: query, required: false, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Platform-managed app templates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PlatformAppTemplate" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createPlatformAppTemplate
+      x-luna-cli:
+        requiredScopes: ["config:write"]
+      tags:
+        - AppTemplates
+      summary: Create a platform-managed app template
+      x-luna-agent:
+        effect: write
+        purpose: { zh: 创建新的平台级数据库应用商城模板。, en: Create a new platform-managed database app marketplace template. }
+        verification:
+          - { operationId: listPlatformAppTemplates, family: resource, idFrom: result.id, collection: true }
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformAppTemplateWriteInput"
+      responses:
+        "201":
+          description: Created platform app template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAppTemplate"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/configs/app-templates/import:
+    post:
+      operationId: importPlatformAppTemplate
+      x-luna-cli:
+        requiredScopes: ["config:write"]
+      tags:
+        - AppTemplates
+      summary: Import a platform-managed app template from JSON bundle
+      x-luna-agent:
+        effect: write
+        purpose: { zh: 从 JSON 导出包导入或覆盖平台级应用商城模板。, en: Import or overwrite a platform-managed app marketplace template from a JSON bundle. }
+        verification:
+          - { operationId: listPlatformAppTemplates, family: resource, idFrom: result.id, collection: true }
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformAppTemplateImportInput"
+      responses:
+        "200":
+          description: Overwritten platform app template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAppTemplate"
+        "201":
+          description: Imported platform app template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAppTemplate"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/configs/app-templates/{templateId}/export:
+    get:
+      operationId: exportPlatformAppTemplate
+      x-luna-cli:
+        requiredScopes: ["config:read"]
+      tags:
+        - AppTemplates
+      summary: Export a platform or built-in app template as portable JSON
+      x-luna-agent:
+        purpose: { zh: 导出平台级或内置应用模板为可移植 JSON 定义（不含敏感默认值）。, en: Export a platform-managed or built-in app template as a sanitized portable JSON bundle. }
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: templateId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 120 } }
+      responses:
+        "200":
+          description: Sanitized portable app-template bundle.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAppTemplateBundle"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/configs/app-templates/{templateId}:
+    parameters:
+      - { name: templateId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 120 } }
+    put:
+      operationId: updatePlatformAppTemplate
+      x-luna-cli:
+        requiredScopes: ["config:write"]
+      tags:
+        - AppTemplates
+      summary: Update a platform-managed app template
+      x-luna-agent:
+        effect: write
+        purpose: { zh: 更新平台级应用商城模板或切换启用状态。, en: Update a platform-managed app marketplace template or toggle its enabled state. }
+        verification:
+          - { operationId: listPlatformAppTemplates, family: resource, idFrom: argument.templateId, collection: true }
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformAppTemplateWriteInput"
+      responses:
+        "200":
+          description: Updated platform app template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAppTemplate"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deletePlatformAppTemplate
+      x-luna-cli:
+        requiredScopes: ["config:write"]
+      tags:
+        - AppTemplates
+      summary: Delete a platform-managed app template
+      x-luna-agent:
+        effect: write
+        purpose: { zh: 删除平台级数据库应用商城模板。, en: Delete a platform-managed database app marketplace template. }
+        verification:
+          - { operationId: listPlatformAppTemplates, family: resource, idFrom: argument.templateId, collection: true, expect: absent }
+      security: [{ SessionCookie: [] }]
+      responses:
+        "204": { description: Platform app template deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/projects/order:
     put:
       operationId: updateProjectOrder
@@ -15604,10 +15771,17 @@ components:
         required: { type: boolean }
         secret: { type: boolean }
         autoGenerate: { type: boolean }
+    AppTemplateConfigFile:
+      type: object
+      additionalProperties: false
+      required: [path, content]
+      properties:
+        path: { type: string }
+        content: { type: string }
     AppTemplateComponent:
       type: object
       additionalProperties: false
-      required: [key, name, image, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes]
+      required: [key, name, image, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, dependencies]
       properties:
         key: { type: string, pattern: "^[a-z][a-z0-9]*$", description: Stable component key; the installed application identifier is applicationIdentifier-key. }
         name: { type: string }
@@ -15620,10 +15794,13 @@ components:
           type: array
           maxItems: 32
           items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        dependencies:
+          type: array
+          items: { type: string }
     AppTemplateSummary:
       type: object
       additionalProperties: false
-      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, featured, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, valueCount, requiredValueCount]
+      required: [id, slug, name, description, category, kind, systemComponent, source, icon, officialWebsite, officialRepository, popularityWeight, featured, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, valueCount, requiredValueCount]
       properties:
         id: { type: string }
         slug: { type: string }
@@ -15632,6 +15809,7 @@ components:
         category: { type: string }
         kind: { type: string }
         systemComponent: { type: string }
+        source: { type: string, enum: [builtin, platform] }
         icon: { type: string }
         officialWebsite: { type: string }
         officialRepository: { type: string }
@@ -15657,7 +15835,7 @@ components:
     AppTemplate:
       type: object
       additionalProperties: false
-      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, featured, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, values]
+      required: [id, slug, name, description, category, kind, systemComponent, source, icon, officialWebsite, officialRepository, popularityWeight, featured, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, values]
       properties:
         id: { type: string }
         slug: { type: string }
@@ -15666,6 +15844,7 @@ components:
         category: { type: string }
         kind: { type: string }
         systemComponent: { type: string }
+        source: { type: string, enum: [builtin, platform] }
         icon: { type: string }
         officialWebsite: { type: string }
         officialRepository: { type: string }
@@ -15689,6 +15868,217 @@ components:
         values:
           type: array
           items: { $ref: "#/components/schemas/AppTemplateValueDefinition" }
+    PlatformAppTemplateComponentInput:
+      type: object
+      additionalProperties: false
+      required: [key, name, image, servicePort]
+      properties:
+        key: { type: string, pattern: "^[a-z][a-z0-9]*$" }
+        name: { type: string }
+        image: { type: string }
+        servicePort: { type: integer, minimum: 1, maximum: 65535 }
+        defaultReplicas: { type: integer, minimum: 1 }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        containerCommand: { type: string }
+        containerArgs: { type: string }
+        fsGroup: { type: string }
+        dataVolumes:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        secretEnv:
+          type: object
+          additionalProperties: { type: string }
+        configFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        secretFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+    PlatformAppTemplateComponent:
+      type: object
+      additionalProperties: false
+      required: [key, name, image, servicePort, defaultReplicas, defaultCPU, defaultMemory, containerCommand, containerArgs, fsGroup, dataVolumes, env, secretEnv, configFiles, secretFiles, dependencies]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        image: { type: string }
+        servicePort: { type: integer }
+        defaultReplicas: { type: integer }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        containerCommand: { type: string }
+        containerArgs: { type: string }
+        fsGroup: { type: string }
+        dataVolumes:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        secretEnv:
+          type: object
+          additionalProperties: { type: string }
+        configFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        secretFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        dependencies:
+          type: array
+          items: { type: string }
+    PlatformAppTemplateWriteInput:
+      type: object
+      additionalProperties: false
+      required: [slug, name, category]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        icon: { type: string }
+        version: { type: string }
+        enabled: { type: boolean }
+        featured: { type: boolean }
+        popularityWeight: { type: integer, minimum: 0, maximum: 1000 }
+        officialWebsite: { type: string }
+        officialRepository: { type: string }
+        image: { type: string }
+        servicePort: { type: integer }
+        defaultReplicas: { type: integer }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        containerCommand: { type: string }
+        containerArgs: { type: string }
+        fsGroup: { type: string }
+        dataVolumes:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        secretEnv:
+          type: object
+          additionalProperties: { type: string }
+        configFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        secretFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/PlatformAppTemplateComponentInput" }
+        values:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateValueDefinition" }
+    PlatformAppTemplateBundle:
+      type: object
+      additionalProperties: false
+      required: [slug, name, category]
+      properties:
+        schemaVersion: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        icon: { type: string }
+        version: { type: string }
+        enabled: { type: boolean }
+        featured: { type: boolean }
+        popularityWeight: { type: integer }
+        officialWebsite: { type: string }
+        officialRepository: { type: string }
+        image: { type: string }
+        servicePort: { type: integer }
+        defaultReplicas: { type: integer }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        containerCommand: { type: string }
+        containerArgs: { type: string }
+        fsGroup: { type: string }
+        dataVolumes:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        secretEnv:
+          type: object
+          additionalProperties: { type: string }
+        configFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        secretFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/PlatformAppTemplateComponentInput" }
+        values:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateValueDefinition" }
+    PlatformAppTemplateImportInput:
+      type: object
+      additionalProperties: false
+      required: [bundle]
+      properties:
+        overwrite: { type: boolean }
+        bundle: { $ref: "#/components/schemas/PlatformAppTemplateBundle" }
+    PlatformAppTemplate:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, description, category, icon, version, isMultiComponent, enabled, featured, popularityWeight, officialWebsite, officialRepository, image, servicePort, defaultReplicas, defaultCPU, defaultMemory, containerCommand, containerArgs, fsGroup, dataVolumes, env, secretEnv, configFiles, secretFiles, components, values, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        icon: { type: string }
+        version: { type: string }
+        isMultiComponent: { type: boolean }
+        enabled: { type: boolean }
+        featured: { type: boolean }
+        popularityWeight: { type: integer }
+        officialWebsite: { type: string }
+        officialRepository: { type: string }
+        image: { type: string }
+        servicePort: { type: integer }
+        defaultReplicas: { type: integer }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        containerCommand: { type: string }
+        containerArgs: { type: string }
+        fsGroup: { type: string }
+        dataVolumes:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        secretEnv:
+          type: object
+          additionalProperties: { type: string }
+        configFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        secretFiles:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateConfigFile" }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/PlatformAppTemplateComponent" }
+        values:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateValueDefinition" }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     AppTemplateInstallInput:
       type: object
       required: [applicationName, applicationIdentifier, deploymentName, stage, clusterId]

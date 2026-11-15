@@ -1,0 +1,58 @@
+{
+  "id": "wordpress",
+  "slug": "wordpress",
+  "name": "WordPress",
+  "description": "Popular self-hosted CMS and blog platform; connect it to an existing MySQL-compatible database.",
+  "category": "collaboration",
+  "icon": "/app-templates/icons/wordpress.svg",
+  "officialWebsite": "https://wordpress.org/",
+  "officialRepository": "https://github.com/WordPress/WordPress",
+  "popularityWeight": 81,
+  "image": "wordpress:6.6-apache",
+  "version": "6.6-apache",
+  "servicePort": 80,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/www/html"
+    }
+  ],
+  "env": {
+    "WORDPRESS_DB_HOST": "{{dbHost}}",
+    "WORDPRESS_DB_NAME": "{{database}}",
+    "WORDPRESS_DB_USER": "{{username}}"
+  },
+  "secretEnv": {
+    "WORDPRESS_DB_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "dbHost",
+      "label": "Database host",
+      "default": "mysql:3306",
+      "required": true
+    },
+    {
+      "key": "database",
+      "label": "Database",
+      "default": "wordpress",
+      "required": true
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "wordpress",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "required": true
+    }
+  ]
+}

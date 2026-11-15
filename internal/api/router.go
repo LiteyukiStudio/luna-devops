@@ -254,6 +254,12 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 
 		v1.GET("/app-templates", domains.application.ListAppTemplates)
 		v1.GET("/app-templates/:templateId", domains.application.GetAppTemplate)
+		v1.GET("/configs/app-templates", domains.identity.PlatformAdminMiddleware(), domains.application.ListPlatformAppTemplates)
+		v1.POST("/configs/app-templates", domains.identity.PlatformAdminMiddleware(), domains.application.CreatePlatformAppTemplate)
+		v1.POST("/configs/app-templates/import", domains.identity.PlatformAdminMiddleware(), domains.application.ImportPlatformAppTemplate)
+		v1.GET("/configs/app-templates/:templateId/export", domains.identity.PlatformAdminMiddleware(), domains.application.ExportPlatformAppTemplate)
+		v1.PUT("/configs/app-templates/:templateId", domains.identity.PlatformAdminMiddleware(), domains.application.UpdatePlatformAppTemplate)
+		v1.DELETE("/configs/app-templates/:templateId", domains.identity.PlatformAdminMiddleware(), domains.application.DeletePlatformAppTemplate)
 
 		v1.GET("/projects", domains.project.ListProjects)
 		v1.GET("/projects/pins", domains.project.ListProjectPins)

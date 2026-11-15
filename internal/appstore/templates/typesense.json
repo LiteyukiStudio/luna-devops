@@ -1,0 +1,39 @@
+{
+  "id": "typesense",
+  "slug": "typesense",
+  "name": "Typesense",
+  "description": "Fast typo-tolerant search engine for product search and application search.",
+  "category": "database",
+  "icon": "/app-templates/icons/fallback.svg",
+  "officialWebsite": "https://typesense.org/",
+  "officialRepository": "https://github.com/typesense/typesense",
+  "popularityWeight": 73,
+  "image": "typesense/typesense:28.0",
+  "version": "28.0",
+  "servicePort": 8108,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/data"
+    }
+  ],
+  "env": {
+    "TYPESENSE_DATA_DIR": "/data"
+  },
+  "secretEnv": {
+    "TYPESENSE_API_KEY": "{{apiKey}}"
+  },
+  "values": [
+    {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

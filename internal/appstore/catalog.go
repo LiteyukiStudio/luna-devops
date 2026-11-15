@@ -16,8 +16,13 @@ import (
 	"strings"
 )
 
-//go:embed templates.json
+//go:embed templates/*.json
 var templateFS embed.FS
+
+const (
+	TemplateSourceBuiltin  = "builtin"
+	TemplateSourcePlatform = "platform"
+)
 
 // randomSource 是模板随机密钥的熵来源；测试可替换为失败的 Reader 验证安装会中止。
 var randomSource io.Reader = rand.Reader
@@ -42,6 +47,7 @@ type Template struct {
 	Category           string `json:"category"`
 	Kind               string `json:"kind"`
 	SystemComponent    string `json:"systemComponent"`
+	Source             string `json:"source,omitempty"`
 	Icon               string `json:"icon"`
 	OfficialWebsite    string `json:"officialWebsite"`
 	OfficialRepository string `json:"officialRepository"`
@@ -132,25 +138,58 @@ func (template Template) IsMultiComponent() bool {
 }
 
 func Catalog() ([]Template, error) {
-	content, err := templateFS.ReadFile("templates.json")
+	entries, err := templateFS.ReadDir("templates")
 	if err != nil {
 		return nil, err
 	}
-	var templates []Template
-	if err := json.Unmarshal(content, &templates); err != nil {
-		return nil, err
-	}
-	for index := range templates {
-		templates[index].OfficialWebsite = strings.TrimSpace(templates[index].OfficialWebsite)
-		templates[index].OfficialRepository = strings.TrimSpace(templates[index].OfficialRepository)
-		if templates[index].OfficialWebsite == "" {
-			templates[index].OfficialWebsite = templates[index].OfficialRepository
+	templates := make([]Template, 0, len(entries))
+	seenIDs := make(map[string]struct{}, len(entries))
+	seenSlugs := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
 		}
-		if err := validateTemplateWorkloads(templates[index]); err != nil {
-			return nil, fmt.Errorf("template %s: %w", templates[index].ID, err)
+		content, err := templateFS.ReadFile("templates/" + entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", entry.Name(), err)
 		}
+		var template Template
+		if err := json.Unmarshal(content, &template); err != nil {
+			return nil, fmt.Errorf("decode %s: %w", entry.Name(), err)
+		}
+		template.ID = strings.TrimSpace(template.ID)
+		template.Slug = strings.TrimSpace(template.Slug)
+		if template.ID == "" || template.Slug == "" {
+			return nil, fmt.Errorf("template file %s requires non-empty id and slug", entry.Name())
+		}
+		if _, exists := seenIDs[template.ID]; exists {
+			return nil, fmt.Errorf("duplicate built-in template id %q", template.ID)
+		}
+		seenIDs[template.ID] = struct{}{}
+		if _, exists := seenSlugs[template.Slug]; exists {
+			return nil, fmt.Errorf("duplicate built-in template slug %q", template.Slug)
+		}
+		seenSlugs[template.Slug] = struct{}{}
+		template.Source = TemplateSourceBuiltin
+		template.OfficialWebsite = strings.TrimSpace(template.OfficialWebsite)
+		template.OfficialRepository = strings.TrimSpace(template.OfficialRepository)
+		if template.OfficialWebsite == "" {
+			template.OfficialWebsite = template.OfficialRepository
+		}
+		if err := validateTemplateWorkloads(template); err != nil {
+			return nil, fmt.Errorf("template %s: %w", template.ID, err)
+		}
+		templates = append(templates, template)
 	}
+	slices.SortFunc(templates, compareCatalogTemplates)
 	return templates, nil
+}
+
+func compareCatalogTemplates(left, right Template) int {
+	if left.PopularityWeight != right.PopularityWeight {
+		return right.PopularityWeight - left.PopularityWeight
+	}
+	return strings.Compare(left.ID, right.ID)
 }
 
 func validateTemplateWorkloads(template Template) error {

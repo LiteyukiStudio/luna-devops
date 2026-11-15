@@ -1,0 +1,45 @@
+{
+  "id": "grafana",
+  "slug": "grafana",
+  "name": "Grafana",
+  "description": "Metrics dashboard and visualization platform for observability data.",
+  "category": "observability",
+  "icon": "/app-templates/icons/grafana.svg",
+  "officialWebsite": "https://grafana.com/",
+  "officialRepository": "https://github.com/grafana/grafana",
+  "popularityWeight": 84,
+  "image": "grafana/grafana:latest",
+  "version": "latest",
+  "servicePort": 3000,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/grafana"
+    }
+  ],
+  "env": {
+    "GF_SECURITY_ADMIN_USER": "{{username}}"
+  },
+  "secretEnv": {
+    "GF_SECURITY_ADMIN_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "admin",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

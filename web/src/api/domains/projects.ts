@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, NetworkServiceShare, NetworkServiceShareDirection, NetworkServiceSharePayload, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, NetworkServiceShare, NetworkServiceShareDirection, NetworkServiceSharePayload, PaginatedResponse, PaginationParams, PlatformAppTemplate, PlatformAppTemplateBundle, PlatformAppTemplateImportPayload, PlatformAppTemplateWritePayload, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -16,6 +16,27 @@ export const projectsApi = {
     return request<AppTemplateSummary[]>(`/app-templates${suffix}`)
   },
   getAppTemplate: (templateId: string) => request<AppTemplate>(`/app-templates/${encodeURIComponent(templateId)}`),
+  listPlatformAppTemplates: (params?: { query?: string, category?: string, enabled?: boolean }, signal?: AbortSignal) => {
+    const search = new URLSearchParams()
+    if (params?.query)
+      search.set('query', params.query)
+    if (params?.category)
+      search.set('category', params.category)
+    if (params?.enabled !== undefined)
+      search.set('enabled', String(params.enabled))
+    const suffix = search.size > 0 ? `?${search.toString()}` : ''
+    return request<PlatformAppTemplate[]>(`/configs/app-templates${suffix}`, { signal })
+  },
+  createPlatformAppTemplate: (payload: PlatformAppTemplateWritePayload) =>
+    request<PlatformAppTemplate>('/configs/app-templates', { method: 'POST', body: JSON.stringify(payload) }),
+  updatePlatformAppTemplate: (templateId: string, payload: PlatformAppTemplateWritePayload) =>
+    request<PlatformAppTemplate>(`/configs/app-templates/${encodeURIComponent(templateId)}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deletePlatformAppTemplate: (templateId: string) =>
+    request<void>(`/configs/app-templates/${encodeURIComponent(templateId)}`, { method: 'DELETE' }),
+  exportPlatformAppTemplate: (templateId: string) =>
+    request<PlatformAppTemplateBundle>(`/configs/app-templates/${encodeURIComponent(templateId)}/export`),
+  importPlatformAppTemplate: (payload: PlatformAppTemplateImportPayload) =>
+    request<PlatformAppTemplate>('/configs/app-templates/import', { method: 'POST', body: JSON.stringify(payload) }),
   installAppTemplate: (projectId: string, templateId: string, payload: AppTemplateInstallPayload) =>
     request<AppTemplateInstallResponse>(`/projects/${projectId}/app-templates/${encodeURIComponent(templateId)}/install`, { method: 'POST', body: JSON.stringify(payload) }),
   installSystemAppTemplate: (templateId: string, payload: SystemComponentInstallPayload) =>

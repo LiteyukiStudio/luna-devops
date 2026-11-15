@@ -5,21 +5,28 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
+import { PlatformRole } from '@/lib/roles'
 import { AppTemplatesPage } from './AppTemplatesPage'
 
 const mocks = vi.hoisted(() => ({
+  createPlatformAppTemplate: vi.fn(),
   createProjectVolume: vi.fn(),
+  deletePlatformAppTemplate: vi.fn(),
+  exportPlatformAppTemplate: vi.fn(),
   getAppTemplate: vi.fn(),
   getProject: vi.fn(),
   getProjectVolume: vi.fn(),
+  importPlatformAppTemplate: vi.fn(),
   installAppTemplate: vi.fn(),
   listAppTemplates: vi.fn(),
+  listPlatformAppTemplates: vi.fn(),
   listProjectVolumes: vi.fn(),
   listProjectVolumeStorageClasses: vi.fn(),
   listProjects: vi.fn(),
   listRuntimeClusters: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
+  updatePlatformAppTemplate: vi.fn(),
   session: {
     user: {
       id: 'usr_1',
@@ -38,16 +45,22 @@ vi.mock('@/api', async (importOriginal) => {
     ...actual,
     api: {
       ...actual.api,
+      createPlatformAppTemplate: mocks.createPlatformAppTemplate,
       createProjectVolume: mocks.createProjectVolume,
+      deletePlatformAppTemplate: mocks.deletePlatformAppTemplate,
+      exportPlatformAppTemplate: mocks.exportPlatformAppTemplate,
       getAppTemplate: mocks.getAppTemplate,
       getProject: mocks.getProject,
       getProjectVolume: mocks.getProjectVolume,
+      importPlatformAppTemplate: mocks.importPlatformAppTemplate,
       installAppTemplate: mocks.installAppTemplate,
       listAppTemplates: mocks.listAppTemplates,
+      listPlatformAppTemplates: mocks.listPlatformAppTemplates,
       listProjectVolumes: mocks.listProjectVolumes,
       listProjectVolumeStorageClasses: mocks.listProjectVolumeStorageClasses,
       listProjects: mocks.listProjects,
       listRuntimeClusters: mocks.listRuntimeClusters,
+      updatePlatformAppTemplate: mocks.updatePlatformAppTemplate,
     },
   }
 })
@@ -127,8 +140,10 @@ const createdVolume = {
 describe('app template installation', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
+    mocks.session.user.role = PlatformRole.User
     await i18next.changeLanguage('en-US')
     mocks.listAppTemplates.mockResolvedValue([{ ...template, valueCount: 1, requiredValueCount: 0 }])
+    mocks.listPlatformAppTemplates.mockResolvedValue([])
     mocks.getAppTemplate.mockResolvedValue(template)
     mocks.listProjects.mockResolvedValue([{
       id: 'prj_1',
@@ -555,7 +570,200 @@ describe('app template installation', () => {
     expect(within(installDialog).getByText(i18next.t('appTemplatesPage.validation.projectVolumeRequired'))).toBeInTheDocument()
     expect(mocks.installAppTemplate).not.toHaveBeenCalled()
   })
+
+  it('shows suite topology overview on multi-component cards and install sheet, while hiding admin actions for regular users', async () => {
+    const suiteTemplate = {
+      ...template,
+      id: 'neo-blog',
+      slug: 'neo-blog',
+      name: 'Neo Blog',
+      source: 'platform' as const,
+      image: '',
+      servicePort: 0,
+      dataVolumes: [],
+      components: [
+        {
+          key: 'web',
+          name: 'Frontend',
+          image: 'example/web:latest',
+          servicePort: 3000,
+          defaultReplicas: 1,
+          defaultCPU: '250m',
+          defaultMemory: '256Mi',
+          dataVolumes: [],
+          dependencies: ['api'],
+        },
+        {
+          key: 'api',
+          name: 'Backend',
+          image: 'example/api:latest',
+          servicePort: 8080,
+          defaultReplicas: 1,
+          defaultCPU: '500m',
+          defaultMemory: '512Mi',
+          dataVolumes: [{ logicalName: 'data', sourceType: 'projectVolume' as const, mountPath: '/data' }],
+          dependencies: [],
+        },
+      ],
+      values: [],
+    }
+    mocks.listAppTemplates.mockResolvedValue([{ ...suiteTemplate, valueCount: 0, requiredValueCount: 0 }])
+    mocks.getAppTemplate.mockResolvedValue(suiteTemplate)
+    const user = userEvent.setup()
+    renderPage()
+
+    const card = await screen.findByRole('button', { name: /^Neo Blog/ })
+    expect(card).toHaveTextContent('Frontend + Backend')
+    expect(card).toHaveTextContent(i18next.t('appTemplatesPage.platformCustomBadge'))
+    expect(screen.queryByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.manage') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.create') })).not.toBeInTheDocument()
+
+    // Searching by component name matches the multi-component suite.
+    await user.type(screen.getByRole('searchbox', { name: i18next.t('appTemplatesPage.searchPlaceholder') }), 'backend')
+    expect(screen.getByRole('button', { name: /^Neo Blog/ })).toBeInTheDocument()
+
+    const installDialog = await openInstallSheet(user, 'Neo Blog')
+    expect(await within(installDialog).findByText(i18next.t('appTemplatesPage.suiteOverviewTitle'))).toBeInTheDocument()
+    expect(within(installDialog).getByText(i18next.t('appTemplatesPage.componentDependsOn', { targets: 'Backend' }))).toBeInTheDocument()
+    expect(within(installDialog).getByText(i18next.t('appTemplatesPage.persistentVolumeBadge'))).toBeInTheDocument()
+    expect(within(installDialog).queryByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.exportJson') })).not.toBeInTheDocument()
+  })
+
+  it('allows platform administrators to create, toggle, export, delete, and import platform templates', async () => {
+    mocks.session.user.role = PlatformRole.Admin
+    const existingPlatformTemplate = {
+      id: 'ptpl_1',
+      slug: 'internal-portal',
+      name: 'Internal Portal',
+      description: 'Internal operations portal',
+      category: 'developerTool',
+      icon: '',
+      version: '1.2.0',
+      isMultiComponent: false,
+      enabled: true,
+      featured: false,
+      popularityWeight: 60,
+      officialWebsite: 'https://portal.example.com',
+      officialRepository: '',
+      image: 'registry.example.com/portal:1.2.0',
+      servicePort: 8080,
+      defaultReplicas: 1,
+      defaultCPU: '250m',
+      defaultMemory: '256Mi',
+      containerCommand: '',
+      containerArgs: '',
+      fsGroup: '',
+      dataVolumes: [],
+      env: { PORT: '8080' },
+      secretEnv: {},
+      configFiles: [],
+      secretFiles: [],
+      components: [],
+      values: [],
+      createdBy: 'usr_1',
+      createdAt: '2026-08-29T00:00:00Z',
+      updatedAt: '2026-08-29T00:00:00Z',
+    }
+    mocks.listPlatformAppTemplates.mockResolvedValue([existingPlatformTemplate])
+    mocks.createPlatformAppTemplate.mockResolvedValue(existingPlatformTemplate)
+    mocks.updatePlatformAppTemplate.mockResolvedValue({ ...existingPlatformTemplate, enabled: false })
+    mocks.deletePlatformAppTemplate.mockResolvedValue(undefined)
+    mocks.exportPlatformAppTemplate.mockResolvedValue({
+      schemaVersion: 'luna.app-template/v1',
+      slug: 'internal-portal',
+      name: 'Internal Portal',
+      category: 'developerTool',
+      image: 'registry.example.com/portal:1.2.0',
+      servicePort: 8080,
+    })
+    mocks.importPlatformAppTemplate.mockResolvedValue(existingPlatformTemplate)
+
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:template-export')
+    URL.revokeObjectURL = vi.fn()
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    try {
+      const user = userEvent.setup()
+      renderPage()
+
+      // 1. Create a platform template via New template dialog
+      await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.create') }))
+      const createDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.platformAdmin.createDialogTitle') })
+      await user.type(within(createDialog).getByLabelText(new RegExp(`^${escapeRegExp(i18next.t('appTemplatesPage.platformAdmin.slug'))}`), { selector: 'input' }), 'custom-wiki')
+      await user.type(within(createDialog).getByLabelText(new RegExp(`^${escapeRegExp(i18next.t('appTemplatesPage.platformAdmin.name'))}`), { selector: 'input' }), 'Custom Wiki')
+      await user.type(within(createDialog).getByLabelText(new RegExp(`^${escapeRegExp(i18next.t('appTemplatesPage.imageRef'))}`), { selector: 'input' }), 'ghcr.io/requarks/wiki:2')
+      await user.click(within(createDialog).getByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.save') }))
+
+      await waitFor(() => expect(mocks.createPlatformAppTemplate).toHaveBeenCalledWith(expect.objectContaining({
+        category: 'developerTool',
+        enabled: true,
+        image: 'ghcr.io/requarks/wiki:2',
+        name: 'Custom Wiki',
+        servicePort: 8080,
+        slug: 'custom-wiki',
+      })))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: i18next.t('appTemplatesPage.platformAdmin.createDialogTitle') })).not.toBeInTheDocument())
+
+      // 2. Manage existing platform templates: disable, export JSON, and delete
+      await user.click(screen.getByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.manage') }))
+      const managerSheet = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.platformAdmin.managerTitle') })
+      expect(await within(managerSheet).findByText('Internal Portal')).toBeInTheDocument()
+
+      await user.click(within(managerSheet).getByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.disableAction') }))
+      await waitFor(() => expect(mocks.updatePlatformAppTemplate).toHaveBeenCalledWith('ptpl_1', expect.objectContaining({
+        enabled: false,
+        slug: 'internal-portal',
+      })))
+
+      await user.click(within(managerSheet).getByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.exportJson') }))
+      await waitFor(() => expect(mocks.exportPlatformAppTemplate).toHaveBeenCalledWith('ptpl_1'))
+      expect(URL.createObjectURL).toHaveBeenCalledOnce()
+
+      await user.click(within(managerSheet).getByRole('button', { name: i18next.t('common.delete') }))
+      const confirmDialog = await screen.findByRole('alertdialog')
+      await user.click(within(confirmDialog).getByRole('button', { name: i18next.t('common.delete') }))
+      await waitFor(() => expect(mocks.deletePlatformAppTemplate).toHaveBeenCalledWith('ptpl_1'))
+
+      // 3. Import template JSON
+      await user.click(within(managerSheet).getByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.importJson') }))
+      const importDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.platformAdmin.importDialogTitle') })
+      const jsonInput = within(importDialog).getByLabelText(new RegExp(`^${escapeRegExp(i18next.t('appTemplatesPage.platformAdmin.jsonContent'))}`), { selector: 'textarea' })
+      await user.click(jsonInput)
+      await user.paste(JSON.stringify({
+        schemaVersion: 'luna.app-template/v1',
+        slug: 'imported-cache',
+        name: 'Imported Cache',
+        category: 'middleware',
+        image: 'valkey/valkey:8-alpine',
+        servicePort: 6379,
+      }))
+      await user.click(within(importDialog).getByRole('checkbox', { name: new RegExp(`^${escapeRegExp(i18next.t('appTemplatesPage.platformAdmin.overwriteExisting'))}`) }))
+      await user.click(within(importDialog).getByRole('button', { name: i18next.t('appTemplatesPage.platformAdmin.importSubmit') }))
+
+      await waitFor(() => expect(mocks.importPlatformAppTemplate).toHaveBeenCalledWith({
+        bundle: expect.objectContaining({
+          category: 'middleware',
+          image: 'valkey/valkey:8-alpine',
+          name: 'Imported Cache',
+          servicePort: 6379,
+          slug: 'imported-cache',
+        }),
+        overwrite: true,
+      }))
+    }
+    finally {
+      URL.createObjectURL = originalCreateObjectURL
+      URL.revokeObjectURL = originalRevokeObjectURL
+      clickSpy.mockRestore()
+    }
+  })
 })
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 function renderPage() {
   const queryClient = new QueryClient({

@@ -14,6 +14,9 @@ export function TemplateCard({ template, onOpen }: { template: AppTemplateSummar
   const { t } = useTranslation()
   const systemComponent = isSystemComponentTemplate(template)
   const multiComponent = isMultiComponentTemplate(template)
+  const componentSummary = multiComponent
+    ? template.components.map(component => component.name).filter(Boolean).join(' + ')
+    : ''
   return (
     <button
       className="flex min-h-40 min-w-0 flex-col rounded-container border border-border bg-surface-raised p-4 text-left transition-colors duration-standard ease-standard hover:border-primary-border hover:bg-surface-subtle focus-visible:border-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/50"
@@ -26,14 +29,19 @@ export function TemplateCard({ template, onOpen }: { template: AppTemplateSummar
           <span className="block truncate text-sm font-semibold text-foreground">{template.name}</span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">{templateCategoryLabel(template.category, t)}</span>
         </span>
-        {systemComponent && <StatusBadge className="shrink-0" tone="neutral">{t('appTemplatesPage.platformComponent')}</StatusBadge>}
+        {systemComponent
+          ? <StatusBadge className="shrink-0" tone="neutral">{t('appTemplatesPage.platformComponent')}</StatusBadge>
+          : template.source === 'platform'
+            ? <StatusBadge className="shrink-0" tone="info">{t('appTemplatesPage.platformCustomBadge')}</StatusBadge>
+            : null}
       </span>
       <span className="mt-3 line-clamp-2 text-sm leading-5 text-muted-foreground">
         {templateDescription(template, t)}
       </span>
-      <span className="mt-auto flex min-w-0 items-center gap-3 pt-3 text-xs text-muted-foreground">
-        {template.version && <span className="truncate font-mono">{template.version}</span>}
+      <span className="mt-auto flex min-w-0 items-center gap-2 pt-3 text-xs text-muted-foreground">
+        {template.version && <span className="shrink-0 font-mono">{template.version}</span>}
         {multiComponent && <span className="shrink-0">{t('appTemplatesPage.componentCount', { count: template.components.length })}</span>}
+        {componentSummary && <span className="min-w-0 truncate text-muted-foreground/80">{componentSummary}</span>}
       </span>
     </button>
   )

@@ -1,0 +1,25 @@
+{
+  "id": "bytebase",
+  "slug": "bytebase",
+  "name": "Bytebase",
+  "description": "Database schema change and review workflow for small engineering teams.",
+  "category": "database",
+  "icon": "/app-templates/icons/bytebase.svg",
+  "officialWebsite": "https://www.bytebase.com/",
+  "officialRepository": "https://github.com/bytebase/bytebase",
+  "popularityWeight": 62,
+  "image": "bytebase/bytebase:latest",
+  "version": "latest",
+  "servicePort": 8080,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/opt/bytebase"
+    }
+  ],
+  "values": []
+}

@@ -1,0 +1,45 @@
+{
+  "id": "mongodb",
+  "slug": "mongo",
+  "name": "MongoDB",
+  "description": "Document database for JSON-like application data and flexible schemas.",
+  "category": "database",
+  "icon": "/app-templates/icons/mongodb.svg",
+  "officialWebsite": "https://www.mongodb.com/",
+  "officialRepository": "https://github.com/mongodb/mongo",
+  "popularityWeight": 86,
+  "image": "mongo:7",
+  "version": "7",
+  "servicePort": 27017,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/data/db"
+    }
+  ],
+  "env": {
+    "MONGO_INITDB_ROOT_USERNAME": "{{username}}"
+  },
+  "secretEnv": {
+    "MONGO_INITDB_ROOT_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "root",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

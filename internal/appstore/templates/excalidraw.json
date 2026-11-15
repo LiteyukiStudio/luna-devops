@@ -1,0 +1,19 @@
+{
+  "id": "excalidraw",
+  "slug": "excalidraw",
+  "name": "Excalidraw",
+  "description": "Simple collaborative whiteboard for diagrams, sketches, and product notes.",
+  "category": "collaboration",
+  "icon": "/app-templates/icons/excalidraw.svg",
+  "officialWebsite": "https://excalidraw.com/",
+  "officialRepository": "https://github.com/excalidraw/excalidraw",
+  "popularityWeight": 67,
+  "image": "excalidraw/excalidraw:latest",
+  "version": "latest",
+  "servicePort": 80,
+  "defaultReplicas": 1,
+  "defaultCPU": "250m",
+  "defaultMemory": "256Mi",
+  "dataVolumes": [],
+  "values": []
+}

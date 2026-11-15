@@ -1,0 +1,36 @@
+{
+  "id": "meilisearch",
+  "slug": "meilisearch",
+  "name": "Meilisearch",
+  "description": "Lightweight full-text search engine with simple API-driven indexing.",
+  "category": "database",
+  "icon": "/app-templates/icons/meilisearch.svg",
+  "officialWebsite": "https://www.meilisearch.com/",
+  "officialRepository": "https://github.com/meilisearch/meilisearch",
+  "popularityWeight": 72,
+  "image": "getmeili/meilisearch:v1.13",
+  "version": "v1.13",
+  "servicePort": 7700,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/meili_data"
+    }
+  ],
+  "secretEnv": {
+    "MEILI_MASTER_KEY": "{{masterKey}}"
+  },
+  "values": [
+    {
+      "key": "masterKey",
+      "label": "Master key",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

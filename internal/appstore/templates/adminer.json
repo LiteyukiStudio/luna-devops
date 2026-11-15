@@ -1,0 +1,19 @@
+{
+  "id": "adminer",
+  "slug": "adminer",
+  "name": "Adminer",
+  "description": "Small web database administration tool for MySQL, PostgreSQL, SQLite, and more.",
+  "category": "database",
+  "icon": "/app-templates/icons/adminer.svg",
+  "officialWebsite": "https://www.adminer.org/",
+  "officialRepository": "https://github.com/vrana/adminer",
+  "popularityWeight": 63,
+  "image": "adminer:4",
+  "version": "4",
+  "servicePort": 8080,
+  "defaultReplicas": 1,
+  "defaultCPU": "250m",
+  "defaultMemory": "256Mi",
+  "dataVolumes": [],
+  "values": []
+}

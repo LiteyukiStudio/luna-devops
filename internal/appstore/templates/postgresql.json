@@ -1,0 +1,53 @@
+{
+  "id": "postgresql",
+  "slug": "postgres",
+  "name": "PostgreSQL",
+  "description": "Relational database for application data, metadata, and transactional workloads.",
+  "category": "database",
+  "icon": "/app-templates/icons/postgresql.svg",
+  "officialWebsite": "https://www.postgresql.org/",
+  "officialRepository": "https://github.com/postgres/postgres",
+  "popularityWeight": 100,
+  "featured": true,
+  "image": "postgres:16-alpine",
+  "version": "16-alpine",
+  "servicePort": 5432,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/postgresql/data"
+    }
+  ],
+  "env": {
+    "POSTGRES_USER": "{{username}}",
+    "POSTGRES_DB": "{{database}}"
+  },
+  "secretEnv": {
+    "POSTGRES_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "database",
+      "label": "Database",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

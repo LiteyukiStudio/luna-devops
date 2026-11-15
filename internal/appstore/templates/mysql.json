@@ -1,0 +1,60 @@
+{
+  "id": "mysql",
+  "slug": "mysql",
+  "name": "MySQL",
+  "description": "Classic relational database with a simple single-container setup.",
+  "category": "database",
+  "icon": "/app-templates/icons/mysql.svg",
+  "officialWebsite": "https://www.mysql.com/",
+  "officialRepository": "https://github.com/mysql/mysql-server",
+  "popularityWeight": 90,
+  "image": "mysql:8.4",
+  "version": "8.4",
+  "servicePort": 3306,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/mysql"
+    }
+  ],
+  "env": {
+    "MYSQL_DATABASE": "{{database}}",
+    "MYSQL_USER": "{{username}}"
+  },
+  "secretEnv": {
+    "MYSQL_ROOT_PASSWORD": "{{rootPassword}}",
+    "MYSQL_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "database",
+      "label": "Database",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "rootPassword",
+      "label": "Root password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

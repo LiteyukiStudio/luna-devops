@@ -1,0 +1,25 @@
+{
+  "id": "verdaccio",
+  "slug": "verdaccio",
+  "name": "Verdaccio",
+  "description": "Private npm-compatible package registry for internal JavaScript packages.",
+  "category": "storage",
+  "icon": "/app-templates/icons/verdaccio.svg",
+  "officialWebsite": "https://verdaccio.org/",
+  "officialRepository": "https://github.com/verdaccio/verdaccio",
+  "popularityWeight": 66,
+  "image": "verdaccio/verdaccio:6",
+  "version": "6",
+  "servicePort": 4873,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/verdaccio/storage"
+    }
+  ],
+  "values": []
+}

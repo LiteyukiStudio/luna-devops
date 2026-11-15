@@ -1,0 +1,45 @@
+{
+  "id": "rabbitmq",
+  "slug": "rabbitmq",
+  "name": "RabbitMQ",
+  "description": "Message broker for asynchronous jobs, events, and lightweight queues.",
+  "category": "middleware",
+  "icon": "/app-templates/icons/rabbitmq.svg",
+  "officialWebsite": "https://www.rabbitmq.com/",
+  "officialRepository": "https://github.com/rabbitmq/rabbitmq-server",
+  "popularityWeight": 76,
+  "image": "rabbitmq:3-management-alpine",
+  "version": "3-management-alpine",
+  "servicePort": 5672,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/rabbitmq"
+    }
+  ],
+  "env": {
+    "RABBITMQ_DEFAULT_USER": "{{username}}"
+  },
+  "secretEnv": {
+    "RABBITMQ_DEFAULT_PASS": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "app",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

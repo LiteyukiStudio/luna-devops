@@ -1,0 +1,31 @@
+{
+  "id": "caddy",
+  "slug": "caddy",
+  "name": "Caddy",
+  "description": "Simple web server and reverse proxy starter with a minimal static response.",
+  "category": "middleware",
+  "icon": "/app-templates/icons/caddy.svg",
+  "officialWebsite": "https://caddyserver.com/",
+  "officialRepository": "https://github.com/caddyserver/caddy",
+  "popularityWeight": 60,
+  "image": "caddy:2-alpine",
+  "version": "2-alpine",
+  "servicePort": 80,
+  "defaultReplicas": 1,
+  "defaultCPU": "250m",
+  "defaultMemory": "256Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/data"
+    }
+  ],
+  "configFiles": [
+    {
+      "path": "/etc/caddy/Caddyfile",
+      "content": ":80\nrespond \"Hello from Caddy on Luna DevOps\"\n"
+    }
+  ],
+  "values": []
+}

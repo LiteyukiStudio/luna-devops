@@ -1,19 +1,27 @@
-import type { AppTemplateSummary } from '@/api'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, SearchX } from 'lucide-react'
+import type { AppTemplateSummary, PlatformAppTemplate } from '@/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, Plus, SearchX, Settings2, Upload } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { api } from '@/api'
+import { useSession } from '@/app/session-context'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { TemplateGridSkeleton } from '@/components/common/loading-states'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { InstallTemplateSheet } from './install-template-sheet'
+import { PlatformTemplateEditorDialog } from './platform-template-editor-dialog'
+import { downloadTemplateBundleJson } from './platform-template-form'
+import { PlatformTemplateImportDialog } from './platform-template-import-dialog'
+import { PlatformTemplateManagerSheet } from './platform-template-manager-sheet'
 import { TemplateCard } from './template-card'
 import { templateCategoryLabel } from './template-text'
 
@@ -24,12 +32,19 @@ const ALL_CATEGORIES = 'all'
 
 export function AppTemplatesPage() {
   const { i18n, t } = useTranslation()
+  const { user } = useSession()
+  const queryClient = useQueryClient()
+  const canManagePlatformTemplates = isPlatformAdmin(user?.role)
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState(ALL_CATEGORIES)
   const [sortBy, setSortBy] = useState<SortBy>('popularity')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [selectedTemplateOverride, setSelectedTemplateOverride] = useState<AppTemplateSummary | null>(null)
+  const [managerOpen, setManagerOpen] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<PlatformAppTemplate | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const requestedTemplateId = searchParams.get('template')
   const templates = useQuery({ queryKey: ['app-templates'], queryFn: () => api.listAppTemplates() })
   const templateItems = templates.data ?? []
@@ -37,10 +52,29 @@ export function AppTemplatesPage() {
     ?? templateItems.find(template => template.id === requestedTemplateId)
     ?? null
 
+  const exportMutation = useMutation({
+    mutationFn: (templateId: string) => api.exportPlatformAppTemplate(templateId),
+    onSuccess: (bundle) => {
+      downloadTemplateBundleJson(bundle)
+      toast.success(t('appTemplatesPage.platformAdmin.exportedToast'))
+    },
+    onError: error => toast.error(error.message),
+  })
+
   const keyword = search.trim().toLowerCase()
   const keywordMatches = keyword
-    ? templateItems.filter(template => [template.name, template.slug, template.image, template.officialWebsite, template.officialRepository]
-        .some(value => value.toLowerCase().includes(keyword)))
+    ? templateItems.filter((template) => {
+        const componentTokens = template.components.flatMap(component => [component.name, component.key, component.image])
+        return [
+          template.name,
+          template.slug,
+          template.description,
+          template.image,
+          template.officialWebsite,
+          template.officialRepository,
+          ...componentTokens,
+        ].some(value => value.toLowerCase().includes(keyword))
+      })
     : templateItems
   const categoryCounts = new Map<string, number>()
   for (const template of keywordMatches)
@@ -77,8 +111,58 @@ export function AppTemplatesPage() {
     setCategory(ALL_CATEGORIES)
   }
 
+  function openCreateDialog() {
+    setEditingTemplate(null)
+    setEditorOpen(true)
+  }
+
+  function openEditDialog(template: PlatformAppTemplate) {
+    setEditingTemplate(template)
+    setEditorOpen(true)
+  }
+
+  async function openEditById(templateId: string) {
+    try {
+      const cached = queryClient.getQueryData<PlatformAppTemplate[]>(['platform-app-templates'])
+      const foundCached = cached?.find(item => item.id === templateId || item.slug === templateId)
+      if (foundCached) {
+        closeInstallSheet()
+        openEditDialog(foundCached)
+        return
+      }
+      const list = await queryClient.fetchQuery({
+        queryFn: ({ signal }) => api.listPlatformAppTemplates(undefined, signal),
+        queryKey: ['platform-app-templates'],
+      })
+      const found = list.find(item => item.id === templateId || item.slug === templateId)
+      if (found) {
+        closeInstallSheet()
+        openEditDialog(found)
+      }
+    }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   return (
     <PageShell spacing="compact" width="full">
+      {canManagePlatformTemplates && (
+        <PageChromeTools>
+          <Button type="button" variant="outline" onClick={() => setManagerOpen(true)}>
+            <Settings2 className="size-4" />
+            {t('appTemplatesPage.platformAdmin.manage')}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="size-4" />
+            {t('appTemplatesPage.platformAdmin.importJson')}
+          </Button>
+          <Button type="button" onClick={openCreateDialog}>
+            <Plus className="size-4" />
+            {t('appTemplatesPage.platformAdmin.create')}
+          </Button>
+        </PageChromeTools>
+      )}
       <div className="flex flex-col gap-3 @2xl/workspace:flex-row @2xl/workspace:items-start @2xl/workspace:justify-between">
         <div aria-label={t('appTemplatesPage.categoryFilter')} className="flex min-w-0 flex-wrap gap-1.5" role="group">
           <CategoryChip
@@ -158,7 +242,40 @@ export function AppTemplatesPage() {
             : <TemplateGrid templates={visibleTemplates} onOpen={setSelectedTemplateOverride} />
       )}
 
-      <InstallTemplateSheet summary={selectedTemplate} onClose={closeInstallSheet} />
+      <InstallTemplateSheet
+        exporting={exportMutation.isPending && exportMutation.variables === selectedTemplate?.id}
+        summary={selectedTemplate}
+        onClose={closeInstallSheet}
+        onEditPlatformTemplate={canManagePlatformTemplates ? templateId => void openEditById(templateId) : undefined}
+        onExportTemplate={canManagePlatformTemplates ? templateId => exportMutation.mutate(templateId) : undefined}
+      />
+
+      {canManagePlatformTemplates && (
+        <>
+          <PlatformTemplateManagerSheet
+            exportingId={exportMutation.isPending ? (exportMutation.variables ?? null) : null}
+            open={managerOpen}
+            onCreate={openCreateDialog}
+            onEdit={openEditDialog}
+            onExport={templateId => exportMutation.mutate(templateId)}
+            onImport={() => setImportOpen(true)}
+            onOpenChange={setManagerOpen}
+          />
+          <PlatformTemplateEditorDialog
+            open={editorOpen}
+            template={editingTemplate}
+            onOpenChange={(nextOpen) => {
+              setEditorOpen(nextOpen)
+              if (!nextOpen)
+                setEditingTemplate(null)
+            }}
+          />
+          <PlatformTemplateImportDialog
+            open={importOpen}
+            onOpenChange={setImportOpen}
+          />
+        </>
+      )}
     </PageShell>
   )
 }

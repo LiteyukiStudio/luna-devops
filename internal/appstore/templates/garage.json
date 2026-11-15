@@ -1,0 +1,53 @@
+{
+  "id": "garage",
+  "slug": "garage",
+  "name": "Garage",
+  "description": "Lightweight S3-compatible object storage for project files and artifacts.",
+  "category": "storage",
+  "icon": "/app-templates/icons/garage.svg",
+  "officialWebsite": "https://garagehq.deuxfleurs.fr/",
+  "officialRepository": "https://git.deuxfleurs.fr/Deuxfleurs/garage",
+  "popularityWeight": 58,
+  "image": "dxflrs/garage:v1.1.0",
+  "version": "v1.1.0",
+  "servicePort": 3900,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/garage"
+    }
+  ],
+  "secretFiles": [
+    {
+      "path": "/etc/garage.toml",
+      "content": "metadata_dir = \"/var/lib/garage/meta\"\ndata_dir = \"/var/lib/garage/data\"\ndb_engine = \"sqlite\"\nreplication_mode = \"none\"\nrpc_bind_addr = \"[::]:3901\"\nrpc_secret = \"{{rpcSecret}}\"\n\n[s3_api]\ns3_region = \"garage\"\napi_bind_addr = \"[::]:3900\"\nroot_domain = \".s3.garage.local\"\n\n[admin]\napi_bind_addr = \"[::]:3903\"\nadmin_token = \"{{adminToken}}\"\nmetrics_token = \"{{metricsToken}}\"\n"
+    }
+  ],
+  "values": [
+    {
+      "key": "rpcSecret",
+      "label": "RPC secret",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    },
+    {
+      "key": "adminToken",
+      "label": "Admin token",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    },
+    {
+      "key": "metricsToken",
+      "label": "Metrics token",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

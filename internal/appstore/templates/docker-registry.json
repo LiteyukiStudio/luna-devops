@@ -1,0 +1,25 @@
+{
+  "id": "docker-registry",
+  "slug": "registry",
+  "name": "Docker Registry",
+  "description": "Private OCI image registry for internal container image distribution.",
+  "category": "storage",
+  "icon": "/app-templates/icons/docker-registry.svg",
+  "officialWebsite": "https://distribution.github.io/distribution/",
+  "officialRepository": "https://github.com/distribution/distribution",
+  "popularityWeight": 65,
+  "image": "registry:2",
+  "version": "2",
+  "servicePort": 5000,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/registry"
+    }
+  ],
+  "values": []
+}

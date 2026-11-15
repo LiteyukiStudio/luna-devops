@@ -62,6 +62,7 @@ type Host interface {
 	EnqueueNetworkPolicyProjectReconcile(ctx context.Context, projectID string) bool
 	DBFor(ctx *gin.Context) *gorm.DB
 	DBWithContext(ctx context.Context) *gorm.DB
+	CurrentUser(ctx *gin.Context) (model.User, bool)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
 	EnsureProjectCanMutate(ctx *gin.Context, project model.Project) bool
 	EnsureBillingAllowsDeployChange(ctx *gin.Context, projectID string) bool
@@ -109,6 +110,9 @@ func New(host Host) *Handler {
 func (h *Handler) dbFor(ctx *gin.Context) *gorm.DB { return h.host.DBFor(ctx) }
 func (h *Handler) dbWithContext(ctx context.Context) *gorm.DB {
 	return h.host.DBWithContext(ctx)
+}
+func (h *Handler) currentUser(ctx *gin.Context) (model.User, bool) {
+	return h.host.CurrentUser(ctx)
 }
 func (h *Handler) authorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool) {
 	return h.host.AuthorizeProject(ctx, action)

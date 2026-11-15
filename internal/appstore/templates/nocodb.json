@@ -1,0 +1,25 @@
+{
+  "id": "nocodb",
+  "slug": "nocodb",
+  "name": "NocoDB",
+  "description": "Open-source no-code database interface for small internal tools and data apps.",
+  "category": "developerTool",
+  "icon": "/app-templates/icons/fallback.svg",
+  "officialWebsite": "https://www.nocodb.com/",
+  "officialRepository": "https://github.com/nocodb/nocodb",
+  "popularityWeight": 71,
+  "image": "nocodb/nocodb:latest",
+  "version": "latest",
+  "servicePort": 8080,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/usr/app/data"
+    }
+  ],
+  "values": []
+}

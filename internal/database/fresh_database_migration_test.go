@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 131
+	latestMigrationVersion   = 132
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -84,6 +84,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000130_network_service_shares.down.sql":                     false,
 		"000131_notification_scopes_and_runtime_alerts.up.sql":       false,
 		"000131_notification_scopes_and_runtime_alerts.down.sql":     false,
+		"000132_platform_app_templates.up.sql":                       false,
+		"000132_platform_app_templates.down.sql":                     false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -285,6 +287,7 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 131, "notification_channels", "scope")
 	assertSingleColumnMigration(t, testDB, runner, 131, "notification_rules", "channel_targets_json")
 	assertSingleColumnMigration(t, testDB, runner, 131, "runtime_alert_incidents", "incident_kind")
+	assertSingleColumnMigration(t, testDB, runner, 132, "platform_app_templates", "spec_json")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -506,6 +509,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"inbox_action_requests",
 		"project_volume_quota_usage",
 		"project_volume_quota_reservations",
+		"platform_app_templates",
 		"ai.conversation_summaries",
 		"ai.model_credit_holds",
 		"ai.model_usages",
@@ -983,6 +987,7 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 		&model.ProjectTopologyEdge{},
 		&model.AppTemplateInstallation{},
 		&model.AppTemplateInstallationComponent{},
+		&model.PlatformAppTemplate{},
 		&model.SystemComponentInstallation{},
 		&model.GitProvider{},
 		&model.GitAccount{},

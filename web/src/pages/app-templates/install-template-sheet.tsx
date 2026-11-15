@@ -1,8 +1,8 @@
 import type { InstallFormValues } from './install-form'
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateSummary } from '@/api'
+import type { AppTemplate, AppTemplateComponent, AppTemplateInstallPayload, AppTemplateSummary } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, PackagePlus } from 'lucide-react'
+import { ChevronDown, Download, PackagePlus, Pencil } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -56,10 +56,24 @@ interface SystemInstallRequest {
 }
 
 /** 模板详情与安装抽屉：头部展示模板信息，正文首屏只问项目空间、名称和环境，其余参数默认折叠。 */
-export function InstallTemplateSheet({ summary, onClose }: { summary: AppTemplateSummary | null, onClose: () => void }) {
+export function InstallTemplateSheet({
+  exporting = false,
+  summary,
+  onClose,
+  onEditPlatformTemplate,
+  onExportTemplate,
+}: {
+  exporting?: boolean
+  summary: AppTemplateSummary | null
+  onClose: () => void
+  onEditPlatformTemplate?: (templateId: string) => void
+  onExportTemplate?: (templateId: string) => void
+}) {
   const { t } = useTranslation()
+  const { user } = useSession()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const canManagePlatformTemplates = isPlatformAdmin(user?.role)
   const templateDetail = useQuery({
     queryKey: ['app-template', summary?.id],
     queryFn: () => api.getAppTemplate(summary!.id),
@@ -128,12 +142,46 @@ export function InstallTemplateSheet({ summary, onClose }: { summary: AppTemplat
                     <span>{templateCategoryLabel(summary.category, t)}</span>
                     {summary.version && <span className="font-mono">{summary.version}</span>}
                     {isMultiComponentTemplate(summary) && <span>{t('appTemplatesPage.componentCount', { count: summary.components.length })}</span>}
-                    {isSystemComponentTemplate(summary) && <StatusBadge tone="neutral">{t('appTemplatesPage.platformComponent')}</StatusBadge>}
+                    {isSystemComponentTemplate(summary)
+                      ? <StatusBadge tone="neutral">{t('appTemplatesPage.platformComponent')}</StatusBadge>
+                      : summary.source === 'platform'
+                        ? <StatusBadge tone="info">{t('appTemplatesPage.platformCustomBadge')}</StatusBadge>
+                        : null}
                   </div>
                 </div>
               </div>
               <SheetDescription className="leading-5">{templateDescription(summary, t)}</SheetDescription>
-              <TemplateSourceLinks template={summary} />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <TemplateSourceLinks template={summary} />
+                {canManagePlatformTemplates && !isSystemComponentTemplate(summary) && (onExportTemplate || (summary.source === 'platform' && onEditPlatformTemplate)) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {summary.source === 'platform' && onEditPlatformTemplate && (
+                      <Button
+                        disabled={installing}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        onClick={() => onEditPlatformTemplate(summary.id)}
+                      >
+                        <Pencil className="size-3.5" />
+                        {t('appTemplatesPage.platformAdmin.edit')}
+                      </Button>
+                    )}
+                    {onExportTemplate && (
+                      <Button
+                        disabled={installing || exporting}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        onClick={() => onExportTemplate(summary.id)}
+                      >
+                        <Download className="size-3.5" />
+                        {t('appTemplatesPage.platformAdmin.exportJson')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
             </SheetHeader>
             {templateDetail.isError && (
               <div className="p-5">
@@ -369,6 +417,8 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
             )}
 
         {essentialValues.map(templateValueField)}
+
+        {multiComponent && <SuiteOverview components={components} />}
 
         <Collapsible className="min-w-0 rounded-container border border-border" open={advancedOpen} onOpenChange={setAdvancedOpen}>
           <CollapsibleTrigger asChild>
@@ -617,6 +667,47 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
         </Button>
       </div>
     </form>
+  )
+}
+
+function SuiteOverview({ components }: { components: AppTemplateComponent[] }) {
+  const { t } = useTranslation()
+  const nameByKey = new Map(components.map(component => [component.key, component.name]))
+
+  return (
+    <section className="grid min-w-0 gap-2 rounded-container border border-border bg-surface-subtle/50 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium text-foreground">{t('appTemplatesPage.suiteOverviewTitle')}</h3>
+        <span className="text-xs text-muted-foreground">
+          {t('appTemplatesPage.componentCount', { count: components.length })}
+        </span>
+      </div>
+      <ul className="grid gap-1.5">
+        {components.map((component) => {
+          const depNames = (component.dependencies ?? [])
+            .map(dep => nameByKey.get(dep) ?? dep)
+            .filter(Boolean)
+          return (
+            <li key={component.key} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate font-medium text-foreground">{component.name}</span>
+                {component.servicePort > 0 && (
+                  <span className="shrink-0 font-mono text-muted-foreground">{`:${component.servicePort}`}</span>
+                )}
+              </span>
+              <span className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                {depNames.length > 0 && (
+                  <span>{t('appTemplatesPage.componentDependsOn', { targets: depNames.join(', ') })}</span>
+                )}
+                {hasProjectVolume(component.dataVolumes) && (
+                  <StatusBadge tone="neutral">{t('appTemplatesPage.persistentVolumeBadge')}</StatusBadge>
+                )}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 

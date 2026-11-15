@@ -173,7 +173,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 			"items": projects, "page": options.Page, "pageSize": options.PageSize, "visibility": options.Visibility,
 		}, Truncated: truncated}, err)
 	case "listAppTemplates":
-		templates, err := appstore.Catalog()
+		templates, err := appstore.CatalogWithPlatform(ctx, s.db)
 		if err != nil {
 			return Result{}, fmt.Errorf("%w: %v", ErrStorage, err)
 		}
@@ -181,15 +181,17 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		category := strings.ToLower(strings.TrimSpace(stringArgument(input.Arguments, "category")))
 		items := make([]map[string]any, 0, min(limit, len(templates)))
 		for _, template := range templates {
-			if template.Kind == "system" {
+			if template.Kind == "system" || template.Kind == "system_component" {
 				continue
 			}
 			if category != "" && strings.ToLower(template.Category) != category {
 				continue
 			}
-			searchable := strings.ToLower(strings.Join([]string{
-				template.ID, template.Slug, template.Name, template.Description, template.Category,
-			}, " "))
+			searchParts := []string{template.ID, template.Slug, template.Name, template.Description, template.Category, template.Image}
+			for _, comp := range template.Components {
+				searchParts = append(searchParts, comp.Key, comp.Name, comp.Image)
+			}
+			searchable := strings.ToLower(strings.Join(searchParts, " "))
 			if query != "" && !strings.Contains(searchable, query) {
 				continue
 			}
@@ -202,12 +204,13 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 			}
 			items = append(items, map[string]any{
 				"id": template.ID, "slug": template.Slug, "name": template.Name,
-				"description": template.Description, "category": template.Category,
+				"description": template.Description, "category": template.Category, "source": template.Source,
 				"icon": template.Icon, "officialWebsite": template.OfficialWebsite,
 				"officialRepository": template.OfficialRepository, "version": template.Version,
 				"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
 				"defaultMemory": template.DefaultMemory, "dataVolumes": template.DataVolumes,
-				"valueCount": len(template.Values), "requiredValueCount": requiredCount,
+				"isMultiComponent": template.IsMultiComponent(),
+				"valueCount":       len(template.Values), "requiredValueCount": requiredCount,
 			})
 			if len(items) == limit {
 				break
@@ -215,7 +218,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		}
 		return Result{Value: map[string]any{"items": items}, Truncated: len(items) == limit}, nil
 	case "getAppTemplate":
-		return s.getAppTemplate(input)
+		return s.getAppTemplate(ctx, input)
 	case "webSearch":
 		return s.webSearch(ctx, input.UserID, input.Arguments)
 	case "fetchWebPage":
@@ -350,13 +353,13 @@ func appTemplateComponents(template appstore.Template) []map[string]any {
 			"key": component.Key, "name": component.Name, "image": component.Image,
 			"servicePort": component.ServicePort, "defaultReplicas": component.DefaultReplicas,
 			"defaultCPU": component.DefaultCPU, "defaultMemory": component.DefaultMemory,
-			"dataVolumes": component.DataVolumes,
+			"dataVolumes": component.DataVolumes, "dependencies": appstore.ComponentDependencies(component.Workload),
 		})
 	}
 	return components
 }
 
-func (s *Service) getAppTemplate(input Request) (Result, error) {
+func (s *Service) getAppTemplate(ctx context.Context, input Request) (Result, error) {
 	id := strings.TrimSpace(stringArgument(input.Arguments, "id"))
 	if id == "" {
 		id = strings.TrimSpace(stringArgument(input.Arguments, "slug"))
@@ -364,11 +367,11 @@ func (s *Service) getAppTemplate(input Request) (Result, error) {
 	if id == "" {
 		return Result{}, ErrInvalidInput
 	}
-	template, found, err := appstore.Find(id)
+	template, found, err := appstore.FindWithPlatform(ctx, s.db, id)
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %v", ErrStorage, err)
 	}
-	if !found || template.Kind == "system" {
+	if !found || template.Kind == "system" || template.Kind == "system_component" {
 		return Result{}, ErrNotFound
 	}
 	values := make([]map[string]any, 0, len(template.Values))
@@ -384,7 +387,7 @@ func (s *Service) getAppTemplate(input Request) (Result, error) {
 	}
 	return Result{Value: map[string]any{
 		"id": template.ID, "slug": template.Slug, "name": template.Name,
-		"description": template.Description, "category": template.Category,
+		"description": template.Description, "category": template.Category, "source": template.Source,
 		"icon": template.Icon, "officialWebsite": template.OfficialWebsite,
 		"officialRepository": template.OfficialRepository, "version": template.Version,
 		"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,

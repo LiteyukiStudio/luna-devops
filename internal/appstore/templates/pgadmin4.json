@@ -1,0 +1,45 @@
+{
+  "id": "pgadmin4",
+  "slug": "pgadmin",
+  "name": "pgAdmin4",
+  "description": "Web management console for PostgreSQL servers and databases.",
+  "category": "database",
+  "icon": "/app-templates/icons/pgadmin4.svg",
+  "officialWebsite": "https://www.pgadmin.org/",
+  "officialRepository": "https://github.com/pgadmin-org/pgadmin4",
+  "popularityWeight": 64,
+  "image": "dpage/pgadmin4:latest",
+  "version": "latest",
+  "servicePort": 80,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/var/lib/pgadmin"
+    }
+  ],
+  "env": {
+    "PGADMIN_DEFAULT_EMAIL": "{{email}}"
+  },
+  "secretEnv": {
+    "PGADMIN_DEFAULT_PASSWORD": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "email",
+      "label": "Email",
+      "default": "admin@example.com",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

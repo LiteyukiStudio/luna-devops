@@ -1,0 +1,19 @@
+{
+  "id": "memcached",
+  "slug": "memcached",
+  "name": "Memcached",
+  "description": "Tiny memory cache service for simple high-speed key-value caching.",
+  "category": "database",
+  "icon": "/app-templates/icons/memcached.svg",
+  "officialWebsite": "https://memcached.org/",
+  "officialRepository": "https://github.com/memcached/memcached",
+  "popularityWeight": 74,
+  "image": "memcached:1.6-alpine",
+  "version": "1.6-alpine",
+  "servicePort": 11211,
+  "defaultReplicas": 1,
+  "defaultCPU": "250m",
+  "defaultMemory": "256Mi",
+  "dataVolumes": [],
+  "values": []
+}

@@ -31,22 +31,42 @@ func TestCatalogUsesConsolidatedCategories(t *testing.T) {
 }
 
 func TestCatalogUsesTypedDataVolumeDeclarations(t *testing.T) {
-	raw, err := templateFS.ReadFile("templates.json")
+	entries, err := templateFS.ReadDir("templates")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, legacy := range [][]byte{[]byte(`"dataRetentionEnabled"`), []byte(`"dataMountPath"`), []byte(`"dataCapacity"`)} {
-		if bytes.Contains(raw, legacy) {
-			t.Fatalf("catalog still contains legacy volume property %s", legacy)
+	fileCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
 		}
+		fileCount++
+		raw, err := templateFS.ReadFile("templates/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, legacy := range [][]byte{[]byte(`"dataRetentionEnabled"`), []byte(`"dataMountPath"`), []byte(`"dataCapacity"`)} {
+			if bytes.Contains(raw, legacy) {
+				t.Fatalf("catalog file %s still contains legacy volume property %s", entry.Name(), legacy)
+			}
+		}
+	}
+	if fileCount < 30 {
+		t.Fatalf("embedded template file count = %d, expected split catalog files", fileCount)
 	}
 
 	templates, err := Catalog()
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(templates) != fileCount {
+		t.Fatalf("Catalog() len = %d, want %d", len(templates), fileCount)
+	}
 	persistentTemplates := 0
 	for _, template := range templates {
+		if template.Source != TemplateSourceBuiltin {
+			t.Fatalf("template %s source = %q, want %q", template.ID, template.Source, TemplateSourceBuiltin)
+		}
 		for _, dataVolume := range template.DataVolumes {
 			if dataVolume.SourceType == "projectVolume" {
 				persistentTemplates++
@@ -260,5 +280,111 @@ func TestNeoBlogComponentDependenciesAreDeclaredOnce(t *testing.T) {
 	}
 	if host, port := ComponentBindingEnvVars("postgres"); host != "POSTGRES_HOST" || port != "POSTGRES_PORT" {
 		t.Fatalf("binding env vars = %s/%s", host, port)
+	}
+}
+
+func TestValidatePlatformTemplateAndRoundTripSpec(t *testing.T) {
+	single := Template{
+		Slug:        "Internal-Portal",
+		Name:        "Internal Portal",
+		Description: "Company portal service",
+		Category:    "collaboration",
+		Version:     "2.1.0",
+		Workload: Workload{
+			Image:       "ghcr.io/liteyuki/portal:2.1.0",
+			ServicePort: 8080,
+			Env:         map[string]string{"PUBLIC_URL": "{{baseUrl}}"},
+			SecretEnv:   map[string]string{"PORTAL_SECRET": "{{secretKey}}"},
+		},
+		Values: []ValueDefinition{
+			{Key: "baseUrl", Label: "Base URL", Required: true},
+			{Key: "secretKey", Label: "Secret Key", Secret: true, AutoGenerate: true},
+		},
+	}
+	record, validated, err := ModelFromPlatformTemplate("ptpl_portal", "usr_admin", true, single)
+	if err != nil {
+		t.Fatalf("ModelFromPlatformTemplate(single) error = %v", err)
+	}
+	if record.Slug != "internal-portal" || record.IsMultiComponent || validated.Source != TemplateSourcePlatform {
+		t.Fatalf("record = %#v, validated = %#v", record, validated)
+	}
+	restored, err := TemplateFromPlatformModel(record)
+	if err != nil {
+		t.Fatalf("TemplateFromPlatformModel error = %v", err)
+	}
+	if restored.Image != "ghcr.io/liteyuki/portal:2.1.0" || restored.DefaultReplicas != 1 || len(restored.Values) != 2 {
+		t.Fatalf("restored = %#v", restored)
+	}
+
+	multi := Template{
+		Slug:     "suite-app",
+		Name:     "Suite App",
+		Category: "developerTool",
+		Components: []Component{
+			{
+				Key:  "web",
+				Name: "Web",
+				Workload: Workload{
+					Image:       "ghcr.io/liteyuki/web:1.0.0",
+					ServicePort: 3000,
+					Env:         map[string]string{"API_ORIGIN": "http://{{components.api.host}}:8080"},
+				},
+			},
+			{
+				Key:  "api",
+				Name: "API",
+				Workload: Workload{
+					Image:       "ghcr.io/liteyuki/api:1.0.0",
+					ServicePort: 8080,
+					SecretEnv:   map[string]string{"API_TOKEN": "{{apiToken}}"},
+				},
+			},
+		},
+		Values: []ValueDefinition{{Key: "apiToken", Secret: true, AutoGenerate: true}},
+	}
+	multiRecord, _, err := ModelFromPlatformTemplate("ptpl_suite", "usr_admin", true, multi)
+	if err != nil || !multiRecord.IsMultiComponent {
+		t.Fatalf("ModelFromPlatformTemplate(multi) record=%#v err=%v", multiRecord, err)
+	}
+
+	// Built-in bundle export strips secret defaults and passes platform validation under a new slug
+	mongoExpress, found, err := Find("mongo-express")
+	if err != nil || !found {
+		t.Fatalf("Find(mongo-express) found=%t err=%v", found, err)
+	}
+	bundle := BundleFromTemplate(mongoExpress, true)
+	bundle.Slug = "custom-mongo-express"
+	if _, err := ValidatePlatformTemplate(bundle.ToTemplate("ptpl_mexp")); err != nil {
+		t.Fatalf("exported bundle failed platform validation: %v", err)
+	}
+
+	invalidCases := map[string]Template{
+		"system component kind": {
+			Slug: "bad-sys", Name: "Bad", Category: "observability", Kind: "system_component",
+			Workload: Workload{Image: "example/probe:1", ServicePort: 8080},
+		},
+		"secret default": {
+			Slug: "bad-secret-default", Name: "Bad", Category: "database",
+			Workload: Workload{Image: "example/db:1", ServicePort: 5432, SecretEnv: map[string]string{"PW": "{{pw}}"}},
+			Values:   []ValueDefinition{{Key: "pw", Secret: true, Default: "plaintext"}},
+		},
+		"secret leaked into plain env": {
+			Slug: "bad-secret-leak", Name: "Bad", Category: "database",
+			Workload: Workload{Image: "example/db:1", ServicePort: 5432, Env: map[string]string{"PW": "{{pw}}"}},
+			Values:   []ValueDefinition{{Key: "pw", Secret: true, AutoGenerate: true}},
+		},
+		"literal secretEnv without placeholder": {
+			Slug: "bad-literal-secret", Name: "Bad", Category: "database",
+			Workload: Workload{Image: "example/db:1", ServicePort: 5432, SecretEnv: map[string]string{"PW": "hardcoded"}},
+		},
+		"undeclared placeholder": {
+			Slug: "bad-placeholder", Name: "Bad", Category: "database",
+			Workload: Workload{Image: "example/db:1", ServicePort: 5432, Env: map[string]string{"FOO": "{{missing}}"}},
+		},
+	}
+	for name, invalid := range invalidCases {
+		if _, err := ValidatePlatformTemplate(invalid); err == nil {
+			t.Fatalf("expected %s to fail validation", name)
+		}
 	}
 }

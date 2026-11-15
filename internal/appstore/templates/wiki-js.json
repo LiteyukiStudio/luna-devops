@@ -1,0 +1,29 @@
+{
+  "id": "wiki-js",
+  "slug": "wiki-js",
+  "name": "Wiki.js",
+  "description": "Modern self-hosted wiki for team documentation and knowledge bases.",
+  "category": "collaboration",
+  "icon": "/app-templates/icons/fallback.svg",
+  "officialWebsite": "https://js.wiki/",
+  "officialRepository": "https://github.com/requarks/wiki",
+  "popularityWeight": 69,
+  "image": "requarks/wiki:2",
+  "version": "2",
+  "servicePort": 3000,
+  "defaultReplicas": 1,
+  "defaultCPU": "500m",
+  "defaultMemory": "512Mi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/wiki/data"
+    }
+  ],
+  "env": {
+    "DB_TYPE": "sqlite",
+    "DB_FILEPATH": "/wiki/data/wiki.db"
+  },
+  "values": []
+}

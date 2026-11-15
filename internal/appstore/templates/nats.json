@@ -1,0 +1,19 @@
+{
+  "id": "nats",
+  "slug": "nats",
+  "name": "NATS",
+  "description": "Lightweight messaging system for events, pub/sub, and service communication.",
+  "category": "middleware",
+  "icon": "/app-templates/icons/nats.svg",
+  "officialWebsite": "https://nats.io/",
+  "officialRepository": "https://github.com/nats-io/nats-server",
+  "popularityWeight": 79,
+  "image": "nats:2-alpine",
+  "version": "2-alpine",
+  "servicePort": 4222,
+  "defaultReplicas": 1,
+  "defaultCPU": "250m",
+  "defaultMemory": "256Mi",
+  "dataVolumes": [],
+  "values": []
+}

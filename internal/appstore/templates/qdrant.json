@@ -1,0 +1,36 @@
+{
+  "id": "qdrant",
+  "slug": "qdrant",
+  "name": "Qdrant",
+  "description": "Vector database for semantic search, recommendations, and AI retrieval workloads.",
+  "category": "database",
+  "icon": "/app-templates/icons/fallback.svg",
+  "officialWebsite": "https://qdrant.tech/",
+  "officialRepository": "https://github.com/qdrant/qdrant",
+  "popularityWeight": 75,
+  "image": "qdrant/qdrant:v1.13.4",
+  "version": "v1.13.4",
+  "servicePort": 6333,
+  "defaultReplicas": 1,
+  "defaultCPU": "1",
+  "defaultMemory": "1Gi",
+  "dataVolumes": [
+    {
+      "logicalName": "data",
+      "sourceType": "projectVolume",
+      "mountPath": "/qdrant/storage"
+    }
+  ],
+  "secretEnv": {
+    "QDRANT__SERVICE__API_KEY": "{{apiKey}}"
+  },
+  "values": [
+    {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "autoGenerate": true,
+      "required": true
+    }
+  ]
+}

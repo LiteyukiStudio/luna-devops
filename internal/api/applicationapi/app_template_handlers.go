@@ -62,6 +62,7 @@ type appTemplateComponentResponse struct {
 	DefaultCPU      string                `json:"defaultCPU"`
 	DefaultMemory   string                `json:"defaultMemory"`
 	DataVolumes     []appstore.DataVolume `json:"dataVolumes"`
+	Dependencies    []string              `json:"dependencies"`
 }
 
 type appTemplateSummaryResponse struct {
@@ -72,6 +73,7 @@ type appTemplateSummaryResponse struct {
 	Category           string                         `json:"category"`
 	Kind               string                         `json:"kind"`
 	SystemComponent    string                         `json:"systemComponent"`
+	Source             string                         `json:"source"`
 	Icon               string                         `json:"icon"`
 	OfficialWebsite    string                         `json:"officialWebsite"`
 	OfficialRepository string                         `json:"officialRepository"`
@@ -105,7 +107,7 @@ type appTemplateResponse struct {
 }
 
 func (h *Handlers) ListAppTemplates(ctx *gin.Context) {
-	templates, err := appstore.Catalog()
+	templates, err := appstore.CatalogWithPlatform(ctx.Request.Context(), h.dbFor(ctx))
 	if err != nil {
 		writeTemplateCatalogUnavailable(ctx, err)
 		return
@@ -117,11 +119,7 @@ func (h *Handlers) ListAppTemplates(ctx *gin.Context) {
 		if category != "" && strings.ToLower(template.Category) != category {
 			continue
 		}
-		searchable := strings.ToLower(strings.Join([]string{
-			template.ID, template.Slug, template.Name, template.Description, template.Category,
-			template.Image, template.OfficialWebsite, template.OfficialRepository,
-		}, " "))
-		if query != "" && !strings.Contains(searchable, query) {
+		if query != "" && !templateMatchesQuery(template, query) {
 			continue
 		}
 		items = append(items, appTemplateSummaryFrom(template))
@@ -129,8 +127,19 @@ func (h *Handlers) ListAppTemplates(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, items)
 }
 
+func templateMatchesQuery(template appstore.Template, query string) bool {
+	parts := []string{
+		template.ID, template.Slug, template.Name, template.Description, template.Category,
+		template.Image, template.OfficialWebsite, template.OfficialRepository,
+	}
+	for _, comp := range template.Components {
+		parts = append(parts, comp.Key, comp.Name, comp.Image)
+	}
+	return strings.Contains(strings.ToLower(strings.Join(parts, " ")), query)
+}
+
 func (h *Handlers) GetAppTemplate(ctx *gin.Context) {
-	template, found, err := appstore.Find(ctx.Param("templateId"))
+	template, found, err := appstore.FindWithPlatform(ctx.Request.Context(), h.dbFor(ctx), ctx.Param("templateId"))
 	if err != nil {
 		writeTemplateCatalogUnavailable(ctx, err)
 		return
@@ -151,15 +160,24 @@ func appTemplateSummaryFrom(template appstore.Template) appTemplateSummaryRespon
 	}
 	components := make([]appTemplateComponentResponse, 0, len(template.Components))
 	for _, component := range template.Components {
+		deps := appstore.ComponentDependencies(component.Workload)
+		if deps == nil {
+			deps = []string{}
+		}
 		components = append(components, appTemplateComponentResponse{
 			Key: component.Key, Name: component.Name, Image: component.Image, ServicePort: component.ServicePort,
 			DefaultReplicas: component.DefaultReplicas, DefaultCPU: component.DefaultCPU,
 			DefaultMemory: component.DefaultMemory, DataVolumes: nonNilDataVolumes(component.DataVolumes),
+			Dependencies: deps,
 		})
+	}
+	source := strings.TrimSpace(template.Source)
+	if source == "" {
+		source = appstore.TemplateSourceBuiltin
 	}
 	return appTemplateSummaryResponse{
 		ID: template.ID, Slug: template.Slug, Name: template.Name, Description: template.Description,
-		Category: template.Category, Kind: template.Kind, SystemComponent: template.SystemComponent,
+		Category: template.Category, Kind: template.Kind, SystemComponent: template.SystemComponent, Source: source,
 		Icon: template.Icon, OfficialWebsite: template.OfficialWebsite, OfficialRepository: template.OfficialRepository,
 		PopularityWeight: template.PopularityWeight, Featured: template.Featured, Image: template.Image, Version: template.Version,
 		ServicePort: template.ServicePort, DefaultReplicas: template.DefaultReplicas,
@@ -200,7 +218,7 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 		return
 	}
 
-	template, found, err := appstore.Find(ctx.Param("templateId"))
+	template, found, err := appstore.FindWithPlatform(ctx.Request.Context(), h.dbFor(ctx), ctx.Param("templateId"))
 	if err != nil {
 		writeTemplateCatalogUnavailable(ctx, err)
 		return
