@@ -149,15 +149,7 @@ func (s *Service) Overview(ctx context.Context, scope Scope) (Overview, error) {
 	if err != nil {
 		return result, err
 	}
-	activities := make([]Activity, 0, len(events))
-	for _, event := range events {
-		activities = append(activities, activityFromEvent(event, references))
-	}
-	if len(activities) > activityLimit {
-		result.Activities = activities[:activityLimit]
-	} else {
-		result.Activities = activities
-	}
+	result.Activities = foldRecentActivities(events, references, activityLimit)
 	result.Attention = aggregateAttention(events, references, result.GeneratedAt.Add(-attentionWindow))
 	result.Summary.AttentionItems = len(result.Attention)
 
@@ -400,6 +392,45 @@ func activityFromEvent(event model.PlatformEvent, references entityReferences) A
 		activity.Links = map[string]string{}
 	}
 	return activity
+}
+
+func foldRecentActivities(events []model.PlatformEvent, references entityReferences, limit int) []Activity {
+	if limit <= 0 || len(events) == 0 {
+		return []Activity{}
+	}
+	capacity := min(len(events), limit)
+	activities := make([]Activity, 0, capacity)
+	seen := make(map[string]struct{}, capacity)
+	for _, event := range events {
+		key := activityClosureKey(event)
+		if key != "" {
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		activities = append(activities, activityFromEvent(event, references))
+		if len(activities) >= limit {
+			break
+		}
+	}
+	return activities
+}
+
+func activityClosureKey(event model.PlatformEvent) string {
+	if correlationID := strings.TrimSpace(event.CorrelationID); correlationID != "" {
+		category := strings.TrimSpace(event.Category)
+		if category == "" {
+			category, _, _ = strings.Cut(strings.TrimSpace(event.Type), ".")
+		}
+		return category + ":" + correlationID
+	}
+	resourceType := strings.TrimSpace(event.ResourceType)
+	resourceID := strings.TrimSpace(event.ResourceID)
+	if resourceType != "" && resourceID != "" {
+		return resourceType + ":" + resourceID
+	}
+	return strings.TrimSpace(event.ID)
 }
 
 type attentionGroup struct {

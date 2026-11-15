@@ -300,3 +300,46 @@ func TestDashboardProjectShortcutLatestActivityIsNotLimitedByRecentEventScan(t *
 		t.Fatalf("shortcut latest activities = %v, want %v", latest, want)
 	}
 }
+
+func TestDashboardOverviewFoldsLifecycleActivitiesWithoutMutatingPlatformEvents(t *testing.T) {
+	db := openDashboardTestDB(t)
+	if err := db.AutoMigrate(&model.Project{}, &model.ProjectMember{}, &model.ProjectPin{}, &model.Application{}, &model.DeploymentTarget{}, &model.BuildRun{}, &model.Release{}, &model.PlatformEvent{}); err != nil {
+		t.Fatalf("migrate dashboard test schema: %v", err)
+	}
+	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+	project := model.Project{ID: "prj_fold", Name: "Fold", Identifier: "fold", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	events := []model.PlatformEvent{
+		{ID: "evt_build_running", Type: "build.started", Category: "build", Severity: "info", Status: "in_progress", ProjectID: project.ID, CorrelationID: "bldr_active", OccurredAt: now, CreatedAt: now},
+		{ID: "evt_rel_done", Type: "release.succeeded", Category: "release", Severity: "info", Status: "succeeded", ProjectID: project.ID, CorrelationID: "rel_1", OccurredAt: now.Add(-10 * time.Second), CreatedAt: now.Add(-10 * time.Second)},
+		{ID: "evt_hook_done", Type: "hook.succeeded", Category: "hook", Severity: "info", Status: "succeeded", ProjectID: project.ID, CorrelationID: "rel_1", OccurredAt: now.Add(-20 * time.Second), CreatedAt: now.Add(-20 * time.Second)},
+		{ID: "evt_hook_start", Type: "hook.started", Category: "hook", Severity: "info", Status: "in_progress", ProjectID: project.ID, CorrelationID: "rel_1", OccurredAt: now.Add(-30 * time.Second), CreatedAt: now.Add(-30 * time.Second)},
+		{ID: "evt_rel_start", Type: "release.started", Category: "release", Severity: "info", Status: "in_progress", ProjectID: project.ID, CorrelationID: "rel_1", OccurredAt: now.Add(-40 * time.Second), CreatedAt: now.Add(-40 * time.Second)},
+	}
+	if err := db.Create(&events).Error; err != nil {
+		t.Fatalf("create events: %v", err)
+	}
+
+	service := NewService(db)
+	service.now = func() time.Time { return now }
+	overview, err := service.Overview(t.Context(), Scope{UserID: "usr_1", VisibleProjectIDs: []string{project.ID}})
+	if err != nil {
+		t.Fatalf("overview: %v", err)
+	}
+
+	got := activityIDs(overview.Activities)
+	want := []string{"evt_build_running", "evt_rel_done", "evt_hook_done"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("overview activities = %v, want %v", got, want)
+	}
+
+	var storedCount int64
+	if err := db.Model(&model.PlatformEvent{}).Where("project_id = ?", project.ID).Count(&storedCount).Error; err != nil {
+		t.Fatalf("count stored platform events: %v", err)
+	}
+	if storedCount != int64(len(events)) {
+		t.Fatalf("stored platform events = %d, want %d immutable rows", storedCount, len(events))
+	}
+}
