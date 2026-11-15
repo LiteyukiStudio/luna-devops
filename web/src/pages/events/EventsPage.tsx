@@ -307,6 +307,7 @@ export function EventsPage() {
     <>
       <DataList
         columns={columns}
+        constrainedHeight
         emptyActions={filtered
           ? (
               <Button

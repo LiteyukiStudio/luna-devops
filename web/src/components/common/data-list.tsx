@@ -52,11 +52,16 @@ interface DataListProps<T> {
     retrying?: boolean
   }
   loading?: boolean
+  /**
+   * 是否启用视口内固定高度滚动模式。
+   * 启用后桌面端应用 `md:h-[calc(100vh-...)]`，由内部 ScrollArea 承担纵向与横向滚动、吸顶表头与固定底部分页；
+   * 默认 false 时不限制列表最大高度，内容自然展开并由外层页面或抽屉容器统一纵向滚动，仅保留横向滚动。
+   */
   constrainedHeight?: boolean
   /**
-   * 列表相对视口的纵向偏移（rem），用于计算内部滚动区的最大高度。
-   * 默认 15rem 适用于列表上方只有紧凑工具栏的页面；当列表上方存在筛选卡片等
-   * 较高内容时，应传入更大的偏移，避免列表底部与分页被推出视口。
+   * 仅在 `constrainedHeight` 为 `true` 时生效：列表相对视口的纵向偏移（rem），用于计算桌面端固定高度。
+   * 默认 15rem 适用于列表上方只有紧凑工具栏的页面；当列表上方存在筛选卡片或指标区等较高内容时，
+   * 传入更大的偏移，避免列表底部与分页超出视口。
    */
   viewportOffset?: 15 | 20 | 24 | 28
   search?: {
@@ -88,13 +93,7 @@ interface DataListProps<T> {
   rowActionLabel?: (item: T) => string
 }
 
-// Tailwind v4 只扫描源码中的字面量类名，预定义可选的视口偏移，避免动态拼接失效。
-const viewportOffsetClass: Record<number, string> = {
-  15: 'md:max-h-[calc(100vh-15rem)]',
-  20: 'md:max-h-[calc(100vh-20rem)]',
-  24: 'md:max-h-[calc(100vh-24rem)]',
-  28: 'md:max-h-[calc(100vh-28rem)]',
-}
+// Tailwind v4 只扫描源码中的字面量类名，预定义 constrainedHeight 模式可选的视口固定高度，避免动态拼接失效。
 const viewportOffsetFixedClass: Record<number, string> = {
   15: 'md:h-[calc(100vh-15rem)]',
   20: 'md:h-[calc(100vh-20rem)]',
@@ -330,15 +329,13 @@ export function DataList<T>({
       )
     : undefined
 
-  const offsetClass = viewportOffsetClass[viewportOffset] ?? viewportOffsetClass[15]
   const offsetFixedClass = viewportOffsetFixedClass[viewportOffset] ?? viewportOffsetFixedClass[15]
   return (
     <div
       ref={rootRef}
       className={cn(
         // 列表自身是尺寸容器：工具区堆叠/并排与窄屏隐藏列按列表实际宽度（@…/data-list:）响应，在页面、分栏和 Sheet 中一致
-        '@container/data-list flex w-full min-w-0 max-w-full max-h-none flex-col',
-        offsetClass,
+        '@container/data-list flex w-full min-w-0 max-w-full flex-col',
         constrainedHeight && offsetFixedClass,
       )}
       data-slot="data-list"
@@ -391,13 +388,14 @@ export function DataList<T>({
       )}
       <TableFrame
         className={cn(
-          'w-full flex-1',
+          'w-full',
+          constrainedHeight && 'min-h-0 flex-1',
           !hasTools && 'mt-group',
         )}
         footer={tableFooter}
         framed={framed}
-        scrollAreaClassName="h-full"
-        scrollbars="both"
+        scrollAreaClassName={constrainedHeight ? 'h-full' : undefined}
+        scrollbars={constrainedHeight ? 'both' : 'horizontal'}
         scrollType="auto"
       >
         {loading

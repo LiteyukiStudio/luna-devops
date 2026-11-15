@@ -115,6 +115,9 @@ describe('events page resources', () => {
 
     await user.click(await screen.findByText('LiteyukiStudio/neo-blog'))
 
+    expect(document.querySelector('[data-slot="data-list"]')).toHaveClass('md:h-[calc(100vh-24rem)]')
+    expect(document.querySelector('[data-slot="scroll-area"]')).toHaveAttribute('data-scrollbars', 'both')
+
     const sheet = await screen.findByRole('dialog')
     expect(await within(sheet).findByText('Repository binding · LiteyukiStudio/neo-blog')).toBeInTheDocument()
     expect(within(sheet).getByText('repository_binding / rpb_651266c2a50996ccb2607d54')).toBeInTheDocument()

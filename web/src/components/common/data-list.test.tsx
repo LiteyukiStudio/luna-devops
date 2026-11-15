@@ -252,4 +252,50 @@ describe('data list behavior', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('Nothing here')).not.toBeInTheDocument()
   })
+
+  it('expands naturally without viewport max-height clipping when constrainedHeight is false', () => {
+    const { container } = render(
+      <DataList
+        columns={columns}
+        emptyTitle="Empty"
+        items={[{ id: 'one', name: 'One' }]}
+        rowKey={item => item.id}
+        viewportOffset={24}
+      />,
+    )
+
+    const root = container.querySelector('[data-slot="data-list"]')
+    const tableFrame = container.querySelector('[data-slot="table-frame"]')
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]')
+
+    expect(root).not.toBeNull()
+    expect(root?.className).not.toMatch(/md:max-h-\[calc\(100vh-/)
+    expect(root?.className).not.toMatch(/md:h-\[calc\(100vh-/)
+    expect(tableFrame).not.toHaveClass('flex-1')
+    expect(scrollArea).not.toHaveClass('h-full')
+    expect(scrollArea).toHaveAttribute('data-scrollbars', 'horizontal')
+  })
+
+  it('applies definite viewport height and internal bidirectional scroll area when constrainedHeight is true', () => {
+    const { container } = render(
+      <DataList
+        columns={columns}
+        constrainedHeight
+        emptyTitle="Empty"
+        items={[{ id: 'one', name: 'One' }]}
+        rowKey={item => item.id}
+        viewportOffset={24}
+      />,
+    )
+
+    const root = container.querySelector('[data-slot="data-list"]')
+    const tableFrame = container.querySelector('[data-slot="table-frame"]')
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]')
+
+    expect(root).toHaveClass('md:h-[calc(100vh-24rem)]')
+    expect(root?.className).not.toMatch(/md:max-h-\[calc\(100vh-/)
+    expect(tableFrame).toHaveClass('min-h-0', 'flex-1')
+    expect(scrollArea).toHaveClass('h-full')
+    expect(scrollArea).toHaveAttribute('data-scrollbars', 'both')
+  })
 })
