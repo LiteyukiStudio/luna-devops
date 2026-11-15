@@ -128,21 +128,33 @@ export function DeploymentTargetDetailSheet({
               title={t('deploymentsPage.runtimeResources')}
               variant="bordered"
             >
-              <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 [&_[data-slot=description-list-label]]:font-medium">
-                <DescriptionListItem
-                  className="sm:col-span-2 lg:col-span-3"
-                  label={t('deploymentsPage.runtimeMetrics')}
-                  value={(
-                    <DeploymentTargetMetricsCell applicationId={applicationId} detailed enabled={target.enabled && Boolean(release)} projectId={projectId} targetId={target.id} />
-                  )}
+              <div className="grid gap-4">
+                <DeploymentTargetMetricsCell
+                  applicationId={applicationId}
+                  detailed
+                  enabled={target.enabled && Boolean(release)}
+                  projectId={projectId}
+                  targetId={target.id}
                 />
-                <DescriptionListItem label={t('deploymentsPage.replicaCpuQuota')} value={target.cpuRequest || '-'} />
-                <DescriptionListItem label={t('deploymentsPage.replicaMemoryQuota')} value={target.memoryRequest || '-'} />
-                <DescriptionListItem label={t('deploymentsPage.replicas')} value={target.status === 'unavailable' ? '-' : `${target.readyReplicas} / ${target.desiredReplicas}`} />
-                <DescriptionListItem label={t('deploymentsPage.workloadType')} value={target.workloadType || '-'} />
-                <DescriptionListItem label={t('deploymentsPage.autoScalingEnabled')} value={<StatusValueBadge value={target.autoScalingEnabled ? 'enabled' : 'disabled'} />} />
-                <DescriptionListItem label={t('deploymentsPage.servicePorts')} value={formatServicePorts(target.servicePorts)} />
-              </dl>
+                <dl className="grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-4 [&_[data-slot=description-list-label]]:font-medium">
+                  <DescriptionListItem
+                    label={t('deploymentsPage.replicas')}
+                    value={target.status === 'unavailable' ? '-' : `${target.readyReplicas} / ${target.desiredReplicas}`}
+                  />
+                  <DescriptionListItem
+                    label={t('deploymentsPage.workloadType')}
+                    value={target.workloadType || '-'}
+                  />
+                  <DescriptionListItem
+                    label={t('deploymentsPage.autoScalingEnabled')}
+                    value={<StatusValueBadge value={target.autoScalingEnabled ? 'enabled' : 'disabled'} />}
+                  />
+                  <DescriptionListItem
+                    label={t('deploymentsPage.servicePorts')}
+                    value={formatServicePorts(target.servicePorts) || '-'}
+                  />
+                </dl>
+              </div>
             </Section>
 
             <Section
