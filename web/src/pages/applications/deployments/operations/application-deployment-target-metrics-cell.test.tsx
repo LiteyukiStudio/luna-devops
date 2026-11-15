@@ -2,6 +2,7 @@ import type { DeploymentTargetMetrics } from '@/api'
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeploymentTargetMetricsCell } from './application-deployment-target-metrics-cell'
+import { DeploymentTargetMetricsCards } from './deployment-target-metrics-cards'
 import '@/i18n'
 
 type Listener = (event: MessageEvent) => void
@@ -65,7 +66,7 @@ const sampleMetrics: DeploymentTargetMetrics = {
   updatedAt: '2026-11-16T00:00:00Z',
 }
 
-describe('deployment target metrics cell', () => {
+describe('deployment target metrics cell and cards', () => {
   beforeEach(() => {
     FakeEventSource.instances = []
   })
@@ -74,7 +75,7 @@ describe('deployment target metrics cell', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps compact table cell layout when detailed is false', () => {
+  it('renders compact table cell layout in DeploymentTargetMetricsCell', () => {
     render(
       <DeploymentTargetMetricsCell
         applicationId="app_1"
@@ -96,11 +97,10 @@ describe('deployment target metrics cell', () => {
     expect(screen.queryByText('Live usage')).not.toBeInTheDocument()
   })
 
-  it('renders dual resource ring cards in detailed mode with tiered colors and request markers', () => {
+  it('renders dual resource ring cards in DeploymentTargetMetricsCards with tiered colors and request markers', () => {
     const { container } = render(
-      <DeploymentTargetMetricsCell
+      <DeploymentTargetMetricsCards
         applicationId="app_1"
-        detailed
         enabled
         projectId="prj_1"
         targetId="tgt_1"
@@ -131,11 +131,10 @@ describe('deployment target metrics cell', () => {
     expect(container.querySelectorAll('line')).toHaveLength(2)
   })
 
-  it('renders unavailable badge and disabled fallback in detailed mode', () => {
+  it('renders unavailable badge and disabled fallback in DeploymentTargetMetricsCards', () => {
     const { rerender } = render(
-      <DeploymentTargetMetricsCell
+      <DeploymentTargetMetricsCards
         applicationId="app_1"
-        detailed
         enabled
         projectId="prj_1"
         targetId="tgt_1"
@@ -153,9 +152,8 @@ describe('deployment target metrics cell', () => {
     expect(screen.getByText('Unavailable')).toBeInTheDocument()
 
     rerender(
-      <DeploymentTargetMetricsCell
+      <DeploymentTargetMetricsCards
         applicationId="app_1"
-        detailed
         enabled={false}
         projectId="prj_1"
         targetId="tgt_1"

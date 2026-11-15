@@ -1,9 +1,7 @@
+import type { DeploymentTargetRuntimeDiagnosticsState } from './use-deployment-target-runtime-diagnostics'
 import type { DeploymentTargetEvent, DeploymentTargetRuntimePod, Release, RuntimeContainerStatusSnapshot } from '@/api'
-import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertTriangle, Box, Eye, History, RefreshCw, Terminal } from 'lucide-react'
-import { useState } from 'react'
+import { Activity, AlertTriangle, ArrowRight, Box, Eye, History, RefreshCw, Terminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { api } from '@/api'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { Section } from '@/components/common/section'
@@ -11,217 +9,222 @@ import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 
-export function DeploymentTargetRuntimeDiagnostics({
-  applicationId,
-  deployed,
-  enabled,
-  projectId,
-  release,
-  targetId,
-  webConsoleEnabled,
-  onOpenPodConsole,
-  onViewPodLogs,
+export function RuntimeEventsWarningBanner({
+  latestReason,
+  onViewEvents,
+  warningCount,
 }: {
-  applicationId: string
-  deployed: boolean
-  enabled: boolean
-  projectId: string
-  release?: Release
-  targetId: string
-  webConsoleEnabled: boolean
-  onOpenPodConsole?: (release: Release, pod: string) => void
-  onViewPodLogs?: (release: Release, pod: string, previous: boolean) => void
+  latestReason?: string
+  onViewEvents: () => void
+  warningCount: number
 }) {
-  if (!enabled || (!deployed && !release))
+  const { t } = useTranslation()
+  if (warningCount <= 0)
     return null
+
   return (
-    <ActiveDeploymentTargetRuntimeDiagnostics
-      applicationId={applicationId}
-      projectId={projectId}
-      release={release}
-      targetId={targetId}
-      webConsoleEnabled={webConsoleEnabled}
-      onOpenPodConsole={onOpenPodConsole}
-      onViewPodLogs={onViewPodLogs}
-    />
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-warning-border bg-warning-subtle px-3.5 py-2.5 text-xs"
+      role="status"
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <AlertTriangle className="size-3.5 shrink-0 text-warning" aria-hidden="true" />
+        <span className="font-semibold text-warning">
+          {t('deploymentsPage.runtimeEventsWarningBanner', { count: warningCount })}
+        </span>
+        {latestReason && <span className="truncate text-muted-foreground">{latestReason}</span>}
+      </div>
+      <Button
+        className="h-auto shrink-0 p-0 text-xs font-medium text-warning hover:bg-transparent hover:underline"
+        size="sm"
+        type="button"
+        variant="ghost"
+        onClick={onViewEvents}
+      >
+        {t('deploymentsPage.runtimeEventsViewAction')}
+        <ArrowRight className="size-3.5" aria-hidden="true" />
+      </Button>
+    </div>
   )
 }
 
-function ActiveDeploymentTargetRuntimeDiagnostics({
-  applicationId,
-  projectId,
+export function DeploymentTargetRuntimePodsSection({
+  diagnostics,
   release,
-  targetId,
   webConsoleEnabled,
   onOpenPodConsole,
   onViewPodLogs,
 }: {
-  applicationId: string
-  projectId: string
+  diagnostics: DeploymentTargetRuntimeDiagnosticsState
   release?: Release
-  targetId: string
   webConsoleEnabled: boolean
   onOpenPodConsole?: (release: Release, pod: string) => void
   onViewPodLogs?: (release: Release, pod: string, previous: boolean) => void
 }) {
   const { t } = useTranslation()
-  const [warningOnly, setWarningOnly] = useState(false)
-
-  const podsQuery = useQuery({
-    ...liveObservationQueryPolicy,
-    queryKey: ['deployment-target-detail-pods', projectId, applicationId, targetId],
-    queryFn: ({ signal }) => api.listDeploymentTargetRuntimePods(projectId, applicationId, targetId, { sortBy: 'restartCount', sortOrder: 'desc' }, signal),
-    enabled: Boolean(projectId && applicationId && targetId),
-    refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
-  })
-
-  const eventsQuery = useQuery({
-    ...liveObservationQueryPolicy,
-    queryKey: ['deployment-target-events', projectId, applicationId, targetId, warningOnly ? 'Warning' : 'all'],
-    queryFn: ({ signal }) => api.listDeploymentTargetEvents(projectId, applicationId, targetId, {
-      pageSize: 20,
-      type: warningOnly ? 'Warning' : undefined,
-    }, signal),
-    enabled: Boolean(projectId && applicationId && targetId),
-    refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
-  })
-
-  const podsUnavailable = podsQuery.isError || podsQuery.data?.status === 'unavailable'
-  const pods = podsQuery.data?.status === 'ready' ? podsQuery.data.items : []
-  const eventsUnavailable = eventsQuery.isError || eventsQuery.data?.status === 'unavailable'
-  const events = eventsQuery.data?.status === 'ready' ? eventsQuery.data.items : []
+  if (!diagnostics.active)
+    return null
 
   return (
-    <>
-      <Section
-        description={t('deploymentsPage.runtimePodsSectionDescription')}
-        icon={<Box className="size-4" aria-hidden="true" />}
-        title={t('deploymentsPage.runtimePodsSection')}
-        tools={(
-          <Button
-            aria-label={t('common.refresh')}
-            className="h-8 w-8"
-            disabled={podsQuery.isFetching}
-            size="icon"
-            type="button"
-            variant="ghost"
-            onClick={() => void podsQuery.refetch()}
-          >
-            <RefreshCw className={`size-4 ${podsQuery.isFetching ? 'motion-safe:animate-spin' : ''}`} />
-          </Button>
-        )}
-        variant="bordered"
-      >
-        {podsQuery.isLoading
+    <Section
+      description={t('deploymentsPage.runtimePodsSectionDescription')}
+      icon={<Box className="size-4" aria-hidden="true" />}
+      title={t('deploymentsPage.runtimePodsSection')}
+      tools={(
+        <Button
+          aria-label={t('common.refresh')}
+          className="h-8 w-8"
+          disabled={diagnostics.podsFetching}
+          size="icon"
+          type="button"
+          variant="ghost"
+          onClick={diagnostics.refetchPods}
+        >
+          <RefreshCw className={`size-4 ${diagnostics.podsFetching ? 'motion-safe:animate-spin' : ''}`} />
+        </Button>
+      )}
+      variant="bordered"
+    >
+      {diagnostics.podsLoading
+        ? (
+            <div className="grid gap-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          )
+        : diagnostics.podsUnavailable
           ? (
-              <div className="grid gap-2">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-              </div>
+              <ErrorState
+                description={t('deploymentsPage.runtimePodsUnavailable')}
+                retrying={diagnostics.podsFetching}
+                title={t('common.unavailable')}
+                onRetry={diagnostics.refetchPods}
+              />
             )
-          : podsUnavailable
+          : diagnostics.pods.length === 0
             ? (
-                <ErrorState
-                  description={t('deploymentsPage.runtimePodsUnavailable')}
-                  retrying={podsQuery.isFetching}
-                  title={t('common.unavailable')}
-                  onRetry={() => void podsQuery.refetch()}
+                <EmptyState
+                  description={t('deploymentsPage.runtimePodsEmptyDescription')}
+                  icon={<Box className="size-5" aria-hidden="true" />}
+                  title={t('deploymentsPage.runtimePodsEmpty')}
+                  variant="plain"
                 />
               )
-            : pods.length === 0
-              ? (
-                  <EmptyState
-                    description={t('deploymentsPage.runtimePodsEmptyDescription')}
-                    icon={<Box className="size-5" aria-hidden="true" />}
-                    title={t('deploymentsPage.runtimePodsEmpty')}
-                    variant="plain"
-                  />
-                )
-              : (
-                  <div className="grid gap-2.5">
-                    {pods.map(pod => (
-                      <RuntimePodCard
-                        key={pod.name}
-                        pod={pod}
-                        release={release}
-                        webConsoleEnabled={webConsoleEnabled}
-                        onOpenPodConsole={onOpenPodConsole}
-                        onViewPodLogs={onViewPodLogs}
-                      />
-                    ))}
-                  </div>
-                )}
-      </Section>
+            : (
+                <div className="grid gap-2.5">
+                  {diagnostics.pods.map(pod => (
+                    <RuntimePodCard
+                      key={pod.name}
+                      pod={pod}
+                      release={release}
+                      webConsoleEnabled={webConsoleEnabled}
+                      onOpenPodConsole={onOpenPodConsole}
+                      onViewPodLogs={onViewPodLogs}
+                    />
+                  ))}
+                </div>
+              )}
+    </Section>
+  )
+}
 
+export function DeploymentTargetRuntimeEventsSection({
+  diagnostics,
+  onToggleWarningOnly,
+  warningOnly,
+}: {
+  diagnostics: DeploymentTargetRuntimeDiagnosticsState
+  onToggleWarningOnly: () => void
+  warningOnly: boolean
+}) {
+  const { t } = useTranslation()
+  if (!diagnostics.active) {
+    return (
       <Section
         description={t('deploymentsPage.runtimeEventsSectionDescription')}
         icon={<Activity className="size-4" aria-hidden="true" />}
         title={t('deploymentsPage.runtimeEventsSection')}
-        tools={(
-          <div className="flex items-center gap-1.5">
-            <Button
-              aria-pressed={warningOnly}
-              className="h-8 px-2.5 text-xs"
-              size="sm"
-              type="button"
-              variant={warningOnly ? 'secondary' : 'outline'}
-              onClick={() => setWarningOnly(value => !value)}
-            >
-              <AlertTriangle className="size-3.5" />
-              {t('deploymentsPage.runtimeEventsWarningOnly')}
-            </Button>
-            <Button
-              aria-label={t('common.refresh')}
-              className="h-8 w-8"
-              disabled={eventsQuery.isFetching}
-              size="icon"
-              type="button"
-              variant="ghost"
-              onClick={() => void eventsQuery.refetch()}
-            >
-              <RefreshCw className={`size-4 ${eventsQuery.isFetching ? 'motion-safe:animate-spin' : ''}`} />
-            </Button>
-          </div>
-        )}
         variant="bordered"
       >
-        {eventsQuery.isLoading
+        <EmptyState
+          description={t('deploymentsPage.runtimeEventsEmptyDescription')}
+          icon={<Activity className="size-5" aria-hidden="true" />}
+          title={t('deploymentsPage.runtimeEventsEmpty')}
+          variant="plain"
+        />
+      </Section>
+    )
+  }
+
+  const visibleEvents = warningOnly ? diagnostics.warningEvents : diagnostics.events
+
+  return (
+    <Section
+      description={t('deploymentsPage.runtimeEventsSectionDescription')}
+      icon={<Activity className="size-4" aria-hidden="true" />}
+      title={t('deploymentsPage.runtimeEventsSection')}
+      tools={(
+        <div className="flex items-center gap-1.5">
+          <Button
+            aria-pressed={warningOnly}
+            className="h-8 px-2.5 text-xs"
+            size="sm"
+            type="button"
+            variant={warningOnly ? 'secondary' : 'outline'}
+            onClick={onToggleWarningOnly}
+          >
+            <AlertTriangle className="size-3.5" />
+            {t('deploymentsPage.runtimeEventsWarningOnly')}
+          </Button>
+          <Button
+            aria-label={t('common.refresh')}
+            className="h-8 w-8"
+            disabled={diagnostics.eventsFetching}
+            size="icon"
+            type="button"
+            variant="ghost"
+            onClick={diagnostics.refetchEvents}
+          >
+            <RefreshCw className={`size-4 ${diagnostics.eventsFetching ? 'motion-safe:animate-spin' : ''}`} />
+          </Button>
+        </div>
+      )}
+      variant="bordered"
+    >
+      {diagnostics.eventsLoading
+        ? (
+            <div className="grid gap-2">
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+            </div>
+          )
+        : diagnostics.eventsUnavailable
           ? (
-              <div className="grid gap-2">
-                <Skeleton className="h-14 w-full" />
-                <Skeleton className="h-14 w-full" />
-              </div>
+              <ErrorState
+                description={t('deploymentsPage.runtimeEventsUnavailableDescription')}
+                retrying={diagnostics.eventsFetching}
+                title={t('common.unavailable')}
+                onRetry={diagnostics.refetchEvents}
+              />
             )
-          : eventsUnavailable
+          : visibleEvents.length === 0
             ? (
-                <ErrorState
-                  description={t('deploymentsPage.runtimeEventsUnavailableDescription')}
-                  retrying={eventsQuery.isFetching}
-                  title={t('common.unavailable')}
-                  onRetry={() => void eventsQuery.refetch()}
+                <EmptyState
+                  description={warningOnly ? t('deploymentsPage.runtimeEventsNoWarningsDescription') : t('deploymentsPage.runtimeEventsEmptyDescription')}
+                  icon={<Activity className="size-5" aria-hidden="true" />}
+                  title={warningOnly ? t('deploymentsPage.runtimeEventsNoWarnings') : t('deploymentsPage.runtimeEventsEmpty')}
+                  variant="plain"
                 />
               )
-            : events.length === 0
-              ? (
-                  <EmptyState
-                    description={warningOnly ? t('deploymentsPage.runtimeEventsNoWarningsDescription') : t('deploymentsPage.runtimeEventsEmptyDescription')}
-                    icon={<Activity className="size-5" aria-hidden="true" />}
-                    title={warningOnly ? t('deploymentsPage.runtimeEventsNoWarnings') : t('deploymentsPage.runtimeEventsEmpty')}
-                    variant="plain"
-                  />
-                )
-              : (
-                  <div className="divide-y divide-separator-subtle">
-                    {events.map(event => (
-                      <RuntimeEventItem key={`${event.involvedKind}-${event.involvedName}-${event.reason}-${event.lastSeen}`} event={event} />
-                    ))}
-                  </div>
-                )}
-      </Section>
-    </>
+            : (
+                <div className="divide-y divide-separator-subtle">
+                  {visibleEvents.map(event => (
+                    <RuntimeEventItem key={`${event.involvedKind}-${event.involvedName}-${event.reason}-${event.lastSeen}`} event={event} />
+                  ))}
+                </div>
+              )}
+    </Section>
   )
 }
 

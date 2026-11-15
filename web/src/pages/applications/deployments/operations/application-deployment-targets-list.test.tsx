@@ -13,6 +13,10 @@ vi.mock('./application-deployment-target-metrics-cell', () => ({
   DeploymentTargetMetricsCell: () => <span>-</span>,
 }))
 
+vi.mock('./deployment-target-metrics-cards', () => ({
+  DeploymentTargetMetricsCards: () => <span>-</span>,
+}))
+
 vi.mock('@/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api')>()
   return {
@@ -286,12 +290,24 @@ describe('application deployment targets behavior', () => {
           firstSeen: '2026-09-06T00:50:00Z',
           lastSeen: '2026-09-06T01:02:30Z',
         },
+        {
+          id: 'evt_pod_2',
+          involvedKind: 'Pod',
+          involvedName: 'app-dev-7f9c8-oom',
+          type: 'Normal',
+          reason: 'Pulled',
+          source: 'kubelet',
+          message: 'Container image pulled successfully',
+          count: 1,
+          firstSeen: '2026-09-06T00:49:00Z',
+          lastSeen: '2026-09-06T00:49:00Z',
+        },
       ],
       page: 1,
       pageSize: 20,
       sortBy: 'lastSeen',
       sortOrder: 'desc',
-      total: 1,
+      total: 2,
       totalPages: 1,
       status: 'ready',
       observationCode: 'deployment_target.events_ready',
@@ -313,8 +329,19 @@ describe('application deployment targets behavior', () => {
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('app-dev-7f9c8-oom')).toBeInTheDocument()
     expect(within(dialog).getByText(/Exit 137/)).toBeInTheDocument()
-    expect(await within(dialog).findByText(/Back-off restarting failed container/)).toBeInTheDocument()
+    expect(await within(dialog).findByText('1 recent warning event(s) detected')).toBeInTheDocument()
 
+    await user.click(within(dialog).getByRole('button', { name: 'View events' }))
+    expect(within(dialog).getByRole('tab', { name: /Cluster events/ })).toHaveAttribute('aria-selected', 'true')
+    expect(within(dialog).getByRole('button', { name: 'Warnings only' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await within(dialog).findByText(/Back-off restarting failed container/)).toBeInTheDocument()
+    expect(within(dialog).queryByText('Container image pulled successfully')).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Warnings only' }))
+    expect(await within(dialog).findByText('Container image pulled successfully')).toBeInTheDocument()
+    expect(api.listDeploymentTargetEvents).toHaveBeenCalledTimes(1)
+
+    await user.click(within(dialog).getByRole('tab', { name: 'Overview' }))
     await user.click(within(dialog).getByRole('button', { name: 'Previous crash logs' }))
     expect(onViewLogs).toHaveBeenCalledWith(release, { pod: 'app-dev-7f9c8-oom', previous: true, view: 'runtime' })
   })
