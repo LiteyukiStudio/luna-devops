@@ -11,6 +11,7 @@ export function PublicConfigProvider({ children }: { children: ReactNode }) {
   const configs = useQuery({
     queryKey: ['public-configs'],
     queryFn: () => api.getPublicConfigs(publicConfigKeys),
+    staleTime: 5 * 60 * 1000,
   })
 
   const value = useMemo(() => ({ ...defaultPublicConfigs, ...(configs.data ?? {}) }), [configs.data])

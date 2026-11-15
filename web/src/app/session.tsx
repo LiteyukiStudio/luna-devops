@@ -30,6 +30,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return user
     },
     retry: false,
+    staleTime: 60 * 1000,
   })
   useEffect(() => {
     if (currentUser.data)

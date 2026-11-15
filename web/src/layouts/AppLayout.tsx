@@ -2,7 +2,7 @@ import type { AIAssistantView } from '@/components/common/ai-assistant/route-sta
 import type { ProjectWorkspaceSection } from '@/pages/projects/overview/project-workspace-sections'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Bell, ChartNoAxesCombined, Check, ChevronsUpDown, Container, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, PanelLeft, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -11,7 +11,6 @@ import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { AccountMenu } from '@/components/common/account-menu'
-import { AIAssistantDesktopHost } from '@/components/common/ai-assistant/desktop-host'
 import { useAIAssistantPresentationMode } from '@/components/common/ai-assistant/presentation-mode'
 import {
   AI_ASSISTANT_ROUTE_PATH,
@@ -47,8 +46,10 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
-import { AIAssistantPage } from '@/pages/ai-assistant/AIAssistantPage'
 import { normalizeProjectWorkspaceSection, projectWorkspaceSectionPath, projectWorkspaceSections } from '@/pages/projects/overview/project-workspace-sections'
+
+const AIAssistantDesktopHost = lazy(() => import('@/components/common/ai-assistant/desktop-host').then(module => ({ default: module.AIAssistantDesktopHost })))
+const AIAssistantPage = lazy(() => import('@/pages/ai-assistant/AIAssistantPage').then(module => ({ default: module.AIAssistantPage })))
 
 interface Breadcrumb {
   label: string
@@ -378,7 +379,11 @@ export function AppLayout() {
               <main className="size-full min-h-0 overflow-hidden">
                 {aiCapabilities.isPending
                   ? <AppLoadingState logoUrl={configs['site.logoUrl'] || '/luna-devops-logo.svg'} title={t('aiAssistant.title')} />
-                  : <AIAssistantPage />}
+                  : (
+                      <Suspense fallback={<AppLoadingState logoUrl={configs['site.logoUrl'] || '/luna-devops-logo.svg'} title={t('aiAssistant.title')} />}>
+                        <AIAssistantPage />
+                      </Suspense>
+                    )}
               </main>
             </div>
           )
@@ -479,29 +484,28 @@ function AIAssistantEntryHost() {
     })
   }, [assistantView, enabled, location, navigate, open, presentationMode, rememberWorkspaceLocation, transitionAssistantToPage])
 
-  if (!runtime.enabled)
+  if (!runtime.enabled || !runtime.open)
     return null
 
   if (presentationMode === 'window') {
     return (
-      <AIAssistantDesktopHost
-        view={assistantView}
-        onExpand={() => {
-          rememberWorkspaceLocation(location)
-          transitionAssistantToPage()
-          navigate(AI_ASSISTANT_ROUTE_PATH, {
-            state: createAIAssistantRouteState(location),
-          })
-        }}
-        onViewChange={setAssistantView}
-      />
+      <Suspense fallback={null}>
+        <AIAssistantDesktopHost
+          view={assistantView}
+          onExpand={() => {
+            rememberWorkspaceLocation(location)
+            transitionAssistantToPage()
+            navigate(AI_ASSISTANT_ROUTE_PATH, {
+              state: createAIAssistantRouteState(location),
+            })
+          }}
+          onViewChange={setAssistantView}
+        />
+      </Suspense>
     )
   }
 
-  if (runtime.open)
-    return <div aria-hidden="true" className="fixed inset-0 z-50 bg-surface" data-ai-assistant-transition />
-
-  return null
+  return <div aria-hidden="true" className="fixed inset-0 z-50 bg-surface" data-ai-assistant-transition />
 }
 
 /** 顶栏右上角的助手入口：桌面窗口模式切换右侧停靠面板，页面模式进入全页助手。 */

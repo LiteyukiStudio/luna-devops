@@ -21,10 +21,24 @@ export default defineConfig(({ mode }) => ({
     rolldownOptions: {
       output: {
         codeSplitting: {
-          groups: [{
-            name: 'react-vendor',
-            test: /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:react|react-dom)\//,
-          }],
+          minSize: 20_000,
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:react|react-dom)\//,
+              priority: 30,
+            },
+            {
+              name: 'router-query-vendor',
+              test: /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:react-router|react-router-dom|@tanstack\/react-query)\//,
+              priority: 20,
+            },
+            {
+              name: 'ui-vendor',
+              test: /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:lucide-react|radix-ui|@radix-ui\/|cmdk|sonner|class-variance-authority|clsx|tailwind-merge)\//,
+              priority: 10,
+            },
+          ],
         },
       },
     },

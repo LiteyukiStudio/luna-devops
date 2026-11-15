@@ -36,23 +36,10 @@ export function InteractionCardChart({ block, label }: InteractionCardChartProps
       return
     let cancelled = false
     let resizeObserver: ResizeObserver | undefined
-    void Promise.all([
-      import('echarts/core'),
-      import('echarts/charts'),
-      import('echarts/components'),
-      import('echarts/renderers'),
-    ]).then(([core, charts, components, renderers]) => {
+    void import('./interaction-card-chart-runtime').then(({ initCompactChart }) => {
       if (cancelled)
         return
-      core.use([
-        charts.BarChart,
-        charts.LineChart,
-        charts.PieChart,
-        components.GridComponent,
-        components.TooltipComponent,
-        renderers.CanvasRenderer,
-      ])
-      const chart = core.init(element)
+      const chart = initCompactChart(element)
       chartRef.current = chart
       if (optionRef.current)
         chart.setOption(optionRef.current, true)
