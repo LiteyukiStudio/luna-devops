@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import type { CommandPaletteScope } from './command-palette-model'
+import type { CommandPaletteRouteContext, CommandPaletteScope } from './command-palette-model'
 import type { SearchResultItem } from '@/api'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
@@ -25,6 +25,7 @@ import {
   Store,
   SunMoon,
   UserRound,
+  X,
 } from 'lucide-react'
 import { use, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -54,10 +55,14 @@ import {
   formatSearchResultContext,
   hasInlineResourcePrefix,
   matchesLocalSearchQuery,
+  parseInlineTemplateQuery,
   readCommandPaletteRecents,
   recordCommandPaletteRecent,
+  resolveRoutePaletteContext,
   resolveSearchResultPath,
-  searchTypesForScope,
+  scopeForRouteContext,
+  searchTypesForPalette,
+  selectCommandPaletteTemplates,
 } from './command-palette-model'
 
 /** 当前项目空间的分区入口；分区定义由布局从项目空间工作区目录传入。 */
@@ -130,6 +135,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [scope, setScope] = useState<CommandPaletteScope>('all')
+  const [routeContext, setRouteContext] = useState<CommandPaletteRouteContext | null>(null)
   const [allSpaces, setAllSpaces] = useState(false)
   const [recentsVersion, setRecentsVersion] = useState(0)
 
@@ -137,6 +143,14 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
   const effectiveVisibility = canViewAllSpaces && allSpaces ? 'all' : undefined
   const trimmedQuery = query.trim()
   const effectiveServerQuery = trimmedQuery === '' ? '' : debouncedQuery.trim()
+  const inlineTemplate = useMemo(() => parseInlineTemplateQuery(trimmedQuery), [trimmedQuery])
+  const templateFocused = scope === 'app_template' || inlineTemplate.matched
+  const hasServerOnlyRouteContext = routeContext !== null && routeContext !== 'app_template' && routeContext !== 'project'
+  const inlineResourceMode = hasInlineResourcePrefix(trimmedQuery) || inlineTemplate.matched
+  const allowLocalNavigation = !inlineResourceMode && !hasServerOnlyRouteContext && (scope === 'all' || scope === 'navigation')
+  const allowLocalProjectSections = !inlineResourceMode && !hasServerOnlyRouteContext && (scope === 'all' || scope === 'project' || scope === 'navigation')
+  const allowLocalApplications = !inlineResourceMode && !hasServerOnlyRouteContext && (scope === 'all' || scope === 'application')
+  const allowLocalProjects = !inlineResourceMode && !hasServerOnlyRouteContext && (scope === 'all' || scope === 'project')
 
   const currentProjectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1]
   const currentAppId = location.pathname.match(/^\/projects\/[^/]+\/apps\/([^/]+)/)?.[1]
@@ -167,18 +181,20 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
   const appTemplates = useQuery({
     queryKey: ['app-templates'],
     queryFn: () => api.listAppTemplates(),
-    enabled: open && Boolean(user) && trimmedQuery.length > 0 && (scope === 'all' || scope === 'navigation'),
+    enabled: open && Boolean(user) && (templateFocused || (trimmedQuery.length > 0 && allowLocalNavigation)),
     staleTime: 5 * 60_000,
   })
 
-  const scopeSearchTypes = useMemo(() => searchTypesForScope(scope), [scope])
+  const scopeSearchTypes = useMemo(() => searchTypesForPalette(scope, routeContext), [scope, routeContext])
   const serverSearchEnabled = open
     && Boolean(user)
     && scope !== 'navigation'
+    && scope !== 'app_template'
+    && !inlineTemplate.matched
     && effectiveServerQuery.length > 0
 
   const serverSearch = useQuery({
-    queryKey: ['global-search', effectiveServerQuery, scope, effectiveVisibility ?? 'related'],
+    queryKey: ['global-search', effectiveServerQuery, scope, routeContext ?? 'none', effectiveVisibility ?? 'related'],
     queryFn: ({ signal }) => api.searchPlatformResources({
       q: effectiveServerQuery,
       types: scopeSearchTypes,
@@ -221,32 +237,38 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
     }
   }, [user?.id, currentProject, currentAppId, currentApplication])
 
+  function applyOpenState(nextOpen: boolean, pathname: string) {
+    setOpen(nextOpen)
+    if (nextOpen) {
+      const nextContext = resolveRoutePaletteContext(pathname)
+      setRouteContext(nextContext)
+      setScope(scopeForRouteContext(nextContext))
+      return
+    }
+    setQuery('')
+    setDebouncedQuery('')
+    setRouteContext(null)
+    setScope('all')
+  }
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (!isCommandPaletteShortcut(event))
         return
       event.preventDefault()
-      setOpen((current) => {
-        const next = !current
-        if (!next) {
-          setQuery('')
-          setDebouncedQuery('')
-          setScope('all')
-        }
-        return next
-      })
+      applyOpenState(!open, location.pathname)
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [open, location.pathname])
 
   function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen)
-    if (!nextOpen) {
-      setQuery('')
-      setDebouncedQuery('')
-      setScope('all')
-    }
+    applyOpenState(nextOpen, location.pathname)
+  }
+
+  function clearRouteContext() {
+    setRouteContext(null)
+    setScope('all')
   }
 
   function run(action: () => void) {
@@ -317,11 +339,6 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
   )
 
   const shortcut = isApplePlatform() ? t('nav.commandPalette.shortcutMac') : t('nav.commandPalette.shortcutOther')
-  const inlineResourceMode = hasInlineResourcePrefix(trimmedQuery)
-  const allowLocalNavigation = !inlineResourceMode && (scope === 'all' || scope === 'navigation')
-  const allowLocalProjectSections = !inlineResourceMode && (scope === 'all' || scope === 'project' || scope === 'navigation')
-  const allowLocalApplications = !inlineResourceMode && (scope === 'all' || scope === 'application')
-  const allowLocalProjects = !inlineResourceMode && (scope === 'all' || scope === 'project')
 
   const serverItems = useMemo(
     () => (serverSearchEnabled ? (serverSearch.data?.items ?? []) : []),
@@ -429,12 +446,12 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
   )
 
   const filteredTemplates = useMemo(
-    () => (trimmedQuery.length > 0 && allowLocalNavigation
-      ? (appTemplates.data ?? [])
-          .filter(tpl => matchesLocalSearchQuery(trimmedQuery, tpl.name, tpl.slug, tpl.description, tpl.category, tpl.image))
-          .slice(0, 5)
-      : []),
-    [trimmedQuery, allowLocalNavigation, appTemplates.data],
+    () => selectCommandPaletteTemplates(appTemplates.data ?? [], {
+      query: inlineTemplate.matched ? inlineTemplate.query : trimmedQuery,
+      templateFocused,
+      allowInGeneralSearch: allowLocalNavigation,
+    }),
+    [appTemplates.data, inlineTemplate.matched, inlineTemplate.query, trimmedQuery, templateFocused, allowLocalNavigation],
   )
 
   const showCreateProjectAction = allowLocalNavigation && matchesLocalSearchQuery(
@@ -449,6 +466,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
   )
 
   const isSearchingServer = serverSearchEnabled && (serverSearch.isFetching || effectiveServerQuery !== trimmedQuery)
+  const activeContextLabel = routeContext ? t(`nav.commandPalette.contextChips.${routeContext}`) : ''
 
   function renderServerResultItem(item: SearchResultItem) {
     const contextText = formatSearchResultContext(item)
@@ -506,7 +524,33 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
       >
         <CommandInput
           placeholder={t('nav.commandPalette.placeholder')}
+          prefix={routeContext
+            ? (
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-border bg-primary-subtle px-2 py-0.5 text-xs font-medium text-primary-text"
+                  data-testid="command-palette-context-chip"
+                >
+                  <span>{activeContextLabel}</span>
+                  <button
+                    aria-label={t('nav.commandPalette.clearContextChip', { context: activeContextLabel })}
+                    className="inline-flex items-center justify-center rounded-xs p-0.5 text-primary-text/80 transition-colors hover:bg-primary/15 hover:text-primary-text"
+                    tabIndex={-1}
+                    type="button"
+                    onClick={clearRouteContext}
+                    onMouseDown={event => event.preventDefault()}
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </button>
+                </span>
+              )
+            : undefined}
           value={query}
+          onKeyDown={(event) => {
+            if (event.key === 'Backspace' && query === '' && routeContext !== null) {
+              event.preventDefault()
+              clearRouteContext()
+            }
+          }}
           onValueChange={setQuery}
         />
         <div
@@ -516,7 +560,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
         >
           <div className="flex flex-wrap items-center gap-1">
             {COMMAND_PALETTE_SCOPES.map((itemScope) => {
-              const active = scope === itemScope
+              const active = scope === itemScope && (itemScope !== 'all' || !hasServerOnlyRouteContext)
               return (
                 <button
                   key={itemScope}
@@ -529,7 +573,10 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
                   )}
                   tabIndex={-1}
                   type="button"
-                  onClick={() => setScope(itemScope)}
+                  onClick={() => {
+                    setRouteContext(null)
+                    setScope(itemScope)
+                  }}
                   onMouseDown={event => event.preventDefault()}
                 >
                   {t(`nav.commandPalette.scopes.${itemScope}`)}
@@ -564,10 +611,14 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
         </div>
         <CommandList className="max-h-[min(28rem,66vh)]">
           <CommandEmpty>
-            {isSearchingServer ? t('nav.commandPalette.searching') : t('nav.commandPalette.empty')}
+            {isSearchingServer || (templateFocused && appTemplates.isLoading)
+              ? t('nav.commandPalette.searching')
+              : (hasServerOnlyRouteContext && trimmedQuery === '')
+                  ? t('nav.commandPalette.contextEmptyHint', { context: activeContextLabel })
+                  : t('nav.commandPalette.empty')}
           </CommandEmpty>
 
-          {trimmedQuery === '' && scope === 'all' && recents.length > 0 && (
+          {trimmedQuery === '' && scope === 'all' && routeContext === null && recents.length > 0 && (
             <CommandGroup heading={t('nav.commandPalette.groups.recent')}>
               {recents.map(recent => (
                 <CommandItem

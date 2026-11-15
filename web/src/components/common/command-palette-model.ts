@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next'
 import type { LucideIcon } from 'lucide-react'
-import type { SearchResourceType, SearchResultItem } from '@/api'
+import type { AppTemplateSummary, SearchResourceType, SearchResultItem } from '@/api'
 import {
   Bell,
   ChartNoAxesCombined,
@@ -25,6 +25,7 @@ export type CommandPaletteScope
     | 'gateway_route'
     | 'deployment_target'
     | 'project'
+    | 'app_template'
     | 'navigation'
 
 export const COMMAND_PALETTE_SCOPES: readonly CommandPaletteScope[] = [
@@ -33,8 +34,18 @@ export const COMMAND_PALETTE_SCOPES: readonly CommandPaletteScope[] = [
   'gateway_route',
   'deployment_target',
   'project',
+  'app_template',
   'navigation',
 ]
+
+export type CommandPaletteRouteContext
+  = | 'app_template'
+    | 'project'
+    | 'runtime_cluster'
+    | 'artifact_registry'
+    | 'repository_binding'
+    | 'notification_channel'
+    | 'user'
 
 export interface PageCommand {
   to: string
@@ -198,6 +209,50 @@ export function buildPageCommands(t: TFunction): PageCommand[] {
   ]
 }
 
+const INLINE_TEMPLATE_PREFIXES = new Set([
+  'template',
+  'templates',
+  'tpl',
+  'luna-app',
+  'app-template',
+])
+
+const MAX_FOCUSED_TEMPLATE_ITEMS = 8
+const MAX_GENERAL_TEMPLATE_ITEMS = 5
+
+export function resolveRoutePaletteContext(pathname: string): CommandPaletteRouteContext | null {
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  switch (normalized) {
+    case '/app-templates':
+      return 'app_template'
+    case '/projects':
+      return 'project'
+    case '/clusters':
+      return 'runtime_cluster'
+    case '/registries':
+      return 'artifact_registry'
+    case '/code-repositories':
+      return 'repository_binding'
+    case '/notification-channels':
+      return 'notification_channel'
+    case '/settings/users':
+      return 'user'
+    default:
+      return null
+  }
+}
+
+export function scopeForRouteContext(context: CommandPaletteRouteContext | null): CommandPaletteScope {
+  switch (context) {
+    case 'app_template':
+      return 'app_template'
+    case 'project':
+      return 'project'
+    default:
+      return 'all'
+  }
+}
+
 export function searchTypesForScope(scope: CommandPaletteScope): SearchResourceType[] | undefined {
   switch (scope) {
     case 'all':
@@ -210,9 +265,94 @@ export function searchTypesForScope(scope: CommandPaletteScope): SearchResourceT
       return ['deployment_target', 'release', 'build_run']
     case 'project':
       return ['project', 'project_volume', 'runtime_config_set', 'build_variable_set']
+    case 'app_template':
     case 'navigation':
       return []
   }
+}
+
+export function searchTypesForPalette(
+  scope: CommandPaletteScope,
+  routeContext: CommandPaletteRouteContext | null = null,
+): SearchResourceType[] | undefined {
+  if (scope !== 'all')
+    return searchTypesForScope(scope)
+  switch (routeContext) {
+    case 'runtime_cluster':
+      return ['runtime_cluster']
+    case 'artifact_registry':
+      return ['artifact_registry']
+    case 'repository_binding':
+      return ['repository_binding']
+    case 'notification_channel':
+      return ['notification_channel']
+    case 'user':
+      return ['user']
+    default:
+      return undefined
+  }
+}
+
+export function parseInlineTemplateQuery(rawQuery: string): { matched: boolean, query: string } {
+  const trimmed = rawQuery.trim()
+  const colonIdx = trimmed.indexOf(':')
+  if (colonIdx <= 0)
+    return { matched: false, query: trimmed }
+  if (trimmed.slice(colonIdx + 1).startsWith('//'))
+    return { matched: false, query: trimmed }
+  const prefix = trimmed.slice(0, colonIdx).trim().toLowerCase()
+  if (!INLINE_TEMPLATE_PREFIXES.has(prefix))
+    return { matched: false, query: trimmed }
+  return {
+    matched: true,
+    query: trimmed.slice(colonIdx + 1).trim(),
+  }
+}
+
+export type CommandPaletteTemplateItem = Pick<
+  AppTemplateSummary,
+  'id' | 'slug' | 'name' | 'description' | 'category' | 'image' | 'featured' | 'popularityWeight' | 'kind' | 'components'
+>
+
+export function selectCommandPaletteTemplates<T extends CommandPaletteTemplateItem>(
+  templates: readonly T[],
+  options: {
+    query: string
+    templateFocused: boolean
+    allowInGeneralSearch: boolean
+  },
+): T[] {
+  const trimmed = options.query.trim()
+  if (!options.templateFocused && (!options.allowInGeneralSearch || trimmed.length === 0))
+    return []
+
+  const matched = templates.filter(tpl => matchesLocalSearchQuery(
+    trimmed,
+    tpl.name,
+    tpl.slug,
+    tpl.description,
+    tpl.category,
+    tpl.image,
+    ...(tpl.components ?? []).map(component => `${component.name} ${component.key} ${component.image}`),
+  ))
+
+  const sorted = [...matched].sort((left, right) => {
+    if (trimmed.length === 0) {
+      const leftSystem = left.kind === 'system_component' ? 1 : 0
+      const rightSystem = right.kind === 'system_component' ? 1 : 0
+      if (leftSystem !== rightSystem)
+        return leftSystem - rightSystem
+    }
+    const featuredDiff = Number(Boolean(right.featured)) - Number(Boolean(left.featured))
+    if (featuredDiff !== 0)
+      return featuredDiff
+    const weightDiff = (right.popularityWeight ?? 0) - (left.popularityWeight ?? 0)
+    if (weightDiff !== 0)
+      return weightDiff
+    return left.name.localeCompare(right.name)
+  })
+
+  return sorted.slice(0, options.templateFocused ? MAX_FOCUSED_TEMPLATE_ITEMS : MAX_GENERAL_TEMPLATE_ITEMS)
 }
 
 export function hasInlineResourcePrefix(rawQuery: string): boolean {

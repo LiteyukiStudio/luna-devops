@@ -14,7 +14,12 @@ import { ThemeContext } from '@/app/theme-context'
 import i18next from '@/i18n'
 import { AIAssistantRuntimeContext } from './ai-assistant/runtime-context'
 import { CommandPalette } from './command-palette'
-import { readCommandPaletteRecents, recordCommandPaletteRecent } from './command-palette-model'
+import {
+  parseInlineTemplateQuery,
+  readCommandPaletteRecents,
+  recordCommandPaletteRecent,
+  resolveRoutePaletteContext,
+} from './command-palette-model'
 
 const mocks = vi.hoisted(() => ({
   listApplications: vi.fn(),
@@ -84,7 +89,7 @@ describe('command palette', () => {
     const user = userEvent.setup()
     renderPalette()
 
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
     expect(within(dialog).queryByRole('option', { name: 'Global Settings' })).not.toBeInTheDocument()
 
@@ -97,9 +102,12 @@ describe('command palette', () => {
     expect(await screen.findByTestId('location')).toHaveTextContent('/registries')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     const reopened = await screen.findByRole('dialog', { name: 'Command palette' })
-    await user.type(within(reopened).getByRole('combobox'), 'feishu')
+    expect(within(reopened).getByTestId('command-palette-context-chip')).toHaveTextContent('Registries')
+    const reopenedInput = within(reopened).getByRole('combobox')
+    await user.type(reopenedInput, '{Backspace}feishu')
+    expect(within(reopened).queryByTestId('command-palette-context-chip')).not.toBeInTheDocument()
     await user.click(within(reopened).getByRole('option', { name: 'Notification Channels' }))
     expect(await screen.findByTestId('location')).toHaveTextContent('/notification-channels')
   })
@@ -109,7 +117,7 @@ describe('command palette', () => {
     renderPalette(['/projects/prj_1'], { permissions: ['user.manage'] })
 
     expect(mocks.listProjects).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
     expect(await within(dialog).findByRole('group', { name: 'Applications in Blog' })).toBeInTheDocument()
     expect(within(dialog).getByRole('option', { name: 'Global Settings' })).toBeInTheDocument()
@@ -127,7 +135,7 @@ describe('command palette', () => {
       { icon: Boxes, label: 'Shared config', to: '/projects/prj_1?tab=shared-config' },
     ])
 
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
     const sections = await within(dialog).findByRole('group', { name: 'Sections in Blog' })
     expect(within(sections).getAllByRole('option').map(option => option.textContent)).toEqual(['Overview', 'Shared config'])
@@ -140,11 +148,11 @@ describe('command palette', () => {
     const user = userEvent.setup()
     renderPalette()
 
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     await user.click(await screen.findByRole('option', { name: 'Toggle light/dark theme' }))
     expect(mocks.setMode).toHaveBeenCalledWith('dark')
 
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     await user.click(await screen.findByRole('option', { name: 'Create project space' }))
     expect(await screen.findByTestId('location')).toHaveTextContent('/projects?create=1')
   })
@@ -185,7 +193,7 @@ describe('command palette', () => {
     } satisfies SearchResponse)
 
     renderPalette()
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
 
     await user.click(within(dialog).getByRole('button', { name: 'Domains' }))
@@ -229,7 +237,7 @@ describe('command palette', () => {
     } satisfies SearchResponse)
 
     renderPalette(['/dashboard'], { role: 'platform_admin', permissions: ['user.manage'] })
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
 
     const allSpacesBtn = within(dialog).getByRole('button', { name: 'All spaces' })
@@ -279,7 +287,7 @@ describe('command palette', () => {
       onDraftChange,
     })
 
-    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
 
     const recentGroup = within(dialog).getByRole('group', { name: 'Recent' })
@@ -292,6 +300,99 @@ describe('command palette', () => {
 
     expect(onDraftChange).toHaveBeenCalledWith('why is pod crashing')
     expect(await screen.findByTestId('location')).toHaveTextContent('/ai-assistant')
+  })
+
+  it('injects removable route context chips and resets back to global search via Backspace or clear button', async () => {
+    expect(resolveRoutePaletteContext('/app-templates')).toBe('app_template')
+    expect(resolveRoutePaletteContext('/projects')).toBe('project')
+    expect(resolveRoutePaletteContext('/projects/prj_1')).toBeNull()
+    expect(resolveRoutePaletteContext('/clusters')).toBe('runtime_cluster')
+    expect(resolveRoutePaletteContext('/registries')).toBe('artifact_registry')
+    expect(resolveRoutePaletteContext('/code-repositories')).toBe('repository_binding')
+    expect(resolveRoutePaletteContext('/notification-channels')).toBe('notification_channel')
+    expect(resolveRoutePaletteContext('/settings/users')).toBe('user')
+
+    const user = userEvent.setup()
+    mocks.listAppTemplates.mockResolvedValue([
+      { ...templateFixture(), id: 'tpl_basic', slug: 'basic', name: 'Basic Tool', featured: false, popularityWeight: 10 },
+      { ...templateFixture(), id: 'tpl_pg', slug: 'postgresql', name: 'PostgreSQL', featured: true, popularityWeight: 100 },
+    ])
+
+    const view = renderPalette(['/app-templates'])
+    fireEvent.keyDown(document.body, { key: 'k', metaKey: true })
+    const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
+
+    expect(within(dialog).getByTestId('command-palette-context-chip')).toHaveTextContent('Templates')
+    expect(within(dialog).getByRole('button', { name: 'Templates' })).toHaveAttribute('aria-pressed', 'true')
+
+    const templatesGroup = await within(dialog).findByRole('group', { name: 'App Marketplace templates' })
+    const templateLabels = within(templatesGroup).getAllByRole('option').map(el => el.textContent)
+    expect(templateLabels[0]).toContain('PostgreSQL')
+    expect(templateLabels[1]).toContain('Basic Tool')
+    expect(within(dialog).queryByRole('option', { name: 'Dashboard' })).not.toBeInTheDocument()
+
+    // Dismiss chip with Backspace when input is empty -> restores global search
+    await user.keyboard('{Backspace}')
+    expect(within(dialog).queryByTestId('command-palette-context-chip')).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(dialog).getByRole('option', { name: 'Dashboard' })).toBeInTheDocument()
+    view.unmount()
+
+    // Opening on /clusters scopes server search to runtime_cluster and clicking × clears it
+    renderPalette(['/clusters'])
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
+    const clusterDialog = await screen.findByRole('dialog', { name: 'Command palette' })
+    expect(within(clusterDialog).getByTestId('command-palette-context-chip')).toHaveTextContent('Clusters')
+    expect(within(clusterDialog).getByText('Type to search in Clusters, or press Backspace for global search')).toBeInTheDocument()
+
+    await user.type(within(clusterDialog).getByRole('combobox'), 'prod')
+    await waitFor(() => {
+      expect(mocks.searchPlatformResources).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: 'prod',
+          types: ['runtime_cluster'],
+        }),
+        expect.any(AbortSignal),
+      )
+    })
+
+    await user.clear(within(clusterDialog).getByRole('combobox'))
+    await user.click(within(clusterDialog).getByRole('button', { name: 'Remove Clusters filter and return to global search' }))
+    expect(within(clusterDialog).queryByTestId('command-palette-context-chip')).not.toBeInTheDocument()
+    expect(within(clusterDialog).getByRole('option', { name: 'Dashboard' })).toBeInTheDocument()
+  })
+
+  it('supports zero-input template recommendations in Templates scope and inline template:/luna-app: prefixes', async () => {
+    expect(parseInlineTemplateQuery('template:redis')).toEqual({ matched: true, query: 'redis' })
+    expect(parseInlineTemplateQuery('luna-app:')).toEqual({ matched: true, query: '' })
+    expect(parseInlineTemplateQuery('https://example.com')).toEqual({ matched: false, query: 'https://example.com' })
+
+    const user = userEvent.setup()
+    mocks.listAppTemplates.mockResolvedValue([
+      { ...templateFixture(), id: 'redis', slug: 'redis', name: 'Redis', description: 'In-memory store', featured: true, popularityWeight: 95 },
+      { ...templateFixture(), id: 'memos', slug: 'memos', name: 'Memos', description: 'Lightweight notes', featured: false, popularityWeight: 40 },
+    ])
+
+    renderPalette(['/dashboard'])
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
+
+    // Zero-input in Templates scope shows recommended templates immediately
+    await user.click(within(dialog).getByRole('button', { name: 'Templates' }))
+    const templatesGroup = await within(dialog).findByRole('group', { name: 'App Marketplace templates' })
+    expect(within(templatesGroup).getByRole('option', { name: /Redis/ })).toBeInTheDocument()
+    expect(within(templatesGroup).getByRole('option', { name: /Memos/ })).toBeInTheDocument()
+
+    // Switch back to All and use inline luna-app: prefix
+    await user.click(within(dialog).getByRole('button', { name: 'All' }))
+    await user.type(within(dialog).getByRole('combobox'), 'luna-app:memos')
+    const inlineGroup = await within(dialog).findByRole('group', { name: 'App Marketplace templates' })
+    expect(within(inlineGroup).getByRole('option', { name: /Memos/ })).toBeInTheDocument()
+    expect(within(inlineGroup).queryByRole('option', { name: /Redis/ })).not.toBeInTheDocument()
+    expect(mocks.searchPlatformResources).not.toHaveBeenCalled()
+
+    await user.click(within(inlineGroup).getByRole('option', { name: /Memos/ }))
+    expect(await screen.findByTestId('location')).toHaveTextContent('/app-templates?template=memos')
   })
 })
 

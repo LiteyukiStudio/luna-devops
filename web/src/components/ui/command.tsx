@@ -1,6 +1,6 @@
 'use client'
 
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
 import { SearchIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -50,12 +50,19 @@ function CommandDialog({
   )
 }
 
-function CommandInput({ className, ...props }: ComponentProps<typeof CommandPrimitive.Input>) {
+function CommandInput({
+  className,
+  prefix,
+  ...props
+}: Omit<ComponentProps<typeof CommandPrimitive.Input>, 'prefix'> & {
+  prefix?: ReactNode
+}) {
   return (
     <div className="flex h-9 items-center gap-2 border-b border-border px-3" data-slot="command-input-wrapper">
       <SearchIcon aria-hidden="true" className="size-4 shrink-0 opacity-50" />
+      {prefix}
       <CommandPrimitive.Input
-        className={cn('flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50', className)}
+        className={cn('flex h-10 min-w-0 flex-1 rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50', className)}
         data-slot="command-input"
         {...props}
       />
