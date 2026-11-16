@@ -146,17 +146,24 @@ type RuntimeMetricsOptions struct {
 	WorkloadType       string
 }
 
+type RuntimePodMetricsSnapshot struct {
+	PodName          string `json:"podName"`
+	CPUUsageMilli    int64  `json:"cpuUsageMilli"`
+	MemoryUsageBytes int64  `json:"memoryUsageBytes"`
+}
+
 type RuntimeMetricsSnapshot struct {
-	Available         bool   `json:"available"`
-	Reason            string `json:"reason,omitempty"`
-	DesiredReplicas   int32  `json:"desiredReplicas"`
-	UpdatedReplicas   int32  `json:"updatedReplicas"`
-	ReadyReplicas     int32  `json:"readyReplicas"`
-	AvailableReplicas int32  `json:"availableReplicas"`
-	PodCount          int    `json:"podCount"`
-	ContainerCount    int    `json:"containerCount"`
-	CPUUsageMilli     int64  `json:"cpuUsageMilli"`
-	MemoryUsageBytes  int64  `json:"memoryUsageBytes"`
+	Available         bool                        `json:"available"`
+	Reason            string                      `json:"reason,omitempty"`
+	DesiredReplicas   int32                       `json:"desiredReplicas"`
+	UpdatedReplicas   int32                       `json:"updatedReplicas"`
+	ReadyReplicas     int32                       `json:"readyReplicas"`
+	AvailableReplicas int32                       `json:"availableReplicas"`
+	PodCount          int                         `json:"podCount"`
+	ContainerCount    int                         `json:"containerCount"`
+	CPUUsageMilli     int64                       `json:"cpuUsageMilli"`
+	MemoryUsageBytes  int64                       `json:"memoryUsageBytes"`
+	Pods              []RuntimePodMetricsSnapshot `json:"pods,omitempty"`
 	// Resources is the per-replica Pod template envelope from the same workload observation.
 	Resources PodTemplateResources `json:"-"`
 	UpdatedAt time.Time            `json:"updatedAt"`

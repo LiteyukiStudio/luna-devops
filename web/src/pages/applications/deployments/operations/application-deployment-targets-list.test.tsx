@@ -1,20 +1,49 @@
 import type { DeploymentTargetRow } from './application-deployment-targets-list'
-import type { DeploymentTarget, GatewayRoute, Release } from '@/api'
+import type { DeploymentTarget, DeploymentTargetMetrics, GatewayRoute, Release } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
 import '@/i18n'
 
-vi.mock('./application-deployment-target-metrics-cell', () => ({
-  DeploymentTargetMetricsCell: () => <span>-</span>,
-}))
+type Listener = (event: MessageEvent) => void
 
-vi.mock('./deployment-target-metrics-cards', () => ({
-  DeploymentTargetMetricsCards: () => <span>-</span>,
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  listeners: Record<string, Listener[]> = {}
+  closed = false
+  url: string
+
+  constructor(url: string) {
+    this.url = url
+    FakeEventSource.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: Listener) {
+    this.listeners[type] ??= []
+    this.listeners[type].push(listener)
+  }
+
+  removeEventListener(type: string, listener: Listener) {
+    this.listeners[type] = (this.listeners[type] ?? []).filter(item => item !== listener)
+  }
+
+  emit(type: string, data?: unknown) {
+    const event = { data: data === undefined ? '' : JSON.stringify(data) } as MessageEvent
+    for (const listener of this.listeners[type] ?? [])
+      listener(event)
+  }
+
+  close() {
+    this.closed = true
+  }
+}
+
+vi.mock('@/lib/telemetry', () => ({
+  createTracedEventSource: vi.fn((url: string) => new FakeEventSource(url) as unknown as EventSource),
 }))
 
 vi.mock('@/api', async (importOriginal) => {
@@ -72,6 +101,7 @@ const release = {
 
 function renderList(items: DeploymentTargetRow[] = [], handlers: {
   onCancelRelease?: (release: Release) => void
+  onOpenConsole?: (release: Release, pod?: string) => void
   onViewLogs?: (release: Release, options?: { view?: 'deployment' | 'runtime', pod?: string, previous?: boolean }) => void
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -91,7 +121,7 @@ function renderList(items: DeploymentTargetRow[] = [], handlers: {
           onCreateTarget={vi.fn()}
           onCancelRelease={handlers.onCancelRelease ?? vi.fn()}
           onDeleteTarget={vi.fn()}
-          onOpenConsole={vi.fn()}
+          onOpenConsole={handlers.onOpenConsole ?? vi.fn()}
           onOpenReleaseDialog={vi.fn()}
           onEditTarget={vi.fn()}
           onPullLatestImageDeploy={vi.fn()}
@@ -105,6 +135,9 @@ function renderList(items: DeploymentTargetRow[] = [], handlers: {
 }
 
 describe('application deployment targets behavior', () => {
+  beforeEach(() => {
+    FakeEventSource.instances = []
+  })
   it('opens operational details from the actions menu', async () => {
     const user = userEvent.setup()
     renderList([{
@@ -344,5 +377,139 @@ describe('application deployment targets behavior', () => {
     await user.click(within(dialog).getByRole('tab', { name: 'Overview' }))
     await user.click(within(dialog).getByRole('button', { name: 'Previous crash logs' }))
     expect(onViewLogs).toHaveBeenCalledWith(release, { pod: 'app-dev-7f9c8-oom', previous: true, view: 'runtime' })
+    // Detail drawer remains open when opening secondary log drawer.
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('merges runtime resources and instances with per-pod mini rings, unified outline buttons, and persistent primary drawer', async () => {
+    const user = userEvent.setup()
+    const onViewLogs = vi.fn()
+    const onOpenConsole = vi.fn()
+    vi.mocked(api.listDeploymentTargetRuntimePods).mockResolvedValue({
+      items: [
+        {
+          name: 'app-dev-pod-1',
+          phase: 'Running',
+          status: 'ready',
+          ready: true,
+          readyContainers: 1,
+          totalContainers: 1,
+          terminating: false,
+          restartCount: 1,
+          releaseId: 'release_1',
+          nodeName: 'node-1',
+          containers: ['app'],
+          containerStatuses: [],
+          createdAt: '2026-09-06T00:00:00Z',
+        },
+        {
+          name: 'app-dev-pod-pending',
+          phase: 'Pending',
+          status: 'pending',
+          ready: false,
+          readyContainers: 0,
+          totalContainers: 1,
+          terminating: false,
+          restartCount: 0,
+          releaseId: 'release_1',
+          containers: ['app'],
+          containerStatuses: [],
+          createdAt: '2026-09-06T01:00:00Z',
+        },
+      ],
+      page: 1,
+      pageSize: 100,
+      sortBy: 'restartCount',
+      sortOrder: 'desc',
+      total: 2,
+      totalPages: 1,
+      status: 'ready',
+      observationCode: 'deployment_target.runtime_pods_ready',
+      observedAt: '2026-09-06T01:03:00Z',
+    })
+    vi.mocked(api.listDeploymentTargetEvents).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      sortBy: 'lastSeen',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
+      status: 'ready',
+      observationCode: 'deployment_target.events_ready',
+      observedAt: '2026-09-06T01:03:00Z',
+    })
+
+    renderList([{
+      deployed: true,
+      release,
+      routes: [],
+      runtimeStatus: { podCount: 2, summary: '', value: 'ready' },
+      target: { ...deploymentTarget, desiredReplicas: 2, enabled: true, readyReplicas: 1 },
+      webConsoleEnabled: true,
+    }], { onOpenConsole, onViewLogs })
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions for deploy config app-dev' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Runtime resources & instances')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Instances (2)')).toBeInTheDocument()
+
+    const liveMetrics: DeploymentTargetMetrics = {
+      available: true,
+      availableReplicas: 1,
+      configuredReplicas: 2,
+      containerCount: 1,
+      cpuLimitMilli: 2000,
+      cpuRequestMilli: 500,
+      cpuUsageMilli: 940,
+      cpuUsagePercent: 47,
+      desiredReplicas: 2,
+      memoryLimitBytes: 4 * 1024 ** 3,
+      memoryRequestBytes: 1024 ** 3,
+      memoryUsageBytes: Math.round(1.62 * 1024 ** 3),
+      memoryUsagePercent: 40.5,
+      podCount: 1,
+      pods: [
+        {
+          podName: 'app-dev-pod-1',
+          cpuUsageMilli: 940,
+          cpuUsagePercent: 94,
+          memoryUsageBytes: Math.round(1.62 * 1024 ** 3),
+          memoryUsagePercent: 81,
+        },
+      ],
+      readyReplicas: 1,
+      replicaCpuLimitMilli: 1000,
+      replicaCpuRequestMilli: 250,
+      replicaMemoryLimitBytes: 2 * 1024 ** 3,
+      replicaMemoryRequestBytes: 512 * 1024 ** 2,
+      status: 'ready',
+      updatedAt: '2026-09-06T01:03:00Z',
+    }
+
+    act(() => {
+      FakeEventSource.instances[0].emit('metrics', liveMetrics)
+    })
+
+    expect(within(dialog).getByText('940m / 1')).toBeInTheDocument()
+    expect(within(dialog).getByText('(94%)')).toBeInTheDocument()
+    expect(within(dialog).getByText('1.62 / 2Gi')).toBeInTheDocument()
+    expect(within(dialog).getByText('(81%)')).toBeInTheDocument()
+
+    const logsButtons = within(dialog).getAllByRole('button', { name: 'Logs' })
+    const crashButton = within(dialog).getByRole('button', { name: 'Previous crash logs' })
+    const consoleButtons = within(dialog).getAllByRole('button', { name: 'Web Console' })
+    expect(logsButtons[0].className).toBe(consoleButtons[0].className)
+    expect(crashButton.className).toBe(consoleButtons[0].className)
+
+    await user.click(logsButtons[0])
+    expect(onViewLogs).toHaveBeenCalledWith(release, { pod: 'app-dev-pod-1', previous: false, view: 'runtime' })
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await user.click(consoleButtons[0])
+    expect(onOpenConsole).toHaveBeenCalledWith(release, 'app-dev-pod-1')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 })

@@ -66,7 +66,13 @@ func TestDeploymentTargetMetricsAggregatesTemplateEnvelopeAcrossReplicas(t *test
 }
 
 func TestDeploymentTargetMetricsOmitsPercentWithoutLimit(t *testing.T) {
-	payload, err := json.Marshal(deploymentTargetMetricsResponseFromSnapshot(kubeprovider.RuntimeMetricsSnapshot{Available: true, DesiredReplicas: 1}, model.DeploymentTarget{}))
+	payload, err := json.Marshal(deploymentTargetMetricsResponseFromSnapshot(kubeprovider.RuntimeMetricsSnapshot{
+		Available:       true,
+		DesiredReplicas: 1,
+		Pods: []kubeprovider.RuntimePodMetricsSnapshot{
+			{PodName: "pod-a", CPUUsageMilli: 120, MemoryUsageBytes: 64 << 20},
+		},
+	}, model.DeploymentTarget{}))
 	if err != nil {
 		t.Fatalf("marshal metrics: %v", err)
 	}
@@ -77,6 +83,41 @@ func TestDeploymentTargetMetricsOmitsPercentWithoutLimit(t *testing.T) {
 	if _, ok := body["cpuUsagePercent"]; ok {
 		t.Fatalf("cpuUsagePercent must be omitted without a limit: %s", payload)
 	}
+	pods, ok := body["pods"].([]any)
+	if !ok || len(pods) != 1 {
+		t.Fatalf("pods = %#v, want 1 entry", body["pods"])
+	}
+	firstPod, _ := pods[0].(map[string]any)
+	if _, hasPct := firstPod["cpuUsagePercent"]; hasPct {
+		t.Fatalf("per-pod cpuUsagePercent must be omitted without replica limit: %s", payload)
+	}
+}
+
+func TestDeploymentTargetMetricsMapsPerPodPercentagesFromReplicaEnvelope(t *testing.T) {
+	const gib = int64(1024 * 1024 * 1024)
+	response := deploymentTargetMetricsResponseFromSnapshot(kubeprovider.RuntimeMetricsSnapshot{
+		Available:        true,
+		DesiredReplicas:  2,
+		PodCount:         2,
+		CPUUsageMilli:    1400,
+		MemoryUsageBytes: 3 * gib / 2,
+		Resources:        kubeprovider.PodTemplateResources{CPURequestMilli: 250, MemoryRequestBytes: gib / 2, CPULimitMilli: 1000, MemoryLimitBytes: 2 * gib},
+		Pods: []kubeprovider.RuntimePodMetricsSnapshot{
+			{PodName: "pod-1", CPUUsageMilli: 900, MemoryUsageBytes: gib},
+			{PodName: "pod-2", CPUUsageMilli: 500, MemoryUsageBytes: gib / 2},
+		},
+	}, model.DeploymentTarget{Replicas: 2})
+
+	if len(response.Pods) != 2 {
+		t.Fatalf("len(response.Pods) = %d, want 2", len(response.Pods))
+	}
+	if response.Pods[0].PodName != "pod-1" || response.Pods[0].CPUUsageMilli != 900 {
+		t.Fatalf("Pods[0] = %#v", response.Pods[0])
+	}
+	assertPercent(t, "pod-1 cpu", response.Pods[0].CPUUsagePercent, floatPointer(90))
+	assertPercent(t, "pod-1 memory", response.Pods[0].MemoryUsagePercent, floatPointer(50))
+	assertPercent(t, "pod-2 cpu", response.Pods[1].CPUUsagePercent, floatPointer(50))
+	assertPercent(t, "pod-2 memory", response.Pods[1].MemoryUsagePercent, floatPointer(25))
 }
 
 func floatPointer(value float64) *float64 { return &value }

@@ -13035,6 +13035,17 @@ components:
           description: Stable code explaining why the live observation is not ready, when available.
         currentRelease: { $ref: "#/components/schemas/ApplicationCurrentRelease" }
       required: [id, stage, enabled, deployed, desiredReplicas, readyReplicas, status]
+    DeploymentTargetPodMetrics:
+      type: object
+      additionalProperties: false
+      description: Live CPU and memory usage of a single workload Pod from metrics.k8s.io, compared against the per-replica Pod template limit.
+      properties:
+        podName: { type: string }
+        cpuUsageMilli: { type: integer, minimum: 0 }
+        cpuUsagePercent: { type: number, minimum: 0, description: cpuUsageMilli / replicaCpuLimitMilli; omitted when replicaCpuLimitMilli is 0. }
+        memoryUsageBytes: { type: integer, minimum: 0 }
+        memoryUsagePercent: { type: number, minimum: 0, description: memoryUsageBytes / replicaMemoryLimitBytes; omitted when replicaMemoryLimitBytes is 0. }
+      required: [podName, cpuUsageMilli, memoryUsageBytes]
     DeploymentTargetMetrics:
       type: object
       additionalProperties: false
@@ -13063,6 +13074,10 @@ components:
         replicaCpuLimitMilli: { type: integer, minimum: 0 }
         replicaMemoryRequestBytes: { type: integer, minimum: 0 }
         replicaMemoryLimitBytes: { type: integer, minimum: 0 }
+        pods:
+          type: array
+          description: Per-Pod live usage from the same metrics.k8s.io observation, sorted by podName.
+          items: { $ref: "#/components/schemas/DeploymentTargetPodMetrics" }
         updatedAt: { type: string, format: date-time }
       required: [available, status, configuredReplicas, desiredReplicas, readyReplicas, availableReplicas, podCount, containerCount, cpuUsageMilli, cpuRequestMilli, cpuLimitMilli, memoryUsageBytes, memoryRequestBytes, memoryLimitBytes, replicaCpuRequestMilli, replicaCpuLimitMilli, replicaMemoryRequestBytes, replicaMemoryLimitBytes, updatedAt]
     ApplicationListItem:

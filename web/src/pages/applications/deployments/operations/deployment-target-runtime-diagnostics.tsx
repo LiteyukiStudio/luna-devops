@@ -1,14 +1,29 @@
+import type { MetricsStreamState } from './use-deployment-target-metrics'
 import type { DeploymentTargetRuntimeDiagnosticsState } from './use-deployment-target-runtime-diagnostics'
-import type { DeploymentTargetEvent, DeploymentTargetRuntimePod, Release, RuntimeContainerStatusSnapshot } from '@/api'
+import type {
+  DeploymentTargetEvent,
+  DeploymentTargetPodMetrics,
+  DeploymentTargetRuntimePod,
+  Release,
+  RuntimeContainerStatusSnapshot,
+} from '@/api'
 import { Activity, AlertTriangle, ArrowRight, Box, Eye, History, RefreshCw, Terminal } from 'lucide-react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
-import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
+import {
+  formatLiveUsageBytes,
+  formatLiveUsageCPU,
+  formatMetricsBytes,
+  formatMetricsCPU,
+} from '@/pages/applications/deployments/application-deployments-panel-utils'
+import { PodResourceMiniRing } from './deployment-target-metrics-cards'
 
 export function RuntimeEventsWarningBanner({
   latestReason,
@@ -49,48 +64,48 @@ export function RuntimeEventsWarningBanner({
   )
 }
 
-export function DeploymentTargetRuntimePodsSection({
+export function DeploymentTargetRuntimePodsList({
   diagnostics,
+  metricsStream,
   release,
   webConsoleEnabled,
   onOpenPodConsole,
   onViewPodLogs,
 }: {
   diagnostics: DeploymentTargetRuntimeDiagnosticsState
+  metricsStream: MetricsStreamState
   release?: Release
   webConsoleEnabled: boolean
   onOpenPodConsole?: (release: Release, pod: string) => void
   onViewPodLogs?: (release: Release, pod: string, previous: boolean) => void
 }) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
+  const locale = i18n.language
+  const metrics = metricsStream.kind === 'ready' ? metricsStream.metrics : null
+  const podMetricsByName = useMemo(() => {
+    const map = new Map<string, DeploymentTargetPodMetrics>()
+    for (const item of metrics?.pods ?? [])
+      map.set(item.podName, item)
+    return map
+  }, [metrics?.pods])
+
   if (!diagnostics.active)
     return null
 
+  const replicaCpuLimitText = metrics ? formatMetricsCPU(metrics.replicaCpuLimitMilli, locale) : undefined
+  const replicaMemoryLimitText = metrics ? formatMetricsBytes(metrics.replicaMemoryLimitBytes, locale) : undefined
+  const listTitle = !diagnostics.podsLoading && !diagnostics.podsUnavailable
+    ? t('deploymentsPage.runtimePodsListCount', { count: diagnostics.pods.length })
+    : t('deploymentsPage.runtimePodsList')
+
   return (
-    <Section
-      description={t('deploymentsPage.runtimePodsSectionDescription')}
-      icon={<Box className="size-4" aria-hidden="true" />}
-      title={t('deploymentsPage.runtimePodsSection')}
-      tools={(
-        <Button
-          aria-label={t('common.refresh')}
-          className="h-8 w-8"
-          disabled={diagnostics.podsFetching}
-          size="icon"
-          type="button"
-          variant="ghost"
-          onClick={diagnostics.refetchPods}
-        >
-          <RefreshCw className={`size-4 ${diagnostics.podsFetching ? 'motion-safe:animate-spin' : ''}`} />
-        </Button>
-      )}
-      variant="bordered"
-    >
+    <div className="grid gap-2.5 border-t border-border pt-3.5">
+      <div className="text-xs font-medium text-muted-foreground">{listTitle}</div>
       {diagnostics.podsLoading
         ? (
             <div className="grid gap-2">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
             </div>
           )
         : diagnostics.podsUnavailable
@@ -116,8 +131,12 @@ export function DeploymentTargetRuntimePodsSection({
                   {diagnostics.pods.map(pod => (
                     <RuntimePodCard
                       key={pod.name}
+                      locale={locale}
                       pod={pod}
+                      podMetrics={podMetricsByName.get(pod.name)}
                       release={release}
+                      replicaCpuLimitText={replicaCpuLimitText}
+                      replicaMemoryLimitText={replicaMemoryLimitText}
                       webConsoleEnabled={webConsoleEnabled}
                       onOpenPodConsole={onOpenPodConsole}
                       onViewPodLogs={onViewPodLogs}
@@ -125,7 +144,7 @@ export function DeploymentTargetRuntimePodsSection({
                   ))}
                 </div>
               )}
-    </Section>
+    </div>
   )
 }
 
@@ -141,57 +160,50 @@ export function DeploymentTargetRuntimeEventsSection({
   const { t } = useTranslation()
   if (!diagnostics.active) {
     return (
-      <Section
-        description={t('deploymentsPage.runtimeEventsSectionDescription')}
-        icon={<Activity className="size-4" aria-hidden="true" />}
-        title={t('deploymentsPage.runtimeEventsSection')}
-        variant="bordered"
-      >
+      <section className="grid gap-3 rounded-container border border-border bg-surface-raised p-4 shadow-surface-sm">
+        <h3 className="text-sm font-semibold text-foreground">{t('deploymentsPage.runtimeEventsSection')}</h3>
         <EmptyState
           description={t('deploymentsPage.runtimeEventsEmptyDescription')}
           icon={<Activity className="size-5" aria-hidden="true" />}
           title={t('deploymentsPage.runtimeEventsEmpty')}
           variant="plain"
         />
-      </Section>
+      </section>
     )
   }
 
   const visibleEvents = warningOnly ? diagnostics.warningEvents : diagnostics.events
 
   return (
-    <Section
-      description={t('deploymentsPage.runtimeEventsSectionDescription')}
-      icon={<Activity className="size-4" aria-hidden="true" />}
-      title={t('deploymentsPage.runtimeEventsSection')}
-      tools={(
+    <section className="grid gap-3 rounded-container border border-border bg-surface-raised p-4 shadow-surface-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-foreground">{t('deploymentsPage.runtimeEventsSection')}</h3>
         <div className="flex items-center gap-1.5">
           <Button
             aria-pressed={warningOnly}
-            className="h-8 px-2.5 text-xs"
+            className="h-7 px-2.5 text-xs"
             size="sm"
             type="button"
             variant={warningOnly ? 'secondary' : 'outline'}
             onClick={onToggleWarningOnly}
           >
-            <AlertTriangle className="size-3.5" />
+            <AlertTriangle className="size-3.5" aria-hidden="true" />
             {t('deploymentsPage.runtimeEventsWarningOnly')}
           </Button>
           <Button
             aria-label={t('common.refresh')}
-            className="h-8 w-8"
+            className="size-7"
             disabled={diagnostics.eventsFetching}
             size="icon"
             type="button"
-            variant="ghost"
+            variant="outline"
             onClick={diagnostics.refetchEvents}
           >
-            <RefreshCw className={`size-4 ${diagnostics.eventsFetching ? 'motion-safe:animate-spin' : ''}`} />
+            <RefreshCw className={cn('size-3.5', diagnostics.eventsFetching && 'motion-safe:animate-spin')} />
           </Button>
         </div>
-      )}
-      variant="bordered"
-    >
+      </div>
+
       {diagnostics.eventsLoading
         ? (
             <div className="grid gap-2">
@@ -224,19 +236,27 @@ export function DeploymentTargetRuntimeEventsSection({
                   ))}
                 </div>
               )}
-    </Section>
+    </section>
   )
 }
 
 function RuntimePodCard({
+  locale,
   pod,
+  podMetrics,
   release,
+  replicaCpuLimitText,
+  replicaMemoryLimitText,
   webConsoleEnabled,
   onOpenPodConsole,
   onViewPodLogs,
 }: {
+  locale: string
   pod: DeploymentTargetRuntimePod
+  podMetrics?: DeploymentTargetPodMetrics
   release?: Release
+  replicaCpuLimitText?: string
+  replicaMemoryLimitText?: string
   webConsoleEnabled: boolean
   onOpenPodConsole?: (release: Release, pod: string) => void
   onViewPodLogs?: (release: Release, pod: string, previous: boolean) => void
@@ -255,50 +275,53 @@ function RuntimePodCard({
   const hasPreviousCrash = pod.restartCount > 0 || allStatuses.some(item => Boolean(item.lastTermination))
   const canOpenConsole = Boolean(release && webConsoleEnabled && (release.status === 'succeeded' || release.status === 'running'))
 
+  const podCpuUsedText = podMetrics ? formatLiveUsageCPU(podMetrics.cpuUsageMilli, locale) : undefined
+  const podMemoryUsedText = podMetrics ? formatLiveUsageBytes(podMetrics.memoryUsageBytes, locale) : undefined
+
   return (
-    <div className="grid gap-2 rounded-control border border-border bg-surface-subtle/50 p-3 text-xs">
+    <div className="grid gap-2.5 rounded-xl border border-border bg-surface-subtle/40 p-3.5 text-xs shadow-surface-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="truncate font-mono font-medium text-foreground">{pod.name}</span>
           <StatusValueBadge labelKeyPrefix="deploymentsPage.runtimeStatuses" value={effectiveStatus} />
         </div>
         {release && (
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             {onViewPodLogs && (
               <Button
-                className="h-7 px-2 text-xs"
+                className="h-7 px-2.5 text-xs"
                 size="sm"
                 type="button"
                 variant="outline"
                 onClick={() => onViewPodLogs(release, pod.name, false)}
               >
-                <Eye className="size-3.5" />
+                <Eye className="size-3.5" aria-hidden="true" />
                 {t('deploymentsPage.runtimePodLogsAction')}
               </Button>
             )}
             {onViewPodLogs && hasPreviousCrash && (
               <Button
-                className="h-7 px-2 text-xs"
+                className="h-7 px-2.5 text-xs"
                 size="sm"
                 type="button"
                 variant="outline"
                 onClick={() => onViewPodLogs(release, pod.name, true)}
               >
-                <History className="size-3.5" />
+                <History className="size-3.5" aria-hidden="true" />
                 {t('deploymentsPage.runtimePreviousLogs')}
               </Button>
             )}
             {onOpenPodConsole && (
               <Button
-                className="h-7 px-2 text-xs"
+                className="h-7 px-2.5 text-xs"
                 disabled={!canOpenConsole}
                 size="sm"
                 title={!webConsoleEnabled ? t('deploymentsPage.webConsoleDisabledHint') : undefined}
                 type="button"
-                variant="ghost"
+                variant="outline"
                 onClick={() => onOpenPodConsole(release, pod.name)}
               >
-                <Terminal className="size-3.5" />
+                <Terminal className="size-3.5" aria-hidden="true" />
                 {t('deploymentsPage.webConsole')}
               </Button>
             )}
@@ -306,9 +329,26 @@ function RuntimePodCard({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <PodResourceMiniRing
+          label={t('deploymentsPage.metricsCpu')}
+          limitText={replicaCpuLimitText}
+          locale={locale}
+          percent={podMetrics?.cpuUsagePercent}
+          usedText={podCpuUsedText}
+        />
+        <PodResourceMiniRing
+          label={t('deploymentsPage.metricsMemory')}
+          limitText={replicaMemoryLimitText}
+          locale={locale}
+          percent={podMetrics?.memoryUsagePercent}
+          usedText={podMemoryUsedText}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums text-muted-foreground">
         <span>{t('deploymentsPage.runtimePodReadySummary', { ready: readyContainers, total: totalContainers })}</span>
-        <span className={pod.restartCount > 0 ? 'font-medium text-warning' : undefined}>
+        <span className={pod.restartCount > 0 ? 'font-semibold text-warning' : undefined}>
           {t('deploymentsPage.runtimePodRestarts', { count: pod.restartCount })}
         </span>
         {pod.nodeName && <span>{t('deploymentsPage.runtimePodNode', { node: pod.nodeName })}</span>}
@@ -320,7 +360,7 @@ function RuntimePodCard({
       ))}
 
       {abnormalContainers.length === 0 && failedConditions.slice(0, 1).map(condition => (
-        <div key={condition.type} className="rounded-control border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-foreground">
+        <div key={condition.type} className="rounded-control border border-warning-border bg-warning-subtle px-2.5 py-1.5 text-foreground">
           <span className="font-medium">{condition.reason || condition.type}</span>
           {condition.message && <span className="text-muted-foreground">{` · ${condition.message}`}</span>}
         </div>
@@ -336,7 +376,7 @@ function ContainerDiagnosticNote({ status }: { status: RuntimeContainerStatusSna
   const last = status.lastTermination
 
   return (
-    <div className="grid gap-1 rounded-control border border-destructive/25 bg-destructive/5 px-2.5 py-1.5 text-foreground">
+    <div className="grid gap-1 rounded-control border border-danger-border bg-danger-subtle px-2.5 py-1.5 text-foreground">
       {(current.state === 'waiting' || (current.state === 'terminated' && (current.exitCode ?? 0) !== 0)) && (
         <div className="break-words">
           <span className="font-mono font-medium">{prefix}</span>
@@ -369,7 +409,7 @@ function RuntimeEventItem({ event }: { event: DeploymentTargetEvent }) {
           <StatusBadge tone={isWarning ? 'warning' : 'neutral'}>
             {isWarning ? t('deploymentsPage.runtimeEventTypeWarning') : t('deploymentsPage.runtimeEventTypeNormal')}
           </StatusBadge>
-          <span className="font-medium text-foreground">{event.reason || '-'}</span>
+          <span className="font-semibold text-foreground">{event.reason || '-'}</span>
           <span className="truncate font-mono text-muted-foreground">{`${event.involvedKind}/${event.involvedName}`}</span>
           {event.count > 1 && <span className="tabular-nums text-muted-foreground">{`×${event.count}`}</span>}
         </div>

@@ -76,6 +76,7 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 
+  --shadow-surface-sm: var(--surface-shadow-sm);
   --shadow-raised: 0 1px 2px hsl(var(--foreground) / 0.04), 0 8px 24px hsl(var(--foreground) / 0.05);
   --shadow-overlay: 0 16px 48px hsl(var(--foreground) / 0.18);
 }
@@ -95,6 +96,7 @@
 :root {
   --layout-page-inline: 1rem;
   --layout-page-block: 1rem;
+  --surface-shadow-sm: 0 2px 3px -1px rgb(0 0 0 / 0.08), 0 1px 0 0 rgb(25 28 33 / 0.02);
   --auth-card-background: linear-gradient(
     135deg,
     color-mix(in oklab, var(--primary) 10%, hsl(var(--surface))) 0%,
@@ -113,6 +115,7 @@
 }
 
 :root[data-theme="dark"] {
+  --surface-shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.35);
   --auth-card-background: linear-gradient(
     135deg,
     color-mix(in oklab, var(--primary) 16%, hsl(var(--surface))) 0%,

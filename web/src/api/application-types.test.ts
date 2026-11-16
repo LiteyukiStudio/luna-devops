@@ -6,6 +6,8 @@ import type {
   AppTemplateComponent,
   AppTemplateConfigFile,
   AppTemplateSummary,
+  DeploymentTargetMetrics,
+  DeploymentTargetPodMetrics,
   PlatformAppTemplate,
   PlatformAppTemplateBundle,
   PlatformAppTemplateComponent,
@@ -14,9 +16,11 @@ import type {
 import { describe, expectTypeOf, it } from 'vitest'
 
 describe('application list transport contracts', () => {
-  it('keeps current release and access URL bound to OpenAPI', () => {
+  it('keeps current release, access URL, and deployment target metrics bound to OpenAPI', () => {
     expectTypeOf<ApplicationCurrentRelease>().toEqualTypeOf<components['schemas']['ApplicationCurrentRelease']>()
     expectTypeOf<Application['primaryAccessUrl']>().toEqualTypeOf<components['schemas']['ApplicationListItem']['primaryAccessUrl']>()
+    expectTypeOf<DeploymentTargetPodMetrics>().toEqualTypeOf<components['schemas']['DeploymentTargetPodMetrics']>()
+    expectTypeOf<DeploymentTargetMetrics>().toEqualTypeOf<components['schemas']['DeploymentTargetMetrics']>()
   })
 
   it('keeps the app template featured flag, source, and platform schemas bound to OpenAPI', () => {

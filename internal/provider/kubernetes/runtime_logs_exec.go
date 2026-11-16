@@ -103,7 +103,10 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 		ReadyReplicas: workload.ReadyReplicas, AvailableReplicas: workload.AvailableReplicas,
 		PodCount: len(list.Items), Resources: workload.Resources, UpdatedAt: time.Now(),
 	}
+	pods := make([]RuntimePodMetricsSnapshot, 0, len(list.Items))
 	for _, item := range list.Items {
+		var podCPU int64
+		var podMemory int64
 		containers, _, _ := unstructured.NestedSlice(item.Object, "containers")
 		for _, rawContainer := range containers {
 			container, ok := rawContainer.(map[string]any)
@@ -117,15 +120,32 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 			snapshot.ContainerCount++
 			if value := strings.TrimSpace(usage["cpu"]); value != "" {
 				if quantity, err := resource.ParseQuantity(value); err == nil {
-					snapshot.CPUUsageMilli += quantity.MilliValue()
+					milli := max(quantity.MilliValue(), 0)
+					podCPU += milli
+					snapshot.CPUUsageMilli += milli
 				}
 			}
 			if value := strings.TrimSpace(usage["memory"]); value != "" {
 				if quantity, err := resource.ParseQuantity(value); err == nil {
-					snapshot.MemoryUsageBytes += quantity.Value()
+					bytesVal := max(quantity.Value(), 0)
+					podMemory += bytesVal
+					snapshot.MemoryUsageBytes += bytesVal
 				}
 			}
 		}
+		if podName := strings.TrimSpace(item.GetName()); podName != "" {
+			pods = append(pods, RuntimePodMetricsSnapshot{
+				PodName:          podName,
+				CPUUsageMilli:    podCPU,
+				MemoryUsageBytes: podMemory,
+			})
+		}
+	}
+	if len(pods) > 0 {
+		sort.Slice(pods, func(left, right int) bool {
+			return pods[left].PodName < pods[right].PodName
+		})
+		snapshot.Pods = pods
 	}
 	return snapshot, nil
 }

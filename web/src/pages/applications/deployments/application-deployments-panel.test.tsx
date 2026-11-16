@@ -10,12 +10,23 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { ApplicationDeploymentsPanel } from './application-deployments-panel'
 
+vi.mock('@/lib/telemetry', () => ({
+  createTracedEventSource: vi.fn(() => ({
+    addEventListener: vi.fn(),
+    close: vi.fn(),
+    removeEventListener: vi.fn(),
+  })),
+}))
+
 vi.mock('@/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api')>()
   return {
     ...actual,
     api: {
       ...actual.api,
+      getReleaseRuntimeLogs: vi.fn(),
+      listDeploymentTargetEvents: vi.fn(),
+      listDeploymentTargetRuntimePods: vi.fn(),
       listRuntimeClusterResources: vi.fn(),
       listRuntimeClusters: vi.fn(),
       restartDeploymentTarget: vi.fn(),
@@ -198,5 +209,82 @@ describe('application deployments panel', () => {
     expect(confirm).toBeDisabled()
     await user.type(within(dialog).getByLabelText('Type Web to confirm deletion'), 'Web')
     expect(confirm).toBeEnabled()
+  })
+
+  it('stacks secondary pod logs drawer over the detail drawer and closes only the top drawer via Escape or overlay click', async () => {
+    const user = userEvent.setup()
+    const podItem = {
+      name: 'web-pod-1',
+      phase: 'Running',
+      status: 'ready',
+      ready: true,
+      readyContainers: 1,
+      totalContainers: 1,
+      terminating: false,
+      restartCount: 0,
+      releaseId: 'rel_web_3',
+      nodeName: 'node-1',
+      containers: ['app'],
+      containerStatuses: [],
+      createdAt: '2026-09-06T00:00:00Z',
+    }
+    vi.mocked(api.listDeploymentTargetRuntimePods).mockResolvedValue({
+      items: [podItem],
+      page: 1,
+      pageSize: 100,
+      sortBy: 'restartCount',
+      sortOrder: 'desc',
+      total: 1,
+      totalPages: 1,
+      status: 'ready',
+      observationCode: 'deployment_target.runtime_pods_ready',
+      observedAt: '2026-09-06T01:00:00Z',
+    })
+    vi.mocked(api.listDeploymentTargetEvents).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      sortBy: 'lastSeen',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
+      status: 'ready',
+      observationCode: 'deployment_target.events_ready',
+      observedAt: '2026-09-06T01:00:00Z',
+    })
+    vi.mocked(api.getReleaseRuntimeLogs).mockResolvedValue({
+      container: 'app',
+      content: '2026-09-06T01:00:00Z server started\n',
+      pod: 'web-pod-1',
+      previous: false,
+    })
+
+    renderPanel()
+
+    await openRowMenu(user, 'Web')
+    await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
+
+    const detailDialog = await screen.findByRole('dialog', { name: 'Web' })
+    expect(await within(detailDialog).findByText('web-pod-1')).toBeInTheDocument()
+
+    // Open secondary Logs sheet from inside the primary detail sheet
+    await user.click(within(detailDialog).getByRole('button', { name: 'Logs' }))
+
+    const logsDialog = await screen.findByRole('dialog', { name: 'Release logs' })
+    expect(logsDialog).toBeInTheDocument()
+
+    // Pressing Escape closes ONLY the top-most secondary sheet, returning seamlessly to the primary detail sheet
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Release logs' })).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog', { name: 'Web' })).toBeInTheDocument()
+
+    // Reopen Logs sheet and click its backdrop overlay: closes ONLY the secondary sheet
+    await user.click(within(screen.getByRole('dialog', { name: 'Web' })).getByRole('button', { name: 'Logs' }))
+    await screen.findByRole('dialog', { name: 'Release logs' })
+    const overlays = document.querySelectorAll<HTMLElement>('[data-slot="sheet-overlay"]')
+    expect(overlays.length).toBe(2)
+    await user.click(overlays[overlays.length - 1])
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Release logs' })).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog', { name: 'Web' })).toBeInTheDocument()
   })
 })

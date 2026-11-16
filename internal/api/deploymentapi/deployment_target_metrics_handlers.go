@@ -173,6 +173,14 @@ func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, 
 	return client, ""
 }
 
+type deploymentTargetPodMetricsResponse struct {
+	PodName            string   `json:"podName"`
+	CPUUsageMilli      int64    `json:"cpuUsageMilli"`
+	CPUUsagePercent    *float64 `json:"cpuUsagePercent,omitempty"`
+	MemoryUsageBytes   int64    `json:"memoryUsageBytes"`
+	MemoryUsagePercent *float64 `json:"memoryUsagePercent,omitempty"`
+}
+
 // deploymentTargetMetricsResponse compares like with like: usage, request
 // floor and limit all cover every regular container of every replica. The
 // request and limit come from the workload Pod template observed together with
@@ -199,11 +207,12 @@ type deploymentTargetMetricsResponse struct {
 	CPUUsagePercent    *float64 `json:"cpuUsagePercent,omitempty"`
 	MemoryUsagePercent *float64 `json:"memoryUsagePercent,omitempty"`
 	// Per-replica Pod template envelope.
-	ReplicaCPURequestMilli    int64     `json:"replicaCpuRequestMilli"`
-	ReplicaCPULimitMilli      int64     `json:"replicaCpuLimitMilli"`
-	ReplicaMemoryRequestBytes int64     `json:"replicaMemoryRequestBytes"`
-	ReplicaMemoryLimitBytes   int64     `json:"replicaMemoryLimitBytes"`
-	UpdatedAt                 time.Time `json:"updatedAt"`
+	ReplicaCPURequestMilli    int64                                `json:"replicaCpuRequestMilli"`
+	ReplicaCPULimitMilli      int64                                `json:"replicaCpuLimitMilli"`
+	ReplicaMemoryRequestBytes int64                                `json:"replicaMemoryRequestBytes"`
+	ReplicaMemoryLimitBytes   int64                                `json:"replicaMemoryLimitBytes"`
+	Pods                      []deploymentTargetPodMetricsResponse `json:"pods,omitempty"`
+	UpdatedAt                 time.Time                            `json:"updatedAt"`
 }
 
 func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMetricsSnapshot, target model.DeploymentTarget) deploymentTargetMetricsResponse {
@@ -211,6 +220,19 @@ func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMe
 	resources := snapshot.Resources
 	cpuLimit := resources.CPULimitMilli * replicas
 	memoryLimit := resources.MemoryLimitBytes * replicas
+	var pods []deploymentTargetPodMetricsResponse
+	if len(snapshot.Pods) > 0 {
+		pods = make([]deploymentTargetPodMetricsResponse, 0, len(snapshot.Pods))
+		for _, pod := range snapshot.Pods {
+			pods = append(pods, deploymentTargetPodMetricsResponse{
+				PodName:            pod.PodName,
+				CPUUsageMilli:      pod.CPUUsageMilli,
+				CPUUsagePercent:    usagePercent(pod.CPUUsageMilli, resources.CPULimitMilli),
+				MemoryUsageBytes:   pod.MemoryUsageBytes,
+				MemoryUsagePercent: usagePercent(pod.MemoryUsageBytes, resources.MemoryLimitBytes),
+			})
+		}
+	}
 	return deploymentTargetMetricsResponse{
 		Available:                 snapshot.Available,
 		Status:                    deploymentTargetMetricsStatus(snapshot.Available),
@@ -233,6 +255,7 @@ func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMe
 		ReplicaCPULimitMilli:      resources.CPULimitMilli,
 		ReplicaMemoryRequestBytes: resources.MemoryRequestBytes,
 		ReplicaMemoryLimitBytes:   resources.MemoryLimitBytes,
+		Pods:                      pods,
 		UpdatedAt:                 snapshot.UpdatedAt,
 	}
 }

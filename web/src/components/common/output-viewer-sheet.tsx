@@ -26,7 +26,15 @@ export function OutputViewerSheet({
 
   return (
     <Sheet open onOpenChange={open => !open && onClose()}>
-      <SheetContent className={cn('max-w-none gap-0 overflow-hidden p-0 sm:max-w-none', fullscreen ? 'w-screen' : 'w-[min(100vw,52rem)]')} side="right">
+      <SheetContent
+        className={cn('max-w-none gap-0 overflow-hidden p-0 sm:max-w-none', fullscreen ? 'w-screen' : 'w-[min(100vw,52rem)]')}
+        side="right"
+        onOpenAutoFocus={(event) => {
+          // 首个可聚焦控件为带 Tooltip 的全屏按钮；将初始焦点落在抽屉容器本身，避免打开时弹出 Tooltip 拦截首次 Esc。
+          event.preventDefault()
+          ;(event.currentTarget as HTMLElement | null)?.focus({ preventScroll: true })
+        }}
+      >
         <SheetHeader className="shrink-0 flex-row items-start gap-3 border-b border-border px-4 py-3 pr-14">
           <div className="grid min-w-0 flex-1 gap-1">
             <div className="flex min-w-0 items-center gap-2">

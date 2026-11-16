@@ -1565,6 +1565,16 @@ export interface DeploymentServicePort {
   appProtocol?: string
 }
 
+export interface DeploymentTargetPodMetrics {
+  podName: string
+  cpuUsageMilli: number
+  /** Omitted when replicaCpuLimitMilli is 0. */
+  cpuUsagePercent?: number
+  memoryUsageBytes: number
+  /** Omitted when replicaMemoryLimitBytes is 0. */
+  memoryUsagePercent?: number
+}
+
 export interface DeploymentTargetMetrics {
   available: boolean
   status: 'ready' | 'unavailable'
@@ -1592,6 +1602,7 @@ export interface DeploymentTargetMetrics {
   replicaCpuLimitMilli: number
   replicaMemoryRequestBytes: number
   replicaMemoryLimitBytes: number
+  pods?: DeploymentTargetPodMetrics[]
   updatedAt: string
 }
 

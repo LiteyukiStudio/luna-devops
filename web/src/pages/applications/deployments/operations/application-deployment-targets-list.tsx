@@ -223,11 +223,9 @@ export function ApplicationDeploymentTargetsList({
             setDetailTargetId('')
         }}
         onOpenPodConsole={(release, pod) => {
-          setDetailTargetId('')
           onOpenConsole(release, pod)
         }}
         onViewPodLogs={(release, pod, previous) => {
-          setDetailTargetId('')
           onViewLogs(release, { pod, previous, view: 'runtime' })
         }}
       />

@@ -133,8 +133,59 @@ export function formatMetricsBytes(value: number, locale: string) {
   const gib = 1024 ** 3
   const mib = 1024 ** 2
   if (value >= gib)
-    return `${(value / gib).toLocaleString(locale, { maximumFractionDigits: 1 })}Gi`
+    return `${(value / gib).toLocaleString(locale, { maximumFractionDigits: 2 })}Gi`
   return `${(value / mib).toLocaleString(locale, { maximumFractionDigits: 1 })}Mi`
+}
+
+export function formatLiveUsageCPU(milli: number, locale: string) {
+  if (!Number.isFinite(milli) || milli < 0)
+    return '-'
+  if (milli === 0)
+    return '0m'
+  return formatMetricsCPU(milli, locale)
+}
+
+export function formatLiveUsageBytes(value: number, locale: string) {
+  if (!Number.isFinite(value) || value < 0)
+    return '-'
+  if (value === 0)
+    return '0Mi'
+  return formatMetricsBytes(value, locale)
+}
+
+/**
+ * 格式化「已用 / 上限」或「request / limit」资源对：
+ * - 数字与单位间不加空格；
+ * - 同单位仅在右侧保留单位（如 `1.2 / 8Gi`、`4.68 / 6Gi`、`250 / 500m`）；
+ * - 异单位各自保留单位（如 `9.5Mi / 8Gi`、`1m / 1`）。
+ */
+export function formatMetricsPair(left: string, right: string) {
+  const rawLeft = left.trim() || '-'
+  const rawRight = right.trim() || '-'
+  const leftParts = parseMetricQuantity(rawLeft)
+  const rightParts = parseMetricQuantity(rawRight)
+  if (leftParts && rightParts && leftParts.unit === rightParts.unit)
+    return `${leftParts.amount} / ${rightParts.amount}${rightParts.unit}`
+  const normLeft = leftParts ? `${leftParts.amount}${leftParts.unit}` : rawLeft
+  const normRight = rightParts ? `${rightParts.amount}${rightParts.unit}` : rawRight
+  return `${normLeft} / ${normRight}`
+}
+
+export function resourceUsageToneClass(percent: number | undefined) {
+  if (percent === undefined || !Number.isFinite(percent) || percent < 0)
+    return 'text-muted-foreground'
+  if (percent >= 90)
+    return 'text-danger'
+  if (percent >= 70)
+    return 'text-warning'
+  return 'text-success'
+}
+
+function parseMetricQuantity(value: string) {
+  const matched = value.match(/^([+-]?\d[\d.,]*)\s*([a-z]+)$/i)
+  if (!matched)
+    return null
+  return { amount: matched[1], unit: matched[2] }
 }
 
 function formatCPU(value: string) {

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { formatMetricsBytes, formatMetricsPercent } from '@/pages/applications/deployments/application-deployments-panel-utils'
+import { formatMetricsBytes, formatMetricsPair, formatMetricsPercent } from '@/pages/applications/deployments/application-deployments-panel-utils'
 import { MetricsStreamFallback } from './deployment-target-metrics-fallback'
 import { useDeploymentTargetMetricsStream } from './use-deployment-target-metrics'
 
@@ -18,7 +18,10 @@ export function DeploymentTargetMetricsCell({ applicationId, enabled, projectId,
 
   const { metrics } = streamState
   const locale = i18n.language
-  const memoryLabel = `${formatMetricsBytes(metrics.memoryUsageBytes, locale)} / ${formatMetricsBytes(metrics.memoryLimitBytes, locale)}`
+  const memoryLabel = formatMetricsPair(
+    formatMetricsBytes(metrics.memoryUsageBytes, locale),
+    formatMetricsBytes(metrics.memoryLimitBytes, locale),
+  )
 
   return (
     <div className="grid min-w-36 gap-1 text-xs">

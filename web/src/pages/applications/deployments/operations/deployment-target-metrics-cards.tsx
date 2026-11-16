@@ -1,62 +1,121 @@
+import type { MetricsStreamState } from './use-deployment-target-metrics'
+import { CircleHelp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { formatMetricsBytes, formatMetricsCPU, formatMetricsPercent } from '@/pages/applications/deployments/application-deployments-panel-utils'
-import { MetricsStreamFallback } from './deployment-target-metrics-fallback'
-import { useDeploymentTargetMetricsStream } from './use-deployment-target-metrics'
+import {
+  formatLiveUsageBytes,
+  formatLiveUsageCPU,
+  formatMetricsBytes,
+  formatMetricsCPU,
+  formatMetricsPair,
+  formatMetricsPercent,
+  resourceUsageToneClass,
+} from '@/pages/applications/deployments/application-deployments-panel-utils'
 
-/** 详情抽屉使用的双圆环运行指标卡（CPU 与内存并排展示）。 */
-export function DeploymentTargetMetricsCards({ applicationId, enabled, projectId, targetId }: {
-  applicationId: string
-  enabled: boolean
-  projectId: string
-  targetId: string
-}) {
-  const { i18n, t } = useTranslation()
-  const streamState = useDeploymentTargetMetricsStream({ applicationId, enabled, projectId, targetId })
+/** 「运行资源与实例」顶栏右侧的实时指标状态胶囊。 */
+export function MetricsStatusPill({ streamState }: { streamState: MetricsStreamState }) {
+  const { t } = useTranslation()
+  if (streamState.kind === 'disabled')
+    return null
 
-  if (streamState.kind !== 'ready')
-    return <MetricsStreamFallback state={streamState} />
-
-  const { metrics } = streamState
-  const locale = i18n.language
+  const label = streamState.kind === 'ready'
+    ? t('deploymentsPage.metricsAllReplicas', { replicas: streamState.metrics.desiredReplicas })
+    : streamState.kind === 'connecting'
+      ? t('deploymentsPage.metricsConnecting')
+      : t('deploymentsPage.metricsUnavailable')
 
   return (
-    <div aria-label={t('deploymentsPage.runtimeMetrics')} className="grid gap-3">
-      <div className="text-xs text-muted-foreground">
-        {t('deploymentsPage.metricsAllReplicas', { replicas: metrics.desiredReplicas })}
-      </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <ResourceMetricCard
-          limitText={formatMetricsCPU(metrics.cpuLimitMilli, locale)}
-          limitTotal={metrics.cpuLimitMilli}
-          liveUsageLabel={t('deploymentsPage.metricsLiveUsage')}
-          locale={locale}
-          perReplicaLabel={t('deploymentsPage.metricsPerReplica')}
-          perReplicaLim={formatMetricsCPU(metrics.replicaCpuLimitMilli, locale)}
-          perReplicaReq={formatMetricsCPU(metrics.replicaCpuRequestMilli, locale)}
-          percent={metrics.cpuUsagePercent}
-          requestFloorLabel={t('deploymentsPage.metricsRequestFloor')}
-          requestText={formatMetricsCPU(metrics.cpuRequestMilli, locale)}
-          requestTotal={metrics.cpuRequestMilli}
-          title={t('deploymentsPage.metricsCpu')}
-          usedText={formatMetricsCPU(metrics.cpuUsageMilli, locale)}
-        />
-        <ResourceMetricCard
-          limitText={formatMetricsBytes(metrics.memoryLimitBytes, locale)}
-          limitTotal={metrics.memoryLimitBytes}
-          liveUsageLabel={t('deploymentsPage.metricsLiveUsage')}
-          locale={locale}
-          perReplicaLabel={t('deploymentsPage.metricsPerReplica')}
-          perReplicaLim={formatMetricsBytes(metrics.replicaMemoryLimitBytes, locale)}
-          perReplicaReq={formatMetricsBytes(metrics.replicaMemoryRequestBytes, locale)}
-          percent={metrics.memoryUsagePercent}
-          requestFloorLabel={t('deploymentsPage.metricsRequestFloor')}
-          requestText={formatMetricsBytes(metrics.memoryRequestBytes, locale)}
-          requestTotal={metrics.memoryRequestBytes}
-          title={t('deploymentsPage.metricsMemory')}
-          usedText={formatMetricsBytes(metrics.memoryUsageBytes, locale)}
-        />
-      </div>
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-subtle px-2 py-0.5 text-xs text-muted-foreground">
+      <span
+        aria-hidden="true"
+        className={cn(
+          'size-1.5 shrink-0 rounded-full',
+          streamState.kind === 'ready' ? 'bg-success-solid' : 'bg-muted-foreground/60',
+        )}
+      />
+      <span>{label}</span>
+    </span>
+  )
+}
+
+/** 详情抽屉使用的双圆环运行指标卡（CPU 与内存并排展示，连接中/不可用时保持卡片几何不跳变）。 */
+export function DeploymentTargetMetricsOverview({ streamState }: { streamState: MetricsStreamState }) {
+  const { i18n, t } = useTranslation()
+  const locale = i18n.language
+  const metrics = streamState.kind === 'ready' ? streamState.metrics : null
+
+  return (
+    <div aria-label={t('deploymentsPage.runtimeMetrics')} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <ResourceMetricCard
+        limitText={metrics ? formatMetricsCPU(metrics.cpuLimitMilli, locale) : '-'}
+        limitTotal={metrics?.cpuLimitMilli ?? 0}
+        liveUsageLabel={t('deploymentsPage.metricsLiveUsage')}
+        locale={locale}
+        perReplicaLabel={t('deploymentsPage.metricsPerReplica')}
+        perReplicaLim={metrics ? formatMetricsCPU(metrics.replicaCpuLimitMilli, locale) : '-'}
+        perReplicaReq={metrics ? formatMetricsCPU(metrics.replicaCpuRequestMilli, locale) : '-'}
+        percent={metrics?.cpuUsagePercent}
+        requestFloorLabel={t('deploymentsPage.metricsRequestFloor')}
+        requestFloorTooltip={t('deploymentsPage.metricsRequestFloorTooltip')}
+        requestText={metrics ? formatMetricsCPU(metrics.cpuRequestMilli, locale) : '-'}
+        requestTotal={metrics?.cpuRequestMilli ?? 0}
+        title={t('deploymentsPage.metricsCpu')}
+        usedText={metrics ? formatLiveUsageCPU(metrics.cpuUsageMilli, locale) : '-'}
+      />
+      <ResourceMetricCard
+        limitText={metrics ? formatMetricsBytes(metrics.memoryLimitBytes, locale) : '-'}
+        limitTotal={metrics?.memoryLimitBytes ?? 0}
+        liveUsageLabel={t('deploymentsPage.metricsLiveUsage')}
+        locale={locale}
+        perReplicaLabel={t('deploymentsPage.metricsPerReplica')}
+        perReplicaLim={metrics ? formatMetricsBytes(metrics.replicaMemoryLimitBytes, locale) : '-'}
+        perReplicaReq={metrics ? formatMetricsBytes(metrics.replicaMemoryRequestBytes, locale) : '-'}
+        percent={metrics?.memoryUsagePercent}
+        requestFloorLabel={t('deploymentsPage.metricsRequestFloor')}
+        requestFloorTooltip={t('deploymentsPage.metricsRequestFloorTooltip')}
+        requestText={metrics ? formatMetricsBytes(metrics.memoryRequestBytes, locale) : '-'}
+        requestTotal={metrics?.memoryRequestBytes ?? 0}
+        title={t('deploymentsPage.metricsMemory')}
+        usedText={metrics ? formatLiveUsageBytes(metrics.memoryUsageBytes, locale) : '-'}
+      />
+    </div>
+  )
+}
+
+/** 单 Pod 实例实时 CPU / 内存内联小圆环（20px 圆环 + 资源名 + 数值与百分比，不可用时降级为 `-`）。 */
+export function PodResourceMiniRing({
+  label,
+  limitText,
+  locale,
+  percent,
+  usedText,
+}: {
+  label: string
+  limitText?: string
+  locale: string
+  percent?: number
+  usedText?: string
+}) {
+  const hasUsage = usedText !== undefined && usedText !== '-'
+  const valueText = hasUsage
+    ? (limitText && limitText !== '-' ? formatMetricsPair(usedText, limitText) : usedText)
+    : '-'
+  const percentText = formatMetricsPercent(percent, locale)
+
+  return (
+    <div className="inline-flex items-center gap-2 text-xs">
+      <ResourceRingSvg minVisualPercent={4} percent={hasUsage ? percent : undefined} size={20} stroke={2.5} />
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      {hasUsage
+        ? (
+            <span className="shrink-0 font-mono font-medium tabular-nums text-foreground">
+              {valueText}
+              {' '}
+              <span className="font-normal text-muted-foreground">{`(${percentText})`}</span>
+            </span>
+          )
+        : <span className="shrink-0 font-mono tabular-nums text-muted-foreground">-</span>}
     </div>
   )
 }
@@ -71,6 +130,7 @@ function ResourceMetricCard({
   perReplicaReq,
   percent,
   requestFloorLabel,
+  requestFloorTooltip,
   requestText,
   requestTotal,
   title,
@@ -85,63 +145,74 @@ function ResourceMetricCard({
   perReplicaReq: string
   percent: number | undefined
   requestFloorLabel: string
+  requestFloorTooltip: string
   requestText: string
   requestTotal: number
   title: string
   usedText: string
 }) {
+  const { t } = useTranslation()
   const requestRatio = limitTotal > 0 && requestTotal > 0 && requestTotal < limitTotal
     ? requestTotal / limitTotal
     : null
   const requestPercentText = limitTotal > 0 && requestTotal > 0
     ? `${Math.round((requestTotal / limitTotal) * 100).toLocaleString(locale)}%`
     : null
+  const livePair = usedText === '-' && limitText === '-' ? '-' : formatMetricsPair(usedText, limitText)
+  const perReplicaPair = perReplicaReq === '-' && perReplicaLim === '-' ? '-' : formatMetricsPair(perReplicaReq, perReplicaLim)
+  const hasPercent = percent !== undefined && Number.isFinite(percent) && percent >= 0
 
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-subtle/40 p-4">
-      <ResourceUsageRing
-        centerBottom={title}
-        centerTop={formatMetricsPercent(percent, locale)}
-        percent={percent}
-        requestRatio={requestRatio}
-      />
+    <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-subtle/50 p-4 shadow-surface-sm">
+      <div className="relative inline-flex size-[76px] shrink-0 items-center justify-center">
+        <ResourceRingSvg
+          minVisualPercent={2}
+          percent={percent}
+          requestRatio={requestRatio}
+          size={76}
+          stroke={6.5}
+        />
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-tight">
+          <span className={cn('text-sm font-semibold tabular-nums', hasPercent ? 'text-foreground' : 'text-muted-foreground')}>
+            {formatMetricsPercent(percent, locale)}
+          </span>
+          <span className="text-[11px] text-muted-foreground">{title}</span>
+        </div>
+      </div>
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-baseline justify-between gap-3">
           <span className="shrink-0 text-xs text-muted-foreground">{liveUsageLabel}</span>
-          <span className="font-mono text-sm font-semibold tabular-nums">
-            {usedText}
-            {' '}
-            <span className="text-xs font-normal text-muted-foreground">
-              /
-              {' '}
-              {limitText}
-            </span>
-          </span>
+          <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{livePair}</span>
         </div>
         <div className="space-y-1 border-t border-border pt-1.5 text-xs">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="shrink-0 text-muted-foreground">{requestFloorLabel}</span>
-            <span className="font-mono font-medium tabular-nums">
+            <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
+              <span>{requestFloorLabel}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    aria-label={`${requestFloorLabel}${t('common.helpSuffix')}`}
+                    className="inline-flex size-3.5 items-center justify-center rounded-sm text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    type="button"
+                  >
+                    <CircleHelp aria-hidden="true" className="size-3" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72 leading-5" side="top">
+                  {requestFloorTooltip}
+                </TooltipContent>
+              </Tooltip>
+            </span>
+            <span className="font-mono font-medium tabular-nums text-foreground">
               {requestText}
               {requestPercentText !== null && (
-                <span className="font-normal text-muted-foreground">
-                  {' '}
-                  (
-                  {requestPercentText}
-                  )
-                </span>
+                <span className="font-normal text-muted-foreground">{` (${requestPercentText})`}</span>
               )}
             </span>
           </div>
           <div className="flex items-baseline justify-between gap-3">
             <span className="shrink-0 text-muted-foreground">{perReplicaLabel}</span>
-            <span className="font-mono font-medium tabular-nums">
-              {perReplicaReq}
-              {' '}
-              /
-              {' '}
-              {perReplicaLim}
-            </span>
+            <span className="font-mono font-medium tabular-nums text-foreground">{perReplicaPair}</span>
           </div>
         </div>
       </div>
@@ -149,34 +220,27 @@ function ResourceMetricCard({
   )
 }
 
-function ResourceUsageRing({
-  centerBottom,
-  centerTop,
+export function ResourceRingSvg({
+  minVisualPercent = 2,
   percent,
-  requestRatio,
+  requestRatio = null,
+  size,
+  stroke,
 }: {
-  centerBottom: string
-  centerTop: string
+  minVisualPercent?: number
   percent: number | undefined
-  requestRatio: number | null
+  requestRatio?: number | null
+  size: number
+  stroke: number
 }) {
-  const size = 76
-  const stroke = 7
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   const hasPercent = percent !== undefined && Number.isFinite(percent) && percent >= 0
   const clamped = hasPercent ? Math.min(100, Math.max(0, percent)) : 0
-  // 极低非零负载保留至少 2% 弧度，避免 0.1% 看起来完全空环。
-  const visualPct = hasPercent ? (clamped > 0 && clamped < 2 ? 2 : clamped) : 0
+  // 极低非零负载保留最小可见弧度，避免 0.1% 看起来完全空环。
+  const visualPct = hasPercent ? (clamped > 0 && clamped < minVisualPercent ? minVisualPercent : clamped) : 0
   const dashOffset = circumference - (visualPct / 100) * circumference
-
-  const toneClass = !hasPercent
-    ? 'text-muted-foreground'
-    : percent >= 90
-      ? 'text-danger'
-      : percent >= 70
-        ? 'text-warning'
-        : 'text-success'
+  const toneClass = resourceUsageToneClass(percent)
 
   let markerLine: { x1: string, x2: string, y1: string, y2: string } | null = null
   if (requestRatio !== null && requestRatio > 0 && requestRatio < 1) {
@@ -191,10 +255,10 @@ function ResourceUsageRing({
   }
 
   return (
-    <div className="relative inline-flex size-[76px] shrink-0 items-center justify-center">
-      <svg aria-hidden="true" className="size-[76px] -rotate-90" viewBox={`0 0 ${size} ${size}`}>
+    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ height: size, width: size }}>
+      <svg aria-hidden="true" className="-rotate-90" height={size} viewBox={`0 0 ${size} ${size}`} width={size}>
         <circle
-          className="text-border/60"
+          className="text-border/75"
           cx={size / 2}
           cy={size / 2}
           fill="none"
@@ -218,7 +282,7 @@ function ResourceUsageRing({
         )}
       </svg>
       {markerLine && (
-        <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-[76px]" viewBox={`0 0 ${size} ${size}`}>
+        <svg aria-hidden="true" className="pointer-events-none absolute inset-0" height={size} viewBox={`0 0 ${size} ${size}`} width={size}>
           <line
             className="text-muted-foreground/70"
             stroke="currentColor"
@@ -231,12 +295,6 @@ function ResourceUsageRing({
           />
         </svg>
       )}
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-tight">
-        <span className={cn('text-sm font-semibold tabular-nums', hasPercent ? 'text-foreground' : 'text-muted-foreground')}>
-          {centerTop}
-        </span>
-        <span className="text-[11px] text-muted-foreground">{centerBottom}</span>
-      </div>
-    </div>
+    </span>
   )
 }
