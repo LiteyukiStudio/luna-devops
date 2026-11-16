@@ -215,6 +215,7 @@ export function ProjectsPage() {
                     aria-disabled={deleting}
                     aria-label={t('projectSpaces.openWorkspace')}
                     className={buttonVariants({ className: cn('hidden @xl/data-list:inline-flex', deleting && 'pointer-events-none opacity-50'), size: 'sm', variant: 'ghost' })}
+                    tabIndex={deleting ? -1 : undefined}
                     title={t('projectSpaces.openWorkspace')}
                     to={`/projects/${project.id}`}
                   >
@@ -309,32 +310,35 @@ export function ProjectsPage() {
                 setPage(1)
               }}
             />
-            <Select
-              aria-label={t('projectSpaces.sortBy')}
-              containerClassName="min-w-32 flex-1 @lg/data-list:w-40 @lg/data-list:flex-none"
-              value={sortBy}
-              onChange={(event) => {
-                setSortBy(event.target.value as ProjectSortBy)
-                setPage(1)
-              }}
-            >
-              {PROJECT_SORT_OPTIONS.map(option => (
-                <option key={option} value={option}>{t(`projectSpaces.sort.${option}`)}</option>
-              ))}
-            </Select>
-            <Button
-              aria-label={t('projectSpaces.sortOrder')}
-              size="icon"
-              title={t(`projectSpaces.sortOrderOptions.${sortOrder}`)}
-              variant="outline"
-              onClick={() => {
-                setSortOrder(current => current === 'desc' ? 'asc' : 'desc')
-                setPage(1)
-              }}
-            >
-              {sortOrder === 'desc' ? <ArrowDownWideNarrow size={16} /> : <ArrowUpNarrowWide size={16} />}
-              <span className="sr-only">{t(`projectSpaces.sortOrderOptions.${sortOrder}`)}</span>
-            </Button>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 @lg/data-list:flex-none">
+              <Select
+                aria-label={t('projectSpaces.sortBy')}
+                className="h-8 text-xs"
+                containerClassName="min-w-32 flex-1 @lg/data-list:w-40 @lg/data-list:flex-none"
+                value={sortBy}
+                onChange={(event) => {
+                  setSortBy(event.target.value as ProjectSortBy)
+                  setPage(1)
+                }}
+              >
+                {PROJECT_SORT_OPTIONS.map(option => (
+                  <option key={option} value={option}>{t(`projectSpaces.sort.${option}`)}</option>
+                ))}
+              </Select>
+              <Button
+                aria-label={t('projectSpaces.sortOrder')}
+                size="icon"
+                title={t(`projectSpaces.sortOrderOptions.${sortOrder}`)}
+                variant="outline"
+                onClick={() => {
+                  setSortOrder(current => current === 'desc' ? 'asc' : 'desc')
+                  setPage(1)
+                }}
+              >
+                {sortOrder === 'desc' ? <ArrowDownWideNarrow size={16} /> : <ArrowUpNarrowWide size={16} />}
+                <span className="sr-only">{t(`projectSpaces.sortOrderOptions.${sortOrder}`)}</span>
+              </Button>
+            </div>
           </>
         )}
       />
@@ -484,7 +488,15 @@ function ProjectSummary({ project }: { project: Project }) {
         <FolderKanban size={18} />
       </span>
       <div className="min-w-0 w-full">
-        <Link aria-disabled={deleting} className={`truncate font-medium transition hover:text-primary-text ${deleting ? 'pointer-events-none opacity-60' : ''}`} to={`/projects/${project.id}`}>
+        <Link
+          aria-disabled={deleting}
+          className={cn(
+            'block truncate rounded-sm font-medium transition hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            deleting && 'pointer-events-none opacity-60',
+          )}
+          tabIndex={deleting ? -1 : undefined}
+          to={`/projects/${project.id}`}
+        >
           {project.name}
         </Link>
         <ResourceDeletionStatus

@@ -37,6 +37,7 @@ const dashboardPage = {
   noRecentApps: '还没有应用',
   noRecentAppsDescription: '在项目空间中创建应用，或从模板开始。',
   openApplication: '打开应用 {{name}}',
+  recentAppsLoadFailedTitle: '最近应用加载失败',
   appsPartiallyUnavailable: '部分项目空间的应用状态暂时无法读取。',
   platformReadinessDescription: '仅平台管理员可见。',
   runtimeStatuses: {

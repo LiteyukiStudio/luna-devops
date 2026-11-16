@@ -77,6 +77,7 @@ const apps = {
   deleteConfirmationHint: '애플리케이션 이름과 완전히 일치해야 합니다.',
   deleteDataRetainHint: '애플리케이션 삭제 시 마운트만 해제되고 프로젝트 데이터 볼륨은 볼륨 센터에서 계속 관리됩니다.',
   deleteDataDetected: '{{count}}개의 영구 데이터 볼륨이 감지되었습니다. 삭제 전에 백업을 낚수하는 것을 권장합니다.',
+  deletionPreviewFailed: '연결된 데이터 볼륨 상태를 확인할 수 없습니다. 삭제 전에 다시 시도하세요.',
   deleteQueued: '애플리케이션 삭제가 시작되었습니다. 플랫폼이 실행 리소스를 정리하고 있습니다',
   openDetailAria: '애플리케이션 {{name}} 열기',
   repoBinding: '코드 리포지토리',

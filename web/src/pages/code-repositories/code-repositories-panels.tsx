@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { GitProviderGuide } from './code-repositories-utils'
 import type { GitAccount, GitProvider } from '@/api'
-import { ChevronDown, Copy, ExternalLink, GitBranch, Info, KeyRound, LinkIcon, MoreHorizontal, Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import { ChevronDown, Copy, ExternalLink, GitBranch, Info, KeyRound, LinkIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -25,6 +25,7 @@ export function ProvidersPanel({
   toolbar,
   total,
   totalPages,
+  onCreate,
   onDelete,
   onEdit,
   onPageChange,
@@ -39,6 +40,7 @@ export function ProvidersPanel({
   toolbar?: ReactNode
   total: number
   totalPages: number
+  onCreate?: () => void
   onDelete: (provider: GitProvider) => void
   onEdit: (provider: GitProvider) => void
   onPageChange: (page: number) => void
@@ -94,6 +96,12 @@ export function ProvidersPanel({
             : <span className="text-xs text-muted-foreground">{t('common.viewOnly')}</span>,
         },
       ]}
+      emptyActions={canManage && onCreate && (
+        <Button type="button" variant="outline" onClick={onCreate}>
+          <Plus className="size-4" />
+          {t('codeRepositoriesView.createProvider')}
+        </Button>
+      )}
       emptyTitle={t('codeRepositoriesView.noProvidersTitle')}
       emptyDescription={t('codeRepositoriesView.noProvidersDescription')}
       emptyIcon={<GitBranch className="size-5" />}
@@ -126,6 +134,7 @@ export function CredentialsPanel({
   toolbar,
   total,
   totalPages,
+  onCreate,
   onDelete,
   onEdit,
   onPageChange,
@@ -142,6 +151,7 @@ export function CredentialsPanel({
   toolbar?: ReactNode
   total: number
   totalPages: number
+  onCreate?: () => void
   onDelete: (credential: GitAccount) => void
   onEdit: (credential: GitAccount) => void
   onPageChange: (page: number) => void
@@ -220,6 +230,12 @@ export function CredentialsPanel({
             ),
           },
         ]}
+        emptyActions={onCreate && (
+          <Button type="button" variant="outline" onClick={onCreate}>
+            <Plus className="size-4" />
+            {t('codeRepositoriesView.createCredential')}
+          </Button>
+        )}
         emptyTitle={t('codeRepositoriesView.noCredentialsTitle')}
         emptyDescription={t('codeRepositoriesView.noCredentialsDescription')}
         emptyIcon={<KeyRound className="size-5" />}

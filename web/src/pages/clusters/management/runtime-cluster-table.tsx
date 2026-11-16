@@ -1,7 +1,7 @@
 import type { CurrentUser, Project, RuntimeCluster, RuntimeClusterPressure } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
-import { FlaskConical, MoreHorizontal, Pencil, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
+import { FlaskConical, MoreHorizontal, Pencil, Plus, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { DataList } from '@/components/common/data-list'
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { canManageCluster, gatewayAccessSummary, scopeLabel } from './cluster-helpers'
 
-export function RuntimeClusterTable({ clusters, error, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onEgressExceptions, onTest }: {
+export function RuntimeClusterTable({ clusters, error, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onCreate, onDelete, onEdit, onEgressExceptions, onTest }: {
   clusters: RuntimeCluster[]
   error?: {
     onRetry: () => void
@@ -30,6 +30,7 @@ export function RuntimeClusterTable({ clusters, error, loading, pagination, pres
   pressureLoading: boolean
   projects: Project[]
   user?: CurrentUser
+  onCreate?: () => void
   onDelete: (cluster: RuntimeCluster) => void
   onEdit: (cluster: RuntimeCluster) => void
   onTest: (clusterId: string) => void
@@ -137,6 +138,12 @@ export function RuntimeClusterTable({ clusters, error, loading, pagination, pres
   return (
     <DataList
       columns={columns}
+      emptyActions={onCreate && (
+        <Button type="button" variant="outline" onClick={onCreate}>
+          <Plus className="size-4" />
+          {t('deploymentsPage.createCluster')}
+        </Button>
+      )}
       emptyTitle={t('deploymentsPage.emptyClusters')}
       error={error && {
         ...error,
@@ -171,11 +178,15 @@ function PendingShareApprovalsBadge({ cluster, onOpen }: { cluster: RuntimeClust
   if (count === 0)
     return null
   return (
-    <Button className="h-auto p-0" size="sm" variant="link" onClick={() => onOpen(cluster)}>
-      <StatusBadge tone="warning">
-        <ShieldAlert className="size-3" />
-        {t('clustersPage.shareApprovals.pendingCount', { count })}
-      </StatusBadge>
+    <Button
+      className="h-7 gap-1 border-warning-border bg-warning-subtle px-2.5 text-xs font-medium text-warning hover:bg-warning-subtle/80 hover:text-warning"
+      size="sm"
+      type="button"
+      variant="outline"
+      onClick={() => onOpen(cluster)}
+    >
+      <ShieldAlert className="size-3.5" />
+      {t('clustersPage.shareApprovals.pendingCount', { count })}
     </Button>
   )
 }

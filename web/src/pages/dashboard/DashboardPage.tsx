@@ -65,10 +65,14 @@ export function DashboardPage() {
 
   if (dashboard.isError) {
     return (
-      <ErrorState
-        description={t('dashboardPage.loadFailedDescription')}
-        title={t('dashboardPage.loadFailedTitle')}
-      />
+      <PageShell width="full">
+        <ErrorState
+          description={t('dashboardPage.loadFailedDescription')}
+          retrying={dashboard.isFetching}
+          title={t('dashboardPage.loadFailedTitle')}
+          onRetry={() => void dashboard.refetch()}
+        />
+      </PageShell>
     )
   }
 
@@ -81,6 +85,14 @@ export function DashboardPage() {
   const recentApplications = recentApplicationRows(overview, recentProjects, applicationQueries.map(query => query.data?.items ?? []))
   const applicationsLoading = applicationQueries.some(query => query.isLoading)
   const applicationsFailed = applicationQueries.some(query => query.isError)
+  const allApplicationsFailed = recentProjects.length > 0 && applicationQueries.every(query => query.isError)
+  const applicationsRetrying = applicationQueries.some(query => query.isFetching)
+  const retryFailedApplications = () => {
+    applicationQueries.forEach((query) => {
+      if (query.isError)
+        void query.refetch()
+    })
+  }
   const summary = [
     t('dashboardPage.resourceTotals', { applications: overview.summary.applications, projects: overview.summary.projects }),
     activeTasks > 0 ? t('dashboardPage.activeTasksTotal', { count: activeTasks }) : '',
@@ -98,8 +110,16 @@ export function DashboardPage() {
 
       {overview.attention.length > 0 && <AttentionPanel items={overview.attention} visibility={dashboardVisibility} />}
 
-      <div className="grid min-w-0 items-start gap-4 @4xl/workspace:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
-        <RecentApplications failed={applicationsFailed} loading={applicationsLoading} rows={recentApplications} visibility={dashboardVisibility} />
+      <div className="grid min-w-0 items-start gap-section @4xl/workspace:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+        <RecentApplications
+          allFailed={allApplicationsFailed}
+          failed={applicationsFailed}
+          loading={applicationsLoading}
+          retrying={applicationsRetrying}
+          rows={recentApplications}
+          visibility={dashboardVisibility}
+          onRetry={retryFailedApplications}
+        />
         <div className="grid min-w-0 content-start gap-section">
           <RecentActivity activities={overview.activities} visibility={dashboardVisibility} />
           <ProjectShortcuts hasMore={overview.summary.projects > overview.projects.length} projects={overview.projects} visibility={dashboardVisibility} />
@@ -145,7 +165,7 @@ function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[]
   )
 }
 
-function RecentApplications({ failed, loading, rows, visibility }: { failed: boolean, loading: boolean, rows: RecentApplicationRow[], visibility: ResultVisibility }) {
+function RecentApplications({ allFailed, failed, loading, onRetry, retrying, rows, visibility }: { allFailed: boolean, failed: boolean, loading: boolean, onRetry: () => void, retrying: boolean, rows: RecentApplicationRow[], visibility: ResultVisibility }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const detailPath = (row: RecentApplicationRow) => `/projects/${row.project.id}/apps/${row.application.id}`
@@ -164,7 +184,7 @@ function RecentApplications({ failed, loading, rows, visibility }: { failed: boo
                   <ApplicationIcon name={row.application.icon} />
                 </span>
                 <div className="min-w-0">
-                  <Link className="block truncate rounded-sm font-medium hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={detailPath(row)}>
+                  <Link className="block truncate rounded-sm font-medium hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={-1} to={detailPath(row)}>
                     {row.application.name}
                   </Link>
                   <span className="block truncate text-xs text-muted-foreground">{row.project.name}</span>
@@ -203,13 +223,21 @@ function RecentApplications({ failed, loading, rows, visibility }: { failed: boo
         emptyDescription={t('dashboardPage.noRecentAppsDescription')}
         emptyIcon={<AppWindow className="size-5" />}
         emptyTitle={t('dashboardPage.noRecentApps')}
+        error={allFailed && rows.length === 0
+          ? {
+              description: t('dashboardPage.appsPartiallyUnavailable'),
+              onRetry,
+              retrying,
+              title: t('dashboardPage.recentAppsLoadFailedTitle'),
+            }
+          : undefined}
         items={rows}
         loading={loading && rows.length === 0}
         rowActionLabel={row => t('dashboardPage.openApplication', { name: row.application.name })}
         rowKey={row => row.application.id}
         onRowClick={row => navigate(detailPath(row))}
       />
-      {failed && <p className="text-xs text-muted-foreground">{t('dashboardPage.appsPartiallyUnavailable')}</p>}
+      {failed && rows.length > 0 && <p className="text-xs text-muted-foreground">{t('dashboardPage.appsPartiallyUnavailable')}</p>}
     </Section>
   )
 }
@@ -273,7 +301,7 @@ function RecentActivity({ activities, visibility }: { activities: DashboardActiv
             <ul className="-my-2 divide-y divide-border">
               {activities.slice(0, 8).map(activity => (
                 <li key={activity.id}>
-                  <Link className="group flex min-w-0 items-start justify-between gap-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(activityTarget(activity), visibility)}>
+                  <Link className="group -mx-2 flex min-w-0 items-start justify-between gap-3 rounded-control px-2 py-2 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(activityTarget(activity), visibility)}>
                     <div className="min-w-0">
                       <StatusIndicator label={eventTypeLabel(t, activity.type)} state={statusIndicatorStateFor(activity.status)} />
                       <p className="truncate pl-5 text-xs text-muted-foreground group-hover:text-foreground">
@@ -328,7 +356,7 @@ function ProjectShortcuts({ hasMore, projects, visibility }: { hasMore: boolean,
             <ul className="-my-2 divide-y divide-border">
               {projects.slice(0, 6).map(project => (
                 <li key={project.id} className="flex min-w-0 items-center justify-between gap-2 py-1.5">
-                  <Link className="min-w-0 flex-1 rounded-sm py-0.5 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(`/projects/${project.id}`, visibility)}>
+                  <Link className="-mx-2 min-w-0 flex-1 rounded-control px-2 py-1 transition-colors hover:bg-muted/60 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(`/projects/${project.id}`, visibility)}>
                     <span className="block truncate text-sm font-medium">{project.name}</span>
                     <span className="block text-xs text-muted-foreground">{t('dashboardPage.appsCount', { count: project.applicationCount })}</span>
                   </Link>

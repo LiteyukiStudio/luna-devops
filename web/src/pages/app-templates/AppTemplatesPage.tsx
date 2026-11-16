@@ -213,7 +213,13 @@ export function AppTemplatesPage() {
         </div>
       </div>
 
-      {templates.isError && <ErrorState title={templates.error.message} />}
+      {templates.isError && (
+        <ErrorState
+          retrying={templates.isFetching}
+          title={templates.error.message}
+          onRetry={() => void templates.refetch()}
+        />
+      )}
       {templates.isLoading && <TemplateGridSkeleton />}
       {templates.isSuccess && (
         visibleTemplates.length === 0
@@ -228,7 +234,24 @@ export function AppTemplatesPage() {
                       title={t('appTemplatesPage.noResultsTitle')}
                     />
                   )
-                : <EmptyState description={t('appTemplatesPage.emptyDescription')} title={t('appTemplatesPage.emptyTitle')} />
+                : (
+                    <EmptyState
+                      actions={canManagePlatformTemplates && (
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
+                            <Upload className="size-4" />
+                            {t('appTemplatesPage.platformAdmin.importJson')}
+                          </Button>
+                          <Button type="button" onClick={openCreateDialog}>
+                            <Plus className="size-4" />
+                            {t('appTemplatesPage.platformAdmin.create')}
+                          </Button>
+                        </div>
+                      )}
+                      description={t('appTemplatesPage.emptyDescription')}
+                      title={t('appTemplatesPage.emptyTitle')}
+                    />
+                  )
             )
           : featuredTemplates.length > 0
             ? (

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { CredentialWithRegistry } from './registry-form-model'
 import type { ArtifactRegistry, ContainerImage, PaginatedResponse } from '@/api'
-import { CheckCircle2, Container, FlaskConical, KeyRound, MoreHorizontal, Package, Pencil, Trash2 } from 'lucide-react'
+import { CheckCircle2, Container, FlaskConical, KeyRound, MoreHorizontal, Package, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
@@ -33,6 +33,7 @@ interface RegistriesPanelProps {
   projectMap: Record<string, { name: string }>
   pagination: PageState<ArtifactRegistry>
   testing: boolean
+  onCreate?: () => void
   onSelectCredentials: (registryId: string) => void
   onEdit: (registry: ArtifactRegistry) => void
   onTest: (registryId: string) => void
@@ -47,6 +48,7 @@ export function RegistriesPanel({
   pagination,
   testing,
   toolbar,
+  onCreate,
   onSelectCredentials,
   onEdit,
   onTest,
@@ -119,6 +121,12 @@ export function RegistriesPanel({
           ),
         },
       ]}
+      emptyActions={onCreate && (
+        <Button type="button" variant="outline" onClick={onCreate}>
+          <Plus className="size-4" />
+          {t('registriesPage.createRegistry')}
+        </Button>
+      )}
       emptyTitle={t('registriesPage.emptyTitle')}
       emptyDescription={t('registriesPage.emptyDescription')}
       emptyIcon={<Container className="size-5" />}
@@ -161,11 +169,12 @@ interface CredentialsPanelProps {
   toolbar?: ReactNode
   pagination: PageState<CredentialWithRegistry>
   projectMap: Record<string, { name: string }>
+  onCreate?: () => void
   onEdit: (credential: CredentialWithRegistry) => void
   onDelete: (credential: CredentialWithRegistry) => void
 }
 
-export function CredentialsPanel({ error, items, loading, pagination, projectMap, toolbar, onDelete, onEdit }: CredentialsPanelProps) {
+export function CredentialsPanel({ error, items, loading, pagination, projectMap, toolbar, onCreate, onDelete, onEdit }: CredentialsPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -246,6 +255,12 @@ export function CredentialsPanel({ error, items, loading, pagination, projectMap
           ),
         },
       ]}
+      emptyActions={onCreate && (
+        <Button type="button" variant="outline" onClick={onCreate}>
+          <KeyRound className="size-4" />
+          {t('registriesPage.createCredentialTitle')}
+        </Button>
+      )}
       emptyTitle={t('registriesPage.noCredentialsTitle')}
       emptyDescription={t('registriesPage.noCredentialsDescription')}
       emptyIcon={<KeyRound className="size-5" />}
@@ -270,9 +285,10 @@ interface ImagesPanelProps {
   toolbar?: ReactNode
   registries: ArtifactRegistry[]
   pagination: PageState<ContainerImage>
+  onCreate?: () => void
 }
 
-export function ImagesPanel({ error, images, loading, registries, pagination, toolbar }: ImagesPanelProps) {
+export function ImagesPanel({ error, images, loading, registries, pagination, toolbar, onCreate }: ImagesPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -294,6 +310,12 @@ export function ImagesPanel({ error, images, loading, registries, pagination, to
         { key: 'scan', header: t('common.status'), width: 'status', render: image => <StatusValueBadge value={image.scanStatus} /> },
         { key: 'digest', header: t('registriesPage.digest'), mobile: 'hidden', width: 'compact', render: image => image.digest ? <CheckCircle2 aria-label={image.digest} className="size-4 text-success" /> : '-' },
       ]}
+      emptyActions={onCreate && (
+        <Button type="button" variant="outline" onClick={onCreate}>
+          <PackagePlus className="size-4" />
+          {t('registriesPage.recordImage')}
+        </Button>
+      )}
       emptyTitle={t('registriesPage.noImagesTitle')}
       emptyDescription={t('registriesPage.noImagesDescription')}
       emptyIcon={<Package className="size-5" />}

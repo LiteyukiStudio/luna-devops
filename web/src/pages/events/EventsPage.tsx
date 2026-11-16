@@ -11,6 +11,7 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { PageShell } from '@/components/common/page-shell'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { SearchMultiSelect } from '@/components/common/search-select'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
@@ -296,7 +297,7 @@ export function EventsPage() {
   )
 
   return (
-    <>
+    <PageShell spacing="compact" width="full">
       <DataList
         columns={columns}
         constrainedHeight
@@ -448,7 +449,7 @@ export function EventsPage() {
         onOpenChange={open => !open && setSelectedEventId('')}
         onRetry={() => void selectedEvent.refetch()}
       />
-    </>
+    </PageShell>
   )
 }
 

@@ -13,6 +13,7 @@ import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
+import { PageShell } from '@/components/common/page-shell'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
 import { TabsContent } from '@/components/ui/tabs'
@@ -218,8 +219,20 @@ export function CodeRepositoriesPage() {
     />
   )
 
+  const openCreateProviderDialog = () => {
+    setEditingProvider(null)
+    providerForm.reset(providerDefaults)
+    setProviderDialogOpen(true)
+  }
+
+  const openCreateCredentialDialog = () => {
+    setEditingCredential(null)
+    credentialForm.reset(credentialDefaults)
+    setCredentialDialogOpen(true)
+  }
+
   return (
-    <>
+    <PageShell spacing="compact" width="full">
       <ContentTabs
         tabs={[
           { value: 'providers', label: t('codeRepositoriesView.providersTab') },
@@ -227,25 +240,13 @@ export function CodeRepositoriesPage() {
         ]}
         tools={activeTab === 'providers'
           ? canManageProviders && (
-            <Button
-              onClick={() => {
-                setEditingProvider(null)
-                providerForm.reset(providerDefaults)
-                setProviderDialogOpen(true)
-              }}
-            >
+            <Button onClick={openCreateProviderDialog}>
               <Plus />
               {t('codeRepositoriesView.createProvider')}
             </Button>
           )
           : (
-              <Button
-                onClick={() => {
-                  setEditingCredential(null)
-                  credentialForm.reset(credentialDefaults)
-                  setCredentialDialogOpen(true)
-                }}
-              >
+              <Button onClick={openCreateCredentialDialog}>
                 <Plus />
                 {t('codeRepositoriesView.createCredential')}
               </Button>
@@ -281,6 +282,7 @@ export function CodeRepositoriesPage() {
                       toolbar={visibilitySelect}
                       total={providers.data?.total ?? 0}
                       totalPages={providers.data?.totalPages ?? 0}
+                      onCreate={openCreateProviderDialog}
                       onDelete={setProviderToDelete}
                       onEdit={(provider) => {
                         setEditingProvider(provider)
@@ -305,6 +307,7 @@ export function CodeRepositoriesPage() {
                       toolbar={visibilitySelect}
                       total={credentials.data?.total ?? 0}
                       totalPages={credentials.data?.totalPages ?? 0}
+                      onCreate={openCreateCredentialDialog}
                       onDelete={setCredentialToDelete}
                       onEdit={(credential) => {
                         setEditingCredential(credential)
@@ -370,6 +373,6 @@ export function CodeRepositoriesPage() {
         onConfirm={() => credentialToDelete && deleteCredential.mutate(credentialToDelete.id)}
         onOpenChange={open => !open && setCredentialToDelete(null)}
       />
-    </>
+    </PageShell>
   )
 }

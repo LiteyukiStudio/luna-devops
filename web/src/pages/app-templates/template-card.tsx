@@ -19,7 +19,7 @@ export function TemplateCard({ template, onOpen }: { template: AppTemplateSummar
     : ''
   return (
     <button
-      className="flex min-h-40 min-w-0 flex-col rounded-container border border-border bg-surface-raised p-4 text-left transition-colors duration-standard ease-standard hover:border-primary-border hover:bg-surface-subtle focus-visible:border-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/50"
+      className="flex min-h-40 min-w-0 flex-col rounded-container border border-border bg-surface-raised p-4 text-left shadow-surface-sm transition-colors duration-standard ease-standard hover:border-primary-border hover:bg-surface-subtle focus-visible:border-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/50"
       type="button"
       onClick={onOpen}
     >

@@ -37,6 +37,7 @@ const dashboardPage = {
   noRecentApps: '아직 애플리케이션이 없습니다',
   noRecentAppsDescription: '프로젝트 스페이스에서 애플리케이션을 만들거나 템플릿으로 시작하세요.',
   openApplication: '애플리케이션 {{name}} 열기',
+  recentAppsLoadFailedTitle: '최근 애플리케이션 로드 실패',
   appsPartiallyUnavailable: '일부 프로젝트 스페이스의 애플리케이션 상태를 일시적으로 읽을 수 없습니다.',
   platformReadinessDescription: '플랫폼 관리자에게만 표시됩니다.',
   runtimeStatuses: {

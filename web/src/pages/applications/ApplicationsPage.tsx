@@ -14,6 +14,7 @@ import { api } from '@/api'
 import { ApplicationBasicFields } from '@/components/common/application-basic-fields'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
+import { ErrorState } from '@/components/common/error-state'
 
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
@@ -21,6 +22,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { ApplicationRuntimeStatus, ApplicationSummary } from './overview/application-summary'
@@ -152,6 +154,8 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
       toast.success(t('apps.deleteQueued'))
       setApplicationToDelete(null)
       setDeleteConfirmation('')
+      if ((applications.data?.items.length ?? 0) <= 1 && page > 1)
+        setPage(page - 1)
       queryClient.invalidateQueries({ queryKey: ['applications', projectId] })
       queryClient.invalidateQueries({ queryKey: ['repository-bindings', projectId] })
     },
@@ -195,12 +199,14 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
                 <div className="flex items-center justify-end gap-1">
                   <Link
                     aria-disabled={deleting}
+                    aria-label={t('apps.deployAction')}
                     className={buttonVariants({ className: deleting ? 'pointer-events-none opacity-50' : undefined, size: 'sm', variant: 'outline' })}
                     tabIndex={deleting ? -1 : undefined}
+                    title={t('apps.deployAction')}
                     to={`/projects/${projectId}/apps/${application.id}?tab=deployments`}
                   >
                     <Rocket size={16} />
-                    {t('apps.deployAction')}
+                    <span className="hidden @xl/data-list:inline">{t('apps.deployAction')}</span>
                   </Link>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -268,12 +274,22 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
         confirmText={t('apps.deleteConfirm')}
         content={(
           <div className="grid gap-3">
-            {persistentVolumeCount > 0 && (
-              <div className="grid gap-2">
-                <p className="text-sm text-warning-foreground">{t('apps.deleteDataDetected', { count: persistentVolumeCount })}</p>
-                <p className="text-xs text-muted-foreground">{t('apps.deleteDataRetainHint')}</p>
-              </div>
-            )}
+            {deletionPreview.isLoading
+              ? <Skeleton className="h-4 w-48" />
+              : deletionPreview.isError
+                ? (
+                    <ErrorState
+                      retrying={deletionPreview.isFetching}
+                      title={t('apps.deletionPreviewFailed')}
+                      onRetry={() => void deletionPreview.refetch()}
+                    />
+                  )
+                : persistentVolumeCount > 0 && (
+                  <div className="grid gap-2">
+                    <p className="text-sm text-warning-foreground">{t('apps.deleteDataDetected', { count: persistentVolumeCount })}</p>
+                    <p className="text-xs text-muted-foreground">{t('apps.deleteDataRetainHint')}</p>
+                  </div>
+                )}
             <Label htmlFor="application-delete-confirmation">{t('apps.deleteConfirmationLabel', { name: deleteConfirmationTarget })}</Label>
             <Input
               id="application-delete-confirmation"

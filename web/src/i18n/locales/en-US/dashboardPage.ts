@@ -37,6 +37,7 @@ const dashboardPage = {
   noRecentApps: 'No applications yet',
   noRecentAppsDescription: 'Create an application in a project space, or start from a template.',
   openApplication: 'Open application {{name}}',
+  recentAppsLoadFailedTitle: 'Failed to load recent applications',
   appsPartiallyUnavailable: 'Application status for some project spaces is temporarily unavailable.',
   platformReadinessDescription: 'Visible to platform administrators only.',
   runtimeStatuses: {

@@ -137,10 +137,10 @@ export function ClustersPage() {
                     </Select>
                     <Button
                       disabled={!resources.selectedResourceCluster || resources.clusterResources.isFetching}
-                      variant="secondary"
+                      variant="outline"
                       onClick={() => resources.clusterResources.refetch()}
                     >
-                      <RefreshCw className="size-4" />
+                      <RefreshCw className={resources.clusterResources.isFetching ? 'size-4 motion-safe:animate-spin' : 'size-4'} />
                       {t('common.refresh')}
                     </Button>
                     {resources.visibleSelectedResourceKeys.length > 0 && (
@@ -194,6 +194,7 @@ export function ClustersPage() {
             }}
             projects={projects.data ?? []}
             user={user}
+            onCreate={() => openClusterDialog()}
             onDelete={setClusterToDelete}
             onEdit={openClusterDialog}
             onEgressExceptions={setExceptionsCluster}

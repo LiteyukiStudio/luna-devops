@@ -37,6 +37,7 @@ const dashboardPage = {
   noRecentApps: 'アプリケーションはまだありません',
   noRecentAppsDescription: 'プロジェクトスペースでアプリケーションを作成するか、テンプレートから始めてください。',
   openApplication: 'アプリケーション {{name}} を開く',
+  recentAppsLoadFailedTitle: '最近のアプリの読み込みに失敗しました',
   appsPartiallyUnavailable: '一部のプロジェクトスペースのアプリケーション状態を一時的に読み取れません。',
   platformReadinessDescription: 'プラットフォーム管理者のみに表示されます。',
   runtimeStatuses: {

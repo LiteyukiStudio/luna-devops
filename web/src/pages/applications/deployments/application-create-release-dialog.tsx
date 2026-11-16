@@ -90,16 +90,14 @@ export function ApplicationCreateReleaseDialog({
               </Select>
             </Field>
           )}
+          {selectedTarget && <input type="hidden" {...form.register('deploymentTargetId', { required: t('common.required') })} />}
           <Field error={form.formState.errors.deploymentTargetId?.message} hint={selectedTarget ? t('deploymentsPage.releaseTargetLockedHint') : undefined} label={t('buildsPage.buildConfig')} required>
             {selectedTarget
               ? (
-                  <>
-                    <input type="hidden" {...form.register('deploymentTargetId', { required: t('common.required') })} />
-                    <Input
-                      disabled
-                      value={`${selectedTarget.name} · ${t(`deploymentsPage.stageLabels.${selectedTarget.stage}`, { defaultValue: selectedTarget.stage })}`}
-                    />
-                  </>
+                  <Input
+                    disabled
+                    value={`${selectedTarget.name} · ${t(`deploymentsPage.stageLabels.${selectedTarget.stage}`, { defaultValue: selectedTarget.stage })}`}
+                  />
                 )
               : (
                   <Select

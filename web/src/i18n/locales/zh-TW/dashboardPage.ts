@@ -37,6 +37,7 @@ const dashboardPage = {
   noRecentApps: '還沒有應用',
   noRecentAppsDescription: '在專案空間中建立應用，或從範本開始。',
   openApplication: '開啟應用 {{name}}',
+  recentAppsLoadFailedTitle: '最近應用載入失敗',
   appsPartiallyUnavailable: '部分專案空間的應用狀態暫時無法讀取。',
   platformReadinessDescription: '僅平臺管理員可見。',
   runtimeStatuses: {

@@ -77,6 +77,7 @@ const apps = {
   deleteConfirmationHint: 'アプリケーション名と完全に一致する必要があります。',
   deleteDataRetainHint: 'アプリケーション削除時はマウントのみ解除され、プロジェクトデータボリュームはボリュームセンターで引き続き管理されます。',
   deleteDataDetected: '{{count}} 個の永続データボリュームを検出しました。削除前にバックアップをエクスポートすることを推奨します。',
+  deletionPreviewFailed: '関連データボリュームの状態を確認できませんでした。削除前に再試行してください。',
   deleteQueued: 'アプリケーション削除を開始しました。プラットフォームは実行リソースをクリーンアップしています',
   openDetailAria: 'アプリケーション {{name}} を開く',
   repoBinding: 'コードリポジトリ',

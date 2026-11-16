@@ -128,7 +128,7 @@ const pageMetaRules = [
 
 function sidebarMenuButtonClassName(active?: boolean) {
   return cn(
-    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-control px-3 text-sm font-normal leading-none text-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-[18px]',
+    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-control px-3 text-sm font-normal leading-snug text-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-[18px]',
     active && 'font-medium [background:var(--sidebar-nav-active)] text-sidebar-nav-active-text hover:[background:var(--sidebar-nav-active)] hover:text-sidebar-nav-active-text',
   )
 }
@@ -272,7 +272,7 @@ export function AppLayout() {
                   onClick={onNavigate}
                 >
                   <item.icon className="shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm leading-snug">{t(item.labelKey)}</span>
                 </NavLink>
               </SidebarMenuItem>
             ))}
@@ -310,7 +310,7 @@ export function AppLayout() {
                 onClick={onNavigate}
               >
                 <section.icon className="shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(section.labelKey)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm leading-snug">{t(section.labelKey)}</span>
               </Link>
             </SidebarMenuItem>
           ))}
@@ -405,6 +405,7 @@ export function AppLayout() {
                 <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background lg:my-2 lg:mr-2 lg:rounded-container lg:shadow-sm', desktopSidebarCollapsed && 'lg:ml-2')}>
                   <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
                     <Button
+                      aria-expanded={mobileSidebarOpen}
                       aria-label={t('nav.openSidebar')}
                       className="-ml-1 size-8 shrink-0 lg:hidden"
                       size="icon"
@@ -449,7 +450,7 @@ export function AppLayout() {
                           <div ref={setTabsTarget} className="min-w-0 empty:hidden" data-slot="workspace-page-tabs" />
                           <div ref={setDescriptionTarget} className="min-w-0 empty:hidden" data-slot="workspace-page-description" />
                         </div>
-                        <div ref={setToolsTarget} className="ml-auto flex min-w-0 max-w-full items-center justify-end empty:hidden" data-slot="workspace-page-tools" />
+                        <div ref={setToolsTarget} className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 empty:hidden" data-slot="workspace-page-tools" />
                       </div>
                       <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
                         <Outlet />
@@ -601,8 +602,9 @@ function ProjectSwitcher({ currentProjectId, currentProjectName, onNavigate, pro
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label={t('nav.switchProject')}
+          aria-label={name ? `${name} · ${t('nav.switchProject')}` : t('nav.switchProject')}
           className="flex h-10 w-full min-w-0 items-center gap-2 rounded-control border border-border bg-surface px-3 text-left text-sm outline-none transition-colors duration-fast hover:bg-sidebar-nav-hover focus-visible:ring-2 focus-visible:ring-ring"
+          title={t('nav.switchProject')}
           type="button"
         >
           <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-control bg-muted text-xs font-semibold text-foreground">

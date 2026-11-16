@@ -11,6 +11,7 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
+import { PageShell } from '@/components/common/page-shell'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
@@ -275,8 +276,27 @@ export function RegistriesPage() {
     />
   )
 
+  const openCreateRegistryDialog = () => {
+    setEditingRegistry(null)
+    registryForm.reset(registryDefaults)
+    setRegistryDialogOpen(true)
+  }
+
+  const openCreateCredentialDialog = () => {
+    setEditingCredential(null)
+    credentialForm.reset({ ...credentialDefaults, registryId: credentialRegistryFilterId })
+    credentialForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
+    credentialForm.setValue('scope', 'user', { shouldValidate: true })
+    setCredentialDialogOpen(true)
+  }
+
+  const openRecordImageDialog = () => {
+    imageForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
+    setImageDialogOpen(true)
+  }
+
   return (
-    <>
+    <PageShell spacing="compact" width="full">
       <ContentTabs
         tabs={[
           { value: 'registries', label: t('registriesPage.registriesTab') },
@@ -286,38 +306,19 @@ export function RegistriesPage() {
         tools={(
           <>
             {activeTab === 'registries' && (
-              <Button
-                onClick={() => {
-                  setEditingRegistry(null)
-                  registryForm.reset(registryDefaults)
-                  setRegistryDialogOpen(true)
-                }}
-              >
+              <Button onClick={openCreateRegistryDialog}>
                 <Plus />
                 {t('registriesPage.createRegistry')}
               </Button>
             )}
             {activeTab === 'credentials' && (
-              <Button
-                onClick={() => {
-                  setEditingCredential(null)
-                  credentialForm.reset({ ...credentialDefaults, registryId: credentialRegistryFilterId })
-                  credentialForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
-                  credentialForm.setValue('scope', 'user', { shouldValidate: true })
-                  setCredentialDialogOpen(true)
-                }}
-              >
+              <Button onClick={openCreateCredentialDialog}>
                 <KeyRound />
                 {t('registriesPage.createCredentialTitle')}
               </Button>
             )}
             {activeTab === 'images' && (
-              <Button
-                onClick={() => {
-                  imageForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
-                  setImageDialogOpen(true)
-                }}
-              >
+              <Button onClick={openRecordImageDialog}>
                 <PackagePlus />
                 {t('registriesPage.recordImage')}
               </Button>
@@ -351,6 +352,7 @@ export function RegistriesPage() {
               },
             }}
             testing={testRegistry.isPending}
+            onCreate={openCreateRegistryDialog}
             onSelectCredentials={(registryId) => {
               setCredentialRegistryFilterId(registryId)
               setCredentialPage(1)
@@ -402,6 +404,7 @@ export function RegistriesPage() {
                 setCredentialPage(1)
               },
             }}
+            onCreate={openCreateCredentialDialog}
             onDelete={setCredentialToDelete}
             onEdit={beginEditCredential}
           />
@@ -429,6 +432,7 @@ export function RegistriesPage() {
                 setImagePage(1)
               },
             }}
+            onCreate={openRecordImageDialog}
           />
         </TabsContent>
 
@@ -509,6 +513,6 @@ export function RegistriesPage() {
         onConfirm={() => credentialToDelete && deleteCredential.mutate({ registryId: credentialToDelete.registryId, credentialId: credentialToDelete.id })}
         onOpenChange={open => !open && setCredentialToDelete(null)}
       />
-    </>
+    </PageShell>
   )
 }

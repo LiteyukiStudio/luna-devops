@@ -77,6 +77,7 @@ const apps = {
   deleteConfirmationHint: '必须完整匹配应用名称后才能继续。',
   deleteDataRetainHint: '应用删除时只会解除挂载，项目数据卷仍由卷中心管理。',
   deleteDataDetected: '检测到 {{count}} 个持久化数据卷。删除前建议先导出备份。',
+  deletionPreviewFailed: '无法检查关联数据卷状态，请重试后再确认删除。',
   deleteQueued: '应用删除已开始，平台正在清理运行资源',
   openDetailAria: '打开应用 {{name}}',
   repoBinding: '代码仓库',

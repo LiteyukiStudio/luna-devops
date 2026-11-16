@@ -13,6 +13,7 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { inboxKeys, invalidateInbox } from '@/components/common/inbox/inbox-query'
 import { inboxMessageText } from '@/components/common/inbox/message-format'
+import { PageShell } from '@/components/common/page-shell'
 import { StatusBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
@@ -89,8 +90,13 @@ export function InboxPage() {
             <div className="min-w-0">
               <p className={message.readAt ? 'truncate font-medium' : 'truncate font-semibold'}>{text.title}</p>
               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{text.content}</p>
-              <div className="mt-2 flex flex-wrap gap-2 @xl/data-list:hidden">
+              <div className="mt-2 flex flex-wrap items-center gap-2 @xl/data-list:hidden">
                 <StatusBadge>{t(`inbox.categories.${message.category}`)}</StatusBadge>
+                {message.actionRequest
+                  ? <StatusBadge tone={message.actionRequest.status === 'pending' ? 'warning' : 'neutral'}>{t(`inbox.states.${message.actionRequest.status}`)}</StatusBadge>
+                  : !message.readAt
+                      ? <StatusBadge tone="info">{t('inbox.states.unread')}</StatusBadge>
+                      : null}
                 <span className="text-xs text-muted-foreground">{formatSmartDateTime(message.createdAt, t)}</span>
               </div>
             </div>
@@ -115,7 +121,7 @@ export function InboxPage() {
       sticky: 'right',
       width: 'actions',
       render: message => (
-        <Button aria-label={t('inbox.actions.archive')} className="size-8" size="icon" variant="ghost" onClick={() => archive.mutate(message.id)}>
+        <Button aria-label={t('inbox.actions.archive')} className="size-8" disabled={archive.isPending} size="icon" variant="ghost" onClick={() => archive.mutate(message.id)}>
           <Archive />
         </Button>
       ),
@@ -132,70 +138,73 @@ export function InboxPage() {
   }
 
   return (
-    <ContentTabs
-      hashRouting={false}
-      tabs={filters.map(value => ({ label: t(`inbox.tabs.${value}`), value }))}
-      tools={(
-        <Button disabled={markAllRead.isPending} variant="outline" onClick={() => markAllRead.mutate()}>
-          <CheckCheck />
-          {t('inbox.actions.markAllRead')}
-        </Button>
-      )}
-      value={filter}
-      onValueChange={selectFilter}
-    >
-      <DataList
-        columns={columns}
-        emptyDescription={t('inbox.empty.description')}
-        emptyIcon={<Bell className="size-5" />}
-        emptyTitle={t(`inbox.empty.${filter}`)}
-        error={messages.isError
-          ? {
-              description: t('inbox.loadFailedDescription'),
-              onRetry: () => void messages.refetch(),
-              retrying: messages.isFetching,
-              title: t('inbox.loadFailedTitle'),
-            }
-          : undefined}
-        items={messages.data?.items ?? []}
-        loading={messages.isLoading}
-        pagination={messages.data && messages.data.total > 0
-          ? {
-              page,
-              pageSize,
-              total: messages.data.total,
-              totalPages: messages.data.totalPages,
-              pageInfoLabel: t('pagination.pageInfo', { page, totalPages: messages.data.totalPages, total: messages.data.total }),
-              onPageChange: setPage,
-              onPageSizeChange: changePageSize,
-            }
-          : undefined}
-        rowActionLabel={() => t('inbox.actions.viewDetails')}
-        rowKey={message => message.id}
-        onRowClick={openDetails}
-      />
-      <InboxDetail
-        decisionPending={decide.isPending}
-        error={selectedMessage.isError}
-        message={selectedMessage.data}
-        open={Boolean(selectedMessageId)}
-        pending={selectedMessage.isLoading}
-        retrying={selectedMessage.isFetching}
-        onArchive={messageId => archive.mutate(messageId)}
-        onClose={closeDetails}
-        onDecision={async (message, decision) => {
-          const request = message.actionRequest
-          if (!request)
-            return
-          await decide.mutateAsync({ decision, expectedVersion: request.rowVersion, requestId: request.id })
-        }}
-        onRetry={() => void selectedMessage.refetch()}
-      />
-    </ContentTabs>
+    <PageShell spacing="compact" width="full">
+      <ContentTabs
+        hashRouting={false}
+        tabs={filters.map(value => ({ label: t(`inbox.tabs.${value}`), value }))}
+        tools={(
+          <Button disabled={markAllRead.isPending} variant="outline" onClick={() => markAllRead.mutate()}>
+            <CheckCheck />
+            {t('inbox.actions.markAllRead')}
+          </Button>
+        )}
+        value={filter}
+        onValueChange={selectFilter}
+      >
+        <DataList
+          columns={columns}
+          emptyDescription={t('inbox.empty.description')}
+          emptyIcon={<Bell className="size-5" />}
+          emptyTitle={t(`inbox.empty.${filter}`)}
+          error={messages.isError
+            ? {
+                description: t('inbox.loadFailedDescription'),
+                onRetry: () => void messages.refetch(),
+                retrying: messages.isFetching,
+                title: t('inbox.loadFailedTitle'),
+              }
+            : undefined}
+          items={messages.data?.items ?? []}
+          loading={messages.isLoading}
+          pagination={messages.data && messages.data.total > 0
+            ? {
+                page,
+                pageSize,
+                total: messages.data.total,
+                totalPages: messages.data.totalPages,
+                pageInfoLabel: t('pagination.pageInfo', { page, totalPages: messages.data.totalPages, total: messages.data.total }),
+                onPageChange: setPage,
+                onPageSizeChange: changePageSize,
+              }
+            : undefined}
+          rowActionLabel={() => t('inbox.actions.viewDetails')}
+          rowKey={message => message.id}
+          onRowClick={openDetails}
+        />
+        <InboxDetail
+          archivePending={archive.isPending}
+          decisionPending={decide.isPending}
+          error={selectedMessage.isError}
+          message={selectedMessage.data}
+          open={Boolean(selectedMessageId)}
+          pending={selectedMessage.isLoading}
+          retrying={selectedMessage.isFetching}
+          onArchive={messageId => archive.mutate(messageId)}
+          onClose={closeDetails}
+          onDecision={async (message, decision) => {
+            const request = message.actionRequest
+            if (!request)
+              return
+            await decide.mutateAsync({ decision, expectedVersion: request.rowVersion, requestId: request.id })
+          }}
+          onRetry={() => void selectedMessage.refetch()}
+        />
+      </ContentTabs>
+    </PageShell>
   )
 }
 
-function InboxDetail({ decisionPending, error, message, open, pending, retrying, onArchive, onClose, onDecision, onRetry }: { decisionPending: boolean, error: boolean, message?: InboxMessage, open: boolean, pending: boolean, retrying: boolean, onArchive: (messageId: string) => void, onClose: () => void, onDecision: (message: InboxMessage, decision: InboxDecision) => Promise<void>, onRetry: () => void }) {
+function InboxDetail({ archivePending, decisionPending, error, message, open, pending, retrying, onArchive, onClose, onDecision, onRetry }: { archivePending: boolean, decisionPending: boolean, error: boolean, message?: InboxMessage, open: boolean, pending: boolean, retrying: boolean, onArchive: (messageId: string) => void, onClose: () => void, onDecision: (message: InboxMessage, decision: InboxDecision) => Promise<void>, onRetry: () => void }) {
   const { t } = useTranslation()
   const [decision, setDecision] = useState<InboxDecision | null>(null)
   const text = message ? inboxMessageText(message, t) : null
@@ -231,7 +240,7 @@ function InboxDetail({ decisionPending, error, message, open, pending, retrying,
                 )
               : message && text && (
                 <div className="space-y-6 p-6">
-                  <p className="text-sm leading-6 text-muted-foreground">{text.content}</p>
+                  <p className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">{text.content}</p>
                   <div className="flex flex-wrap gap-2">
                     <StatusBadge>{t(`inbox.categories.${message.category}`)}</StatusBadge>
                     {actionRequest && <StatusBadge tone={actionable ? 'warning' : 'neutral'}>{t(`inbox.states.${actionRequest.status}`)}</StatusBadge>}
@@ -245,7 +254,7 @@ function InboxDetail({ decisionPending, error, message, open, pending, retrying,
                     </p>
                   )}
                   <div className="flex flex-wrap justify-end gap-2">
-                    <Button variant="ghost" onClick={() => onArchive(message.id)}>
+                    <Button disabled={archivePending} variant="ghost" onClick={() => onArchive(message.id)}>
                       <Archive className="size-4" />
                       {t('inbox.actions.archive')}
                     </Button>

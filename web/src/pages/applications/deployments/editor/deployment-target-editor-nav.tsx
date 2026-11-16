@@ -1,6 +1,6 @@
 import type { DeploymentTargetEditorSection, DeploymentTargetFormValues } from './deployment-target-form'
 import type { DeploymentTarget, RepositoryBinding } from '@/api'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFormContext, useFormState, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -20,6 +20,10 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
   const { control } = useFormContext<DeploymentTargetFormValues>()
   const { errors } = useFormState({ control })
   const activeSection = useActiveSection()
+  const activeLinkRef = useRef<HTMLAnchorElement | null>(null)
+  useEffect(() => {
+    activeLinkRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [activeSection])
   const values = useWatch({ control })
   const titles: Record<DeploymentTargetEditorSection, string> = {
     basics: t('deploymentTargetEditor.sections.basics'),
@@ -57,6 +61,7 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
           return (
             <li key={section} className="shrink-0">
               <a
+                ref={active ? activeLinkRef : undefined}
                 aria-current={active ? 'location' : undefined}
                 className={cn(
                   'grid min-w-36 gap-0.5 rounded-control px-3 py-2 text-left outline-none transition-colors duration-fast hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-ring @2xl/workspace:min-w-0',
@@ -84,15 +89,13 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
   )
 }
 
-/** 观察各分区进入视口的位置，用于导航高亮；只同步外部 DOM 状态。 */
+/** 观察各分区进入视口的位置，用于导航高亮；同步监听动态展开挂载的折叠分区。 */
 function useActiveSection() {
   const [active, setActive] = useState<DeploymentTargetEditorSection>('basics')
   useEffect(() => {
-    const elements = deploymentTargetSectionOrder
-      .map(section => document.getElementById(deploymentTargetSectionAnchor(section)))
-      .filter((element): element is HTMLElement => Boolean(element))
-    if (elements.length === 0 || typeof IntersectionObserver === 'undefined')
+    if (typeof IntersectionObserver === 'undefined')
       return
+    const observed = new Set<HTMLElement>()
     const observer = new IntersectionObserver((entries) => {
       const visible = entries
         .filter(entry => entry.isIntersecting)
@@ -101,9 +104,27 @@ function useActiveSection() {
       if (section)
         setActive(section)
     }, { rootMargin: '0px 0px -70% 0px' })
-    for (const element of elements)
-      observer.observe(element)
-    return () => observer.disconnect()
+
+    const syncObservedElements = () => {
+      for (const section of deploymentTargetSectionOrder) {
+        const element = document.getElementById(deploymentTargetSectionAnchor(section))
+        if (element && !observed.has(element)) {
+          observed.add(element)
+          observer.observe(element)
+        }
+      }
+    }
+    syncObservedElements()
+
+    const mutationObserver = typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(syncObservedElements)
+      : null
+    mutationObserver?.observe(document.body, { childList: true, subtree: true })
+
+    return () => {
+      mutationObserver?.disconnect()
+      observer.disconnect()
+    }
   }, [])
   return active
 }

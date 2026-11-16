@@ -5,7 +5,7 @@ import type { ProjectVolumesPageHandle } from '@/pages/projects/volumes/ProjectV
 import { useQuery } from '@tanstack/react-query'
 import { Activity, ArrowRight, Globe2, Package, Plus, Rocket, Upload, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
-import { lazy, Suspense, useRef } from 'react'
+import { lazy, Suspense, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '@/api'
@@ -43,6 +43,26 @@ const ProjectNotificationsPanel = lazy(() => import('@/pages/projects/notificati
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/topology/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
 
+function useDeferredPanelHandle<T>() {
+  const handleRef = useRef<T | null>(null)
+  const pendingRef = useRef<((handle: T) => void) | null>(null)
+  const attach = useCallback((handle: T | null) => {
+    handleRef.current = handle
+    const pending = pendingRef.current
+    if (handle && pending) {
+      pendingRef.current = null
+      pending(handle)
+    }
+  }, [])
+  const run = useCallback((action: (handle: T) => void) => {
+    if (handleRef.current)
+      action(handleRef.current)
+    else
+      pendingRef.current = action
+  }, [])
+  return [attach, run] as const
+}
+
 export function ProjectWorkspacePage() {
   const { t } = useTranslation()
   const { projectId = '' } = useParams()
@@ -52,9 +72,9 @@ export function ProjectWorkspacePage() {
   const activeTab = normalizeProjectWorkspaceSection(searchParams.get('tab'))
   // 构建变量、运行配置和钩子的旧独立分区链接改写到“共享配置”对应 Tab。
   const legacySearch = legacyProjectWorkspaceSearch(searchParams)
-  const applicationsPageRef = useRef<ApplicationsPageHandle>(null)
-  const membersPageRef = useRef<ProjectMembersPageHandle>(null)
-  const volumesPageRef = useRef<ProjectVolumesPageHandle>(null)
+  const [attachApplicationsPage, runWithApplicationsPage] = useDeferredPanelHandle<ApplicationsPageHandle>()
+  const [attachMembersPage, runWithMembersPage] = useDeferredPanelHandle<ProjectMembersPageHandle>()
+  const [attachVolumesPage, runWithVolumesPage] = useDeferredPanelHandle<ProjectVolumesPageHandle>()
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
   const isOverview = activeTab === 'overview'
   const applications = useQuery({ queryKey: ['applications', projectId], queryFn: () => api.listApplications(projectId), enabled: Boolean(projectId && (isOverview || activeTab === 'topology')) })
@@ -100,15 +120,15 @@ export function ProjectWorkspacePage() {
   const activeContent = (() => {
     switch (activeTab) {
       case 'apps':
-        return <ApplicationsPage ref={applicationsPageRef} projectId={projectId} />
+        return <ApplicationsPage ref={attachApplicationsPage} projectId={projectId} />
       case 'shared-config':
         return <ProjectSharedConfigPanel projectId={projectId} />
       case 'members':
-        return <ProjectMembersPage ref={membersPageRef} embedded projectId={projectId} />
+        return <ProjectMembersPage ref={attachMembersPage} embedded projectId={projectId} />
       case 'volumes':
         return (
           <Suspense fallback={<ToolViewportSkeleton />}>
-            <ProjectVolumesPage key={projectId} ref={volumesPageRef} capabilities={volumeCapabilities} projectId={projectId} />
+            <ProjectVolumesPage key={projectId} ref={attachVolumesPage} capabilities={volumeCapabilities} projectId={projectId} />
           </Suspense>
         )
       case 'topology':
@@ -173,7 +193,7 @@ export function ProjectWorkspacePage() {
   const contentTools = (() => {
     if (activeTab === 'apps') {
       return (
-        <Button type="button" onClick={() => applicationsPageRef.current?.openCreateDialog()}>
+        <Button type="button" onClick={() => runWithApplicationsPage(handle => handle.openCreateDialog())}>
           <Plus size={16} />
           {t('apps.createTitle')}
         </Button>
@@ -182,7 +202,7 @@ export function ProjectWorkspacePage() {
 
     if (activeTab === 'members') {
       return (
-        <Button type="button" onClick={() => membersPageRef.current?.openAddMemberDialog()}>
+        <Button type="button" onClick={() => runWithMembersPage(handle => handle.openAddMemberDialog())}>
           <UserPlus size={16} />
           {t('projectMembers.addTitle')}
         </Button>
@@ -195,13 +215,13 @@ export function ProjectWorkspacePage() {
       return (
         <div className="flex items-center gap-2">
           {volumeCapabilities.canImport && (
-            <Button type="button" variant="outline" onClick={() => volumesPageRef.current?.openImportDialog()}>
+            <Button type="button" variant="outline" onClick={() => runWithVolumesPage(handle => handle.openImportDialog())}>
               <Upload size={16} />
               {t('projectVolumes.import')}
             </Button>
           )}
           {volumeCapabilities.canWrite && (
-            <Button type="button" onClick={() => volumesPageRef.current?.openCreateDialog()}>
+            <Button type="button" onClick={() => runWithVolumesPage(handle => handle.openCreateDialog())}>
               <Plus size={16} />
               {t('projectVolumes.create')}
             </Button>
@@ -215,6 +235,12 @@ export function ProjectWorkspacePage() {
 
   return (
     <PageShell>
+      {currentProject && (
+        <PageChromeHeading
+          description={isOverview ? (currentProject.description || undefined) : undefined}
+          title={currentProject.name}
+        />
+      )}
       <PageChromeTools>{contentTools}</PageChromeTools>
       <motion.div
         key={`${projectId}-${activeTab}`}
@@ -279,18 +305,11 @@ function ProjectOverviewDashboard({
   const accessRoutesUnavailable = overviewUnavailable || accessRoutes?.status === 'unavailable'
   const ownerCount = members.filter(member => member.role === ProjectRole.Owner).length
 
-  if (initialLoading) {
-    return (
-      <div className="grid gap-section">
-        {project && <PageChromeHeading description={project.description || undefined} title={project.name} />}
-        <OverviewSkeleton />
-      </div>
-    )
-  }
+  if (initialLoading)
+    return <OverviewSkeleton />
 
   return (
     <div className="grid gap-section">
-      {project && <PageChromeHeading description={project.description || undefined} title={project.name} />}
       <MetricGroup>
         <MetricItem href="?tab=apps" icon={<Package className="size-4" />} label={t('projectSpaces.apps')} value={overview?.applications ?? '-'} />
         <MetricItem
@@ -444,10 +463,10 @@ function ProjectBillingOwnerItem({ canTransfer, members, project }: { canTransfe
   const owner = project?.billingOwner
   return (
     <div className="grid min-w-0 gap-1" data-slot="description-list-item">
-      <dt className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        {t('projectSpaces.billingOwner')}
+      <div className="flex items-center justify-between gap-3">
+        <dt className="text-xs text-muted-foreground">{t('projectSpaces.billingOwner')}</dt>
         {canTransfer && project && <BillingOwnerTransferDialog members={members} project={project} />}
-      </dt>
+      </div>
       <dd className="min-w-0 text-sm">
         {owner
           ? (
@@ -462,8 +481,27 @@ function ProjectBillingOwnerItem({ canTransfer, members, project }: { canTransfe
   )
 }
 
+function localizedBuildTrigger(triggerType: BuildRun['triggerType'], t: ReturnType<typeof useTranslation>['t']) {
+  switch (triggerType) {
+    case 'manual':
+      return t('buildsPage.events.manual')
+    case 'webhook':
+      return t('buildsPage.events.webhook')
+    case 'push':
+      return t('buildsPage.events.push')
+    case 'tag':
+      return t('buildsPage.events.tag')
+    case 'api':
+      return t('buildsPage.events.api')
+    case 'retry':
+      return t('buildsPage.events.retry')
+    default:
+      return triggerType
+  }
+}
+
 function projectBuildMeta(build: BuildRun, applications: Application[], t: ReturnType<typeof useTranslation>['t']) {
   const app = applications.find(application => application.id === build.applicationId)
   const source = build.sourceTag || build.sourceBranch || build.sourceCommit || '-'
-  return [app?.name ?? t('projectSpaces.unknownApplication'), source, build.triggerType].join(' · ')
+  return [app?.name ?? t('projectSpaces.unknownApplication'), source, localizedBuildTrigger(build.triggerType, t)].join(' · ')
 }

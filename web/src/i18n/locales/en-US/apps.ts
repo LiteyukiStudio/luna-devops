@@ -77,6 +77,7 @@ const apps = {
   deleteConfirmationHint: 'The application name must match before you can continue.',
   deleteDataRetainHint: 'Deleting the application only unbinds its mounts. Project volumes remain managed in the volume center.',
   deleteDataDetected: '{{count}} persistent data volumes were detected. Export a backup before deletion.',
+  deletionPreviewFailed: 'Could not check attached persistent volumes. Retry before deleting.',
   deleteQueued: 'Application deletion started. Runtime resources are being cleaned up.',
   openDetailAria: 'Open application {{name}}',
   repoBinding: 'Code repositories',

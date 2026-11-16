@@ -77,6 +77,7 @@ const apps = {
   deleteConfirmationHint: '必須完整匹配應用名稱後才能繼續。',
   deleteDataRetainHint: '應用刪除時只會解除掛載，專案資料卷仍由卷中心管理。',
   deleteDataDetected: '檢測到 {{count}} 個持久化資料卷。刪除前建議先匯出備份。',
+  deletionPreviewFailed: '無法檢查關聯資料卷狀態，請重試後再確認刪除。',
   deleteQueued: '應用刪除已開始，平臺正在清理執行資源',
   openDetailAria: '開啟應用 {{name}}',
   repoBinding: '程式碼倉庫',
