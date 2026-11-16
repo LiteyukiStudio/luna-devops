@@ -20,6 +20,7 @@ function Button({
   return (
     <Component
       className={cn(buttonVariants({ className, size, variant }))}
+      data-size={size ?? 'default'}
       data-slot="button"
       type={asChild ? undefined : type}
       {...props}

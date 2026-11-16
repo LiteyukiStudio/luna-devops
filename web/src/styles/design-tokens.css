@@ -77,8 +77,10 @@
   --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 
   --shadow-surface-sm: var(--surface-shadow-sm);
-  --shadow-raised: 0 1px 2px hsl(var(--foreground) / 0.04), 0 8px 24px hsl(var(--foreground) / 0.05);
-  --shadow-overlay: 0 16px 48px hsl(var(--foreground) / 0.18);
+  --shadow-surface-md: var(--surface-shadow-md);
+  --shadow-surface-lg: var(--surface-shadow-lg);
+  --shadow-raised: var(--surface-shadow-md);
+  --shadow-overlay: var(--surface-shadow-lg);
 }
 
 @utility duration-fast {
@@ -97,6 +99,8 @@
   --layout-page-inline: 1rem;
   --layout-page-block: 1rem;
   --surface-shadow-sm: 0 2px 3px -1px rgb(0 0 0 / 0.08), 0 1px 0 0 rgb(25 28 33 / 0.02);
+  --surface-shadow-md: 0 1px 1px -0.5px rgb(0 0 0 / 0.06), 0 3px 3px -1.5px rgb(0 0 0 / 0.06), 0 6px 6px -3px rgb(0 0 0 / 0.06), 0 12px 12px -6px rgb(0 0 0 / 0.06);
+  --surface-shadow-lg: 0 2.8px 2.2px rgb(0 0 0 / 0.034), 0 6.7px 5.3px rgb(0 0 0 / 0.048), 0 12.5px 10px rgb(0 0 0 / 0.06), 0 22.3px 17.9px rgb(0 0 0 / 0.072), 0 41.8px 33.4px rgb(0 0 0 / 0.086);
   --auth-card-background: linear-gradient(
     135deg,
     color-mix(in oklab, var(--primary) 10%, hsl(var(--surface))) 0%,
@@ -116,6 +120,8 @@
 
 :root[data-theme="dark"] {
   --surface-shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.35);
+  --surface-shadow-md: 0 8px 20px -6px rgb(0 0 0 / 0.5);
+  --surface-shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.65);
   --auth-card-background: linear-gradient(
     135deg,
     color-mix(in oklab, var(--primary) 16%, hsl(var(--surface))) 0%,

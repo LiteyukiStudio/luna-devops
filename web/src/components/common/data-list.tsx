@@ -343,9 +343,9 @@ export function DataList<T>({
       {hasTools && (
         <div
           className={cn(
-            'flex shrink-0 flex-col gap-2 pb-3 @lg/data-list:flex-row @lg/data-list:flex-wrap @lg/data-list:items-center',
-            // 工具区控件统一使用紧凑高度，避免筛选比表格行还重
-            '[&_[data-slot=input]]:h-8 [&_[data-slot=native-select]]:h-8 [&_[data-slot=select-trigger]]:h-8',
+            'peer/tools flex shrink-0 flex-col gap-2 pb-3 has-[>[data-slot=data-list-tools-controls]:only-child:empty]:hidden @lg/data-list:flex-row @lg/data-list:flex-wrap @lg/data-list:items-center',
+            // 工具区控件统一使用 32px（h-8）紧凑高度，使按钮、输入框与下拉框严格对齐
+            '[&_[data-slot=button]]:h-8 [&_[data-slot=button][data-size=icon]]:w-8 [&_[data-slot=input]]:h-8 [&_[data-slot=native-select]]:h-8 [&_[data-slot=select-trigger]]:h-8',
             hasToolsLead ? '@lg/data-list:justify-between' : '@lg/data-list:justify-start',
           )}
           data-slot="data-list-tools"
@@ -361,7 +361,7 @@ export function DataList<T>({
           {hasToolbarControls && (
             <div
               className={cn(
-                'flex min-w-0 flex-col gap-2 @lg/data-list:flex @lg/data-list:flex-1 @lg/data-list:flex-row @lg/data-list:flex-wrap @lg/data-list:items-center',
+                'flex min-w-0 flex-col gap-2 empty:hidden @lg/data-list:flex @lg/data-list:flex-1 @lg/data-list:flex-row @lg/data-list:flex-wrap @lg/data-list:items-center',
                 hasToolsLead && '@lg/data-list:justify-end',
               )}
               data-slot="data-list-tools-controls"
@@ -380,7 +380,7 @@ export function DataList<T>({
             </div>
           )}
           {toolbarActions && (
-            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2" data-slot="data-list-tools-actions">
+            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 empty:hidden" data-slot="data-list-tools-actions">
               {toolbarActions}
             </div>
           )}
@@ -390,7 +390,7 @@ export function DataList<T>({
         className={cn(
           'w-full',
           constrainedHeight && 'min-h-0 flex-1',
-          !hasTools && 'mt-group',
+          !hasTools ? 'mt-group' : 'peer-has-[>[data-slot=data-list-tools-controls]:only-child:empty]/tools:mt-group',
         )}
         footer={tableFooter}
         framed={framed}

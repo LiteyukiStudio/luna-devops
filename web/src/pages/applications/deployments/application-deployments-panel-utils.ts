@@ -1,4 +1,5 @@
 import type { DeploymentRuntimeConfigRef, DeploymentTarget, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
+import { usageRingToneClass } from '@/components/common/usage-ring-utils'
 import { publicRuntimeEnvironmentInputs } from '@/lib/runtime-environment'
 import { deploymentReleaseKey } from '@/pages/applications/application-config-utils'
 
@@ -172,13 +173,7 @@ export function formatMetricsPair(left: string, right: string) {
 }
 
 export function resourceUsageToneClass(percent: number | undefined) {
-  if (percent === undefined || !Number.isFinite(percent) || percent < 0)
-    return 'text-muted-foreground'
-  if (percent >= 90)
-    return 'text-danger'
-  if (percent >= 70)
-    return 'text-warning'
-  return 'text-success'
+  return usageRingToneClass(percent, 'success')
 }
 
 function parseMetricQuantity(value: string) {

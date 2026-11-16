@@ -19,20 +19,23 @@ export interface SearchSelectOption {
 export type SearchSelectSize = 'sm' | 'default'
 
 interface SearchSelectCommonProps {
-  ariaLabel?: string
-  className?: string
-  disabled?: boolean
-  emptyLabel?: string
-  filterLocally?: boolean
-  limited?: boolean
-  loading?: boolean
-  maxVisible?: number
-  options: SearchSelectOption[]
-  placeholder?: string
-  search?: string
-  searchPlaceholder?: string
-  size?: SearchSelectSize
-  onSearchChange?: (value: string) => void
+  'aria-describedby'?: string
+  'aria-invalid'?: boolean | 'true' | 'false'
+  'ariaLabel'?: string
+  'className'?: string
+  'disabled'?: boolean
+  'emptyLabel'?: string
+  'filterLocally'?: boolean
+  'id'?: string
+  'limited'?: boolean
+  'loading'?: boolean
+  'maxVisible'?: number
+  'options': SearchSelectOption[]
+  'placeholder'?: string
+  'search'?: string
+  'searchPlaceholder'?: string
+  'size'?: SearchSelectSize
+  'onSearchChange'?: (value: string) => void
 }
 
 interface SearchSelectProps extends SearchSelectCommonProps {
@@ -51,11 +54,14 @@ interface SearchMultiSelectProps extends SearchSelectCommonProps {
  * 资源候选较多或需要远程搜索时使用；少量固定枚举继续使用 shadcn Select 或 NativeSelect。
  */
 export function SearchSelect({
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   ariaLabel,
   className,
   disabled,
   emptyLabel,
   filterLocally,
+  id,
   limited,
   loading,
   maxVisible = 50,
@@ -78,9 +84,12 @@ export function SearchSelect({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <SelectTriggerButton
-        ariaLabel={ariaLabel ?? placeholder ?? t('common.select')}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
+        ariaLabel={ariaLabel ?? (id ? undefined : (placeholder ?? t('common.select')))}
         className={className}
         disabled={disabled}
+        id={id}
         open={open}
         placeholder={!selected}
         size={size}
@@ -119,11 +128,14 @@ export function SearchSelect({
  * 项目空间、用户、应用、部署配置和列表筛选等多值场景应在业务包装器中复用此组件。
  */
 export function SearchMultiSelect({
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   ariaLabel,
   className,
   disabled,
   emptyLabel,
   filterLocally,
+  id,
   limited,
   loading,
   maxVisible = 50,
@@ -165,9 +177,12 @@ export function SearchMultiSelect({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <SelectTriggerButton
-        ariaLabel={ariaLabel ?? placeholder ?? t('common.select')}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
+        ariaLabel={ariaLabel ?? (id ? undefined : (placeholder ?? t('common.select')))}
         className={className}
         disabled={disabled}
+        id={id}
         open={open}
         placeholder={selectedOptions.length === 0}
         size={size}
@@ -207,26 +222,43 @@ export function SearchMultiSelect({
   )
 }
 
-function SelectTriggerButton({ ariaLabel, children, className, disabled, open, placeholder, size }: {
-  ariaLabel: string
-  children: ReactNode
-  className?: string
-  disabled?: boolean
-  open: boolean
-  placeholder: boolean
-  size: SearchSelectSize
+function SelectTriggerButton({
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
+  ariaLabel,
+  children,
+  className,
+  disabled,
+  id,
+  open,
+  placeholder,
+  size,
+}: {
+  'aria-describedby'?: string
+  'aria-invalid'?: boolean | 'true' | 'false'
+  'ariaLabel'?: string
+  'children': ReactNode
+  'className'?: string
+  'disabled'?: boolean
+  'id'?: string
+  'open': boolean
+  'placeholder': boolean
+  'size': SearchSelectSize
 }) {
   return (
     <PopoverTrigger asChild>
       <Button
+        aria-describedby={ariaDescribedBy}
         aria-expanded={open}
+        aria-invalid={ariaInvalid}
         aria-label={ariaLabel}
         className={cn(
-          'w-full justify-between rounded-md font-normal',
+          'w-full justify-between rounded-control font-normal aria-invalid:border-danger aria-invalid:ring-danger/20',
           size === 'sm' ? 'h-8 px-2.5 text-xs' : 'h-9 px-3 text-sm',
           className,
         )}
         disabled={disabled}
+        id={id}
         type="button"
         variant="outline"
       >

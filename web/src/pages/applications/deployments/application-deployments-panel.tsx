@@ -69,7 +69,18 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
   const hashParams = useMemo(() => new URLSearchParams(location.hash.replace(/^#/, '')), [location.hash])
   const hashTargetId = hashParams.get('targetId')?.trim() ?? ''
   const hashReleaseId = hashParams.get('releaseId')?.trim() ?? ''
+  const [readyHashReleaseId, setReadyHashReleaseId] = useState('')
   const [dismissedHashReleaseId, setDismissedHashReleaseId] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled)
+        setReadyHashReleaseId(hashReleaseId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [hashReleaseId])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [bundleImportOpen, setBundleImportOpen] = useState(false)
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null)
@@ -188,10 +199,13 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
     if (selectedReleaseTarget.sourceType === 'image')
       form.setValue('imageRef', selectedReleaseTarget.imageRef, { shouldDirty: true, shouldValidate: true })
   }, [applicationId, form, selectedBuildRun, selectedReleaseTarget])
-  // 长任务创建后在 toast 中直接给出进度入口，日志面板按发布 ID 读取最新状态。
+  // 长任务创建后在 toast 中直接给出进度入口，日志面板按发布 ID 读取最新状态；互斥收起终端抽屉但保留底层详情抽屉。
   const viewLogsAction = (release: Release, view: LogTarget['view'] = 'deployment') => ({
     label: t(view === 'runtime' ? 'deploymentsPage.viewRuntimeLogs' : 'deploymentsPage.viewProgress'),
-    onClick: () => setLogTarget({ release, view }),
+    onClick: () => {
+      setConsoleTarget(null)
+      setLogTarget({ release, view })
+    },
   })
   const createRelease = useMutation({
     mutationFn: (values: ReleaseForm) => api.createRelease(projectId, values),
@@ -271,12 +285,17 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
   const confirmCopy = confirmOperation ? operationConfirmCopy(confirmOperation, t) : null
   const deleteConfirmationTarget = targetToDelete?.name ?? ''
   const deleteConfirmationMatches = Boolean(deleteConfirmationTarget) && deleteConfirmation === deleteConfirmationTarget
-  const hashRelease = hashReleaseId && dismissedHashReleaseId !== hashReleaseId
+  const hashReleaseMatched = hashReleaseId
     ? releases.find(release => release.id === hashReleaseId) ?? null
+    : null
+  // 先挂载底层详情抽屉，下一帧再叠加上层发布日志抽屉，避免两个 Radix Modal 同帧挂载互相标记 aria-hidden。
+  const hashRelease = hashReleaseMatched && readyHashReleaseId === hashReleaseId && dismissedHashReleaseId !== hashReleaseId
+    ? hashReleaseMatched
     : null
   const activeLogTarget: LogTarget | null = logTarget ?? (hashRelease ? { release: hashRelease, view: 'deployment' } : null)
   const logRelease = activeLogTarget ? releases.find(release => release.id === activeLogTarget.release.id) ?? activeLogTarget.release : null
-  const initialDetailTargetId = hashTargetId || (hashRelease?.deploymentTargetId ?? '')
+  // 关闭 #releaseId 触发的二级日志抽屉时保持 key 稳定，避免重挂载列表导致底层详情抽屉一并丢失。
+  const initialDetailTargetId = hashTargetId || (hashReleaseMatched?.deploymentTargetId ?? '')
   return (
     <div className="grid min-w-0 max-w-full gap-4">
       <ApplicationDeploymentTargetsList
@@ -297,7 +316,10 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
           setDeleteConfirmation('')
         }}
         onCancelRelease={setReleaseToCancel}
-        onOpenConsole={(release, pod) => setConsoleTarget({ pod, release })}
+        onOpenConsole={(release, pod) => {
+          setLogTarget(null)
+          setConsoleTarget({ pod, release })
+        }}
         onOpenReleaseDialog={openReleaseDialog}
         onEditTarget={openTargetEditor}
         onPullLatestImageDeploy={target => setConfirmOperation({ kind: 'pullLatest', target })}
@@ -306,12 +328,15 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
           if (item.release && item.rollbackTo)
             setConfirmOperation({ kind: 'rollback', release: item.release, rollbackTo: item.rollbackTo, target: item.target })
         }}
-        onViewLogs={(release, options) => setLogTarget({
-          pod: options?.pod,
-          previous: options?.previous,
-          release,
-          view: options?.view ?? 'deployment',
-        })}
+        onViewLogs={(release, options) => {
+          setConsoleTarget(null)
+          setLogTarget({
+            pod: options?.pod,
+            previous: options?.previous,
+            release,
+            view: options?.view ?? 'deployment',
+          })
+        }}
       />
       <DeferredDeploymentBundleImportDialog
         applicationId={applicationId}

@@ -24,6 +24,7 @@ vi.mock('@/api', async (importOriginal) => {
     ...actual,
     api: {
       ...actual.api,
+      getReleaseLogs: vi.fn(),
       getReleaseRuntimeLogs: vi.fn(),
       listDeploymentTargetEvents: vi.fn(),
       listDeploymentTargetRuntimePods: vi.fn(),
@@ -92,12 +93,12 @@ const releases = [
   release('rel_api_1', 'dpt_api', 1, 'registry.example/team/api:v1'),
 ]
 
-function renderPanel({ deploymentTargets = targets, listState = { loading: false } as DeploymentListState } = {}) {
+function renderPanel({ deploymentTargets = targets, initialEntries = ['/'], listState = { loading: false } as DeploymentListState } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={initialEntries}>
           <ApplicationDeploymentsPanel
             applicationId="app_1"
             buildRuns={[]}
@@ -228,6 +229,14 @@ describe('application deployments panel', () => {
       containerStatuses: [],
       createdAt: '2026-09-06T00:00:00Z',
     }
+    vi.mocked(api.getReleaseLogs).mockResolvedValue({
+      content: '2026-09-06T01:00:00Z release succeeded\n',
+      createdAt: '2026-09-06T01:00:00Z',
+      id: 'rlog_1',
+      projectId: 'prj_1',
+      releaseId: 'rel_web_3',
+      updatedAt: '2026-09-06T01:00:00Z',
+    })
     vi.mocked(api.listDeploymentTargetRuntimePods).mockResolvedValue({
       items: [podItem],
       page: 1,
@@ -284,6 +293,49 @@ describe('application deployments panel', () => {
     const overlays = document.querySelectorAll<HTMLElement>('[data-slot="sheet-overlay"]')
     expect(overlays.length).toBe(2)
     await user.click(overlays[overlays.length - 1])
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Release logs' })).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog', { name: 'Web' })).toBeInTheDocument()
+  })
+
+  it('keeps the underlying detail drawer open when dismissing a #releaseId deep-linked logs drawer', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.getReleaseLogs).mockResolvedValue({
+      content: '2026-09-06T01:00:00Z release succeeded\n',
+      createdAt: '2026-09-06T01:00:00Z',
+      id: 'rlog_1',
+      projectId: 'prj_1',
+      releaseId: 'rel_web_3',
+      updatedAt: '2026-09-06T01:00:00Z',
+    })
+    vi.mocked(api.listDeploymentTargetRuntimePods).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 100,
+      sortBy: 'restartCount',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
+      status: 'ready',
+      observationCode: 'deployment_target.runtime_pods_ready',
+      observedAt: '2026-09-06T01:00:00Z',
+    })
+    vi.mocked(api.listDeploymentTargetEvents).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      sortBy: 'lastSeen',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
+      status: 'ready',
+      observationCode: 'deployment_target.events_ready',
+      observedAt: '2026-09-06T01:00:00Z',
+    })
+
+    renderPanel({ initialEntries: ['/#releaseId=rel_web_3'] })
+    await screen.findByRole('dialog', { name: 'Release logs' })
+
+    await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Release logs' })).not.toBeInTheDocument())
     expect(screen.getByRole('dialog', { name: 'Web' })).toBeInTheDocument()
   })

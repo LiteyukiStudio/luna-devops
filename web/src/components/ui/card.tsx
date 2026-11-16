@@ -6,7 +6,7 @@ function Card({ className, padding = 'section', ...props }: ComponentProps<'div'
   return (
     <div
       className={cn(
-        'rounded-container border border-border bg-surface shadow-sm',
+        'rounded-container border border-border bg-surface shadow-surface-sm',
         padding === 'section' && 'p-section',
         className,
       )}

@@ -13,7 +13,7 @@ export function Surface({ className, variant = 'bordered', ...props }: Component
       className={cn(
         'min-w-0',
         variant === 'plain' && 'bg-transparent',
-        variant === 'bordered' && 'rounded-container border border-border bg-surface-raised shadow-sm',
+        variant === 'bordered' && 'rounded-container border border-border bg-surface-raised shadow-surface-sm',
         variant === 'raised' && 'rounded-container border border-border bg-surface-raised shadow-raised',
         variant === 'inset' && 'rounded-container border border-border bg-surface-inset',
         className,

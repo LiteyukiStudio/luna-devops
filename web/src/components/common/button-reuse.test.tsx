@@ -8,7 +8,7 @@ import { APPLICATION_ICON_NAMES } from './application-icons'
 import { CopyableHoverText } from './copyable-hover-text'
 import { FormField } from './form-field'
 import { SearchMultiSelect, SearchSelect } from './search-select'
-import { UsageRing } from './usage-ring'
+import { UsageRing, UsageRingGraphic } from './usage-ring'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
@@ -92,5 +92,16 @@ describe('common button reuse', () => {
     const iconOption = screen.getByRole('button', { name: i18next.t(`apps.icons.${nextIcon}`) })
     await interaction.click(iconOption)
     expect(changeIcon).toHaveBeenCalledWith(nextIcon)
+
+    const { container } = render(
+      <div>
+        <UsageRingGraphic percent={45} size={20} strokeWidth={2.5} />
+        <UsageRingGraphic centerContent={<span>92%</span>} percent={92} requestRatio={0.25} size={76} strokeWidth={6.5} />
+      </div>,
+    )
+    expect(container.querySelector('.text-success')).toBeInTheDocument()
+    expect(container.querySelector('.text-danger')).toBeInTheDocument()
+    expect(container.querySelector('line')).toBeInTheDocument()
+    expect(screen.getByText('92%')).toBeInTheDocument()
   })
 })

@@ -1,6 +1,7 @@
 import type { MetricsStreamState } from './use-deployment-target-metrics'
 import { CircleHelp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { UsageRingGraphic } from '@/components/common/usage-ring'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
@@ -10,7 +11,6 @@ import {
   formatMetricsCPU,
   formatMetricsPair,
   formatMetricsPercent,
-  resourceUsageToneClass,
 } from '@/pages/applications/deployments/application-deployments-panel-utils'
 
 /** 「运行资源与实例」顶栏右侧的实时指标状态胶囊。 */
@@ -105,7 +105,7 @@ export function PodResourceMiniRing({
 
   return (
     <div className="inline-flex items-center gap-2 text-xs">
-      <ResourceRingSvg minVisualPercent={4} percent={hasUsage ? percent : undefined} size={20} stroke={2.5} />
+      <UsageRingGraphic minVisualPercent={4} percent={hasUsage ? percent : undefined} size={20} strokeWidth={2.5} />
       <span className="shrink-0 text-muted-foreground">{label}</span>
       {hasUsage
         ? (
@@ -164,21 +164,21 @@ function ResourceMetricCard({
 
   return (
     <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-subtle/50 p-4 shadow-surface-sm">
-      <div className="relative inline-flex size-[76px] shrink-0 items-center justify-center">
-        <ResourceRingSvg
-          minVisualPercent={2}
-          percent={percent}
-          requestRatio={requestRatio}
-          size={76}
-          stroke={6.5}
-        />
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-tight">
-          <span className={cn('text-sm font-semibold tabular-nums', hasPercent ? 'text-foreground' : 'text-muted-foreground')}>
-            {formatMetricsPercent(percent, locale)}
-          </span>
-          <span className="text-[11px] text-muted-foreground">{title}</span>
-        </div>
-      </div>
+      <UsageRingGraphic
+        centerContent={(
+          <>
+            <span className={cn('text-sm font-semibold tabular-nums', hasPercent ? 'text-foreground' : 'text-muted-foreground')}>
+              {formatMetricsPercent(percent, locale)}
+            </span>
+            <span className="text-[11px] text-muted-foreground">{title}</span>
+          </>
+        )}
+        minVisualPercent={2}
+        percent={percent}
+        requestRatio={requestRatio}
+        size={76}
+        strokeWidth={6.5}
+      />
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-baseline justify-between gap-3">
           <span className="shrink-0 text-xs text-muted-foreground">{liveUsageLabel}</span>
@@ -217,84 +217,5 @@ function ResourceMetricCard({
         </div>
       </div>
     </div>
-  )
-}
-
-export function ResourceRingSvg({
-  minVisualPercent = 2,
-  percent,
-  requestRatio = null,
-  size,
-  stroke,
-}: {
-  minVisualPercent?: number
-  percent: number | undefined
-  requestRatio?: number | null
-  size: number
-  stroke: number
-}) {
-  const radius = (size - stroke) / 2
-  const circumference = 2 * Math.PI * radius
-  const hasPercent = percent !== undefined && Number.isFinite(percent) && percent >= 0
-  const clamped = hasPercent ? Math.min(100, Math.max(0, percent)) : 0
-  // 极低非零负载保留最小可见弧度，避免 0.1% 看起来完全空环。
-  const visualPct = hasPercent ? (clamped > 0 && clamped < minVisualPercent ? minVisualPercent : clamped) : 0
-  const dashOffset = circumference - (visualPct / 100) * circumference
-  const toneClass = resourceUsageToneClass(percent)
-
-  let markerLine: { x1: string, x2: string, y1: string, y2: string } | null = null
-  if (requestRatio !== null && requestRatio > 0 && requestRatio < 1) {
-    const angle = (requestRatio * 360 - 90) * (Math.PI / 180)
-    const center = size / 2
-    markerLine = {
-      x1: (center + (radius - stroke * 0.55) * Math.cos(angle)).toFixed(1),
-      y1: (center + (radius - stroke * 0.55) * Math.sin(angle)).toFixed(1),
-      x2: (center + (radius + stroke * 0.55) * Math.cos(angle)).toFixed(1),
-      y2: (center + (radius + stroke * 0.55) * Math.sin(angle)).toFixed(1),
-    }
-  }
-
-  return (
-    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ height: size, width: size }}>
-      <svg aria-hidden="true" className="-rotate-90" height={size} viewBox={`0 0 ${size} ${size}`} width={size}>
-        <circle
-          className="text-border/75"
-          cx={size / 2}
-          cy={size / 2}
-          fill="none"
-          r={radius}
-          stroke="currentColor"
-          strokeWidth={stroke}
-        />
-        {hasPercent && (
-          <circle
-            className={cn('transition-[stroke-dashoffset] duration-200 motion-reduce:transition-none', toneClass)}
-            cx={size / 2}
-            cy={size / 2}
-            fill="none"
-            r={radius}
-            stroke="currentColor"
-            strokeDasharray={circumference.toFixed(2)}
-            strokeDashoffset={dashOffset.toFixed(2)}
-            strokeLinecap="round"
-            strokeWidth={stroke}
-          />
-        )}
-      </svg>
-      {markerLine && (
-        <svg aria-hidden="true" className="pointer-events-none absolute inset-0" height={size} viewBox={`0 0 ${size} ${size}`} width={size}>
-          <line
-            className="text-muted-foreground/70"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeWidth="1.5"
-            x1={markerLine.x1}
-            x2={markerLine.x2}
-            y1={markerLine.y1}
-            y2={markerLine.y2}
-          />
-        </svg>
-      )}
-    </span>
   )
 }

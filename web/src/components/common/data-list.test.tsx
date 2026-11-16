@@ -298,4 +298,26 @@ describe('data list behavior', () => {
     expect(scrollArea).toHaveClass('h-full')
     expect(scrollArea).toHaveAttribute('data-scrollbars', 'both')
   })
+
+  it('enforces 32px button height in toolbar and collapses empty null-rendering permission toolbar slots', () => {
+    function HiddenPermissionControl() {
+      return null
+    }
+    const { container } = render(
+      <DataList
+        columns={columns}
+        emptyTitle="Empty"
+        items={[{ id: 'one', name: 'One' }]}
+        rowKey={item => item.id}
+        toolbar={<HiddenPermissionControl />}
+      />,
+    )
+
+    const tools = container.querySelector('[data-slot="data-list-tools"]')
+    const controls = container.querySelector('[data-slot="data-list-tools-controls"]')
+    expect(tools?.className).toContain('[&_[data-slot=button]]:h-8')
+    expect(tools?.className).toContain('has-[>[data-slot=data-list-tools-controls]:only-child:empty]:hidden')
+    expect(controls).toBeEmptyDOMElement()
+    expect(controls).toHaveClass('empty:hidden')
+  })
 })
