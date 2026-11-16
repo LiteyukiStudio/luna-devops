@@ -1,8 +1,9 @@
 import type { TFunction } from 'i18next'
-import type { BuildConcurrencyPolicy, BuildEnvironmentConfig, DeploymentRuntimeEnvironmentVariableInput, DeploymentTarget, DeploymentTargetPayload, HookPhase } from '@/api'
+import type { BuildConcurrencyPolicy, BuildEnvironmentConfig, BuildTemplate, DeploymentRuntimeEnvironmentVariableInput, DeploymentTarget, DeploymentTargetPayload, HookPhase } from '@/api'
 import type { RuntimeDataVolumeRow } from '@/lib/runtime-data-volumes'
 import { z } from 'zod'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, emptyKeyValueRow, secretStateToRows } from '@/lib/build-variables'
+import { isValidResourceQuantity } from '@/lib/resource-units'
 import { duplicateRuntimeConfigPathRowIds, parseRuntimeConfigFiles } from '@/lib/runtime-config-files'
 import { parseRuntimeDataVolumes, projectVolumeRowsAreValid, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from '@/pages/applications/application-build-defaults'
@@ -24,25 +25,27 @@ export const maxRuntimeEnvironmentValueLength = 8192
 /** 与后端 isBuildEnvKey 一致的环境变量名规则。 */
 export const runtimeEnvironmentKeyPattern = /^[A-Z_]\w{0,127}$/i
 
-export type DeploymentTargetEditorSection = 'basics' | 'runtime' | 'release' | 'advanced'
-/** 高级（Kubernetes）分区内的低频配置项，每项一行摘要，可单独展开。 */
-export type DeploymentTargetAdvancedItem = 'build' | 'workload' | 'container' | 'service' | 'files' | 'hooks' | 'webConsole' | 'securityScheduling' | 'auxContainers'
+export type DeploymentTargetEditorSection = 'basics' | 'source' | 'runtime' | 'advanced'
+/** 高级选项分区内的 6+1 低频子项（构建项仅代码仓库来源展示），每项一行摘要，可独立折叠展开。 */
+export type DeploymentTargetAdvancedItem = 'build' | 'service' | 'probes' | 'container' | 'files' | 'securityScheduling' | 'hooks'
 
 /**
  * 部署配置编辑器的唯一表单模型。
  * 默认值、约束与跨字段规则都集中在这里；提交只做格式转换，不再静默修补用户输入。
  */
-export function createDeploymentTargetFormSchema(t: TFunction) {
+export function createDeploymentTargetFormSchema(t: TFunction, options?: { buildTemplates?: readonly BuildTemplate[] }) {
   const message = {
     required: t('deploymentTargetEditor.validation.required'),
     integer: t('deploymentTargetEditor.validation.integer'),
     digits: t('deploymentTargetEditor.validation.digits'),
+    resourceQuantity: t('deploymentTargetEditor.validation.resourceQuantity'),
     jsonObject: t('deploymentTargetEditor.validation.jsonObject'),
     jsonArray: t('deploymentTargetEditor.validation.jsonArray'),
     stringList: t('deploymentTargetEditor.validation.stringList'),
     keyValueLines: t('deploymentTargetEditor.validation.keyValueLines'),
   }
   const requiredText = z.string().trim().min(1, message.required)
+  const requiredQuantity = requiredText.refine(value => isValidResourceQuantity(value), message.resourceQuantity)
   const integer = (min: number, max?: number) => {
     const base = z.number({ error: message.integer }).int(message.integer).min(min, t('deploymentTargetEditor.validation.min', { min }))
     return max === undefined ? base : base.max(max, t('deploymentTargetEditor.validation.max', { max }))
@@ -55,13 +58,14 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
   const keyValueRow = z.object({ id: z.string(), key: z.string(), value: z.string(), existing: z.boolean().optional() })
 
   return z.object({
-    // 基本信息
+    // 基础配置
     name: requiredText.max(120, t('deploymentTargetEditor.validation.maxLength', { max: 120 })),
     stage: z.string().regex(/^(?:dev|test|staging|prod|sys-[a-z0-9-]+)$/, message.required),
     clusterId: z.string(),
+    workloadType: z.enum(['Deployment', 'StatefulSet']),
     enabled: z.boolean(),
 
-    // 来源与构建
+    // 来源与构建 / 镜像与发布
     sourceType: z.enum(['repository', 'image']),
     repositoryBindingId: z.string(),
     imageRef: z.string(),
@@ -73,18 +77,25 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
     buildTemplateValues: z.string(),
     dockerfilePath: z.string(),
     buildContext: z.string(),
+    imagePullPolicy: z.enum(['', 'IfNotPresent', 'Always', 'Never']),
+    autoDeploy: z.boolean(),
+    buildConcurrencyPolicy: z.enum(buildConcurrencyPolicies),
+    branchPattern: z.string(),
+    tagPattern: z.string(),
+
+    // 构建高级选项（仅 repository 来源校验）
     buildDirectory: z.string(),
     buildArgs: z.string(),
-    buildCpuRequest: requiredText,
-    buildMemoryRequest: requiredText,
-    buildTimeoutMinutes: integer(1, 1440),
+    buildCpuRequest: z.string(),
+    buildMemoryRequest: z.string(),
+    buildTimeoutMinutes: z.number({ error: message.integer }).or(z.nan()),
     buildVariables: z.array(keyValueRow),
     buildSecrets: z.array(keyValueRow),
 
-    // 运行配置
+    // 运行与扩展
     replicas: integer(0),
-    cpuRequest: requiredText,
-    memoryRequest: requiredText,
+    cpuRequest: requiredQuantity,
+    memoryRequest: requiredQuantity,
     autoScalingEnabled: z.boolean(),
     autoScalingMinReplicas: integer(1),
     autoScalingMaxReplicas: integer(1),
@@ -96,10 +107,7 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
       port: integer(1, 65535),
       appProtocol: z.string().trim().max(253, t('deploymentTargetEditor.validation.maxLength', { max: 253 })),
     })).min(1, message.required).max(maxServicePorts, t('deploymentTargetEditor.validation.portsMax', { max: maxServicePorts })),
-    serviceSessionAffinity: z.enum(['', 'None', 'ClientIP']),
-    internalOnly: z.boolean(),
-    serviceAnnotations: keyValueOrJson,
-    runtimeConfigRefs: z.array(z.object({ setId: z.string(), mode: z.enum(['live', 'snapshot']) })),
+    dataVolumes: z.array(z.custom<RuntimeDataVolumeRow>()),
     environmentVariables: z.array(z.object({
       key: z.string().trim(),
       mode: z.enum(['public', 'secret']),
@@ -107,43 +115,36 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
       stored: z.enum(['none', 'public', 'secret']),
       secretAction: z.enum(['keep', 'set', 'generate', 'clear']),
     })).max(maxRuntimeEnvironmentVariables, t('deploymentTargetEditor.validation.environmentMax', { max: maxRuntimeEnvironmentVariables })),
-    configFiles: z.string(),
-    secretFiles: z.string(),
-    dataVolumes: z.array(z.custom<RuntimeDataVolumeRow>()),
-    workloadType: z.enum(['Deployment', 'StatefulSet']),
-    imagePullPolicy: z.enum(['', 'IfNotPresent', 'Always', 'Never']),
+    runtimeConfigRefs: z.array(z.object({ setId: z.string(), mode: z.enum(['live', 'snapshot']) })),
+
+    // 高级选项：Service / 探针 / 容器 / 文件 / 安全调度 / Hook
+    serviceSessionAffinity: z.enum(['', 'None', 'ClientIP']),
+    internalOnly: z.boolean(),
+    serviceAnnotations: keyValueOrJson,
+    startupProbe: jsonObject,
+    readinessProbe: jsonObject,
+    livenessProbe: jsonObject,
     containerCommand: stringList,
     containerArgs: stringList,
     lifecycle: jsonObject,
-    readinessProbe: jsonObject,
-    livenessProbe: jsonObject,
-    startupProbe: jsonObject,
-
-    // 发布与触发
-    autoDeploy: z.boolean(),
-    buildConcurrencyPolicy: z.enum(buildConcurrencyPolicies),
-    branchPattern: z.string(),
-    tagPattern: z.string(),
-
-    // 钩子
-    buildHooksEnabled: z.boolean(),
-    buildHookBindings: z.array(z.object({ phase: z.enum(deploymentHookPhases), hookConfigId: requiredText })),
-
-    // 安全与调度
     webConsoleEnabled: z.enum(['inherit', 'disabled']),
+    initContainers: jsonArray,
+    sidecarContainers: jsonArray,
+    configFiles: z.string(),
+    secretFiles: z.string(),
     runAsUser: digits,
     runAsGroup: digits,
     fsGroup: digits,
     fsGroupChangePolicy: z.enum(['', 'OnRootMismatch', 'Always']),
     readOnlyRootFilesystem: z.boolean(),
     capabilityDrop: stringList,
+    priorityClassName: z.string(),
     nodeSelector: keyValueOrJson,
     tolerations: jsonArray,
     affinity: jsonObject,
     topologySpreadConstraints: jsonArray,
-    priorityClassName: z.string(),
-    initContainers: jsonArray,
-    sidecarContainers: jsonArray,
+    buildHooksEnabled: z.boolean(),
+    buildHookBindings: z.array(z.object({ phase: z.enum(deploymentHookPhases), hookConfigId: requiredText })),
 
     // 编辑器不展示、但必须原样回写的字段
     requireApproval: z.boolean(),
@@ -164,8 +165,60 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
         issue(['buildContext'], message.required)
       if (values.buildDefinitionMode === 'repository_dockerfile' && !values.dockerfilePath.trim())
         issue(['dockerfilePath'], message.required)
-      if (values.buildDefinitionMode === 'template' && !values.buildTemplateId.trim())
-        issue(['buildTemplateId'], message.required)
+      if (values.buildDefinitionMode === 'template') {
+        if (!values.buildTemplateId.trim()) {
+          issue(['buildTemplateId'], message.required)
+        }
+        else if (!jsonTextMatches(values.buildTemplateValues, 'object')) {
+          issue(['buildTemplateValues'], message.jsonObject)
+        }
+        else {
+          const selectedTemplate = options?.buildTemplates?.find(item => item.id === values.buildTemplateId)
+          if (selectedTemplate) {
+            const parsedValues = parseTemplateValuesRecord(values.buildTemplateValues)
+            for (const parameter of selectedTemplate.parameters) {
+              const rawValue = Object.hasOwn(parsedValues, parameter.key)
+                ? String(parsedValues[parameter.key] ?? '')
+                : parameter.defaultValue
+              const trimmed = rawValue.trim()
+              if (parameter.required && !trimmed) {
+                issue(['buildTemplateValues', parameter.key], message.required)
+                continue
+              }
+              if (!trimmed)
+                continue
+              if (parameter.type === 'port') {
+                if (!/^\d+$/.test(trimmed))
+                  issue(['buildTemplateValues', parameter.key], message.integer)
+                else if (Number(trimmed) < 1)
+                  issue(['buildTemplateValues', parameter.key], t('deploymentTargetEditor.validation.min', { min: 1 }))
+                else if (Number(trimmed) > 65535)
+                  issue(['buildTemplateValues', parameter.key], t('deploymentTargetEditor.validation.max', { max: 65535 }))
+              }
+              else if (parameter.type === 'select' && parameter.options?.length && !parameter.options.includes(trimmed)) {
+                issue(['buildTemplateValues', parameter.key], message.required)
+              }
+            }
+          }
+        }
+      }
+
+      if (!values.buildCpuRequest.trim())
+        issue(['buildCpuRequest'], message.required)
+      else if (!isValidResourceQuantity(values.buildCpuRequest))
+        issue(['buildCpuRequest'], message.resourceQuantity)
+
+      if (!values.buildMemoryRequest.trim())
+        issue(['buildMemoryRequest'], message.required)
+      else if (!isValidResourceQuantity(values.buildMemoryRequest))
+        issue(['buildMemoryRequest'], message.resourceQuantity)
+
+      if (!Number.isInteger(values.buildTimeoutMinutes))
+        issue(['buildTimeoutMinutes'], message.integer)
+      else if (values.buildTimeoutMinutes < 1)
+        issue(['buildTimeoutMinutes'], t('deploymentTargetEditor.validation.min', { min: 1 }))
+      else if (values.buildTimeoutMinutes > 1440)
+        issue(['buildTimeoutMinutes'], t('deploymentTargetEditor.validation.max', { max: 1440 }))
     }
     else if (!values.imageRef.trim()) {
       issue(['imageRef'], message.required)
@@ -240,6 +293,7 @@ export function emptyDeploymentTargetFormValues(): DeploymentTargetFormValues {
     name: '',
     stage: 'dev',
     clusterId: '',
+    workloadType: 'Deployment',
     enabled: true,
     sourceType: 'repository',
     repositoryBindingId: '',
@@ -252,6 +306,11 @@ export function emptyDeploymentTargetFormValues(): DeploymentTargetFormValues {
     buildTemplateValues: '{}',
     dockerfilePath: 'Dockerfile',
     buildContext: '.',
+    imagePullPolicy: '',
+    autoDeploy: true,
+    buildConcurrencyPolicy: 'queue',
+    branchPattern: '',
+    tagPattern: '',
     buildDirectory: '',
     buildArgs: '',
     buildCpuRequest: defaultBuildCpuRequest,
@@ -269,42 +328,36 @@ export function emptyDeploymentTargetFormValues(): DeploymentTargetFormValues {
     autoScalingMemoryPercent: 0,
     autoScalingBehavior: '',
     servicePorts: [{ name: 'http', port: 8080, appProtocol: '' }],
+    dataVolumes: [],
+    environmentVariables: [],
+    runtimeConfigRefs: [],
     serviceSessionAffinity: '',
     internalOnly: false,
     serviceAnnotations: '',
-    runtimeConfigRefs: [],
-    environmentVariables: [],
-    configFiles: '',
-    secretFiles: '',
-    dataVolumes: [],
-    workloadType: 'Deployment',
-    imagePullPolicy: '',
+    startupProbe: '',
+    readinessProbe: '',
+    livenessProbe: '',
     containerCommand: '',
     containerArgs: '',
     lifecycle: '',
-    readinessProbe: '',
-    livenessProbe: '',
-    startupProbe: '',
-    autoDeploy: true,
-    buildConcurrencyPolicy: 'queue',
-    branchPattern: '',
-    tagPattern: '',
-    buildHooksEnabled: true,
-    buildHookBindings: [],
     webConsoleEnabled: 'inherit',
+    initContainers: '',
+    sidecarContainers: '',
+    configFiles: '',
+    secretFiles: '',
     runAsUser: '',
     runAsGroup: '',
     fsGroup: '',
     fsGroupChangePolicy: '',
     readOnlyRootFilesystem: false,
     capabilityDrop: '',
+    priorityClassName: '',
     nodeSelector: '',
     tolerations: '',
     affinity: '',
     topologySpreadConstraints: '',
-    priorityClassName: '',
-    initContainers: '',
-    sidecarContainers: '',
+    buildHooksEnabled: true,
+    buildHookBindings: [],
     requireApproval: false,
     buildEnvironmentId: '',
     buildVariableSetIds: [],
@@ -326,6 +379,7 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
     name: target.name,
     stage: target.stage,
     clusterId: target.clusterId,
+    workloadType: oneOf(target.workloadType, ['Deployment', 'StatefulSet'] as const, 'Deployment'),
     enabled: target.enabled,
     sourceType: target.sourceType,
     repositoryBindingId: target.repositoryBindingId,
@@ -338,6 +392,11 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
     buildTemplateValues: target.buildTemplateValues || '{}',
     dockerfilePath: target.dockerfilePath,
     buildContext: target.buildContext,
+    imagePullPolicy: oneOf(target.imagePullPolicy, ['', 'IfNotPresent', 'Always', 'Never'] as const, ''),
+    autoDeploy: target.autoDeploy,
+    buildConcurrencyPolicy: target.buildConcurrencyPolicy,
+    branchPattern: target.branchPattern,
+    tagPattern: target.tagPattern,
     buildDirectory: target.buildDirectory,
     buildArgs: target.buildArgs,
     buildCpuRequest: target.buildCpuRequest || defaults.buildCpuRequest,
@@ -355,10 +414,7 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
     servicePorts: target.servicePorts?.length
       ? target.servicePorts.map(port => ({ name: port.name, port: port.port, appProtocol: port.appProtocol ?? '' }))
       : defaults.servicePorts,
-    serviceSessionAffinity: oneOf(target.serviceSessionAffinity, ['', 'None', 'ClientIP'] as const, ''),
-    internalOnly: target.internalOnly ?? false,
-    serviceAnnotations: target.serviceAnnotations,
-    runtimeConfigRefs: (target.runtimeConfigRefs ?? []).map(ref => ({ setId: ref.setId, mode: ref.mode })),
+    dataVolumes: parseRuntimeDataVolumes(target.dataVolumes),
     environmentVariables: (target.environmentVariables ?? []).map(variable => ({
       key: variable.key,
       mode: variable.valueMode,
@@ -366,38 +422,35 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
       stored: variable.valueMode,
       secretAction: 'keep' as const,
     })),
-    configFiles: target.configFiles,
-    dataVolumes: parseRuntimeDataVolumes(target.dataVolumes),
-    workloadType: oneOf(target.workloadType, ['Deployment', 'StatefulSet'] as const, 'Deployment'),
-    imagePullPolicy: oneOf(target.imagePullPolicy, ['', 'IfNotPresent', 'Always', 'Never'] as const, ''),
+    runtimeConfigRefs: (target.runtimeConfigRefs ?? []).map(ref => ({ setId: ref.setId, mode: ref.mode })),
+    serviceSessionAffinity: oneOf(target.serviceSessionAffinity, ['', 'None', 'ClientIP'] as const, ''),
+    internalOnly: target.internalOnly ?? false,
+    serviceAnnotations: target.serviceAnnotations,
+    startupProbe: target.startupProbe,
+    readinessProbe: target.readinessProbe,
+    livenessProbe: target.livenessProbe,
     containerCommand: target.containerCommand,
     containerArgs: target.containerArgs,
     lifecycle: target.lifecycle,
-    readinessProbe: target.readinessProbe,
-    livenessProbe: target.livenessProbe,
-    startupProbe: target.startupProbe,
-    autoDeploy: target.autoDeploy,
-    buildConcurrencyPolicy: target.buildConcurrencyPolicy,
-    branchPattern: target.branchPattern,
-    tagPattern: target.tagPattern,
-    buildHooksEnabled: target.buildHooksEnabled,
-    buildHookBindings: [...(target.buildHookBindings ?? [])]
-      .sort((left, right) => left.runOrder - right.runOrder)
-      .map(binding => ({ phase: binding.phase, hookConfigId: binding.hookConfigId })),
     webConsoleEnabled: target.webConsoleEnabled === false ? 'disabled' : 'inherit',
+    initContainers: target.initContainers,
+    sidecarContainers: target.sidecarContainers,
+    configFiles: target.configFiles,
     runAsUser: target.runAsUser,
     runAsGroup: target.runAsGroup,
     fsGroup: target.fsGroup,
     fsGroupChangePolicy: oneOf(target.fsGroupChangePolicy, ['', 'OnRootMismatch', 'Always'] as const, ''),
     readOnlyRootFilesystem: target.readOnlyRootFilesystem,
     capabilityDrop: target.capabilityDrop,
+    priorityClassName: target.priorityClassName,
     nodeSelector: target.nodeSelector,
     tolerations: target.tolerations,
     affinity: target.affinity,
     topologySpreadConstraints: target.topologySpreadConstraints,
-    priorityClassName: target.priorityClassName,
-    initContainers: target.initContainers,
-    sidecarContainers: target.sidecarContainers,
+    buildHooksEnabled: target.buildHooksEnabled,
+    buildHookBindings: [...(target.buildHookBindings ?? [])]
+      .sort((left, right) => left.runOrder - right.runOrder)
+      .map(binding => ({ phase: binding.phase, hookConfigId: binding.hookConfigId })),
     requireApproval: target.requireApproval,
     buildEnvironmentId: target.buildEnvironmentId,
     buildVariableSetIds: target.buildVariableSetIds ?? [],
@@ -410,6 +463,9 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
 export function deploymentTargetFormToPayload(values: DeploymentTargetFormValues, options: { includeBuildEnvironment: boolean }): DeploymentTargetPayload {
   const repository = values.sourceType === 'repository'
   const template = repository && values.buildDefinitionMode === 'template'
+  const buildTimeoutMinutes = Number.isFinite(values.buildTimeoutMinutes) && values.buildTimeoutMinutes >= 1
+    ? Math.round(values.buildTimeoutMinutes)
+    : defaultBuildTimeoutSeconds / 60
   const payload: DeploymentTargetPayload = {
     name: values.name.trim(),
     stage: values.stage,
@@ -433,7 +489,7 @@ export function deploymentTargetFormToPayload(values: DeploymentTargetFormValues
     buildEnvironmentId: values.buildEnvironmentId,
     buildCpuRequest: values.buildCpuRequest,
     buildMemoryRequest: values.buildMemoryRequest,
-    buildTimeoutSeconds: values.buildTimeoutMinutes * 60,
+    buildTimeoutSeconds: buildTimeoutMinutes * 60,
     buildVariableSetIds: values.buildVariableSetIds,
     replicas: values.replicas,
     cpuRequest: values.cpuRequest,
@@ -552,30 +608,28 @@ function deploymentPhaseHooks(payload: DeploymentTargetPayload) {
     .map(binding => ({ hookConfigId: binding.hookConfigId, phase: binding.phase, runOrder: binding.runOrder }))
 }
 
-/** 高级分区各配置项的字段归属：决定摘要、已设置计数和错误时的自动展开。 */
+/** 高级选项 6+1 子项的字段归属：决定摘要、已设置计数和错误时的自动展开。 */
 export const deploymentTargetAdvancedItemFields: Record<DeploymentTargetAdvancedItem, readonly DeploymentTargetFieldName[]> = {
   build: ['buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes', 'buildVariables', 'buildSecrets'],
-  workload: ['workloadType', 'autoScalingBehavior'],
-  container: ['imagePullPolicy', 'containerCommand', 'containerArgs', 'lifecycle', 'readinessProbe', 'livenessProbe', 'startupProbe'],
-  service: ['serviceSessionAffinity', 'serviceAnnotations', 'internalOnly'],
+  service: ['serviceSessionAffinity', 'internalOnly', 'serviceAnnotations'],
+  probes: ['startupProbe', 'readinessProbe', 'livenessProbe'],
+  container: ['containerCommand', 'containerArgs', 'lifecycle', 'webConsoleEnabled', 'initContainers', 'sidecarContainers'],
   files: ['configFiles', 'secretFiles'],
+  securityScheduling: ['runAsUser', 'runAsGroup', 'fsGroup', 'fsGroupChangePolicy', 'readOnlyRootFilesystem', 'capabilityDrop', 'priorityClassName', 'nodeSelector', 'tolerations', 'affinity', 'topologySpreadConstraints'],
   hooks: ['buildHooksEnabled', 'buildHookBindings'],
-  webConsole: ['webConsoleEnabled'],
-  securityScheduling: ['runAsUser', 'runAsGroup', 'fsGroup', 'fsGroupChangePolicy', 'readOnlyRootFilesystem', 'capabilityDrop', 'nodeSelector', 'tolerations', 'affinity', 'topologySpreadConstraints', 'priorityClassName'],
-  auxContainers: ['initContainers', 'sidecarContainers'],
 }
 
-export const deploymentTargetAdvancedItemOrder: readonly DeploymentTargetAdvancedItem[] = ['build', 'workload', 'container', 'service', 'files', 'hooks', 'webConsole', 'securityScheduling', 'auxContainers']
+export const deploymentTargetAdvancedItemOrder: readonly DeploymentTargetAdvancedItem[] = ['build', 'service', 'probes', 'container', 'files', 'securityScheduling', 'hooks']
 
-/** 各分区字段归属：用于导航上的错误计数和提交失败后的定位。 */
+/** 各一级分区的字段归属：用于导航上的错误计数和提交失败后的定位。 */
 export const deploymentTargetSectionFields: Record<DeploymentTargetEditorSection, readonly DeploymentTargetFieldName[]> = {
-  basics: ['name', 'stage', 'clusterId', 'enabled', 'sourceType', 'repositoryBindingId', 'imageRef', 'targetRegistryId', 'targetImageRef', 'buildDefinitionMode', 'buildTemplateId', 'buildTemplateVersion', 'buildTemplateValues', 'dockerfilePath', 'buildContext'],
-  runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'servicePorts', 'runtimeConfigRefs', 'environmentVariables', 'dataVolumes'],
-  release: ['autoDeploy', 'buildConcurrencyPolicy', 'branchPattern', 'tagPattern'],
+  basics: ['name', 'stage', 'clusterId', 'workloadType', 'enabled'],
+  source: ['sourceType', 'repositoryBindingId', 'imageRef', 'targetRegistryId', 'targetImageRef', 'buildDefinitionMode', 'buildTemplateId', 'buildTemplateVersion', 'buildTemplateValues', 'dockerfilePath', 'buildContext', 'imagePullPolicy', 'autoDeploy', 'buildConcurrencyPolicy', 'branchPattern', 'tagPattern'],
+  runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'autoScalingBehavior', 'servicePorts', 'dataVolumes', 'environmentVariables', 'runtimeConfigRefs'],
   advanced: deploymentTargetAdvancedItemOrder.flatMap(item => deploymentTargetAdvancedItemFields[item]),
 }
 
-export const deploymentTargetSectionOrder: readonly DeploymentTargetEditorSection[] = ['basics', 'runtime', 'release', 'advanced']
+export const deploymentTargetSectionOrder: readonly DeploymentTargetEditorSection[] = ['basics', 'source', 'runtime', 'advanced']
 
 /**
  * 统计与平台默认值不同的字段数量，用于高级项的“已设置 N 项”和默认展开。
@@ -625,8 +679,11 @@ export function environmentRowsToPayload(rows: RuntimeEnvironmentRow[]): Deploym
   return items
 }
 
-/** 统计保存时将执行的加密操作，用于提交前的汇总提示。 */
-export function pendingSecretOperations(rows: RuntimeEnvironmentRow[]) {
+/** 统计保存时将执行的加密操作（含密钥环境变量与密钥文件），用于提交前的汇总提示。 */
+export function pendingSecretOperations(
+  rows: RuntimeEnvironmentRow[],
+  options?: { secretFiles?: string, secretFilesSet?: boolean },
+) {
   const counts = { cleared: 0, generated: 0, set: 0 }
   for (const row of rows) {
     if (row.mode === 'public' && row.stored === 'secret')
@@ -638,11 +695,26 @@ export function pendingSecretOperations(rows: RuntimeEnvironmentRow[]) {
     else if (row.mode === 'secret' && row.secretAction === 'set')
       counts.set++
   }
+  const secretFilesTrimmed = options?.secretFiles?.trim() ?? ''
+  if (secretFilesTrimmed === '[]' && options?.secretFilesSet)
+    counts.cleared++
+  else if (secretFilesTrimmed && secretFilesTrimmed !== '[]')
+    counts.set += parseRuntimeConfigFiles(secretFilesTrimmed).length
   return counts
 }
 
 function oneOf<const T extends string>(value: string, allowed: readonly T[], fallback: T): T {
   return (allowed as readonly string[]).includes(value) ? value as T : fallback
+}
+
+function parseTemplateValuesRecord(raw: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw.trim() || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  }
+  catch {
+    return {}
+  }
 }
 
 function jsonTextMatches(value: string, kind: 'object' | 'array') {

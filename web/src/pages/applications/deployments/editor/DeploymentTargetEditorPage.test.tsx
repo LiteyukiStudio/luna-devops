@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
@@ -81,5 +82,19 @@ describe('deployment target editor page', () => {
     expect(screen.getByDisplayValue('team/demo-web-dev:latest')).toBeInTheDocument()
     expect(vi.mocked(api.getRegistryImageTemplateDefault).mock.calls.length).toBeLessThanOrEqual(2)
     expect(vi.mocked(api.getGitRepositoryBuildOptions).mock.calls.length).toBeLessThanOrEqual(2)
+  })
+
+  it('renders ErrorState inside PageShell and retries failed required queries', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.getApplication)
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValue({ id: 'app_1', identifier: 'web', name: 'Web' } as never)
+
+    renderPage()
+
+    expect(await screen.findByText('Unable to load the deploy config')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByDisplayValue('team/demo-web-dev:latest')).toBeInTheDocument()
   })
 })

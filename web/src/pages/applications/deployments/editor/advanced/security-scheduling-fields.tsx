@@ -67,9 +67,10 @@ export function SecuritySchedulingFields() {
 export function AuxContainersFields() {
   const { t } = useTranslation()
   return (
-    <>
+    <div className="grid gap-3 border-t border-border/60 pt-3">
+      <h4 className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedMultiContainer')}</h4>
       <JsonField hint={t('deploymentsPage.initContainersHint')} label={t('deploymentsPage.initContainers')} name="initContainers" placeholder={t('deploymentsPage.auxContainersPlaceholder')} />
       <JsonField hint={t('deploymentsPage.sidecarContainersHint')} label={t('deploymentsPage.sidecarContainers')} name="sidecarContainers" placeholder={t('deploymentsPage.auxContainersPlaceholder')} />
-    </>
+    </div>
   )
 }

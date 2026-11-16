@@ -93,7 +93,6 @@ const projectVolumes = {
   displayNamePlaceholder: '예: 프로덕션 데이터베이스 데이터',
   claimNamePlaceholder: '예: postgres-data',
   snapshotNamePlaceholder: '예: postgres-backup-20260815',
-  capacityPlaceholder: '예: 20Gi',
   importDescription: 'tar.gz 또는 raw.zst 아카이브를 선택하세요. 대상 볼륨이 준비되면 브라우저가 전체 파일을 직접 업로드합니다.',
   directTransfer: '직접 전송',
   transferUnavailableTitle: '데이터 볼륨 전송이 활성화되지 않았습니다',

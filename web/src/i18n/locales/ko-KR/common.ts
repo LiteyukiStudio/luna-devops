@@ -124,6 +124,12 @@ const common = {
   loginRequiredDescription: '로컬 계정 또는 승인된 OIDC 계정으로 플랫폼에 로그인하세요.',
   pinProject: '프로젝트 스페이스 고정',
   unpinProject: '프로젝트 스페이스 고정 해제',
+  cpuUnitCore: '코어',
+  cpuUnitLabel: 'CPU 단위',
+  memoryUnitLabel: '메모리 단위',
+  storageUnitLabel: '스토리지 용량 단위',
+  keyValueRowKeyLabel: '{{title}} {{index}}행 이름',
+  keyValueRowValueLabel: '{{title}} {{index}}행 값',
   resultVisibility: {
     label: '표시 범위',
     related: '나와 관련됨',

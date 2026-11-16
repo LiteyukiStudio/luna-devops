@@ -4,7 +4,7 @@ import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Settings2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api, buildJobLogsStreamUrl } from '@/api'
@@ -14,7 +14,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { SearchSelect } from '@/components/common/search-select'
 import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
-import { UnitInput } from '@/components/common/unit-input'
+import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -520,27 +520,37 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
                   <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentOverrideHint')}</p>
                 </div>
                 <div className="grid items-start gap-3 md:grid-cols-3">
-                  <Field label={t('deploymentsPage.buildCpuRequest')} required>
-                    <UnitInput
-                      unitSelectLabel={t('deploymentsPage.buildCpuRequest')}
-                      units={[
-                        { label: 'm', value: 'm' },
-                        { label: t('deploymentsPage.cpuUnits.core'), value: '' },
-                      ]}
-                      value={form.watch('buildCpuRequest') || defaultBuildCpuRequest}
-                      onChange={value => form.setValue('buildCpuRequest', value, { shouldDirty: true, shouldValidate: true })}
-                    />
+                  <Field error={form.formState.errors.buildCpuRequest?.message} label={t('deploymentsPage.buildCpuRequest')} required>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="buildCpuRequest"
+                        rules={{ required: t('common.required') }}
+                        render={({ field }) => (
+                          <CpuQuotaInput
+                            inputProps={fieldControl}
+                            value={field.value ?? ''}
+                            onChange={field.onChange}
+                          />
+                        )}
+                      />
+                    )}
                   </Field>
-                  <Field label={t('deploymentsPage.buildMemoryRequest')} required>
-                    <UnitInput
-                      unitSelectLabel={t('deploymentsPage.buildMemoryRequest')}
-                      units={[
-                        { label: 'Mi', value: 'Mi' },
-                        { label: 'Gi', value: 'Gi' },
-                      ]}
-                      value={form.watch('buildMemoryRequest') || defaultBuildMemoryRequest}
-                      onChange={value => form.setValue('buildMemoryRequest', value, { shouldDirty: true, shouldValidate: true })}
-                    />
+                  <Field error={form.formState.errors.buildMemoryRequest?.message} label={t('deploymentsPage.buildMemoryRequest')} required>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="buildMemoryRequest"
+                        rules={{ required: t('common.required') }}
+                        render={({ field }) => (
+                          <MemoryQuotaInput
+                            inputProps={fieldControl}
+                            value={field.value ?? ''}
+                            onChange={field.onChange}
+                          />
+                        )}
+                      />
+                    )}
                   </Field>
                   <Field hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
                     <div className="flex h-9 overflow-hidden rounded-control border border-input bg-background shadow-xs transition focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50">

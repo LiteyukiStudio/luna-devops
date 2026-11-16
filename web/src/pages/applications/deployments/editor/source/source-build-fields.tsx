@@ -1,58 +1,74 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import type { ArtifactRegistry, RepositoryBinding } from '@/api'
+import type { ArtifactRegistry, BuildConcurrencyPolicy, RepositoryBinding } from '@/api'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Box, GitBranch } from 'lucide-react'
+import { RotateCw } from 'lucide-react'
 import { Controller, useFormContext, useFormState, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { FormField } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
 import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
 import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
-import { UnitInput } from '@/components/common/unit-input'
+import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { RadioGroup } from '@/components/ui/radio-group'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { registryInputPrefix, registryOptionLabel } from '@/pages/applications/application-config-utils'
 import { ChoiceCard, EditorGroup } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
-import { deploymentTargetAdvancedItemFields, deploymentTargetSectionFields } from '../deployment-target-form'
-import { dockerfileBuildDefaults, repositoryBuildOptionsQuery, targetImageTemplateQuery } from '../deployment-target-queries'
-import { cpuUnits, memoryUnits } from '../resource-units'
+import { buildConcurrencyPolicies, deploymentTargetAdvancedItemFields } from '../deployment-target-form'
+import { dockerfileBuildDefaults, repositoryBuildOptionsQuery } from '../deployment-target-queries'
 import { ApplicationBuildTemplateFields } from './application-build-template-fields'
 import { RepositoryBindingField } from './repository-binding-field'
 
-// 来源类型决定这些字段是否必填。
-const sourceDependentFields = [...deploymentTargetSectionFields.basics, ...deploymentTargetAdvancedItemFields.build]
+const repositoryOnlyFields = [
+  'repositoryBindingId',
+  'targetRegistryId',
+  'targetImageRef',
+  'buildTemplateId',
+  'buildTemplateValues',
+  'dockerfilePath',
+  'buildContext',
+  ...deploymentTargetAdvancedItemFields.build,
+] as const
 
-/** 来源与构建方式：基本信息分区中的常用部分；构建目录、参数、规格与变量收在高级分区。 */
-export function SourceFields({ applicationId, editing, projectId, registries, repositoryBindings }: {
+/** 来源与构建 / 镜像与发布分区的主体内容。 */
+export function SourceFields({
+  applicationId,
+  editing,
+  followsImageTemplate,
+  onTargetImageRefManualChange,
+  projectId,
+  registries,
+  repositoryBindings,
+  resolvedTemplateImageRef,
+}: {
   applicationId: string
   editing: boolean
+  followsImageTemplate: boolean
+  onTargetImageRefManualChange: () => void
   projectId: string
   registries: ArtifactRegistry[]
   repositoryBindings: RepositoryBinding[]
+  resolvedTemplateImageRef?: string
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { control, getValues, register, setValue, trigger } = useFormContext<DeploymentTargetFormValues>()
-  const { dirtyFields, isSubmitted } = useFormState({ control, name: 'targetImageRef' })
-  const [sourceType, repositoryBindingId, registryId, buildDefinitionMode, stage, targetName] = useWatch({
+  const { clearErrors, control, getValues, register, setValue, trigger } = useFormContext<DeploymentTargetFormValues>()
+  const { isSubmitted } = useFormState({ control })
+  const [sourceType, repositoryBindingId, registryId, buildDefinitionMode, buildConcurrencyPolicy] = useWatch({
     control,
-    name: ['sourceType', 'repositoryBindingId', 'targetRegistryId', 'buildDefinitionMode', 'stage', 'name'],
+    name: ['sourceType', 'repositoryBindingId', 'targetRegistryId', 'buildDefinitionMode', 'buildConcurrencyPolicy'],
   })
   const repository = sourceType === 'repository'
   const binding = repositoryBindings.find(item => item.id === repositoryBindingId)
   const buildOptionsQuery = repositoryBuildOptionsQuery(binding)
   const buildOptions = useQuery({ ...buildOptionsQuery, enabled: repository && Boolean(buildOptionsQuery.enabled) })
   const buildTemplates = useQuery({ queryKey: ['build-templates'], queryFn: () => api.listBuildTemplates(), enabled: repository, staleTime: 5 * 60 * 1000 })
-  // 新建时目标镜像跟随镜像站模板，直到用户手动修改；展示值在渲染中派生，提交时同样以模板为准。
-  const followsImageTemplate = !editing && repository && !dirtyFields.targetImageRef
-  const imageTemplate = useQuery({
-    ...targetImageTemplateQuery({ applicationId, projectId, registryId, stage, targetName }),
-    enabled: followsImageTemplate && Boolean(registryId),
-  })
   const registry = registries.find(item => item.id === registryId)
   const dockerfiles = buildOptions.data?.dockerfiles ?? []
   const directories = buildOptions.data?.directories ?? []
@@ -62,6 +78,12 @@ export function SourceFields({ applicationId, editing, projectId, registries, re
   const targetImageRefError = useFieldError('targetImageRef')
   const dockerfileError = useFieldError('dockerfilePath')
   const buildContextError = useFieldError('buildContext')
+
+  const policyOptions: Record<BuildConcurrencyPolicy, { hint: string, label: string }> = {
+    queue: { label: t('deploymentTargetEditor.buildConcurrencyPolicies.queue'), hint: t('deploymentTargetEditor.buildConcurrencyPolicyHints.queue') },
+    cancel_in_progress: { label: t('deploymentTargetEditor.buildConcurrencyPolicies.cancel_in_progress'), hint: t('deploymentTargetEditor.buildConcurrencyPolicyHints.cancel_in_progress') },
+    parallel: { label: t('deploymentTargetEditor.buildConcurrencyPolicies.parallel'), hint: t('deploymentTargetEditor.buildConcurrencyPolicyHints.parallel') },
+  }
 
   const applyDockerfile = (dockerfilePath: string, nextDirectories: string[], nextPorts: Record<string, number[]>, options: { includePath: boolean }) => {
     const defaults = dockerfileBuildDefaults(dockerfilePath, nextDirectories, nextPorts)
@@ -87,30 +109,39 @@ export function SourceFields({ applicationId, editing, projectId, registries, re
   }
 
   return (
-    <>
-      <EditorGroup description={t('apps.sourceTypeHint')} title={t('apps.sourceType')}>
-        <Controller
-          control={control}
-          name="sourceType"
-          render={({ field }) => (
-            <RadioGroup
-              aria-label={t('apps.sourceType')}
-              className="grid gap-2 @lg/workspace:grid-cols-2"
-              value={field.value}
-              onValueChange={(value) => {
-                field.onChange(value === 'image' ? 'image' : 'repository')
-                // 来源类型决定哪些字段必填；提交过后切换来源要立即刷新该分区的校验结果。
+    <div className="grid min-w-0 gap-4">
+      <Controller
+        control={control}
+        name="sourceType"
+        render={({ field }) => (
+          <RadioGroup
+            aria-label={t('apps.sourceType')}
+            className="grid gap-2 @lg/workspace:grid-cols-2"
+            value={field.value}
+            onValueChange={(value) => {
+              const nextSource = value === 'image' ? 'image' : 'repository'
+              field.onChange(nextSource)
+              if (nextSource === 'image') {
+                clearErrors([...repositoryOnlyFields])
                 if (isSubmitted)
-                  void trigger(sourceDependentFields)
-              }}
-            >
-              <ChoiceCard description={t('deploymentTargetEditor.sourceRepositoryDescription')} icon={<GitBranch className="size-4" />} id="deployment-target-source-repository" label={t('apps.repository')} value="repository" />
-              <ChoiceCard description={t('deploymentTargetEditor.sourceImageDescription')} icon={<Box className="size-4" />} id="deployment-target-source-image" label={t('apps.image')} value="image" />
-            </RadioGroup>
-          )}
-        />
-        {repository
-          ? (
+                  void trigger(['imageRef'])
+              }
+              else {
+                clearErrors(['imageRef'])
+                if (isSubmitted)
+                  void trigger([...repositoryOnlyFields])
+              }
+            }}
+          >
+            <ChoiceCard description={t('deploymentTargetEditor.sourceRepositoryDescription')} id="deployment-target-source-repository" label={t('apps.repository')} value="repository" />
+            <ChoiceCard description={t('deploymentTargetEditor.sourceImageDescription')} id="deployment-target-source-image" label={t('apps.image')} value="image" />
+          </RadioGroup>
+        )}
+      />
+
+      {repository
+        ? (
+            <>
               <div className="grid gap-4 @xl/workspace:grid-cols-2">
                 <div className="@xl/workspace:col-span-2">
                   <RepositoryBindingField
@@ -138,72 +169,130 @@ export function SourceFields({ applicationId, editing, projectId, registries, re
                           placeholder={t('buildsPage.targetImageRefPlaceholder')}
                           prefix={registry ? registryInputPrefix(registry) : ''}
                           ref={field.ref}
-                          value={followsImageTemplate ? (imageTemplate.data?.targetImageRef || field.value) : field.value}
+                          value={followsImageTemplate ? (resolvedTemplateImageRef || field.value) : field.value}
                           onBlur={field.onBlur}
-                          onChange={field.onChange}
+                          onChange={(event) => {
+                            onTargetImageRefManualChange()
+                            field.onChange(event.target.value)
+                          }}
                         />
                       )}
                     />
                   )}
                 </FormField>
               </div>
-            )
-          : (
-              <FormField error={imageRefError} hint={t('apps.imageReferenceHint')} label={t('apps.imageReference')} required>
-                <Input {...register('imageRef')} autoComplete="off" placeholder={t('apps.imageReferencePlaceholder')} />
-              </FormField>
-            )}
-        {repository && buildOptions.isError && (
-          <p className="text-xs text-muted-foreground">{t('deploymentsPage.buildOptionsLoadFailed')}</p>
-        )}
-      </EditorGroup>
 
-      {repository && (
-        <EditorGroup description={t('deploymentTargetEditor.buildDescription')} title={t('deploymentTargetEditor.buildTitle')}>
-          <div className="grid gap-4 @xl/workspace:grid-cols-2">
-            <ApplicationBuildTemplateFields
-              dockerfileSuggestions={dockerfiles}
-              recommendedTemplateIds={buildOptions.data?.recommendedTemplateIds ?? []}
-              templates={buildTemplates.data ?? []}
-            />
-            {buildDefinitionMode === 'repository_dockerfile' && (
-              <FormField error={dockerfileError} hint={t('buildsPage.dockerfileLookupHint')} label={t('buildsPage.dockerfilePath')} required>
-                {fieldControl => (
-                  <div className="grid gap-1">
-                    <Input
-                      {...register('dockerfilePath', { onChange: event => applyDockerfile(event.target.value, directories, exposedPorts, { includePath: false }) })}
-                      {...fieldControl}
-                      list="deployment-target-dockerfile-options"
-                      placeholder={t('deploymentsPage.dockerfilePathPlaceholder')}
-                    />
-                    <datalist id="deployment-target-dockerfile-options">
-                      {dockerfiles.map(option => <option key={option} value={option} />)}
-                    </datalist>
-                    {buildOptions.isFetching && <p className="text-xs text-muted-foreground">{t('apps.detectingRepository')}</p>}
-                  </div>
-                )}
-              </FormField>
-            )}
-            <FormField error={buildContextError} hint={t('buildsPage.buildContextLookupHint')} label={t('buildsPage.buildContext')} required>
-              {fieldControl => (
-                <div>
-                  <Input {...register('buildContext')} {...fieldControl} list="deployment-target-build-context-options" placeholder={t('deploymentsPage.buildContextPlaceholder')} />
-                  <datalist id="deployment-target-build-context-options">
-                    {directories.map(option => <option key={option} value={option} />)}
-                  </datalist>
+              {Boolean(buildOptionsQuery.enabled) && buildOptions.isLoading && (
+                <Skeleton className="h-8 w-full rounded-control" />
+              )}
+              {buildOptions.isError && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border bg-surface-subtle px-3 py-2 text-xs text-muted-foreground">
+                  <span>{t('deploymentsPage.buildOptionsLoadFailed')}</span>
+                  <Button disabled={buildOptions.isFetching} size="sm" type="button" variant="outline" onClick={() => void buildOptions.refetch()}>
+                    <RotateCw className="size-3.5" />
+                    {t('common.retry')}
+                  </Button>
                 </div>
               )}
-            </FormField>
-          </div>
-        </EditorGroup>
-      )}
-    </>
+
+              <EditorGroup title={t('deploymentTargetEditor.buildTitle')}>
+                <div className="grid gap-4 @xl/workspace:grid-cols-2">
+                  <ApplicationBuildTemplateFields
+                    dockerfileSuggestions={dockerfiles}
+                    recommendedTemplateIds={buildOptions.data?.recommendedTemplateIds ?? []}
+                    templates={buildTemplates.data ?? []}
+                    templatesError={buildTemplates.isError}
+                    templatesLoading={buildTemplates.isLoading}
+                    templatesRetrying={buildTemplates.isFetching}
+                    onRetryTemplates={() => void buildTemplates.refetch()}
+                  />
+                  {buildDefinitionMode === 'repository_dockerfile' && (
+                    <FormField error={dockerfileError} hint={t('buildsPage.dockerfileLookupHint')} label={t('buildsPage.dockerfilePath')} required>
+                      {fieldControl => (
+                        <div className="grid gap-1">
+                          <Input
+                            {...register('dockerfilePath', { onChange: event => applyDockerfile(event.target.value, directories, exposedPorts, { includePath: false }) })}
+                            {...fieldControl}
+                            className="font-mono"
+                            list="deployment-target-dockerfile-options"
+                            placeholder={t('deploymentsPage.dockerfilePathPlaceholder')}
+                          />
+                          <datalist id="deployment-target-dockerfile-options">
+                            {dockerfiles.map(option => <option key={option} value={option} />)}
+                          </datalist>
+                          {buildOptions.isFetching && !buildOptions.isLoading && <p className="text-xs text-muted-foreground">{t('apps.detectingRepository')}</p>}
+                        </div>
+                      )}
+                    </FormField>
+                  )}
+                  <FormField error={buildContextError} hint={t('buildsPage.buildContextLookupHint')} label={t('buildsPage.buildContext')} required>
+                    {fieldControl => (
+                      <div>
+                        <Input {...register('buildContext')} {...fieldControl} className="font-mono" list="deployment-target-build-context-options" placeholder={t('deploymentsPage.buildContextPlaceholder')} />
+                        <datalist id="deployment-target-build-context-options">
+                          {directories.map(option => <option key={option} value={option} />)}
+                        </datalist>
+                      </div>
+                    )}
+                  </FormField>
+                </div>
+              </EditorGroup>
+
+              <EditorGroup title={t('deploymentTargetEditor.releaseTriggerTitle')}>
+                <div className="grid gap-4 @xl/workspace:grid-cols-2">
+                  <FormField hint={policyOptions[buildConcurrencyPolicy].hint} label={t('deploymentTargetEditor.buildConcurrencyPolicy')}>
+                    <NativeSelect {...register('buildConcurrencyPolicy')}>
+                      {buildConcurrencyPolicies.map(policy => <option key={policy} value={policy}>{policyOptions[policy].label}</option>)}
+                    </NativeSelect>
+                  </FormField>
+                  <ImagePullPolicyField />
+                  <FormField hint={t('deploymentsPage.branchPatternHint')} label={t('deploymentsPage.branchPattern')}>
+                    <Input {...register('branchPattern')} className="font-mono" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.branchPatternPlaceholder') })} />
+                  </FormField>
+                  <FormField hint={t('deploymentsPage.tagPatternHint')} label={t('deploymentsPage.tagPattern')}>
+                    <Input {...register('tagPattern')} className="font-mono" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.tagPatternPlaceholder') })} />
+                  </FormField>
+                </div>
+              </EditorGroup>
+            </>
+          )
+        : (
+            <div className="grid gap-4 @xl/workspace:grid-cols-2">
+              <FormField error={imageRefError} hint={t('apps.imageReferenceHint')} label={t('apps.imageReference')} required>
+                <Input {...register('imageRef')} autoComplete="off" className="font-mono" placeholder={t('apps.imageReferencePlaceholder')} />
+              </FormField>
+              <ImagePullPolicyField />
+            </div>
+          )}
+    </div>
+  )
+}
+
+function ImagePullPolicyField() {
+  const { t } = useTranslation()
+  const { register } = useFormContext<DeploymentTargetFormValues>()
+  return (
+    <FormField hint={t('deploymentsPage.imagePullPolicyHint')} label={t('deploymentsPage.imagePullPolicy')}>
+      <NativeSelect {...register('imagePullPolicy')}>
+        <option value="">{t('deploymentsPage.kubernetesDefault')}</option>
+        <option value="IfNotPresent">{t('deploymentsPage.kubernetesValues.IfNotPresent')}</option>
+        <option value="Always">{t('deploymentsPage.kubernetesValues.Always')}</option>
+        <option value="Never">{t('deploymentsPage.kubernetesValues.Never')}</option>
+      </NativeSelect>
+    </FormField>
   )
 }
 
 /** 高级分区中的构建选项：构建目录、参数、构建规格、超时和部署级构建变量。 */
-export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindings }: {
+export function BuildAdvancedFields({
+  buildEnvironmentAvailable,
+  buildEnvironmentRetrying,
+  onRetryBuildEnvironment,
+  repositoryBindings,
+}: {
   buildEnvironmentAvailable: boolean
+  buildEnvironmentRetrying?: boolean
+  onRetryBuildEnvironment?: () => void
   repositoryBindings: RepositoryBinding[]
 }) {
   const { i18n, t } = useTranslation()
@@ -213,18 +302,55 @@ export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindi
   const buildOptionsQuery = repositoryBuildOptionsQuery(repositoryBindings.find(item => item.id === repositoryBindingId))
   const buildOptions = useQuery(buildOptionsQuery)
   const directories = buildOptions.data?.directories ?? []
+  const buildCpuError = useFieldError('buildCpuRequest')
+  const buildMemoryError = useFieldError('buildMemoryRequest')
   const buildTimeoutError = useFieldError('buildTimeoutMinutes')
 
   return (
     <>
+      <div className="grid gap-4 @xl/workspace:grid-cols-3">
+        <FormField error={buildCpuError} label={t('deploymentsPage.buildCpuRequest')} required>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="buildCpuRequest"
+              render={({ field }) => <CpuQuotaInput inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
+            />
+          )}
+        </FormField>
+        <FormField error={buildMemoryError} label={t('deploymentsPage.buildMemoryRequest')} required>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="buildMemoryRequest"
+              render={({ field }) => <MemoryQuotaInput inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
+            />
+          )}
+        </FormField>
+        <FormField error={buildTimeoutError} hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
+          <Input {...register('buildTimeoutMinutes', { valueAsNumber: true })} className="font-mono tabular-nums" inputMode="numeric" max={1440} min={1} type="number" />
+        </FormField>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t('deploymentsPage.buildEstimatedPrice', { price: billing.formatAmountWithUnit(billing.buildMinuteCost(buildCpuRequest, buildMemoryRequest)) })}
+      </p>
       <div className="grid gap-4 @xl/workspace:grid-cols-2">
         <FormField hint={t('buildsPage.buildDirectoryHint')} label={t('buildsPage.buildDirectory')}>
           {fieldControl => (
-            <div>
-              <Input {...register('buildDirectory')} {...fieldControl} list="deployment-target-build-directory-options" placeholder={t('buildsPage.buildDirectoryPlaceholder')} />
+            <div className="grid gap-1">
+              <Input {...register('buildDirectory')} {...fieldControl} className="font-mono" list="deployment-target-build-directory-options" placeholder={t('buildsPage.buildDirectoryPlaceholder')} />
               <datalist id="deployment-target-build-directory-options">
                 {directories.filter(option => option !== '.').map(option => <option key={option} value={option} />)}
               </datalist>
+              {buildOptions.isError && (
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>{t('deploymentsPage.buildOptionsLoadFailed')}</span>
+                  <Button disabled={buildOptions.isFetching} size="sm" type="button" variant="ghost" onClick={() => void buildOptions.refetch()}>
+                    <RotateCw className="size-3.5" />
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </FormField>
@@ -232,37 +358,11 @@ export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindi
           <Textarea {...register('buildArgs')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('buildsPage.buildArgsPlaceholder') })} />
         </FormField>
       </div>
-      <div className="grid gap-4 @xl/workspace:grid-cols-3">
-        <FormField label={t('deploymentsPage.buildCpuRequest')} required>
-          {fieldControl => (
-            <Controller
-              control={control}
-              name="buildCpuRequest"
-              render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.cpuUnitLabel')} units={cpuUnits(t)} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
-            />
-          )}
-        </FormField>
-        <FormField label={t('deploymentsPage.buildMemoryRequest')} required>
-          {fieldControl => (
-            <Controller
-              control={control}
-              name="buildMemoryRequest"
-              render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.memoryUnitLabel')} units={memoryUnits} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
-            />
-          )}
-        </FormField>
-        <FormField error={buildTimeoutError} hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
-          <Input {...register('buildTimeoutMinutes', { valueAsNumber: true })} inputMode="numeric" max={1440} min={1} type="number" />
-        </FormField>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {t('deploymentsPage.buildEstimatedPrice', { price: billing.formatAmountWithUnit(billing.buildMinuteCost(buildCpuRequest, buildMemoryRequest)) })}
-      </p>
       <div className="grid gap-3">
-        <div>
-          <h4 className="text-sm font-medium">{t('deploymentsPage.deploymentBuildEnvironment')}</h4>
-          <p className="mt-1 text-xs text-muted-foreground">{t('deploymentsPage.deploymentBuildEnvironmentDescription')}</p>
-        </div>
+        <h4 className="inline-flex items-center gap-1.5 text-sm font-medium">
+          {t('deploymentsPage.deploymentBuildEnvironment')}
+          <HelpTip label={t('deploymentsPage.deploymentBuildEnvironment')}>{t('deploymentsPage.deploymentBuildEnvironmentDescription')}</HelpTip>
+        </h4>
         {buildEnvironmentAvailable
           ? (
               <div className="grid gap-3 @2xl/workspace:grid-cols-2">
@@ -282,7 +382,17 @@ export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindi
                 />
               </div>
             )
-          : <p className="text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentLoadFailed')}</p>}
+          : (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border bg-surface-subtle px-3 py-2 text-sm text-muted-foreground">
+                <span>{t('buildsPage.buildEnvironmentLoadFailed')}</span>
+                {onRetryBuildEnvironment && (
+                  <Button disabled={buildEnvironmentRetrying} size="sm" type="button" variant="outline" onClick={onRetryBuildEnvironment}>
+                    <RotateCw className="size-3.5" />
+                    {t('common.retry')}
+                  </Button>
+                )}
+              </div>
+            )}
       </div>
     </>
   )

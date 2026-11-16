@@ -1,5 +1,5 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import type { ArtifactRegistry, RepositoryBinding, RuntimeCluster } from '@/api'
+import type { RuntimeCluster } from '@/api'
 import { Controller, useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
@@ -12,17 +12,13 @@ import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
 import { EditorSection, SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
 import { isPublicDeploymentStage, publicDeploymentStages } from '../deployment-target-form'
-import { SourceFields } from '../source/source-build-fields'
 
 const defaultClusterValue = '__default__'
 
-/** 基本信息与来源：名称、阶段、集群与启用状态，以及来源类型、仓库或镜像和构建方式。 */
-export function BasicsSection({ applicationId, editing, projectId, registries, repositoryBindings, runtimeClusters }: {
-  applicationId: string
+/** 基础配置：名称、阶段、运行集群、工作负载类型与启用开关。 */
+export function BasicsSection({ editing, projectId, runtimeClusters }: {
   editing: boolean
   projectId: string
-  registries: ArtifactRegistry[]
-  repositoryBindings: RepositoryBinding[]
   runtimeClusters: RuntimeCluster[]
 }) {
   const { t } = useTranslation()
@@ -46,8 +42,19 @@ export function BasicsSection({ applicationId, editing, projectId, registries, r
   }
 
   return (
-    <EditorSection description={t('deploymentTargetEditor.sections.basicsDescription')} section="basics" title={t('deploymentTargetEditor.sections.basics')}>
-      <div className="grid gap-4 @xl/workspace:grid-cols-2">
+    <EditorSection
+      section="basics"
+      title={t('deploymentTargetEditor.sections.basics')}
+      tools={(
+        <SwitchField
+          inline
+          description={t('deploymentTargetEditor.enabledDescription')}
+          label={t('deploymentTargetEditor.enabled')}
+          name="enabled"
+        />
+      )}
+    >
+      <div className="grid gap-4 @md/workspace:grid-cols-2 @3xl/workspace:grid-cols-4">
         <FormField error={nameError} hint={t('deploymentsPage.deploymentConfigNameHint')} label={t('common.name')} required>
           <Input {...register('name')} autoComplete="off" placeholder={t('deploymentsPage.deploymentConfigNamePattern')} />
         </FormField>
@@ -59,7 +66,7 @@ export function BasicsSection({ applicationId, editing, projectId, registries, r
             {publicDeploymentStages.map(item => <option key={item} value={item}>{stageLabels[item]}</option>)}
           </NativeSelect>
         </FormField>
-        <FormField className="@xl/workspace:col-span-2" hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
+        <FormField hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
           {fieldControl => (
             <Controller
               control={control}
@@ -92,11 +99,13 @@ export function BasicsSection({ applicationId, editing, projectId, registries, r
             />
           )}
         </FormField>
-        <div className="@xl/workspace:col-span-2">
-          <SwitchField description={t('deploymentTargetEditor.enabledDescription')} label={t('deploymentTargetEditor.enabled')} name="enabled" />
-        </div>
+        <FormField hint={t('deploymentsPage.workloadTypeHint')} label={t('deploymentsPage.workloadType')}>
+          <NativeSelect {...register('workloadType')}>
+            <option value="Deployment">{t('deploymentsPage.kubernetesValues.Deployment')}</option>
+            <option value="StatefulSet">{t('deploymentsPage.kubernetesValues.StatefulSet')}</option>
+          </NativeSelect>
+        </FormField>
       </div>
-      <SourceFields applicationId={applicationId} editing={editing} projectId={projectId} registries={registries} repositoryBindings={repositoryBindings} />
     </EditorSection>
   )
 }

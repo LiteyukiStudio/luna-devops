@@ -1,9 +1,9 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import type { BuildTemplate, BuildTemplatePreview } from '@/api'
+import type { BuildTemplate, BuildTemplateParameter, BuildTemplatePreview } from '@/api'
 import { useMutation } from '@tanstack/react-query'
-import { FileCode2, Sparkles } from 'lucide-react'
+import { FileCode2, RotateCw, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useFormContext } from 'react-hook-form'
+import { get, useFormContext, useFormState } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
@@ -16,20 +16,30 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useFieldError } from '../deployment-target-editor-utils'
 
 export function ApplicationBuildTemplateFields({
   dockerfileSuggestions,
+  onRetryTemplates,
   recommendedTemplateIds,
   templates,
+  templatesError = false,
+  templatesLoading = false,
+  templatesRetrying = false,
 }: {
   dockerfileSuggestions: string[]
+  onRetryTemplates?: () => void
   recommendedTemplateIds: string[]
   templates: BuildTemplate[]
+  templatesError?: boolean
+  templatesLoading?: boolean
+  templatesRetrying?: boolean
 }) {
   const { t } = useTranslation()
   const form = useFormContext<DeploymentTargetFormValues>()
   const templateError = useFieldError('buildTemplateId')
+  const templateValuesRootError = useFieldError('buildTemplateValues')
   const [preview, setPreview] = useState<BuildTemplatePreview | null>(null)
   const mode = form.watch('buildDefinitionMode') || 'repository_dockerfile'
   const templateID = form.watch('buildTemplateId')
@@ -57,24 +67,27 @@ export function ApplicationBuildTemplateFields({
     const next = templates.find(item => item.id === nextID)
     form.setValue('buildTemplateId', next?.id ?? '', { shouldDirty: true, shouldValidate: true })
     form.setValue('buildTemplateVersion', next?.version ?? '', { shouldDirty: true })
-    form.setValue('buildTemplateValues', JSON.stringify(defaultTemplateValues(next)), { shouldDirty: true })
+    form.setValue('buildTemplateValues', JSON.stringify(defaultTemplateValues(next)), { shouldDirty: true, shouldValidate: form.formState.isSubmitted })
   }
 
   const switchMode = (nextMode: DeploymentTargetFormValues['buildDefinitionMode']) => {
     form.setValue('buildDefinitionMode', nextMode, { shouldDirty: true, shouldValidate: true })
-    if (nextMode === 'template' && !selectedTemplate)
+    if (nextMode === 'template' && !selectedTemplate && templates.length > 0)
       selectTemplate(recommendedTemplateIds.find(id => templates.some(item => item.id === id)) ?? templates[0]?.id ?? '')
     if (form.formState.isSubmitted)
-      void form.trigger(['dockerfilePath', 'buildTemplateId'])
+      void form.trigger(['dockerfilePath', 'buildTemplateId', 'buildTemplateValues'])
   }
 
   const updateValue = (key: string, value: string) => {
-    form.setValue('buildTemplateValues', JSON.stringify({ ...templateValues, [key]: value }), { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildTemplateValues', JSON.stringify({ ...defaultTemplateValues(selectedTemplate), ...templateValues, [key]: value }), {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
   }
 
   return (
-    <div className="grid gap-4 @xl/workspace:col-span-2">
-      <Field hint={t('buildTemplates.modeHint')} label={t('buildTemplates.mode')} required>
+    <div className="grid gap-4 @xl/workspace:col-span-2 @xl/workspace:grid-cols-2">
+      <Field className="@xl/workspace:col-span-2" hint={t('buildTemplates.modeHint')} label={t('buildTemplates.mode')} required>
         <NativeSelect value={mode} onChange={event => switchMode(event.target.value === 'template' ? 'template' : 'repository_dockerfile')}>
           <option value="repository_dockerfile">{t('buildTemplates.repositoryDockerfile')}</option>
           <option value="template">{t('buildTemplates.platformTemplate')}</option>
@@ -96,26 +109,40 @@ export function ApplicationBuildTemplateFields({
 
       {mode === 'template' && (
         <>
-          <Field error={templateError} hint={t('buildTemplates.templateHint')} label={t('buildTemplates.template')} required>
-            {control => (
-              <Select value={templateID || undefined} onValueChange={selectTemplate}>
-                <SelectTrigger {...control} className="w-full">
-                  <SelectValue placeholder={t('common.select')} />
-                </SelectTrigger>
-                <SelectContent position="popper">
-                  {orderedTemplates.map((item) => {
-                    return (
-                      <SelectItem key={`${item.id}:${item.version}`} value={item.id}>
-                        {buildTemplateIcon(item)}
-                        <span>{t(`buildTemplates.names.${item.id}`)}</span>
-                        {recommendedTemplateIds.includes(item.id) && <Badge className="ml-auto" variant="secondary">{t('buildTemplates.recommended')}</Badge>}
-                      </SelectItem>
-                    )
-                  })}
-                </SelectContent>
-              </Select>
-            )}
-          </Field>
+          {templatesLoading
+            ? <Skeleton className="h-9 w-full rounded-control @xl/workspace:col-span-2" />
+            : templatesError
+              ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger-border bg-danger-subtle px-3 py-2 text-xs text-danger @xl/workspace:col-span-2" role="alert">
+                    <span>{t('deploymentTargetEditor.buildTemplatesLoadFailed')}</span>
+                    {onRetryTemplates && (
+                      <Button disabled={templatesRetrying} size="sm" type="button" variant="outline" onClick={onRetryTemplates}>
+                        <RotateCw className="size-3.5" />
+                        {t('common.retry')}
+                      </Button>
+                    )}
+                  </div>
+                )
+              : (
+                  <Field error={templateError} hint={t('buildTemplates.templateHint')} label={t('buildTemplates.template')} required>
+                    {control => (
+                      <Select value={templateID || undefined} onValueChange={selectTemplate}>
+                        <SelectTrigger {...control} className="w-full">
+                          <SelectValue placeholder={t('common.select')} />
+                        </SelectTrigger>
+                        <SelectContent position="popper">
+                          {orderedTemplates.map(item => (
+                            <SelectItem key={`${item.id}:${item.version}`} value={item.id}>
+                              {buildTemplateIcon(item)}
+                              <span>{t(`buildTemplates.names.${item.id}`)}</span>
+                              {recommendedTemplateIds.includes(item.id) && <Badge className="ml-auto" variant="secondary">{t('buildTemplates.recommended')}</Badge>}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </Field>
+                )}
           {selectedTemplate?.id === 'nextjs-service' && (
             <Alert className="@xl/workspace:col-span-2">
               <FileCode2 className="size-4" />
@@ -125,9 +152,9 @@ export function ApplicationBuildTemplateFields({
           )}
           {selectedTemplate && (
             <div className="flex min-w-0 items-end gap-2">
-              <div className="grid min-w-0 flex-1 gap-1">
+              <div className="grid min-w-0 flex-1 gap-1.5">
                 <span className="text-sm font-medium">{t('buildTemplates.selectedVersion')}</span>
-                <div className="flex h-8 items-center gap-2 rounded-control border border-border bg-surface-inset px-3">
+                <div className="flex h-9 items-center gap-2 rounded-control border border-border bg-surface-inset px-3">
                   <Badge variant="secondary">
                     v
                     {selectedTemplate.version}
@@ -141,22 +168,16 @@ export function ApplicationBuildTemplateFields({
               </Button>
             </div>
           )}
+          {templateValuesRootError && (
+            <p className="text-xs text-danger @xl/workspace:col-span-2" role="alert">{templateValuesRootError}</p>
+          )}
           {selectedTemplate?.parameters.map(parameter => (
-            <Field key={parameter.key} label={t(`buildTemplates.parameters.${parameter.key}`)} required={parameter.required}>
-              {parameter.type === 'select'
-                ? (
-                    <NativeSelect value={templateValues[parameter.key] ?? parameter.defaultValue} onChange={event => updateValue(parameter.key, event.target.value)}>
-                      {(parameter.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}
-                    </NativeSelect>
-                  )
-                : (
-                    <Input
-                      inputMode={parameter.type === 'port' ? 'numeric' : undefined}
-                      value={templateValues[parameter.key] ?? parameter.defaultValue}
-                      onChange={event => updateValue(parameter.key, event.target.value)}
-                    />
-                  )}
-            </Field>
+            <TemplateParameterField
+              key={parameter.key}
+              parameter={parameter}
+              value={Object.hasOwn(templateValues, parameter.key) ? templateValues[parameter.key] : parameter.defaultValue}
+              onChange={nextValue => updateValue(parameter.key, nextValue)}
+            />
           ))}
           <p className="text-xs text-muted-foreground @xl/workspace:col-span-2">{t('buildTemplates.overrideNotice')}</p>
         </>
@@ -172,6 +193,43 @@ export function ApplicationBuildTemplateFields({
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function TemplateParameterField({
+  onChange,
+  parameter,
+  value,
+}: {
+  onChange: (value: string) => void
+  parameter: BuildTemplateParameter
+  value: string
+}) {
+  const { t } = useTranslation()
+  const { control } = useFormContext<DeploymentTargetFormValues>()
+  const { errors } = useFormState({ control, name: 'buildTemplateValues' })
+  const rawError: unknown = get(errors, `buildTemplateValues.${parameter.key}`)
+  const error = rawError && typeof rawError === 'object' && 'message' in rawError && typeof rawError.message === 'string'
+    ? rawError.message
+    : undefined
+
+  return (
+    <Field error={error} label={t(`buildTemplates.parameters.${parameter.key}`)} required={parameter.required}>
+      {parameter.type === 'select'
+        ? (
+            <NativeSelect value={value} onChange={event => onChange(event.target.value)}>
+              {(parameter.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}
+            </NativeSelect>
+          )
+        : (
+            <Input
+              className="font-mono"
+              inputMode={parameter.type === 'port' ? 'numeric' : undefined}
+              value={value}
+              onChange={event => onChange(event.target.value)}
+            />
+          )}
+    </Field>
   )
 }
 

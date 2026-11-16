@@ -1,8 +1,9 @@
 import type { DeploymentTargetFormValues, RuntimeEnvironmentRow } from './deployment-target-form'
-import type { DeploymentTarget, DeploymentTargetPayload } from '@/api'
+import type { BuildTemplate, DeploymentTarget, DeploymentTargetPayload } from '@/api'
 import type { components } from '@/api/generated/openapi'
 import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
 import i18next from '@/i18n'
+import { fieldErrorCount, sectionErrorCount } from './deployment-target-editor-utils'
 import {
   createDeploymentTargetFormSchema,
   deploymentTargetFormToPayload,
@@ -107,10 +108,10 @@ const configuredTarget: DeploymentTarget = {
   createdAt: '2026-10-01T00:00:00Z',
 }
 
-const schema = () => createDeploymentTargetFormSchema(i18next.t)
+const schema = (buildTemplates?: readonly BuildTemplate[]) => createDeploymentTargetFormSchema(i18next.t, { buildTemplates })
 
-function validationMessages(values: DeploymentTargetFormValues) {
-  const result = schema().safeParse(values)
+function validationMessages(values: DeploymentTargetFormValues, buildTemplates?: readonly BuildTemplate[]) {
+  const result = schema(buildTemplates).safeParse(values)
   return result.success ? {} : Object.fromEntries(result.error.issues.map(issue => [issue.path.join('.'), issue.message]))
 }
 
@@ -182,7 +183,7 @@ describe('unified runtime environment table', () => {
     }))).toHaveProperty('environmentVariables.0.value')
   })
 
-  it('counts pending secret operations for the save summary', () => {
+  it('counts pending secret operations including cleared secret files', () => {
     expect(pendingSecretOperations([
       { ...storedSecretRow('A'), secretAction: 'clear' },
       { ...storedSecretRow('B'), mode: 'public', value: 'x' },
@@ -190,6 +191,9 @@ describe('unified runtime environment table', () => {
       { key: 'D', mode: 'secret', secretAction: 'set', stored: 'none', value: 'v' },
       storedSecretRow('E'),
     ])).toEqual({ cleared: 2, generated: 1, set: 1 })
+
+    expect(pendingSecretOperations([], { secretFiles: '[]', secretFilesSet: true })).toEqual({ cleared: 1, generated: 0, set: 0 })
+    expect(pendingSecretOperations([], { secretFiles: '[{"path":"/run/key","content":"x"}]', secretFilesSet: true })).toEqual({ cleared: 0, generated: 0, set: 1 })
   })
 })
 
@@ -277,6 +281,56 @@ describe('deployment target form model', () => {
     }))).toHaveProperty('buildHookBindings.1.hookConfigId')
   })
 
+  it('validates build template required parameters and port bounds', () => {
+    const templates: BuildTemplate[] = [{
+      id: 'go-service',
+      version: '1.0.0',
+      runtime: 'go',
+      category: 'backend',
+      defaultServicePort: 8080,
+      parameters: [
+        { key: 'entryPackage', type: 'path', required: true, defaultValue: './cmd/server' },
+        { key: 'servicePort', type: 'port', required: true, defaultValue: '8080' },
+      ],
+    }]
+
+    expect(validationMessages(validNewTarget({
+      buildDefinitionMode: 'template',
+      buildTemplateId: 'go-service',
+      buildTemplateValues: JSON.stringify({ entryPackage: ' ', servicePort: '70000' }),
+    }), templates)).toEqual({
+      'buildTemplateValues.entryPackage': 'Required',
+      'buildTemplateValues.servicePort': 'Must be at most 65535',
+    })
+
+    expect(validationMessages(validNewTarget({
+      buildDefinitionMode: 'template',
+      buildTemplateId: 'go-service',
+      buildTemplateValues: JSON.stringify({ entryPackage: './cmd/api', servicePort: '8888' }),
+    }), templates)).toEqual({})
+  })
+
+  it('ignores hidden build errors in image mode and counts leaf row errors accurately', () => {
+    expect(validationMessages(validNewTarget({
+      sourceType: 'image',
+      imageRef: 'nginx:1.27-alpine',
+      buildCpuRequest: '',
+      buildMemoryRequest: '',
+      buildTimeoutMinutes: Number.NaN,
+    }))).toEqual({})
+
+    const mockErrors = {
+      buildCpuRequest: { message: 'Required', type: 'custom' },
+      servicePorts: [
+        { port: { message: 'Invalid port', type: 'min' } },
+        { name: { message: 'Duplicate', type: 'custom' }, port: { message: 'Duplicate', type: 'custom' } },
+      ],
+    }
+    expect(fieldErrorCount(mockErrors, ['servicePorts'])).toBe(3)
+    expect(sectionErrorCount(mockErrors, 'advanced', 'repository')).toBe(1)
+    expect(sectionErrorCount(mockErrors, 'advanced', 'image')).toBe(0)
+  })
+
   it('accepts a freshly created target with platform defaults', () => {
     expect(validationMessages(validNewTarget())).toEqual({})
   })
@@ -295,6 +349,7 @@ describe('deployment target form model', () => {
       ['service ports', { servicePorts: [{ name: 'http', port: 9090, appProtocol: '' }] }],
       ['deployment hook', { buildHookBindings: [{ hookConfigId: 'hook_1', phase: 'preDeployment' as const }] }],
       ['secret files', { secretFiles: '[{"content":"x","path":"/run/secret"}]' }],
+      ['cleared secret files', { secretFiles: '[]' }],
     ])('requires a redeploy for %s changes', (_label, overrides) => {
       expect(changed(overrides)).toBe(true)
     })

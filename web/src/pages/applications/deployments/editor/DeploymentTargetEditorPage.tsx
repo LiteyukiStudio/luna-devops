@@ -54,8 +54,24 @@ export function DeploymentTargetEditorPage() {
 
   const required = [application, project, registries, repositoryBindings, deploymentTargets, releases, runtimeClusters]
   const title = editing ? t('deploymentsPage.editDeploymentTarget') : t('deploymentsPage.createDeploymentTarget')
-  if (required.some(query => query.isError))
-    return <ErrorState description={t('deploymentTargetEditor.loadFailedDescription')} title={t('deploymentTargetEditor.loadFailedTitle')} />
+  if (required.some(query => query.isError)) {
+    return (
+      <PageShell width="content">
+        <PageChromeHeading description={t('deploymentTargetEditor.pageDescription')} title={title} />
+        <ErrorState
+          description={t('deploymentTargetEditor.loadFailedDescription')}
+          retrying={required.some(query => query.isFetching)}
+          title={t('deploymentTargetEditor.loadFailedTitle')}
+          onRetry={() => {
+            for (const query of required) {
+              if (query.isError)
+                void query.refetch()
+            }
+          }}
+        />
+      </PageShell>
+    )
+  }
   // 只等首次加载：来源分区共享同一查询键，挂载后的后台重取不能把编辑器切回骨架屏。
   const initialQueriesSettled = editing
     ? !buildEnvironment.isPending
@@ -68,8 +84,19 @@ export function DeploymentTargetEditorPage() {
       </PageShell>
     )
   }
-  if (editing && !target)
-    return <ErrorState description={t('deploymentTargetEditor.notFoundDescription')} title={t('deploymentTargetEditor.notFoundTitle')} />
+  if (editing && !target) {
+    return (
+      <PageShell width="content">
+        <PageChromeHeading description={t('deploymentTargetEditor.pageDescription')} title={title} />
+        <ErrorState
+          description={t('deploymentTargetEditor.notFoundDescription')}
+          retrying={deploymentTargets.isFetching}
+          title={t('deploymentTargetEditor.notFoundTitle')}
+          onRetry={() => void deploymentTargets.refetch()}
+        />
+      </PageShell>
+    )
+  }
 
   // 运行时密钥随部署配置写入，后端按 deployment:update 授权；前端只消费 currentUserActions，不按角色推导。
   const canManageRuntimeSecrets = projectActionAllowed(project.data?.currentUserActions, ProjectAction.DeploymentUpdate)
@@ -86,6 +113,7 @@ export function DeploymentTargetEditorPage() {
         key={targetId ?? 'new'}
         applicationId={applicationId}
         buildEnvironmentAvailable={!editing || buildEnvironment.isSuccess}
+        buildEnvironmentRetrying={buildEnvironment.isFetching}
         canManageRuntimeSecrets={canManageRuntimeSecrets}
         createInitialValues={() => target
           ? deploymentTargetToFormValues(target, buildEnvironment.data)
@@ -105,6 +133,7 @@ export function DeploymentTargetEditorPage() {
         repositoryBindings={bindings}
         runtimeClusters={runtimeClusters.data ?? []}
         target={target}
+        onRetryBuildEnvironment={() => void buildEnvironment.refetch()}
       />
     </PageShell>
   )

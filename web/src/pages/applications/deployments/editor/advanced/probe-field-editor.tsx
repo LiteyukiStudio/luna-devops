@@ -196,6 +196,7 @@ export function ProbeFieldEditor({
   const { control } = useFormContext<DeploymentTargetFormValues>()
   const error = useFieldError(name)
   const modeSelectId = useId()
+  const errorId = `${modeSelectId}-error`
   const [forceJsonMode, setForceJsonMode] = useState(false)
 
   return (
@@ -206,6 +207,7 @@ export function ProbeFieldEditor({
         const parsed = parseStructuredProbe(field.value, defaultPort)
         const effectiveMode: ProbeMode = forceJsonMode && field.value.trim() !== '' ? 'json' : parsed.mode
         const draft = parsed.draft
+        const nonJsonError = effectiveMode !== 'json' && Boolean(error)
 
         const handleModeChange = (nextMode: ProbeMode) => {
           if (nextMode === 'none') {
@@ -241,6 +243,8 @@ export function ProbeFieldEditor({
                 <HelpTip label={label}>{hint}</HelpTip>
               </span>
               <NativeSelect
+                aria-describedby={nonJsonError ? errorId : undefined}
+                aria-invalid={nonJsonError ? true : undefined}
                 aria-label={label}
                 className="h-8 w-44 text-xs"
                 containerClassName="w-auto"
@@ -260,6 +264,7 @@ export function ProbeFieldEditor({
               <div className="grid gap-3 @xl/workspace:grid-cols-3">
                 <FormField label={t('deploymentsPage.probeHttpPath')}>
                   <Input
+                    className="font-mono"
                     placeholder="/healthz"
                     value={draft.path}
                     onBlur={() => {
@@ -271,6 +276,7 @@ export function ProbeFieldEditor({
                 </FormField>
                 <FormField label={t('deploymentsPage.servicePortNumber')}>
                   <Input
+                    className="font-mono tabular-nums"
                     max={65535}
                     min={1}
                     type="number"
@@ -294,6 +300,7 @@ export function ProbeFieldEditor({
               <div className="grid gap-3 @xl/workspace:grid-cols-3">
                 <FormField label={t('deploymentsPage.servicePortNumber')}>
                   <Input
+                    className="font-mono tabular-nums"
                     max={65535}
                     min={1}
                     type="number"
@@ -319,6 +326,7 @@ export function ProbeFieldEditor({
               <div className="grid gap-3 @xl/workspace:grid-cols-4">
                 <FormField label={t('deploymentsPage.probeInitialDelaySeconds')}>
                   <Input
+                    className="font-mono tabular-nums"
                     min={0}
                     type="number"
                     value={draft.initialDelaySeconds}
@@ -327,6 +335,7 @@ export function ProbeFieldEditor({
                 </FormField>
                 <FormField label={t('deploymentsPage.probePeriodSeconds')}>
                   <Input
+                    className="font-mono tabular-nums"
                     min={1}
                     type="number"
                     value={draft.periodSeconds}
@@ -335,6 +344,7 @@ export function ProbeFieldEditor({
                 </FormField>
                 <FormField label={t('deploymentsPage.probeTimeoutSeconds')}>
                   <Input
+                    className="font-mono tabular-nums"
                     min={1}
                     type="number"
                     value={draft.timeoutSeconds}
@@ -343,6 +353,7 @@ export function ProbeFieldEditor({
                 </FormField>
                 <FormField label={t('deploymentsPage.probeFailureThreshold')}>
                   <Input
+                    className="font-mono tabular-nums"
                     min={1}
                     type="number"
                     value={draft.failureThreshold}
@@ -369,8 +380,8 @@ export function ProbeFieldEditor({
               </FormField>
             )}
 
-            {effectiveMode !== 'json' && error && (
-              <p className="text-xs text-destructive" role="alert">{error}</p>
+            {nonJsonError && error && (
+              <p className="text-xs text-danger" id={errorId} role="alert">{error}</p>
             )}
           </div>
         )

@@ -2,23 +2,26 @@ import type { ComponentProps } from 'react'
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import type { RuntimeCluster } from '@/api'
 import type { RuntimeResourcePolicy } from '@/lib/billing-display'
+import { ChevronDown } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
-import { UnitInput } from '@/components/common/unit-input'
+import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { RadioGroup } from '@/components/ui/radio-group'
 import { useBillingDisplay } from '@/lib/billing-display'
-import { ChoiceCard, EditorGroup, SwitchField } from '../deployment-target-editor-fields'
+import { matchRuntimeSizePreset, runtimeSizePresets } from '@/lib/resource-units'
+import { cn } from '@/lib/utils'
+import { ChoiceCard, EditorGroup, JsonField, SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
-import { cpuUnits, matchRuntimeSizePreset, memoryUnits, runtimeSizePresets } from '../resource-units'
 
 /** 规格与伸缩：规格优先用预设；副本数与 HPA 互斥展示，避免同时编辑两个互相覆盖的副本来源。 */
 export function RuntimeScaleFields({ runtimeClusters }: { runtimeClusters: RuntimeCluster[] }) {
   const { t } = useTranslation()
   const { control, register } = useFormContext<DeploymentTargetFormValues>()
-  const [clusterId, autoScalingEnabled] = useWatch({ control, name: ['clusterId', 'autoScalingEnabled'] })
+  const [clusterId, autoScalingEnabled, autoScalingBehavior] = useWatch({ control, name: ['clusterId', 'autoScalingEnabled', 'autoScalingBehavior'] })
   const runtimeCluster = runtimeClusters.find(cluster => cluster.id === clusterId)
     ?? (clusterId ? undefined : runtimeClusters.find(cluster => cluster.isDefault) ?? runtimeClusters[0])
   const replicasError = useFieldError('replicas')
@@ -26,40 +29,62 @@ export function RuntimeScaleFields({ runtimeClusters }: { runtimeClusters: Runti
   const maxError = useFieldError('autoScalingMaxReplicas')
   const cpuPercentError = useFieldError('autoScalingCpuPercent')
   const memoryPercentError = useFieldError('autoScalingMemoryPercent')
+  const behaviorError = useFieldError('autoScalingBehavior')
+  const [behaviorOpen, setBehaviorOpen] = useState(() => Boolean(autoScalingBehavior?.trim()))
+  const effectiveBehaviorOpen = behaviorOpen || Boolean(behaviorError)
 
   return (
-    <EditorGroup description={t('deploymentTargetEditor.scaleDescription')} title={t('deploymentTargetEditor.scaleTitle')}>
+    <EditorGroup
+      title={t('deploymentTargetEditor.scaleTitle')}
+      tools={(
+        <SwitchField
+          inline
+          description={t('deploymentsPage.autoScalingEnabledHint')}
+          label={t('deploymentsPage.autoScalingEnabled')}
+          name="autoScalingEnabled"
+          revalidate={['autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent']}
+        />
+      )}
+    >
       <RuntimeSizeField />
-      {!autoScalingEnabled && (
-        <div className="grid gap-4 @xl/workspace:grid-cols-3">
-          <FormField error={replicasError} hint={t('deploymentsPage.replicasHint')} label={t('deploymentsPage.replicas')} required>
-            <Input {...register('replicas', { valueAsNumber: true })} inputMode="numeric" min={0} type="number" />
-          </FormField>
-        </div>
+      {autoScalingEnabled
+        ? (
+            <div className="grid gap-4 @lg/workspace:grid-cols-2 @2xl/workspace:grid-cols-4">
+              <FormField error={minError} hint={t('deploymentsPage.autoScalingMinReplicasHint')} label={t('deploymentsPage.autoScalingMinReplicas')} required>
+                <Input {...register('autoScalingMinReplicas', { valueAsNumber: true, deps: ['autoScalingMaxReplicas'] })} className="font-mono tabular-nums" inputMode="numeric" min={1} type="number" />
+              </FormField>
+              <FormField error={maxError} hint={t('deploymentsPage.autoScalingMaxReplicasHint')} label={t('deploymentsPage.autoScalingMaxReplicas')} required>
+                <Input {...register('autoScalingMaxReplicas', { valueAsNumber: true })} className="font-mono tabular-nums" inputMode="numeric" min={1} type="number" />
+              </FormField>
+              <FormField error={cpuPercentError} hint={t('deploymentsPage.autoScalingCpuPercentHint')} label={t('deploymentsPage.autoScalingCpuPercent')}>
+                <PercentInput {...register('autoScalingCpuPercent', { valueAsNumber: true, deps: ['autoScalingMemoryPercent'] })} />
+              </FormField>
+              <FormField error={memoryPercentError} hint={t('deploymentsPage.autoScalingMemoryPercentHint')} label={t('deploymentsPage.autoScalingMemoryPercent')}>
+                <PercentInput {...register('autoScalingMemoryPercent', { valueAsNumber: true, deps: ['autoScalingCpuPercent'] })} />
+              </FormField>
+            </div>
+          )
+        : (
+            <div className="grid gap-4 @xl/workspace:grid-cols-3">
+              <FormField error={replicasError} hint={t('deploymentsPage.replicasHint')} label={t('deploymentsPage.replicas')} required>
+                <Input {...register('replicas', { valueAsNumber: true })} className="font-mono tabular-nums" inputMode="numeric" min={0} type="number" />
+              </FormField>
+            </div>
+          )}
+      {(autoScalingEnabled || Boolean(behaviorError)) && (
+        <Collapsible open={effectiveBehaviorOpen} onOpenChange={setBehaviorOpen}>
+          <div className="rounded-control border border-border bg-surface-subtle/40">
+            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+              <span>{t('deploymentsPage.autoScalingBehavior')}</span>
+              <ChevronDown aria-hidden="true" className={cn('size-3.5 transition-transform duration-fast', effectiveBehaviorOpen && 'rotate-180')} />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="border-t border-border p-3">
+              <JsonField hint={t('deploymentsPage.autoScalingBehaviorHint')} label={t('deploymentsPage.autoScalingBehavior')} name="autoScalingBehavior" placeholder={t('deploymentsPage.autoScalingBehaviorPlaceholder')} />
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
       )}
       <RuntimeCostEstimate policy={runtimeCluster} />
-      <SwitchField
-        description={t('deploymentsPage.autoScalingEnabledHint')}
-        label={t('deploymentsPage.autoScalingEnabled')}
-        name="autoScalingEnabled"
-        revalidate={['autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent']}
-      />
-      {autoScalingEnabled && (
-        <div className="grid gap-4 @lg/workspace:grid-cols-2 @2xl/workspace:grid-cols-4">
-          <FormField error={minError} hint={t('deploymentsPage.autoScalingMinReplicasHint')} label={t('deploymentsPage.autoScalingMinReplicas')} required>
-            <Input {...register('autoScalingMinReplicas', { valueAsNumber: true, deps: ['autoScalingMaxReplicas'] })} inputMode="numeric" min={1} type="number" />
-          </FormField>
-          <FormField error={maxError} hint={t('deploymentsPage.autoScalingMaxReplicasHint')} label={t('deploymentsPage.autoScalingMaxReplicas')} required>
-            <Input {...register('autoScalingMaxReplicas', { valueAsNumber: true })} inputMode="numeric" min={1} type="number" />
-          </FormField>
-          <FormField error={cpuPercentError} hint={t('deploymentsPage.autoScalingCpuPercentHint')} label={t('deploymentsPage.autoScalingCpuPercent')}>
-            <PercentInput {...register('autoScalingCpuPercent', { valueAsNumber: true, deps: ['autoScalingMemoryPercent'] })} />
-          </FormField>
-          <FormField error={memoryPercentError} hint={t('deploymentsPage.autoScalingMemoryPercentHint')} label={t('deploymentsPage.autoScalingMemoryPercent')}>
-            <PercentInput {...register('autoScalingMemoryPercent', { valueAsNumber: true, deps: ['autoScalingCpuPercent'] })} />
-          </FormField>
-        </div>
-      )}
     </EditorGroup>
   )
 }
@@ -107,7 +132,7 @@ function RuntimeCostEstimate({ policy }: { policy?: RuntimeResourcePolicy }) {
   )
 }
 
-/** 规格预设：选择 S/M/L 只写入 cpuRequest 与 memoryRequest；当前值不匹配预设或用户选择自定义时展示原输入框。 */
+/** 规格预设：选择 S/M/L 只写入 cpuRequest 与 memoryRequest；当前值不匹配预设或用户选择自定义时展示配额输入框。 */
 function RuntimeSizeField() {
   const { i18n, t } = useTranslation()
   const labelId = useId()
@@ -153,13 +178,13 @@ function RuntimeSizeField() {
         </RadioGroup>
       </div>
       {selected === 'custom' && (
-        <div className="grid gap-4 @xl/workspace:grid-cols-2">
+        <div className="grid gap-4 rounded-control border border-border bg-surface-subtle/60 p-3.5 @xl/workspace:grid-cols-2">
           <FormField error={cpuError} hint={t('deploymentsPage.runtimeQuotaPolicyHint')} label={t('deploymentsPage.cpuRequest')} required>
             {fieldControl => (
               <Controller
                 control={control}
                 name="cpuRequest"
-                render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.cpuUnitLabel')} units={cpuUnits(t)} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
+                render={({ field }) => <CpuQuotaInput inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
               />
             )}
           </FormField>
@@ -168,7 +193,7 @@ function RuntimeSizeField() {
               <Controller
                 control={control}
                 name="memoryRequest"
-                render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.memoryUnitLabel')} units={memoryUnits} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
+                render={({ field }) => <MemoryQuotaInput inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
               />
             )}
           </FormField>
@@ -179,10 +204,25 @@ function RuntimeSizeField() {
 }
 
 function PercentInput(props: ComponentProps<typeof Input>) {
+  const isInvalid = props['aria-invalid'] === true || props['aria-invalid'] === 'true'
   return (
-    <div className="flex min-w-0 items-center overflow-hidden rounded-control border border-input bg-background shadow-xs focus-within:ring-2 focus-within:ring-ring/50">
-      <Input {...props} className="rounded-none border-0 shadow-none focus-visible:ring-0" inputMode="numeric" max={1000} min={0} type="number" />
-      <span aria-hidden="true" className="px-3 text-sm text-muted-foreground">%</span>
+    <div
+      className={cn(
+        'flex h-9 min-w-0 items-center overflow-hidden rounded-control border border-input bg-surface shadow-xs transition-[color,box-shadow] dark:bg-input/30',
+        isInvalid
+          ? 'border-danger ring-danger/20 focus-within:border-danger focus-within:ring-3 focus-within:ring-danger/20 dark:ring-danger/40'
+          : 'focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50',
+      )}
+    >
+      <Input
+        {...props}
+        className="h-full rounded-none border-0 bg-transparent font-mono tabular-nums shadow-none focus-visible:ring-0 aria-invalid:border-0 aria-invalid:ring-0 dark:bg-transparent"
+        inputMode="numeric"
+        max={1000}
+        min={0}
+        type="number"
+      />
+      <span aria-hidden="true" className="px-3 text-xs font-medium text-muted-foreground">%</span>
     </div>
   )
 }

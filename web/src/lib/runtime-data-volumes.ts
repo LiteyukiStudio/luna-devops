@@ -1,4 +1,5 @@
 import type { DeploymentDataVolumeInput } from '@/api'
+import { isValidResourceQuantity } from '@/lib/resource-units'
 
 export interface RuntimeDataVolumeRow {
   emptyDirMedium: '' | 'Memory'
@@ -79,8 +80,13 @@ export function projectVolumeRowsAreValid(rows: RuntimeDataVolumeRow[]) {
   return rows.every((row) => {
     if (!row.name.trim())
       return false
-    if (row.sourceType === 'emptyDir')
-      return row.mountPath.trim().startsWith('/') && !row.devicePath.trim() && !row.projectVolumeId.trim()
+    if (row.sourceType === 'emptyDir') {
+      const sizeLimit = row.emptyDirSizeLimit.trim()
+      return row.mountPath.trim().startsWith('/')
+        && !row.devicePath.trim()
+        && !row.projectVolumeId.trim()
+        && (!sizeLimit || isValidResourceQuantity(sizeLimit))
+    }
     const mountPath = row.mountPath.trim()
     const devicePath = row.devicePath.trim()
     return row.projectVolumeId.trim().startsWith('pvol_')

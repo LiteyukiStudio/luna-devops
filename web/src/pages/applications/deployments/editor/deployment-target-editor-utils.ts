@@ -1,7 +1,8 @@
 import type { FieldPath, FieldValues } from 'react-hook-form'
 import type { DeploymentTargetEditorSection, DeploymentTargetFormValues } from './deployment-target-form'
 import { get, useFormState } from 'react-hook-form'
-import { deploymentTargetSectionFields } from './deployment-target-form'
+import { visibleAdvancedItems } from './advanced/advanced-items'
+import { deploymentTargetAdvancedItemFields, deploymentTargetSectionFields } from './deployment-target-form'
 
 export function deploymentTargetSectionAnchor(section: DeploymentTargetEditorSection) {
   return `deployment-target-section-${section}`
@@ -24,10 +25,28 @@ export function scrollToDeploymentTargetSection(section: DeploymentTargetEditorS
   document.getElementById(deploymentTargetSectionAnchor(section))?.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'start' })
 }
 
-export function fieldErrorCount(errors: object, fields: readonly FieldPath<DeploymentTargetFormValues>[]) {
-  return fields.filter(field => Boolean(get(errors, field))).length
+/** 递归统计叶子字段/动态行的真实错误数量，避免多行出错只计作 1 条。 */
+export function countLeafErrors(value: unknown): number {
+  if (!value || typeof value !== 'object')
+    return 0
+  if (Array.isArray(value))
+    return value.reduce<number>((sum, item) => sum + countLeafErrors(item), 0)
+  const record = value as Record<string, unknown>
+  if (typeof record.message === 'string' || typeof record.type === 'string')
+    return 1
+  return Object.entries(record)
+    .filter(([key]) => key !== 'ref')
+    .reduce<number>((sum, [, child]) => sum + countLeafErrors(child), 0)
 }
 
-export function sectionErrorCount(errors: object, section: DeploymentTargetEditorSection) {
+export function fieldErrorCount(errors: object, fields: readonly FieldPath<DeploymentTargetFormValues>[]) {
+  return fields.reduce((sum, field) => sum + countLeafErrors(get(errors, field)), 0)
+}
+
+export function sectionErrorCount(errors: object, section: DeploymentTargetEditorSection, sourceType?: string) {
+  if (section === 'advanced') {
+    const visibleFields = visibleAdvancedItems(sourceType).flatMap(item => deploymentTargetAdvancedItemFields[item])
+    return fieldErrorCount(errors, visibleFields)
+  }
   return fieldErrorCount(errors, deploymentTargetSectionFields[section])
 }

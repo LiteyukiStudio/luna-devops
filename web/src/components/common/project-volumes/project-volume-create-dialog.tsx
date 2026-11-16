@@ -2,12 +2,13 @@ import type { ProjectVolume, ProjectVolumeAccessMode, ProjectVolumeCreateInput, 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api, createVolumeIdempotencyKey } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
+import { StorageQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -174,15 +175,13 @@ export function ProjectVolumeCreateDialog({ deploymentContext, onCreated, onOpen
             <Field error={form.formState.errors.displayName?.message} label={t('projectVolumes.name')} required>
               <Input {...form.register('displayName')} aria-invalid={Boolean(form.formState.errors.displayName)} placeholder={t('projectVolumes.displayNamePlaceholder')} />
             </Field>
+            {deploymentContext && <input type="hidden" {...form.register('sourceMode')} />}
             <Field label={t('projectVolumes.createSource')} required>
               {deploymentContext
                 ? (
-                    <>
-                      <input type="hidden" {...form.register('sourceMode')} />
-                      <NativeSelect disabled value="blank">
-                        <option value="blank">{t('projectVolumes.sourceBlank')}</option>
-                      </NativeSelect>
-                    </>
+                    <NativeSelect disabled value="blank">
+                      <option value="blank">{t('projectVolumes.sourceBlank')}</option>
+                    </NativeSelect>
                   )
                 : (
                     <NativeSelect {...form.register('sourceMode')}>
@@ -219,7 +218,19 @@ export function ProjectVolumeCreateDialog({ deploymentContext, onCreated, onOpen
             )}
             {requiresSpec && (
               <Field error={form.formState.errors.capacity?.message} label={t('projectVolumes.capacity')} required>
-                <Input {...form.register('capacity')} aria-invalid={Boolean(form.formState.errors.capacity)} placeholder={t('projectVolumes.capacityPlaceholder')} />
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="capacity"
+                    render={({ field }) => (
+                      <StorageQuotaInput
+                        inputProps={{ ...fieldControl, placeholder: '20' }}
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
+                )}
               </Field>
             )}
             {requiresSpec && (
@@ -229,16 +240,14 @@ export function ProjectVolumeCreateDialog({ deploymentContext, onCreated, onOpen
                 </NativeSelect>
               </Field>
             )}
+            {requiresSpec && deploymentContext && <input type="hidden" {...form.register('volumeMode')} />}
             {requiresSpec && (
               <Field label={t('projectVolumes.volumeMode')} required>
                 {deploymentContext
                   ? (
-                      <>
-                        <input type="hidden" {...form.register('volumeMode')} />
-                        <NativeSelect disabled value={deploymentContext.volumeMode}>
-                          <option value={deploymentContext.volumeMode}>{projectVolumeModeLabel(t, deploymentContext.volumeMode)}</option>
-                        </NativeSelect>
-                      </>
+                      <NativeSelect disabled value={deploymentContext.volumeMode}>
+                        <option value={deploymentContext.volumeMode}>{projectVolumeModeLabel(t, deploymentContext.volumeMode)}</option>
+                      </NativeSelect>
                     )
                   : (
                       <NativeSelect {...form.register('volumeMode')}>

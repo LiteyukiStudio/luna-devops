@@ -53,7 +53,6 @@ const apps = {
   identifierLength: '应用标识长度必须为 {{min}}–{{max}} 个字符',
   identifierPlaceholder: 'console',
   sourceType: '来源类型',
-  sourceTypeHint: '代码仓库表示平台后续会从源码构建镜像；已有镜像表示跳过构建，直接部署镜像地址。',
   repository: '代码仓库',
   image: '已有镜像',
   detectingRepository: '正在探测仓库结构...',

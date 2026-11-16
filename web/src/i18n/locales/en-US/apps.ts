@@ -55,7 +55,6 @@ const apps = {
   identifierLength: 'Application identifier must be {{min}}–{{max}} characters',
   identifierPlaceholder: 'console',
   sourceType: 'Source type',
-  sourceTypeHint: 'Repository means the platform will build an image from source later. Existing image skips build and deploys an image reference directly.',
   repository: 'Code repository',
   image: 'Existing image',
   detectingRepository: 'Detecting repository structure...',

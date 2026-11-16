@@ -124,6 +124,12 @@ const common = {
   loginRequiredDescription: 'ローカルアカウントまたは承認済みの OIDC アカウントでプラットフォームにログインしてください。',
   pinProject: 'プロジェクトスペースを固定',
   unpinProject: 'プロジェクトスペースの固定を解除',
+  cpuUnitCore: 'コア',
+  cpuUnitLabel: 'CPU の単位',
+  memoryUnitLabel: 'メモリーの単位',
+  storageUnitLabel: 'ストレージ容量の単位',
+  keyValueRowKeyLabel: '{{title}} {{index}} 行目のキー',
+  keyValueRowValueLabel: '{{title}} {{index}} 行目の値',
   resultVisibility: {
     label: '表示範囲',
     related: '自分に関連',

@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 import { Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -11,6 +11,7 @@ import { api } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
 import { projectVolumeAccessModeOptions, projectVolumeModeOptions } from '@/components/common/project-volumes/project-volume-form-options'
 import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from '@/components/common/project-volumes/volume-resource-selectors'
+import { StorageQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -187,8 +188,8 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId, trans
             <Field error={form.formState.errors.displayName?.message} label={t('projectVolumes.name')} required>
               <Input {...form.register('displayName')} placeholder={t('projectVolumes.displayNamePlaceholder')} />
             </Field>
+            <input type="hidden" {...form.register('format')} />
             <Field label={t('projectVolumes.archiveFormat')} required>
-              <input type="hidden" {...form.register('format')} />
               <NativeSelect disabled value={importFormat}>
                 {importFormat === 'tar_gz'
                   ? <option value="tar_gz">{t('projectVolumes.formatTarGz')}</option>
@@ -214,15 +215,27 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId, trans
               />
             </Field>
             <Field error={form.formState.errors.capacity?.message} label={t('projectVolumes.capacity')} required>
-              <Input {...form.register('capacity')} placeholder={t('projectVolumes.capacityPlaceholder')} />
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="capacity"
+                  render={({ field }) => (
+                    <StorageQuotaInput
+                      inputProps={{ ...fieldControl, placeholder: '20' }}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
+                />
+              )}
             </Field>
             <Field label={t('projectVolumes.accessMode')} required>
               <NativeSelect {...form.register('accessMode')}>
                 {projectVolumeAccessModeOptions(t).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </NativeSelect>
             </Field>
+            <input type="hidden" {...form.register('volumeMode')} />
             <Field label={t('projectVolumes.volumeMode')} required>
-              <input type="hidden" {...form.register('volumeMode')} />
               <NativeSelect
                 value={volumeMode}
                 onChange={(event) => {

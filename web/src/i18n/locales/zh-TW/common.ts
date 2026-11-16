@@ -124,6 +124,12 @@ const common = {
   loginRequiredDescription: '請先使用本地賬號或已授權的 OIDC 賬號登入平臺。',
   pinProject: '固定項目空間',
   unpinProject: '取消固定項目空間',
+  cpuUnitCore: '核',
+  cpuUnitLabel: 'CPU 單位',
+  memoryUnitLabel: '記憶體單位',
+  storageUnitLabel: '儲存容量單位',
+  keyValueRowKeyLabel: '{{title}} 第 {{index}} 行名稱',
+  keyValueRowValueLabel: '{{title}} 第 {{index}} 行值',
   resultVisibility: {
     label: '查看範圍',
     related: '與我相關',

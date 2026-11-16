@@ -1,7 +1,7 @@
 import type { DeploymentTargetFormValues } from './deployment-target-form'
-import type { DeploymentTarget, Release } from '@/api'
+import type { BuildTemplate, DeploymentTarget, Release } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -24,6 +24,7 @@ vi.mock('@/api', async (importOriginal) => {
       listBuildTemplates: vi.fn(),
       listProjectHooks: vi.fn(),
       listProjectRuntimeConfigSets: vi.fn(),
+      listProjectVolumes: vi.fn(),
       observeRuntimeClusterPressure: vi.fn(),
       updateDeploymentTarget: vi.fn(),
     },
@@ -32,7 +33,7 @@ vi.mock('@/api', async (importOriginal) => {
 
 const repositoryBinding = { applicationId: 'app_1', defaultBranch: 'main', gitAccountId: 'acc_1', id: 'rb_1', owner: 'team', repo: 'demo' }
 
-function imageTarget() {
+function imageTarget(overrides: Partial<DeploymentTarget> = {}) {
   // 与线上返回结构一致的完整镜像来源部署配置，保证编辑器载入后表单校验通过。
   return {
     id: 'target_1',
@@ -117,13 +118,14 @@ function imageTarget() {
     deleteMessage: '',
     createdBy: 'usr_1',
     createdAt: '2026-10-01T00:00:00Z',
+    ...overrides,
   } as unknown as DeploymentTarget
 }
 
 function renderEditor({ releases = [] as Release[], target = null as DeploymentTarget | null, values = {} as Partial<DeploymentTargetFormValues> } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
   const initialValues = target
-    ? deploymentTargetToFormValues(target)
+    ? { ...deploymentTargetToFormValues(target), ...values }
     : { ...emptyDeploymentTargetFormValues(), repositoryBindingId: 'rb_1', targetImageRef: 'team/demo:latest', targetRegistryId: 'reg_1', ...values }
   const editorPath = target ? `/projects/prj_1/apps/app_1/deployments/${target.id}/edit` : '/projects/prj_1/apps/app_1/deployments/new'
   // 编辑器用 useBlocker 拦截未保存离开，需要数据路由。
@@ -172,6 +174,7 @@ describe('deployment target editor', () => {
     vi.mocked(api.listBuildTemplates).mockResolvedValue([])
     vi.mocked(api.listProjectHooks).mockResolvedValue([])
     vi.mocked(api.listProjectRuntimeConfigSets).mockResolvedValue([])
+    vi.mocked(api.listProjectVolumes).mockResolvedValue({ items: [], page: 1, pageSize: 20, sortBy: 'displayName', sortOrder: 'asc', total: 0, totalPages: 0 })
     vi.mocked(api.observeRuntimeClusterPressure).mockResolvedValue([])
     vi.mocked(api.getGitRepositoryBuildOptions).mockResolvedValue({ directories: ['.'], dockerfiles: ['Dockerfile'], exposedPorts: {}, recommendedTemplateIds: [] } as never)
     vi.mocked(api.getRegistryImageTemplateDefault).mockResolvedValue({ targetImageRef: 'team/demo:dev' } as never)
@@ -182,18 +185,19 @@ describe('deployment target editor', () => {
     vi.clearAllMocks()
   })
 
-  it('groups the form into common sections and a collapsed advanced section', async () => {
+  it('groups the form into 4 balanced sections with workload type in basics and 6+1 collapsed advanced items', async () => {
     renderEditor()
 
     const navigation = screen.getByRole('navigation', { name: 'Deploy config sections' })
-    for (const section of ['Basics and source', 'Runtime', 'Release triggers', 'Advanced \\(Kubernetes\\)'])
+    for (const section of ['Basics', 'Source and build', 'Runtime and scaling', 'Advanced options'])
       expect(within(navigation).getByRole('link', { name: new RegExp(section) })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Name/ })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /Workload type/ })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Code repository|Repository/ })).toBeChecked()
+    expect(screen.getByRole('combobox', { name: /Image pull policy/ })).toBeInTheDocument()
     expect(screen.getByRole('spinbutton', { name: /Replicas/ })).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: 'Enable this deploy config' })).toBeChecked()
-    expect(screen.getByRole('button', { name: /Advanced \(Kubernetes\)/ })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('combobox', { name: /Workload type/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Advanced options/ })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('switch', { name: 'Enable deployment hooks' })).not.toBeInTheDocument()
   })
 
@@ -201,23 +205,23 @@ describe('deployment target editor', () => {
     const user = userEvent.setup()
     renderEditor()
 
-    await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced/ }))
+    await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced options/ }))
 
-    expect(screen.getByRole('button', { name: /Advanced \(Kubernetes\)/ })).toHaveAttribute('aria-expanded', 'true')
-    const container = screen.getByRole('button', { name: /Container startup and health checks/ })
-    expect(container).toHaveAttribute('aria-expanded', 'false')
-    expect(container).toHaveTextContent('Using defaults')
-    await user.click(container)
-    expect(screen.getByRole('combobox', { name: /Image pull policy/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Advanced options/ })).toHaveAttribute('aria-expanded', 'true')
+    const probes = screen.getByRole('button', { name: /Health check probes/ })
+    expect(probes).toHaveAttribute('aria-expanded', 'false')
+    expect(probes).toHaveTextContent('Using defaults')
+    await user.click(probes)
+    expect(screen.getByRole('combobox', { name: 'Readiness probe' })).toBeInTheDocument()
   })
 
-  it('opens configured advanced items and forces them open when they fail validation', async () => {
+  it('opens configured advanced items and forces them open and focused when they fail validation', async () => {
     const user = userEvent.setup()
     renderEditor({ values: { name: 'dev', runAsUser: 'abc' } })
 
-    const advanced = screen.getByRole('button', { name: /Advanced \(Kubernetes\)/ })
+    const advanced = screen.getByRole('button', { name: /Advanced options/ })
     expect(advanced).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('button', { name: /Security context and scheduling/ })).toHaveTextContent('Set: 1')
+    expect(screen.getByRole('button', { name: /Security context and node scheduling/ })).toHaveTextContent('Set: 1')
     await user.click(advanced)
     expect(advanced).toHaveAttribute('aria-expanded', 'false')
 
@@ -225,21 +229,27 @@ describe('deployment target editor', () => {
 
     expect(api.createDeploymentTarget).not.toHaveBeenCalled()
     expect(advanced).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('textbox', { name: /Run as UID/ })).toHaveAttribute('aria-invalid', 'true')
-    expect(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced/ })).toHaveTextContent('Errors: 1')
+    const uidInput = screen.getByRole('textbox', { name: /Run as UID/ })
+    expect(uidInput).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(uidInput).toHaveFocus())
+    expect(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced options/ })).toHaveTextContent('Errors: 1')
   })
 
-  it('writes size presets into the CPU and memory requests', async () => {
+  it('writes size presets into the CPU and memory requests and supports decimal custom quotas', async () => {
     const user = userEvent.setup()
     renderEditor({ values: { name: 'dev' } })
 
     expect(screen.getByRole('radio', { name: /^L/ })).toBeChecked()
     expect(screen.queryByRole('textbox', { name: /CPU quota/ })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('radio', { name: /^M/ }))
+    await user.click(screen.getByRole('radio', { name: /Custom/ }))
+    const cpuInput = screen.getByRole('textbox', { name: /CPU quota/ })
+    await user.clear(cpuInput)
+    await user.type(cpuInput, '1.5')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'CPU unit' }), '')
     await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
 
     expect(await screen.findByText('deployments list')).toBeInTheDocument()
-    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.objectContaining({ cpuRequest: '500m', memoryRequest: '512Mi' }))
+    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.objectContaining({ cpuRequest: '1.5', memoryRequest: '1Gi' }))
   })
 
   it('shows the raw CPU and memory inputs for custom sizes', async () => {
@@ -252,6 +262,115 @@ describe('deployment target editor', () => {
     expect(screen.queryByRole('textbox', { name: /CPU quota/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole('radio', { name: /Custom/ }))
     expect(screen.getByRole('textbox', { name: /CPU quota/ })).toHaveValue('250')
+  })
+
+  it('syncs derived targetImageRef from registry template on submit even when form field starts empty', async () => {
+    const user = userEvent.setup()
+    renderEditor({ values: { name: 'dev', targetImageRef: '' } })
+
+    expect(await screen.findByDisplayValue('team/demo:dev')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(await screen.findByText('deployments list')).toBeInTheDocument()
+    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.objectContaining({
+      name: 'dev',
+      targetImageRef: 'team/demo:dev',
+    }))
+  })
+
+  it('validates required build template parameters and focuses the invalid parameter input', async () => {
+    const templates: BuildTemplate[] = [{
+      id: 'go-service',
+      version: '1.0.0',
+      runtime: 'go',
+      category: 'backend',
+      defaultServicePort: 8080,
+      parameters: [
+        { key: 'port', type: 'port', required: true, defaultValue: '9000' },
+      ],
+    }]
+    vi.mocked(api.listBuildTemplates).mockResolvedValue(templates)
+    const user = userEvent.setup()
+    renderEditor({ values: { name: 'dev' } })
+
+    // Wait for listBuildTemplates query to settle before switching mode
+    await waitFor(() => expect(api.listBuildTemplates).toHaveBeenCalled())
+    await user.selectOptions(screen.getByRole('combobox', { name: /Build definition/ }), 'template')
+    const portInput = await screen.findByDisplayValue('9000')
+    await user.clear(portInput)
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(api.createDeploymentTarget).not.toHaveBeenCalled()
+    expect(portInput).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(portInput).toHaveFocus())
+  })
+
+  it('expands config files and focuses the path input when a relative file path fails validation', async () => {
+    const user = userEvent.setup()
+    renderEditor({
+      values: {
+        name: 'dev',
+        configFiles: JSON.stringify([{ path: 'relative.yaml', content: 'port: 8080' }]),
+      },
+    })
+
+    // Collapse advanced first to verify submit re-expands and focuses the invalid file path input.
+    const advanced = screen.getByRole('button', { name: /Advanced options/ })
+    await user.click(advanced)
+    expect(advanced).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(api.createDeploymentTarget).not.toHaveBeenCalled()
+    expect(advanced).toHaveAttribute('aria-expanded', 'true')
+    const pathInput = screen.getByRole('textbox', { name: 'File path' })
+    expect(pathInput).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(pathInput).toHaveFocus())
+  })
+
+  it('focuses the actual invalid data volume input rather than an unfocusable group container', async () => {
+    const user = userEvent.setup()
+    renderEditor({ values: { name: 'dev' } })
+
+    await user.click(screen.getByRole('button', { name: 'Add data volume' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Source' }), 'emptyDir')
+    const mountPathInput = screen.getByRole('textbox', { name: 'Data path' })
+    await user.type(mountPathInput, 'relative/cache')
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(api.createDeploymentTarget).not.toHaveBeenCalled()
+    expect(mountPathInput).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(mountPathInput).toHaveFocus())
+  })
+
+  it('eliminates ghost build errors when switching sourceType to image', async () => {
+    const user = userEvent.setup()
+    renderEditor({ values: { name: 'dev', buildCpuRequest: '' } })
+
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+    expect(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced options/ })).toHaveTextContent('Errors: 1')
+
+    await user.click(screen.getByRole('radio', { name: /Existing image/ }))
+    expect(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced options/ })).not.toHaveTextContent('Errors:')
+  })
+
+  it('allows explicitly clearing existing secret files and shows mutually exclusive sticky status', async () => {
+    const user = userEvent.setup()
+    const target = imageTarget({ secretFilesSet: true })
+    vi.mocked(api.updateDeploymentTarget).mockResolvedValue(target)
+    renderEditor({ target })
+
+    await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced options/ }))
+    await user.click(screen.getByRole('button', { name: 'Clear existing secret files' }))
+
+    expect(screen.getByText('Existing secret files will be cleared on save')).toBeInTheDocument()
+    expect(screen.getByText(/On save:.*clear 1 encrypted items\./)).toBeInTheDocument()
+
+    // Triggering a validation error hides pendingSecretSummary in favor of fixErrors jump button.
+    await user.clear(screen.getByRole('textbox', { name: /Name/ }))
+    await user.click(screen.getByRole('button', { name: 'Save only' }))
+    expect(screen.getByRole('button', { name: /Fields to fix: 1/ })).toBeInTheDocument()
+    expect(screen.queryByText(/On save:/)).not.toBeInTheDocument()
   })
 
   it('shows inline errors and section counts instead of submitting invalid input', async () => {
@@ -278,24 +397,6 @@ describe('deployment target editor', () => {
 
     expect(api.createDeploymentTarget).not.toHaveBeenCalled()
     expect(await screen.findByText('Set a CPU or memory target when autoscaling is enabled')).toBeInTheDocument()
-  })
-
-  it('creates the deploy config with the registry template image and returns to the list', async () => {
-    const user = userEvent.setup()
-    renderEditor()
-
-    await user.type(screen.getByRole('textbox', { name: /Name/ }), 'dev')
-    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
-
-    expect(await screen.findByText('deployments list')).toBeInTheDocument()
-    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.objectContaining({
-      name: 'dev',
-      replicas: 1,
-      repositoryBindingId: 'rb_1',
-      servicePorts: [{ appProtocol: '', name: 'http', port: 8080 }],
-      targetImageRef: 'team/demo:dev',
-    }))
-    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.not.objectContaining({ buildVariables: expect.anything() }))
   })
 
   it('saves plain and encrypted variables from one table in a single request', async () => {
@@ -412,8 +513,8 @@ describe('deployment target editor', () => {
     const user = userEvent.setup()
     renderEditor({ values: { name: 'dev' } })
 
-    await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced/ }))
-    await user.click(screen.getByRole('button', { name: /Container startup and health checks/ }))
+    await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced options/ }))
+    await user.click(screen.getByRole('button', { name: /Health check probes/ }))
     await user.selectOptions(screen.getByRole('combobox', { name: 'Readiness probe' }), 'httpGet')
     const pathInput = screen.getByRole('textbox', { name: 'Path' })
     await user.clear(pathInput)

@@ -1,13 +1,14 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import type { HookPhase, ProjectHookConfig } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, RotateCw, Trash2 } from 'lucide-react'
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
 import { buildHookPhases, deploymentHookPhases } from '../deployment-target-form'
@@ -23,13 +24,18 @@ export function HookBindingsFields({ projectId }: { projectId: string }) {
   const canEdit = hooksEnabled && hookItems.length > 0
 
   return (
-    <>
-      <p className="text-sm leading-6 text-muted-foreground">{t('deploymentsPage.deploymentHooksDescription')}</p>
+    <div className="grid gap-3">
       <SwitchField description={t('deploymentsPage.deploymentHooksEnabledHint')} label={t('deploymentsPage.deploymentHooksEnabled')} name="buildHooksEnabled" />
-      <p className="text-sm leading-6 text-muted-foreground">{t('deploymentsPage.deploymentHooksHint')}</p>
+      {hooks.isLoading && <Skeleton className="h-10 w-full rounded-control" />}
       {hooks.isError && (
         <Alert variant="destructive">
-          <AlertDescription>{t('projectHooks.loadFailedDescription')}</AlertDescription>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>{t('projectHooks.loadFailedDescription')}</span>
+            <Button disabled={hooks.isFetching} size="sm" type="button" variant="outline" onClick={() => void hooks.refetch()}>
+              <RotateCw className="size-3.5" />
+              {t('common.retry')}
+            </Button>
+          </AlertDescription>
         </Alert>
       )}
       {hooks.isSuccess && hookItems.length === 0 && (
@@ -64,7 +70,7 @@ export function HookBindingsFields({ projectId }: { projectId: string }) {
           {t('deploymentsPage.addHookBinding')}
         </Button>
       </div>
-    </>
+    </div>
   )
 }
 

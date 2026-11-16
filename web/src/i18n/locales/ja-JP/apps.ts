@@ -53,7 +53,6 @@ const apps = {
   identifierLength: 'アプリケーション識別子の長さは {{min}}–{{max}} 文字である必要があります',
   identifierPlaceholder: 'console',
   sourceType: 'ソースタイプ',
-  sourceTypeHint: 'コードリポジトリはプラットフォームが後続でソースからイメージをビルドすることを意味します。既存イメージはビルドをスキップし、イメージアドレスを直接デプロイします。',
   repository: 'コードリポジトリ',
   image: '既存イメージ',
   detectingRepository: 'リポジトリ構造を検出中...',

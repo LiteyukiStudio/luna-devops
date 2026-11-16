@@ -15,7 +15,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProjectSpaceSelect } from '@/components/common/project-space-select'
 import { StatusBadge } from '@/components/common/status-badge'
-import { UnitInput } from '@/components/common/unit-input'
+import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -554,20 +554,14 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                               <Field error={errors.replicas?.message} label={t('appTemplatesPage.replicas')}>
                                 <Input min={1} type="number" {...register('replicas', { valueAsNumber: true })} />
                               </Field>
-                              <Field label={t('appTemplatesPage.cpu')}>
+                              <Field error={errors.cpuRequest?.message} label={t('appTemplatesPage.cpu')}>
                                 {fieldControl => (
                                   <Controller
                                     control={control}
                                     name="cpuRequest"
                                     render={({ field }) => (
-                                      <UnitInput
-                                        className="min-w-0"
+                                      <CpuQuotaInput
                                         inputProps={fieldControl}
-                                        unitSelectLabel={t('appTemplatesPage.cpu')}
-                                        units={[
-                                          { label: 'm', value: 'm' },
-                                          { label: t('deploymentsPage.cpuUnits.core'), value: '' },
-                                        ]}
                                         value={field.value}
                                         onChange={field.onChange}
                                       />
@@ -575,20 +569,14 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                                   />
                                 )}
                               </Field>
-                              <Field label={t('appTemplatesPage.memory')}>
+                              <Field error={errors.memoryRequest?.message} label={t('appTemplatesPage.memory')}>
                                 {fieldControl => (
                                   <Controller
                                     control={control}
                                     name="memoryRequest"
                                     render={({ field }) => (
-                                      <UnitInput
-                                        className="min-w-0"
+                                      <MemoryQuotaInput
                                         inputProps={fieldControl}
-                                        unitSelectLabel={t('appTemplatesPage.memory')}
-                                        units={[
-                                          { label: 'Mi', value: 'Mi' },
-                                          { label: 'Gi', value: 'Gi' },
-                                        ]}
                                         value={field.value}
                                         onChange={field.onChange}
                                       />

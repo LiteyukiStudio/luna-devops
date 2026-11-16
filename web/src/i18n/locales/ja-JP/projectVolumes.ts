@@ -93,7 +93,6 @@ const projectVolumes = {
   displayNamePlaceholder: '例：本番データベースデータ',
   claimNamePlaceholder: '例：postgres-data',
   snapshotNamePlaceholder: '例：postgres-backup-20260815',
-  capacityPlaceholder: '例：20Gi',
   importDescription: 'tar.gz または raw.zst アーカイブを選択します。対象ボリュームの準備後、ブラウザーからファイル全体を直接アップロードします。',
   directTransfer: '直接転送',
   transferUnavailableTitle: 'データボリューム転送が有効になっていません',

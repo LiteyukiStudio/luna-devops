@@ -1,8 +1,8 @@
-import type { FieldErrors } from 'react-hook-form'
+import type { FieldErrors, Resolver } from 'react-hook-form'
 import type { DeploymentTargetFormValues } from './deployment-target-form'
-import type { ArtifactRegistry, DeploymentTarget, Release, RepositoryBinding, RuntimeCluster } from '@/api'
+import type { ArtifactRegistry, BuildTemplate, DeploymentTarget, Release, RepositoryBinding, RuntimeCluster } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Rocket, RotateCw, Save } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { FormProvider, useForm } from 'react-hook-form'
@@ -29,16 +29,18 @@ import {
 } from './deployment-target-form'
 import { targetImageTemplateQuery } from './deployment-target-queries'
 import { BasicsSection } from './sections/basics-section'
-import { ReleaseSection } from './sections/release-section'
 import { RuntimeSection } from './sections/runtime-section'
+import { SourceSection } from './sections/source-section'
 import { useUnsavedChangesGuard } from './use-unsaved-changes-guard'
 
 export interface DeploymentTargetEditorProps {
   applicationId: string
   buildEnvironmentAvailable: boolean
+  buildEnvironmentRetrying?: boolean
   canManageRuntimeSecrets: boolean
   deploymentTargets: DeploymentTarget[]
   initialValues: DeploymentTargetFormValues
+  onRetryBuildEnvironment?: () => void
   projectId: string
   registries: ArtifactRegistry[]
   releases: Release[]
@@ -47,13 +49,20 @@ export interface DeploymentTargetEditorProps {
   target: DeploymentTarget | null
 }
 
-/** 部署配置独立编辑页的表单主体：分区导航 + 常用分区 + 默认折叠的高级分区 + 固定操作栏。 */
+interface EditorResolverContext {
+  buildTemplates: readonly BuildTemplate[] | undefined
+  targetImageRefTouchedByUser: boolean
+}
+
+/** 部署配置独立编辑页的表单主体：4 个均衡主分区 + 6+1 折叠高级子项 + 底部粘性操作栏。 */
 export function DeploymentTargetEditor({
   applicationId,
   buildEnvironmentAvailable,
+  buildEnvironmentRetrying,
   canManageRuntimeSecrets,
   deploymentTargets,
   initialValues,
+  onRetryBuildEnvironment,
   projectId,
   registries,
   releases,
@@ -65,11 +74,48 @@ export function DeploymentTargetEditor({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const formRef = useRef<HTMLFormElement>(null)
-  const schema = useMemo(() => createDeploymentTargetFormSchema(t), [t])
-  const form = useForm<DeploymentTargetFormValues>({
+  const [targetImageRefTouchedByUser, setTargetImageRefTouchedByUser] = useState(false)
+  const buildTemplates = useQuery({
+    queryKey: ['build-templates'],
+    queryFn: () => api.listBuildTemplates(),
+    enabled: initialValues.sourceType === 'repository' || !target,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const resolver = useMemo<Resolver<DeploymentTargetFormValues, EditorResolverContext>>(() => {
+    return async (formValues, resolverContext, resolverOptions) => {
+      let candidate = formValues
+      if (!target && formValues.sourceType === 'repository' && !resolverContext?.targetImageRefTouchedByUser && formValues.targetRegistryId) {
+        const templateOptions = targetImageTemplateQuery({
+          applicationId,
+          projectId,
+          registryId: formValues.targetRegistryId,
+          stage: formValues.stage,
+          targetName: formValues.name,
+        })
+        const cached = queryClient.getQueryData<{ targetImageRef?: string }>(templateOptions.queryKey)
+        if (cached?.targetImageRef) {
+          candidate = { ...formValues, targetImageRef: cached.targetImageRef }
+        }
+        else if (!formValues.targetImageRef.trim()) {
+          const fetched = await queryClient.fetchQuery(templateOptions).catch(() => undefined)
+          if (fetched?.targetImageRef)
+            candidate = { ...formValues, targetImageRef: fetched.targetImageRef }
+        }
+      }
+      const currentSchema = createDeploymentTargetFormSchema(t, { buildTemplates: resolverContext?.buildTemplates })
+      return zodResolver(currentSchema)(candidate, resolverContext, resolverOptions)
+    }
+  }, [applicationId, projectId, queryClient, t, target])
+
+  const form = useForm<DeploymentTargetFormValues, EditorResolverContext>({
+    context: {
+      buildTemplates: buildTemplates.data,
+      targetImageRefTouchedByUser,
+    },
     defaultValues: initialValues,
     mode: 'onTouched',
-    resolver: zodResolver(schema),
+    resolver,
     shouldFocusError: false,
   })
   // 已有非默认高级配置时默认展开，避免把已生效的配置藏起来。
@@ -77,6 +123,19 @@ export function DeploymentTargetEditor({
     .some(item => advancedItemConfiguredCount(item, initialValues, target) > 0))
   const values = form.watch()
   const { dirtyFields, errors, isDirty, isSubmitted } = form.formState
+
+  const followsImageTemplate = !target && values.sourceType === 'repository' && !targetImageRefTouchedByUser
+  const imageTemplate = useQuery({
+    ...targetImageTemplateQuery({
+      applicationId,
+      projectId,
+      registryId: values.targetRegistryId,
+      stage: values.stage,
+      targetName: values.name,
+    }),
+    enabled: followsImageTemplate && Boolean(values.targetRegistryId),
+  })
+
   const backTo = `/projects/${projectId}/apps/${applicationId}?tab=deployments`
   const latestRelease = target ? latestReleaseByTarget(releases)[deploymentReleaseKey(target.id)] : undefined
   const baselinePayload = useMemo(
@@ -85,9 +144,12 @@ export function DeploymentTargetEditor({
   )
   const needsRedeploy = baselinePayload ? safeNeedsRedeploy(baselinePayload, values) : false
   const canRedeploy = Boolean(target && values.enabled && (values.sourceType === 'image' ? values.imageRef.trim() : latestRelease?.imageRef.trim()))
-  const pendingSecrets = pendingSecretOperations(values.environmentVariables)
+  const pendingSecrets = pendingSecretOperations(values.environmentVariables, {
+    secretFiles: values.secretFiles,
+    secretFilesSet: target?.secretFilesSet,
+  })
   const pendingSecretCount = pendingSecrets.cleared + pendingSecrets.generated + pendingSecrets.set
-  const totalErrors = deploymentTargetSectionOrder.reduce((count, section) => count + sectionErrorCount(errors, section), 0)
+  const totalErrors = deploymentTargetSectionOrder.reduce((count, section) => count + sectionErrorCount(errors, section, values.sourceType), 0)
   // 配置已保存但重新部署失败时留在页面，单独反馈并允许只重试部署。
   const [redeployFailure, setRedeployFailure] = useState<{ message: string, target: DeploymentTarget } | null>(null)
   const { allowNextNavigation, blocker } = useUnsavedChangesGuard(isDirty)
@@ -166,7 +228,7 @@ export function DeploymentTargetEditor({
 
   async function withTemplateImageRef(formValues: DeploymentTargetFormValues) {
     // 新建且未手动修改目标镜像时，以镜像站模板为准，与界面上派生展示的值保持一致。
-    if (target || formValues.sourceType !== 'repository' || dirtyFields.targetImageRef || !formValues.targetRegistryId)
+    if (target || formValues.sourceType !== 'repository' || targetImageRefTouchedByUser || !formValues.targetRegistryId)
       return formValues
     const template = await queryClient.fetchQuery(targetImageTemplateQuery({
       applicationId,
@@ -179,6 +241,9 @@ export function DeploymentTargetEditor({
   }
 
   function focusFirstError(fieldErrors: FieldErrors<DeploymentTargetFormValues>) {
+    const currentSourceType = form.getValues('sourceType')
+    if (sectionErrorCount(fieldErrors, 'advanced', currentSourceType) > 0)
+      setAdvancedOpen(true)
     // 等错误与自动展开的高级选项渲染后，按页面顺序定位第一个无效控件；找不到控件时退回到所在分区。
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       const invalid = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
@@ -187,7 +252,7 @@ export function DeploymentTargetEditor({
         invalid.focus({ preventScroll: true })
         return
       }
-      const section = deploymentTargetSectionOrder.find(item => sectionErrorCount(fieldErrors, item) > 0)
+      const section = deploymentTargetSectionOrder.find(item => sectionErrorCount(fieldErrors, item, currentSourceType) > 0)
       if (section)
         scrollToDeploymentTargetSection(section)
     }))
@@ -198,13 +263,15 @@ export function DeploymentTargetEditor({
     focusFirstError,
   )
 
+  const hasVisibleErrors = isSubmitted && totalErrors > 0
+
   return (
     <FormProvider {...form}>
       <form
         ref={formRef}
         noValidate
         aria-busy={save.isPending}
-        className="grid min-w-0 gap-6"
+        className="grid min-w-0 gap-5"
         onSubmit={(event) => {
           // 弹窗通过 Portal 渲染，但 React 事件仍沿组件树冒泡；只处理本表单自身的提交。
           if (event.target !== event.currentTarget)
@@ -212,7 +279,7 @@ export function DeploymentTargetEditor({
           void submit(false)(event)
         }}
       >
-        <div className="grid min-w-0 gap-6 @2xl/workspace:grid-cols-[15rem_minmax(0,1fr)]">
+        <div className="grid min-w-0 gap-5 @2xl/workspace:grid-cols-[14.5rem_minmax(0,1fr)]">
           <aside className="min-w-0 @2xl/workspace:sticky @2xl/workspace:top-0 @2xl/workspace:self-start">
             <DeploymentTargetEditorNav
               repositoryBindings={repositoryBindings}
@@ -223,14 +290,21 @@ export function DeploymentTargetEditor({
               }}
             />
           </aside>
-          <div className="grid min-w-0 gap-6">
+          <div className="grid min-w-0 gap-5">
             <BasicsSection
+              editing={Boolean(target)}
+              projectId={projectId}
+              runtimeClusters={runtimeClusters}
+            />
+            <SourceSection
               applicationId={applicationId}
               editing={Boolean(target)}
+              followsImageTemplate={followsImageTemplate}
               projectId={projectId}
               registries={registries}
               repositoryBindings={repositoryBindings}
-              runtimeClusters={runtimeClusters}
+              resolvedTemplateImageRef={imageTemplate.data?.targetImageRef}
+              onTargetImageRefManualChange={() => setTargetImageRefTouchedByUser(true)}
             />
             <RuntimeSection
               canManageRuntimeSecrets={canManageRuntimeSecrets}
@@ -239,42 +313,48 @@ export function DeploymentTargetEditor({
               releases={releases}
               runtimeClusters={runtimeClusters}
             />
-            <ReleaseSection />
             <AdvancedSection
               buildEnvironmentAvailable={buildEnvironmentAvailable}
+              buildEnvironmentRetrying={buildEnvironmentRetrying}
               open={advancedOpen}
               projectId={projectId}
               repositoryBindings={repositoryBindings}
               target={target}
               onOpenChange={setAdvancedOpen}
+              onRetryBuildEnvironment={onRetryBuildEnvironment}
             />
           </div>
         </div>
         <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-container border border-border bg-surface-raised px-4 py-3 shadow-raised @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-between">
           <div aria-live="polite" className="min-w-0 text-sm empty:hidden">
-            {redeployFailure && showRedeployRetry && (
-              <p className="text-danger" data-slot="redeploy-failure">
-                {t('deploymentTargetEditor.savedButRedeployFailed', { message: redeployFailure.message })}
-              </p>
-            )}
-            {isSubmitted && totalErrors > 0 && (
-              <button className="text-left text-danger underline-offset-4 hover:underline focus-visible:underline" type="button" onClick={() => focusFirstError(errors)}>
-                {t('deploymentTargetEditor.fixErrors', { count: totalErrors })}
-              </button>
-            )}
-            {pendingSecretCount > 0 && (
-              <p className="text-foreground">
-                {t('deploymentTargetEditor.pendingSecretSummary', pendingSecrets)}
-              </p>
-            )}
-            {!showRedeployRetry && !(isSubmitted && totalErrors > 0) && needsRedeploy && (
-              <p className="text-warning">
-                {t(canRedeploy ? 'deploymentsPage.runtimeChangesNeedRedeployInline' : 'deploymentsPage.runtimeChangesNeedRedeployUnavailableInline')}
-              </p>
-            )}
+            {redeployFailure && showRedeployRetry
+              ? (
+                  <p className="text-danger" data-slot="redeploy-failure">
+                    {t('deploymentTargetEditor.savedButRedeployFailed', { message: redeployFailure.message })}
+                  </p>
+                )
+              : hasVisibleErrors
+                ? (
+                    <button className="font-medium text-left text-danger underline-offset-4 hover:underline focus-visible:underline" type="button" onClick={() => focusFirstError(errors)}>
+                      {t('deploymentTargetEditor.fixErrors', { count: totalErrors })}
+                    </button>
+                  )
+                : pendingSecretCount > 0
+                  ? (
+                      <p className="text-foreground">
+                        {t('deploymentTargetEditor.pendingSecretSummary', pendingSecrets)}
+                      </p>
+                    )
+                  : needsRedeploy
+                    ? (
+                        <p className="text-warning">
+                          {t(canRedeploy ? 'deploymentsPage.runtimeChangesNeedRedeployInline' : 'deploymentsPage.runtimeChangesNeedRedeployUnavailableInline')}
+                        </p>
+                      )
+                    : null}
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-2">
-            <Button disabled={save.isPending || retryRedeploy.isPending} type="button" variant="ghost" onClick={leaveEditor}>
+            <Button disabled={save.isPending || retryRedeploy.isPending} type="button" variant="outline" onClick={leaveEditor}>
               {t('common.cancel')}
             </Button>
             {redeployFailure && showRedeployRetry && (

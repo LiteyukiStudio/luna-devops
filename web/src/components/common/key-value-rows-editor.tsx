@@ -36,10 +36,16 @@ export function KeyValueRowsEditor({ onChange, rows, secret = false, title, valu
         </Button>
       </div>
       <div className="grid gap-2">
-        {rows.map(row => (
+        {rows.map((row, index) => (
           <div key={row.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto]">
-            <Input placeholder={t('buildsPage.variableKeyPlaceholder')} value={row.key} onChange={event => updateRow(row.id, { key: event.target.value })} />
             <Input
+              aria-label={t('common.keyValueRowKeyLabel', { title, index: index + 1 })}
+              placeholder={t('buildsPage.variableKeyPlaceholder')}
+              value={row.key}
+              onChange={event => updateRow(row.id, { key: event.target.value })}
+            />
+            <Input
+              aria-label={t('common.keyValueRowValueLabel', { title, index: index + 1 })}
               placeholder={row.existing && secret ? t('common.secretSetPlaceholder') : valuePlaceholder}
               type={secret ? 'password' : 'text'}
               value={row.value}

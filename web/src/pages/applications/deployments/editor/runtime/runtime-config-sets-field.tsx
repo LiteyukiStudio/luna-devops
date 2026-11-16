@@ -1,17 +1,19 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import type { DeploymentTarget, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RuntimeConfigRefMode } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileCode2, Pencil, Rocket } from 'lucide-react'
+import { FileCode2, Pencil, Rocket, RotateCw } from 'lucide-react'
 import { useState } from 'react'
 import { useForm, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { HelpTip } from '@/components/common/help-tip'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { NativeSelect } from '@/components/ui/native-select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { deploymentReleaseKey } from '@/pages/applications/application-config-utils'
 import { DeferredRuntimeConfigSetDialog } from '@/pages/applications/deployments/application-deployment-dialogs'
@@ -109,18 +111,27 @@ export function RuntimeConfigSetsField({ canManageSecrets, deploymentTargets, pr
   })
 
   return (
-    <div className="grid min-w-0 gap-3">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h4 className="text-sm font-medium text-foreground">{t('deploymentsPage.runtimeConfigSets')}</h4>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('deploymentsPage.runtimeConfigSetsHint')}</p>
-        </div>
+    <div className="grid min-w-0 gap-3 border-t border-border/70 pt-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <h4 className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
+          {t('deploymentsPage.runtimeConfigSets')}
+          <HelpTip label={t('deploymentsPage.runtimeConfigSets')}>{t('deploymentsPage.runtimeConfigSetsHint')}</HelpTip>
+        </h4>
         <Button size="sm" type="button" variant="outline" onClick={() => openDialog()}>
           <FileCode2 className="size-4" />
           {t('runtimeConfigSets.createTitle')}
         </Button>
       </div>
-      {sets.isError && <p className="text-sm text-danger">{t('deploymentTargetEditor.runtimeConfigSetsLoadFailed')}</p>}
+      {sets.isLoading && <Skeleton className="h-12 w-full rounded-control" />}
+      {sets.isError && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger-border bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
+          <span>{t('deploymentTargetEditor.runtimeConfigSetsLoadFailed')}</span>
+          <Button disabled={sets.isFetching} size="sm" type="button" variant="outline" onClick={() => void sets.refetch()}>
+            <RotateCw className="size-3.5" />
+            {t('common.retry')}
+          </Button>
+        </div>
+      )}
       {sets.data && sets.data.length === 0 && <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyRuntimeConfigSets')}</p>}
       {sets.data && sets.data.length > 0 && (
         <ul className="grid gap-1 rounded-control border border-border p-1">
@@ -128,29 +139,29 @@ export function RuntimeConfigSetsField({ canManageSecrets, deploymentTargets, pr
             const selectedRef = selectedById.get(set.id)
             const checkboxId = `runtime-config-set-${set.id}`
             return (
-              <li key={set.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-control px-3 py-2 hover:bg-surface-subtle">
-                <label className="flex min-w-0 items-center gap-3" htmlFor={checkboxId}>
+              <li key={set.id} className="flex flex-wrap items-center justify-between gap-2 rounded-control px-3 py-2 hover:bg-surface-subtle">
+                <label className="flex min-w-0 flex-1 items-center gap-3" htmlFor={checkboxId}>
                   <Checkbox checked={Boolean(selectedRef)} disabled={!set.enabled && !selectedRef} id={checkboxId} onCheckedChange={checked => toggleSet(set.id, checked === true)} />
-                  <span className="min-w-0 truncate text-sm font-medium" title={set.name}>{set.name}</span>
+                  <span className="min-w-0 truncate font-mono text-sm font-medium" title={set.name}>{set.name}</span>
                   {!set.enabled && <StatusBadge tone="neutral">{t('common.disabled')}</StatusBadge>}
                 </label>
-                {selectedRef
-                  ? (
-                      <NativeSelect
-                        aria-label={t('deploymentTargetEditor.runtimeConfigRefModeFor', { name: set.name })}
-                        className="h-8 text-xs"
-                        containerClassName="w-32 shrink-0"
-                        value={selectedRef.mode}
-                        onChange={event => changeMode(set.id, event.target.value === 'snapshot' ? 'snapshot' : 'live')}
-                      >
-                        <option value="live">{t('deploymentsPage.runtimeConfigRefModes.live')}</option>
-                        <option value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</option>
-                      </NativeSelect>
-                    )
-                  : <span />}
-                <Button aria-label={t('deploymentTargetEditor.editRuntimeConfigSet', { name: set.name })} size="icon" type="button" variant="ghost" onClick={() => openDialog(set)}>
-                  <Pencil className="size-4" />
-                </Button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {selectedRef && (
+                    <NativeSelect
+                      aria-label={t('deploymentTargetEditor.runtimeConfigRefModeFor', { name: set.name })}
+                      className="h-8 w-auto text-xs"
+                      containerClassName="w-auto shrink-0"
+                      value={selectedRef.mode}
+                      onChange={event => changeMode(set.id, event.target.value === 'snapshot' ? 'snapshot' : 'live')}
+                    >
+                      <option value="live">{t('deploymentsPage.runtimeConfigRefModes.live')}</option>
+                      <option value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</option>
+                    </NativeSelect>
+                  )}
+                  <Button aria-label={t('deploymentTargetEditor.editRuntimeConfigSet', { name: set.name })} size="icon" type="button" variant="ghost" onClick={() => openDialog(set)}>
+                    <Pencil className="size-4" />
+                  </Button>
+                </div>
               </li>
             )
           })}

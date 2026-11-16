@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
+import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -217,11 +218,37 @@ function PlatformTemplateEditorForm({
                   <Field error={errors.defaultReplicas?.message} label={t('appTemplatesPage.replicas')}>
                     <Input disabled={pending} min={1} type="number" {...register('defaultReplicas', { valueAsNumber: true })} />
                   </Field>
-                  <Field label={t('appTemplatesPage.cpu')}>
-                    <Input disabled={pending} placeholder="250m" {...register('defaultCPU')} />
+                  <Field error={errors.defaultCPU?.message} label={t('appTemplatesPage.cpu')}>
+                    {fieldControl => (
+                      <Controller
+                        control={control}
+                        name="defaultCPU"
+                        render={({ field }) => (
+                          <CpuQuotaInput
+                            disabled={pending}
+                            inputProps={{ ...fieldControl, placeholder: '250' }}
+                            value={field.value}
+                            onChange={field.onChange}
+                          />
+                        )}
+                      />
+                    )}
                   </Field>
-                  <Field label={t('appTemplatesPage.memory')}>
-                    <Input disabled={pending} placeholder="256Mi" {...register('defaultMemory')} />
+                  <Field error={errors.defaultMemory?.message} label={t('appTemplatesPage.memory')}>
+                    {fieldControl => (
+                      <Controller
+                        control={control}
+                        name="defaultMemory"
+                        render={({ field }) => (
+                          <MemoryQuotaInput
+                            disabled={pending}
+                            inputProps={{ ...fieldControl, placeholder: '256' }}
+                            value={field.value}
+                            onChange={field.onChange}
+                          />
+                        )}
+                      />
+                    )}
                   </Field>
                   <Field
                     hint={t('appTemplatesPage.platformAdmin.persistentMountPathHint')}
@@ -327,11 +354,37 @@ function PlatformTemplateEditorForm({
                         <Field error={errors.components?.[index]?.defaultReplicas?.message} label={t('appTemplatesPage.replicas')}>
                           <Input disabled={pending} min={1} type="number" {...register(`components.${index}.defaultReplicas`, { valueAsNumber: true })} />
                         </Field>
-                        <Field label={t('appTemplatesPage.cpu')}>
-                          <Input disabled={pending} {...register(`components.${index}.defaultCPU`)} />
+                        <Field error={errors.components?.[index]?.defaultCPU?.message} label={t('appTemplatesPage.cpu')}>
+                          {fieldControl => (
+                            <Controller
+                              control={control}
+                              name={`components.${index}.defaultCPU`}
+                              render={({ field }) => (
+                                <CpuQuotaInput
+                                  disabled={pending}
+                                  inputProps={fieldControl}
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                />
+                              )}
+                            />
+                          )}
                         </Field>
-                        <Field label={t('appTemplatesPage.memory')}>
-                          <Input disabled={pending} {...register(`components.${index}.defaultMemory`)} />
+                        <Field error={errors.components?.[index]?.defaultMemory?.message} label={t('appTemplatesPage.memory')}>
+                          {fieldControl => (
+                            <Controller
+                              control={control}
+                              name={`components.${index}.defaultMemory`}
+                              render={({ field }) => (
+                                <MemoryQuotaInput
+                                  disabled={pending}
+                                  inputProps={fieldControl}
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                />
+                              )}
+                            />
+                          )}
                         </Field>
                         <Field label={t('appTemplatesPage.platformAdmin.persistentMountPath')}>
                           <Input disabled={pending} placeholder="/var/lib/postgresql/data" {...register(`components.${index}.persistentMountPath`)} />

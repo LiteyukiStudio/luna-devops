@@ -53,7 +53,6 @@ const apps = {
   identifierLength: '應用標識長度必須為 {{min}}–{{max}} 個字元',
   identifierPlaceholder: 'console',
   sourceType: '來源型別',
-  sourceTypeHint: '程式碼倉庫表示平臺後續會從原始碼構建映象；已有映象表示跳過構建，直接部署映象地址。',
   repository: '程式碼倉庫',
   image: '已有映象',
   detectingRepository: '正在探測倉庫結構...',

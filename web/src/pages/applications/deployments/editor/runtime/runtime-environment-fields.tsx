@@ -4,7 +4,7 @@ import { EditorGroup } from '../deployment-target-editor-fields'
 import { RuntimeConfigSetsField } from './runtime-config-sets-field'
 import { RuntimeEnvironmentTable } from './runtime-environment-table'
 
-/** 环境变量：先引用项目空间公共配置，再用当前部署配置的变量覆盖同名项；配置文件与密钥文件在高级分区。 */
+/** 环境变量与共享配置集：先引用项目空间公共配置，再用当前部署配置的变量覆盖同名项。 */
 export function RuntimeEnvironmentFields({ canManageRuntimeSecrets, deploymentTargets, projectId, releases }: {
   canManageRuntimeSecrets: boolean
   deploymentTargets: DeploymentTarget[]
@@ -14,8 +14,8 @@ export function RuntimeEnvironmentFields({ canManageRuntimeSecrets, deploymentTa
   const { t } = useTranslation()
   return (
     <EditorGroup description={t('deploymentTargetEditor.environmentDescription')} title={t('deploymentTargetEditor.environmentTitle')}>
-      <RuntimeConfigSetsField canManageSecrets={canManageRuntimeSecrets} deploymentTargets={deploymentTargets} projectId={projectId} releases={releases} />
       <RuntimeEnvironmentTable />
+      <RuntimeConfigSetsField canManageSecrets={canManageRuntimeSecrets} deploymentTargets={deploymentTargets} projectId={projectId} releases={releases} />
     </EditorGroup>
   )
 }

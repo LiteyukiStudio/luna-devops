@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, FileJson, Pencil, RefreshCcw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -17,6 +17,7 @@ import { useProjectVolumeStorageClasses } from '@/components/common/project-volu
 import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
+import { StorageQuotaInput } from '@/components/common/unit-input'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -255,7 +256,21 @@ function ProjectVolumeEditDialog({ onOpenChange, open, projectId, volume }: { on
         </DialogHeader>
         <form className="grid gap-4" onSubmit={form.handleSubmit(values => update.mutate(values))}>
           <Field error={form.formState.errors.displayName?.message} label={t('projectVolumes.name')} required><Input {...form.register('displayName')} aria-invalid={Boolean(form.formState.errors.displayName)} /></Field>
-          <Field error={form.formState.errors.capacity?.message} label={t('projectVolumes.capacity')} required><Input {...form.register('capacity')} aria-invalid={Boolean(form.formState.errors.capacity)} /></Field>
+          <Field error={form.formState.errors.capacity?.message} label={t('projectVolumes.capacity')} required>
+            {fieldControl => (
+              <Controller
+                control={form.control}
+                name="capacity"
+                render={({ field }) => (
+                  <StorageQuotaInput
+                    inputProps={fieldControl}
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                )}
+              />
+            )}
+          </Field>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
             <Button disabled={!form.formState.isValid || update.isPending} type="submit">{t('common.save')}</Button>

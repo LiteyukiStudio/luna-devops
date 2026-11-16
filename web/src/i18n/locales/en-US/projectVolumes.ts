@@ -86,7 +86,6 @@ const projectVolumes = {
   displayNamePlaceholder: 'For example: production database data',
   claimNamePlaceholder: 'For example: postgres-data',
   snapshotNamePlaceholder: 'For example: postgres-backup-20260815',
-  capacityPlaceholder: 'For example: 20Gi',
   importDescription: 'Select a tar.gz or raw.zst archive. The browser uploads the complete file after the target volume is ready.',
   directTransfer: 'Direct transfer',
   transferUnavailableTitle: 'Volume transfer is not enabled',

@@ -3,6 +3,7 @@ import { ClipboardPaste, KeyRound, MoreHorizontal, Plus, RefreshCw, RotateCcw, T
 import { useState } from 'react'
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { HelpTip } from '@/components/common/help-tip'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -13,7 +14,7 @@ import { useFieldError } from '../deployment-target-editor-utils'
 import { maxRuntimeEnvironmentVariables } from '../deployment-target-form'
 import { DotEnvPasteDialog } from './dotenv-paste-dialog'
 
-const secretMask = '••••••'
+const secretMask = '••••••••'
 
 /**
  * 普通配置与加密配置的统一键值表。名称在两种模式之间唯一；
@@ -45,11 +46,11 @@ export function RuntimeEnvironmentTable() {
 
   return (
     <div className="grid min-w-0 gap-3">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h4 className="text-sm font-medium text-foreground">{t('deploymentTargetEditor.environmentTableTitle')}</h4>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('deploymentsPage.runtimeEnvVarsHint')}</p>
-        </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <h4 className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
+          {t('deploymentTargetEditor.environmentTableTitle')}
+          <HelpTip label={t('deploymentTargetEditor.environmentTableTitle')}>{t('deploymentsPage.runtimeEnvVarsHint')}</HelpTip>
+        </h4>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" type="button" variant="outline" onClick={() => setPasteOpen(true)}>
             <ClipboardPaste className="size-4" />
@@ -128,7 +129,7 @@ function EnvironmentRow({ index, onRemove, onUpdate, row }: {
 
   return (
     <div className={cn('grid gap-1 rounded-control', clearing && 'opacity-70')}>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-control bg-surface-inset/60 p-2 @4xl/workspace:bg-transparent @4xl/workspace:p-0 @4xl/workspace:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_4.5rem_2.25rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-control bg-surface-inset/60 p-2 @4xl/workspace:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_4.5rem_2.25rem] @4xl/workspace:bg-transparent @4xl/workspace:p-0">
         <Input
           {...register(`environmentVariables.${index}.key`)}
           aria-describedby={errors.length ? errorId : undefined}
@@ -226,12 +227,12 @@ function EnvironmentValueCell({ className, describedBy, index, invalid, name, on
         ? t('deploymentTargetEditor.secretPendingClear')
         : null
     return (
-      <div className={cn('flex h-8 min-w-0 items-center gap-2 rounded-control border border-dashed border-border px-3', className)} aria-label={valueLabel} role="group">
+      <div className={cn('flex h-9 min-w-0 items-center gap-2 rounded-control border border-dashed border-border bg-surface-subtle/60 px-3', className)} aria-label={valueLabel} role="group">
         <span aria-hidden="true" className={cn('font-mono text-sm text-muted-foreground', row.secretAction === 'clear' && 'line-through')}>{secretMask}</span>
         <span className="sr-only">{t('common.secretValueMasked')}</span>
         {status && <StatusBadge tone={row.secretAction === 'clear' ? 'danger' : 'info'}>{status}</StatusBadge>}
         {row.secretAction === 'generate' && row.stored !== 'secret' && (
-          <Button className="ml-auto" size="sm" type="button" variant="ghost" onClick={() => onUpdate({ secretAction: 'set' })}>
+          <Button className="ml-auto h-7 px-2" size="sm" type="button" variant="ghost" onClick={() => onUpdate({ secretAction: 'set' })}>
             {t('common.cancel')}
           </Button>
         )}

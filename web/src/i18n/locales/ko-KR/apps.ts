@@ -53,7 +53,6 @@ const apps = {
   identifierLength: '애플리케이션 식별자 길이는 {{min}}–{{max}}자여야 합니다',
   identifierPlaceholder: 'console',
   sourceType: '소스 유형',
-  sourceTypeHint: '코드 리포지토리는 플랫폼이 후속으로 소스에서 이미지를 빌드함을 의미합니다. 기존 이미지는 빌드를 건너뛰고 이미지 주소를 직접 배포합니다.',
   repository: '코드 리포지토리',
   image: '기존 이미지',
   detectingRepository: '리포지토리 구조 탐지 중...',

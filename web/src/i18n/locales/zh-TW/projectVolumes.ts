@@ -93,7 +93,6 @@ const projectVolumes = {
   displayNamePlaceholder: '例如：生產資料庫資料',
   claimNamePlaceholder: '例如：postgres-data',
   snapshotNamePlaceholder: '例如：postgres-backup-20260815',
-  capacityPlaceholder: '例如：20Gi',
   importDescription: '選擇 tar.gz 或 raw.zst 歸檔。目標資料卷準備完成後，瀏覽器會直接上傳完整檔案。',
   directTransfer: '直接傳輸',
   transferUnavailableTitle: '資料卷傳輸未啟用',

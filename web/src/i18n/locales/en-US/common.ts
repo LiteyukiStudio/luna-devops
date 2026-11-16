@@ -124,6 +124,12 @@ const common = {
   loginRequiredDescription: 'Please log in with a local account or an authorized OIDC account.',
   pinProject: 'Pin project space',
   unpinProject: 'Unpin project space',
+  cpuUnitCore: 'core',
+  cpuUnitLabel: 'CPU unit',
+  memoryUnitLabel: 'Memory unit',
+  storageUnitLabel: 'Storage unit',
+  keyValueRowKeyLabel: '{{title}} row {{index}} key',
+  keyValueRowValueLabel: '{{title}} row {{index}} value',
   resultVisibility: {
     label: 'View range',
     related: 'Related to me',
