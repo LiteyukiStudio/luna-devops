@@ -59,6 +59,8 @@ const clustersPage = {
   resourceEmptyDescription: '這裡只展示 Luna DevOps 建立或打了平臺標籤的資源，不接管叢集裡已有的第三方資源。',
   resourceLoadFailedTitle: '無法讀取叢集資源',
   resourceLoadFailedDescription: 'Kubernetes 即時資源查詢失敗，請檢查叢集連線與權限後重試。',
+  clustersLoadFailedTitle: '執行叢集載入失敗',
+  clustersLoadFailedDescription: '暫時無法讀取執行叢集列表，請稍後重試。',
   selectResourceCluster: '選擇叢集',
   noResourceClusterTitle: '沒有可檢視的叢集',
   noResourceClusterDescription: '目前沒有可用於資源檢視的執行叢集。',

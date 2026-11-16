@@ -11,6 +11,8 @@ export default {
       action: '沒有待處理請求',
       description: '新的專案協作、計費和平臺訊息會顯示在這裡。',
     },
+    loadFailedTitle: '訊息載入失敗',
+    loadFailedDescription: '暫時無法讀取訊息列表，請稍後重試。',
     actions: {
       viewAll: '檢視全部訊息',
       markAllRead: '全部標記已讀',
@@ -39,7 +41,12 @@ export default {
       system: '系統',
     },
     priority: { critical: '緊急', high: '重要' },
-    detail: { title: '訊息詳情', expiresAt: '過期時間' },
+    detail: {
+      title: '訊息詳情',
+      expiresAt: '過期時間',
+      loadFailedTitle: '訊息詳情載入失敗',
+      loadFailedDescription: '暫時無法讀取這條訊息的內容，請稍後重試。',
+    },
     decision: {
       acceptTitle: '確認接受此請求？',
       acceptDescription: '平臺會重新校驗許可權和資源狀態後執行該操作。',

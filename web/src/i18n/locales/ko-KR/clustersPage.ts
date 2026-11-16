@@ -59,6 +59,8 @@ const clustersPage = {
   resourceEmptyDescription: '여기에는 Luna DevOps가 생성했거나 플랫폼 라벨이 붙은 리소스만 표시됩니다. 클러스터 내 기존 타사 리소스는 인수하지 않습니다.',
   resourceLoadFailedTitle: '클러스터 리소스를 불러올 수 없습니다',
   resourceLoadFailedDescription: 'Kubernetes 실시간 리소스 조회에 실패했습니다. 클러스터 연결과 권한을 확인한 후 다시 시도하세요.',
+  clustersLoadFailedTitle: '런타임 클러스터 로드 실패',
+  clustersLoadFailedDescription: '일시적으로 런타임 클러스터 목록을 불러올 수 없습니다. 잠시 후 다시 시도하세요.',
   selectResourceCluster: '클리스터 선택',
   noResourceClusterTitle: '조회 가능한 클러스터가 없습니다',
   noResourceClusterDescription: '리소스를 조회할 수 있는 활성 런타임 클러스터가 없습니다.',

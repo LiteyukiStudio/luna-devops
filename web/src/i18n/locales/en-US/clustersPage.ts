@@ -59,6 +59,8 @@ const clustersPage = {
   resourceEmptyDescription: 'Only resources created by Luna DevOps or labeled as platform-managed are shown. Existing third-party cluster resources are not adopted.',
   resourceLoadFailedTitle: 'Unable to load cluster resources',
   resourceLoadFailedDescription: 'The live Kubernetes resource query failed. Check the cluster connection and permissions, then retry.',
+  clustersLoadFailedTitle: 'Failed to load runtime clusters',
+  clustersLoadFailedDescription: 'Runtime clusters are temporarily unavailable. Try again later.',
   selectResourceCluster: 'Select cluster',
   noResourceClusterTitle: 'No available clusters',
   noResourceClusterDescription: 'There is no active runtime cluster available for resource inspection.',

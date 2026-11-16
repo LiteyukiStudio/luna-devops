@@ -59,6 +59,8 @@ const clustersPage = {
   resourceEmptyDescription: '这里只展示 Luna DevOps 创建或打了平台标签的资源，不接管集群里已有的第三方资源。',
   resourceLoadFailedTitle: '无法读取集群资源',
   resourceLoadFailedDescription: 'Kubernetes 实时资源查询失败，请检查集群连接和权限后重试。',
+  clustersLoadFailedTitle: '运行集群加载失败',
+  clustersLoadFailedDescription: '暂时无法读取运行集群列表，请稍后重试。',
   selectResourceCluster: '选择集群',
   noResourceClusterTitle: '没有可查看的集群',
   noResourceClusterDescription: '当前没有可用于资源查看的运行集群。',

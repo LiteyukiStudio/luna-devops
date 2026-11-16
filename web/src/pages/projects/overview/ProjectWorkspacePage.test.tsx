@@ -164,6 +164,23 @@ describe('project workspace overview', () => {
     expect(await screen.findByText('120')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: i18next.t('projectSpaces.billingOwnerTransfer.trigger') })).not.toBeInTheDocument()
   })
+
+  it('renders independent error states with retry instead of disguising failed builds or events as empty', async () => {
+    const user = userEvent.setup()
+    mocks.listBuildRunsPage.mockRejectedValueOnce(new Error('builds failed'))
+    mocks.listPlatformEvents.mockRejectedValueOnce(new Error('events failed'))
+
+    renderPage()
+
+    expect(await screen.findByText('Failed to load recent builds')).toBeInTheDocument()
+    expect(await screen.findByText('Failed to load recent events')).toBeInTheDocument()
+    expect(screen.queryByText('No build records yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('No events yet')).not.toBeInTheDocument()
+
+    const retryButtons = screen.getAllByRole('button', { name: 'Retry' })
+    await user.click(retryButtons[0])
+    expect(await screen.findByText('No build records yet')).toBeInTheDocument()
+  })
 })
 
 function LocationProbe() {

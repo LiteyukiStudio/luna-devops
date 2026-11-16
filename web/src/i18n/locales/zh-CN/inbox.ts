@@ -11,6 +11,8 @@ export default {
       action: '没有待处理请求',
       description: '新的项目协作、计费和平台消息会显示在这里。',
     },
+    loadFailedTitle: '消息加载失败',
+    loadFailedDescription: '暂时无法读取消息列表，请稍后重试。',
     actions: {
       viewAll: '查看全部消息',
       markAllRead: '全部标记已读',
@@ -39,7 +41,12 @@ export default {
       system: '系统',
     },
     priority: { critical: '紧急', high: '重要' },
-    detail: { title: '消息详情', expiresAt: '过期时间' },
+    detail: {
+      title: '消息详情',
+      expiresAt: '过期时间',
+      loadFailedTitle: '消息详情加载失败',
+      loadFailedDescription: '暂时无法读取这条消息的内容，请稍后重试。',
+    },
     decision: {
       acceptTitle: '确认接受此请求？',
       acceptDescription: '平台会重新校验权限和资源状态后执行该操作。',

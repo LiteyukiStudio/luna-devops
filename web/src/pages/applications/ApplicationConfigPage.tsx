@@ -284,6 +284,8 @@ export function ApplicationConfigPage() {
   // 概览汇总这些查询；任一失败时如实报错，不能把失败当作“尚未创建”去引导用户。
   const overviewQueries = [deploymentTargets, releases, buildRuns, routes, repositoryBindings]
   const overviewFailedQueries = overviewQueries.filter(query => query.isError)
+  const buildListQueries = [buildRuns, buildJobs]
+  const buildListFailedQueries = buildListQueries.filter(query => query.isError)
   const deploymentListQueries = [deploymentTargets, releases]
   const deploymentListFailedQueries = deploymentListQueries.filter(query => query.isError)
   const gatewayListQueries = [routes, deploymentTargets]
@@ -426,6 +428,15 @@ export function ApplicationConfigPage() {
               buildJobs={appBuildJobs}
               deploymentTargets={deploymentTargetRows}
               buildRuns={appBuildRuns}
+              listState={{
+                loading: buildListQueries.some(query => query.isLoading),
+                error: buildListFailedQueries.length > 0
+                  ? {
+                      retrying: buildListFailedQueries.some(query => query.isFetching),
+                      onRetry: () => buildListFailedQueries.forEach(query => void query.refetch()),
+                    }
+                  : undefined,
+              }}
               projectId={projectId}
               projectIdentifier={project.data?.identifier ?? ''}
               registries={registries.data ?? []}

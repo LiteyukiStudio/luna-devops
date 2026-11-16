@@ -11,8 +11,12 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { canManageCluster, gatewayAccessSummary, scopeLabel } from './cluster-helpers'
 
-export function RuntimeClusterTable({ clusters, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onEgressExceptions, onTest }: {
+export function RuntimeClusterTable({ clusters, error, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onEgressExceptions, onTest }: {
   clusters: RuntimeCluster[]
+  error?: {
+    onRetry: () => void
+    retrying: boolean
+  }
   loading: boolean
   pagination: {
     page: number
@@ -134,6 +138,11 @@ export function RuntimeClusterTable({ clusters, loading, pagination, pressureByC
     <DataList
       columns={columns}
       emptyTitle={t('deploymentsPage.emptyClusters')}
+      error={error && {
+        ...error,
+        description: t('clustersPage.clustersLoadFailedDescription'),
+        title: t('clustersPage.clustersLoadFailedTitle'),
+      }}
       items={clusters}
       loading={loading}
       pagination={{

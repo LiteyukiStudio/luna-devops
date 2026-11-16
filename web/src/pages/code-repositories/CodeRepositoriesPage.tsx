@@ -284,7 +284,14 @@ export function CodeRepositoriesPage() {
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
             {(activeTab === 'providers' ? providers.isError : credentials.isError)
-              ? <ErrorState title={t('codeRepositoriesView.loadFailedTitle')} description={t('codeRepositoriesView.loadFailedDescription')} />
+              ? (
+                  <ErrorState
+                    description={t('codeRepositoriesView.loadFailedDescription')}
+                    retrying={activeTab === 'providers' ? providers.isFetching : credentials.isFetching}
+                    title={t('codeRepositoriesView.loadFailedTitle')}
+                    onRetry={() => void (activeTab === 'providers' ? providers.refetch() : credentials.refetch())}
+                  />
+                )
               : activeTab === 'providers'
                 ? (
                     <ProvidersPanel

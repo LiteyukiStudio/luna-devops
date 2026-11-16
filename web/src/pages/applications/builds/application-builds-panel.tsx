@@ -45,7 +45,7 @@ function uniqueBuildFilterValues(values: Array<string | undefined>) {
     .sort((left, right) => left.localeCompare(right))
 }
 
-export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, binding, deploymentTargets, buildJobs, buildRuns, projectId, projectIdentifier, ref, registries, repositoryBindings }: {
+export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, binding, deploymentTargets, buildJobs, buildRuns, listState, projectId, projectIdentifier, ref, registries, repositoryBindings }: {
   applicationId: string
   applicationIdentifier: string
   binding?: { defaultBranch: string, gitAccountId: string, owner: string, repo: string }
@@ -53,6 +53,10 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
   deploymentTargets: DeploymentTarget[]
   buildJobs: BuildJob[]
   buildRuns: BuildRun[]
+  listState?: {
+    loading: boolean
+    error?: { onRetry: () => void, retrying: boolean }
+  }
   projectId: string
   projectIdentifier: string
   ref?: Ref<BuildsPanelHandle>
@@ -376,16 +380,20 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
         ]}
         emptyMode={hasRunFilters ? 'filtered' : 'actionable'}
         emptyTitle={repositoryBindings.length || binding ? t('buildsPage.emptyRuns') : t('buildsPage.repositoryBindingRequired')}
-        error={buildRunsPage.isError
+        error={(listState?.error || buildRunsPage.isError)
           ? {
               description: t('buildsPage.runsLoadFailedDescription'),
-              onRetry: () => void buildRunsPage.refetch(),
-              retrying: buildRunsPage.isFetching,
+              onRetry: () => {
+                listState?.error?.onRetry()
+                if (buildRunsPage.isError)
+                  void buildRunsPage.refetch()
+              },
+              retrying: Boolean(listState?.error?.retrying || buildRunsPage.isFetching),
               title: t('buildsPage.runsLoadFailedTitle'),
             }
           : undefined}
         items={pagedRuns}
-        loading={buildRunsPage.isLoading}
+        loading={Boolean(listState?.loading || buildRunsPage.isLoading)}
         pagination={{
           page: buildRunsPage.data?.page ?? runsPage,
           pageSize: buildRunsPage.data?.pageSize ?? runsPageSize,

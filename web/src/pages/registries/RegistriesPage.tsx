@@ -330,8 +330,13 @@ export function RegistriesPage() {
 
         <TabsContent value="registries">
           <RegistriesPanel
+            error={registries.isError
+              ? {
+                  onRetry: () => void registries.refetch(),
+                  retrying: registries.isFetching,
+                }
+              : undefined}
             items={registryItems}
-            isError={registries.isError}
             loading={registries.isLoading}
             toolbar={visibilitySelect}
             projectMap={projectMap}
@@ -359,6 +364,12 @@ export function RegistriesPage() {
 
         <TabsContent value="credentials">
           <CredentialsPanel
+            error={(credentialRegistryFilterId ? credentials.isError : allCredentials.isError)
+              ? {
+                  onRetry: () => void (credentialRegistryFilterId ? credentials.refetch() : allCredentials.refetch()),
+                  retrying: credentialRegistryFilterId ? credentials.isFetching : allCredentials.isFetching,
+                }
+              : undefined}
             items={visibleCredentials}
             loading={credentialRegistryFilterId ? credentials.isLoading : allCredentials.isLoading}
             projectMap={projectMap}
@@ -398,6 +409,12 @@ export function RegistriesPage() {
 
         <TabsContent value="images">
           <ImagesPanel
+            error={images.isError
+              ? {
+                  onRetry: () => void images.refetch(),
+                  retrying: images.isFetching,
+                }
+              : undefined}
             images={images.data?.items ?? []}
             loading={images.isLoading}
             toolbar={visibilitySelect}

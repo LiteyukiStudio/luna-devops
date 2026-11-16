@@ -59,6 +59,8 @@ const clustersPage = {
   resourceEmptyDescription: 'ここには Luna DevOps が作成したか、プラットフォームラベルが付いたリソースのみ表示されます。クラスター内の既存のサードパーティリソースは引き継ぎません。',
   resourceLoadFailedTitle: 'クラスターリソースを読み込めません',
   resourceLoadFailedDescription: 'Kubernetes のリアルタイムリソース取得に失敗しました。クラスター接続と権限を確認して再試行してください。',
+  clustersLoadFailedTitle: 'ランタイムクラスターの読み込みに失敗しました',
+  clustersLoadFailedDescription: '一時的にランタイムクラスター一覧を読み取れません。後ほど再試行してください。',
   selectResourceCluster: 'クラスターを選択',
   noResourceClusterTitle: '表示可能なクラスターがありません',
   noResourceClusterDescription: 'リソースの表示に利用できる稼働中のランタイムクラスターがありません。',

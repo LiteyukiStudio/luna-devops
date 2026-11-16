@@ -172,6 +172,12 @@ export function ClustersPage() {
         <TabsContent value="clusters">
           <RuntimeClusterTable
             clusters={clusters.data?.items ?? []}
+            error={clusters.isError
+              ? {
+                  onRetry: () => void clusters.refetch(),
+                  retrying: clusters.isFetching,
+                }
+              : undefined}
             loading={clusters.isLoading}
             pressureByClusterId={clusterPressure.byClusterId}
             pressureLoading={clusterPressure.isPending}
@@ -199,8 +205,10 @@ export function ClustersPage() {
             {activeTab === tab && resources.clusterResources.isError
               ? (
                   <ErrorState
-                    title={t('clustersPage.resourceLoadFailedTitle')}
                     description={t('clustersPage.resourceLoadFailedDescription')}
+                    retrying={resources.clusterResources.isFetching}
+                    title={t('clustersPage.resourceLoadFailedTitle')}
+                    onRetry={() => void resources.clusterResources.refetch()}
                   />
                 )
               : (

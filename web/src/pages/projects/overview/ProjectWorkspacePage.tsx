@@ -13,7 +13,7 @@ import { useSession } from '@/app/session-context'
 import { DescriptionListItem } from '@/components/common/description-list-item'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
-import { ToolViewportSkeleton } from '@/components/common/loading-states'
+import { OverviewSkeleton, ToolViewportSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { PageChromeHeading, PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
@@ -22,6 +22,7 @@ import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
 import { buildRunPath, platformEventDetailPath, platformEventResourcePath, projectEventsPath } from '@/lib/resource-routes'
@@ -71,8 +72,25 @@ export function ProjectWorkspacePage() {
   })
   if (legacySearch)
     return <Navigate replace to={{ search: legacySearch }} />
-  if (project.isError)
-    return <ErrorState title={t('projectSpaces.workspaceLoadFailedTitle')} description={t('projectSpaces.workspaceLoadFailedDescription')} />
+  if (project.isError) {
+    return (
+      <PageShell>
+        <ErrorState
+          description={t('projectSpaces.workspaceLoadFailedDescription')}
+          retrying={project.isFetching}
+          title={t('projectSpaces.workspaceLoadFailedTitle')}
+          onRetry={() => void project.refetch()}
+        />
+      </PageShell>
+    )
+  }
+  if (project.isLoading) {
+    return (
+      <PageShell>
+        {isOverview ? <OverviewSkeleton /> : <ToolViewportSkeleton />}
+      </PageShell>
+    )
+  }
 
   const currentProject = project.data
   const currentUserActions = currentProject?.currentUserActions
@@ -123,8 +141,23 @@ export function ProjectWorkspacePage() {
           <ProjectOverviewDashboard
             applications={applications.data ?? []}
             builds={recentBuilds.data?.items ?? []}
+            buildsError={recentBuilds.isError
+              ? {
+                  onRetry: () => void recentBuilds.refetch(),
+                  retrying: recentBuilds.isFetching,
+                }
+              : undefined}
+            buildsLoading={recentBuilds.isLoading}
             buildTotal={recentBuilds.data?.total ?? 0}
             events={recentEvents.data?.items ?? []}
+            eventsError={recentEvents.isError
+              ? {
+                  onRetry: () => void recentEvents.refetch(),
+                  retrying: recentEvents.isFetching,
+                }
+              : undefined}
+            eventsLoading={recentEvents.isLoading}
+            initialLoading={overview.isLoading && !overview.data && recentBuilds.isLoading && recentEvents.isLoading}
             members={members.data ?? []}
             project={currentProject}
             canTransferBillingOwnership={projectActionAllowed(currentUserActions, ProjectAction.ProjectOwnerOnly) && currentProject?.billingOwnerUserId === user?.id}
@@ -197,12 +230,39 @@ export function ProjectWorkspacePage() {
   )
 }
 
-function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransferBillingOwnership, events, members, overview, overviewUnavailable, project, runtimeConfigSetCount, variableSetCount }: {
+interface SectionRetryState {
+  onRetry: () => void
+  retrying: boolean
+}
+
+function ProjectOverviewDashboard({
+  applications,
+  buildTotal,
+  builds,
+  buildsError,
+  buildsLoading,
+  canTransferBillingOwnership,
+  events,
+  eventsError,
+  eventsLoading,
+  initialLoading,
+  members,
+  overview,
+  overviewUnavailable,
+  project,
+  runtimeConfigSetCount,
+  variableSetCount,
+}: {
   applications: Application[]
   buildTotal: number
   builds: BuildRun[]
+  buildsError?: SectionRetryState
+  buildsLoading?: boolean
   canTransferBillingOwnership: boolean
   events: PlatformEvent[]
+  eventsError?: SectionRetryState
+  eventsLoading?: boolean
+  initialLoading?: boolean
   members: ProjectMember[]
   overview?: ProjectOverview
   overviewUnavailable: boolean
@@ -219,6 +279,15 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
   const accessRoutesUnavailable = overviewUnavailable || accessRoutes?.status === 'unavailable'
   const ownerCount = members.filter(member => member.role === ProjectRole.Owner).length
 
+  if (initialLoading) {
+    return (
+      <div className="grid gap-section">
+        {project && <PageChromeHeading description={project.description || undefined} title={project.name} />}
+        <OverviewSkeleton />
+      </div>
+    )
+  }
+
   return (
     <div className="grid gap-section">
       {project && <PageChromeHeading description={project.description || undefined} title={project.name} />}
@@ -231,7 +300,7 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
           label={t('projectSpaces.buildsMetric')}
           meta={builds.length > 0 ? t('projectSpaces.recentBuildsFailedMeta', { count: builds.length, failed: failedBuilds }) : undefined}
           tone={failedBuilds > 0 ? 'danger' : 'neutral'}
-          value={buildTotal}
+          value={buildsError ? '-' : buildTotal}
         />
         <MetricItem
           emphasis={activeReleases > 0 || failedReleases > 0}
@@ -255,30 +324,45 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
 
       <div className="grid gap-section @4xl/workspace:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
         <Section description={t('projectSpaces.recentBuildsDescription')} title={t('projectSpaces.recentBuilds')} variant="bordered">
-          {builds.length > 0
+          {buildsError
             ? (
-                <ul className="-my-2 divide-y divide-border">
-                  {builds.map(build => (
-                    <li key={build.id}>
-                      <Link className={overviewRowLinkClassName} to={buildRunPath(build)}>
-                        <div className="min-w-0">
-                          <div className="truncate font-mono text-xs text-foreground" title={build.imageRef || build.targetRepository || build.id}>
-                            {build.imageRef || build.targetRepository || build.id}
-                          </div>
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {projectBuildMeta(build, applications, t)}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={build.status} />
-                          <span className="text-xs text-muted-foreground">{formatSmartDateTime(build.createdAt, t)}</span>
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                <ErrorState
+                  description={t('projectSpaces.recentBuildsLoadFailedDescription')}
+                  retrying={buildsError.retrying}
+                  title={t('projectSpaces.recentBuildsLoadFailedTitle')}
+                  onRetry={buildsError.onRetry}
+                />
               )
-            : <EmptyState title={t('projectSpaces.noRecentBuilds')} variant="plain" />}
+            : buildsLoading
+              ? (
+                  <div className="grid gap-2">
+                    {Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-11 w-full" />)}
+                  </div>
+                )
+              : builds.length > 0
+                ? (
+                    <ul className="-my-2 divide-y divide-border">
+                      {builds.map(build => (
+                        <li key={build.id}>
+                          <Link className={overviewRowLinkClassName} to={buildRunPath(build)}>
+                            <div className="min-w-0">
+                              <div className="truncate font-mono text-xs text-foreground" title={build.imageRef || build.targetRepository || build.id}>
+                                {build.imageRef || build.targetRepository || build.id}
+                              </div>
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {projectBuildMeta(build, applications, t)}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={build.status} />
+                              <span className="text-xs text-muted-foreground">{formatSmartDateTime(build.createdAt, t)}</span>
+                            </div>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                : <EmptyState title={t('projectSpaces.noRecentBuilds')} variant="plain" />}
         </Section>
 
         <Section title={t('projectSpaces.projectOperations')} variant="bordered">
@@ -315,26 +399,41 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
         )}
         variant="bordered"
       >
-        {events.length > 0
+        {eventsError
           ? (
-              <ul className="-my-2 divide-y divide-border">
-                {events.map(event => (
-                  <li key={event.id}>
-                    <Link className={overviewRowLinkClassName} to={platformEventResourcePath(event) ?? platformEventDetailPath(event)}>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{t(`eventsPage.types.${event.type.replaceAll('.', '_')}`, { defaultValue: event.type })}</p>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.message || t('eventsPage.noMessage')}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
-                        <span className="hidden text-xs text-muted-foreground @lg/workspace:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              <ErrorState
+                description={t('projectSpaces.recentEventsLoadFailedDescription')}
+                retrying={eventsError.retrying}
+                title={t('projectSpaces.recentEventsLoadFailedTitle')}
+                onRetry={eventsError.onRetry}
+              />
             )
-          : <EmptyState title={t('projectSpaces.noRecentEvents')} variant="plain" />}
+          : eventsLoading
+            ? (
+                <div className="grid gap-2">
+                  {Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-11 w-full" />)}
+                </div>
+              )
+            : events.length > 0
+              ? (
+                  <ul className="-my-2 divide-y divide-border">
+                    {events.map(event => (
+                      <li key={event.id}>
+                        <Link className={overviewRowLinkClassName} to={platformEventResourcePath(event) ?? platformEventDetailPath(event)}>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{t(`eventsPage.types.${event.type.replaceAll('.', '_')}`, { defaultValue: event.type })}</p>
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.message || t('eventsPage.noMessage')}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
+                            <span className="hidden text-xs text-muted-foreground @lg/workspace:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
+                          </div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              : <EmptyState title={t('projectSpaces.noRecentEvents')} variant="plain" />}
       </Section>
     </div>
   )

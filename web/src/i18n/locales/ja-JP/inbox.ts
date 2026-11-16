@@ -11,6 +11,8 @@ export default {
       action: '対応待ちリクエストがありません',
       description: '新しいプロジェクトコラボレーション、請求、プラットフォームメッセージがここに表示されます。',
     },
+    loadFailedTitle: 'メッセージの読み込みに失敗しました',
+    loadFailedDescription: '一時的にメッセージ一覧を読み取れません。後ほど再試行してください。',
     actions: {
       viewAll: 'すべてのメッセージを見る',
       markAllRead: 'すべて既読にする',
@@ -39,7 +41,12 @@ export default {
       system: 'システム',
     },
     priority: { critical: '緊急', high: '重要' },
-    detail: { title: 'メッセージ詳細', expiresAt: '有効期限' },
+    detail: {
+      title: 'メッセージ詳細',
+      expiresAt: '有効期限',
+      loadFailedTitle: 'メッセージ詳細の読み込みに失敗しました',
+      loadFailedDescription: '一時的にこのメッセージを読み取れません。後ほど再試行してください。',
+    },
     decision: {
       acceptTitle: 'このリクエストを承認しますか？',
       acceptDescription: 'プラットフォームは権限とリソース状態を再検証してからこの操作を実行します。',

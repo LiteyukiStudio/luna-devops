@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { platformEventResourcePath } from '@/lib/resource-routes'
 import { isPlatformAdmin } from '@/lib/roles'
@@ -294,15 +295,6 @@ export function EventsPage() {
     </div>
   )
 
-  if (events.isError) {
-    return (
-      <ErrorState
-        description={t('eventsPage.loadFailedDescription')}
-        title={t('eventsPage.loadFailedTitle')}
-      />
-    )
-  }
-
   return (
     <>
       <DataList
@@ -325,6 +317,14 @@ export function EventsPage() {
         emptyIcon={filtered ? <SearchX className="size-5" /> : <Activity className="size-5" />}
         emptyMode={filtered ? 'filtered' : 'actionable'}
         emptyTitle={t(filtered ? 'eventsPage.filteredEmptyTitle' : 'eventsPage.emptyTitle')}
+        error={events.isError
+          ? {
+              description: t('eventsPage.loadFailedDescription'),
+              onRetry: () => void events.refetch(),
+              retrying: events.isFetching,
+              title: t('eventsPage.loadFailedTitle'),
+            }
+          : undefined}
         items={events.data?.items ?? []}
         loading={events.isLoading}
         rowActionLabel={() => t('eventsPage.viewDetails')}
@@ -439,11 +439,14 @@ export function EventsPage() {
       />
 
       <EventDetailSheet
+        error={selectedEvent.isError}
         event={selectedEvent.data}
         loading={selectedEvent.isLoading}
         open={Boolean(selectedEventId)}
         platformAdmin={platformAdmin}
+        retrying={selectedEvent.isFetching}
         onOpenChange={open => !open && setSelectedEventId('')}
+        onRetry={() => void selectedEvent.refetch()}
       />
     </>
   )
@@ -492,7 +495,7 @@ function EventResource({ event }: { event: PlatformEvent }) {
   )
 }
 
-function EventDetailSheet({ event, loading, onOpenChange, open, platformAdmin }: { event?: PlatformEvent, loading: boolean, onOpenChange: (open: boolean) => void, open: boolean, platformAdmin: boolean }) {
+function EventDetailSheet({ error, event, loading, onOpenChange, onRetry, open, platformAdmin, retrying }: { error: boolean, event?: PlatformEvent, loading: boolean, onOpenChange: (open: boolean) => void, onRetry: () => void, open: boolean, platformAdmin: boolean, retrying: boolean }) {
   const { t } = useTranslation()
   const detail = event?.detail ?? {}
   const links = event?.links ?? {}
@@ -506,10 +509,10 @@ function EventDetailSheet({ event, loading, onOpenChange, open, platformAdmin }:
     : null
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-        <SheetHeader className="border-b border-border pr-10">
+      <SheetContent className="w-[min(92vw,32rem)] max-w-none gap-0 overflow-y-auto p-0 sm:max-w-none" side="right">
+        <SheetHeader className="border-b border-border p-6 pr-14">
           <SheetTitle>{event ? eventTypeLabel(t, event.type) : t('eventsPage.detailsTitle')}</SheetTitle>
-          <SheetDescription>{event?.message || (loading ? t('common.loading') : t('eventsPage.noMessage'))}</SheetDescription>
+          <SheetDescription>{event?.message || (loading ? t('common.loading') : error ? '' : t('eventsPage.noMessage'))}</SheetDescription>
           {resourcePath && (
             <Button asChild className="mt-2 w-fit" size="sm" variant="outline">
               <Link to={resourcePath}>
@@ -519,60 +522,79 @@ function EventDetailSheet({ event, loading, onOpenChange, open, platformAdmin }:
             </Button>
           )}
         </SheetHeader>
-        {event && (
-          <div className="space-y-5 px-4 pb-6">
-            <div className="flex flex-wrap gap-2">
-              <StatusValueBadge labelKeyPrefix="eventsPage.severities" value={event.severity} />
-              <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
-            </div>
-            <DetailSection title={t('eventsPage.details.context')}>
-              <DetailRow label={t('eventsPage.details.time')} value={formatAbsoluteDateTime(event.occurredAt)} />
-              {(event.resourceName || event.resourceId) && (
-                <DetailRow
-                  label={t('eventsPage.details.resource')}
-                  value={t('eventsPage.resourceSummary', { type: eventResourceTypeLabel(t, event.resourceType), name: event.resourceName || event.resourceId })}
+        {error
+          ? (
+              <div className="p-6">
+                <ErrorState
+                  description={t('eventsPage.detailLoadFailedDescription')}
+                  retrying={retrying}
+                  title={t('eventsPage.detailLoadFailedTitle')}
+                  onRetry={onRetry}
                 />
-              )}
-              <DetailRow label={t('eventsPage.details.project')} value={detail.project?.name} />
-              <DetailRow label={t('eventsPage.details.application')} value={detail.application?.name} />
-              <DetailRow label={t('eventsPage.details.deploymentTarget')} value={detail.deploymentTarget?.name} />
-              <DetailRow label={t('eventsPage.details.actor')} value={detail.actor?.name || detail.actor?.email} />
-            </DetailSection>
-            <DetailSection title={t('eventsPage.details.identifiers')}>
-              <DetailRow label={t('eventsPage.details.eventId')} value={event.id} mono />
-              <DetailRow label={t('eventsPage.details.resourceRef')} value={[event.resourceType, event.resourceId].filter(Boolean).join(' / ')} mono />
-              <DetailRow label={t('eventsPage.details.correlationId')} value={event.correlationId} mono />
-              <div className="grid gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
-                <dt className="text-xs text-muted-foreground">{t('eventsPage.details.notificationDeliveries')}</dt>
-                <dd className="min-w-0 text-sm">
-                  {deliveriesPath
-                    ? (
-                        <Link className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline" to={deliveriesPath}>
-                          {t('eventsPage.details.viewDeliveries', { count: event.deliveryCount })}
-                          <ArrowRight className="size-3.5" />
-                        </Link>
-                      )
-                    : String(event.deliveryCount)}
-                </dd>
               </div>
-            </DetailSection>
-            <EventSpecificDetails detail={detail} />
-            {Object.keys(links).length > 0 && (
-              <DetailSection title={t('eventsPage.details.links')}>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(links).map(([key, href]) => (
-                    <Button key={key} asChild size="sm" variant="outline">
-                      <a href={href}>
-                        {t(`eventsPage.linkNames.${key}`, { defaultValue: key })}
-                        <ExternalLink />
-                      </a>
-                    </Button>
-                  ))}
+            )
+          : loading && !event
+            ? (
+                <div className="grid gap-3 p-6">
+                  <Skeleton className="h-6 w-28" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-3/4" />
                 </div>
-              </DetailSection>
+              )
+            : event && (
+              <div className="space-y-6 p-6">
+                <div className="flex flex-wrap gap-2">
+                  <StatusValueBadge labelKeyPrefix="eventsPage.severities" value={event.severity} />
+                  <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
+                </div>
+                <DetailSection title={t('eventsPage.details.context')}>
+                  <DetailRow label={t('eventsPage.details.time')} value={formatAbsoluteDateTime(event.occurredAt)} />
+                  {(event.resourceName || event.resourceId) && (
+                    <DetailRow
+                      label={t('eventsPage.details.resource')}
+                      value={t('eventsPage.resourceSummary', { type: eventResourceTypeLabel(t, event.resourceType), name: event.resourceName || event.resourceId })}
+                    />
+                  )}
+                  <DetailRow label={t('eventsPage.details.project')} value={detail.project?.name} />
+                  <DetailRow label={t('eventsPage.details.application')} value={detail.application?.name} />
+                  <DetailRow label={t('eventsPage.details.deploymentTarget')} value={detail.deploymentTarget?.name} />
+                  <DetailRow label={t('eventsPage.details.actor')} value={detail.actor?.name || detail.actor?.email} />
+                </DetailSection>
+                <DetailSection title={t('eventsPage.details.identifiers')}>
+                  <DetailRow label={t('eventsPage.details.eventId')} value={event.id} mono />
+                  <DetailRow label={t('eventsPage.details.resourceRef')} value={[event.resourceType, event.resourceId].filter(Boolean).join(' / ')} mono />
+                  <DetailRow label={t('eventsPage.details.correlationId')} value={event.correlationId} mono />
+                  <div className="grid gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt className="text-xs text-muted-foreground">{t('eventsPage.details.notificationDeliveries')}</dt>
+                    <dd className="min-w-0 text-sm">
+                      {deliveriesPath
+                        ? (
+                            <Link className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline" to={deliveriesPath}>
+                              {t('eventsPage.details.viewDeliveries', { count: event.deliveryCount })}
+                              <ArrowRight className="size-3.5" />
+                            </Link>
+                          )
+                        : String(event.deliveryCount)}
+                    </dd>
+                  </div>
+                </DetailSection>
+                <EventSpecificDetails detail={detail} />
+                {Object.keys(links).length > 0 && (
+                  <DetailSection title={t('eventsPage.details.links')}>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(links).map(([key, href]) => (
+                        <Button key={key} asChild size="sm" variant="outline">
+                          <a href={href}>
+                            {t(`eventsPage.linkNames.${key}`, { defaultValue: key })}
+                            <ExternalLink />
+                          </a>
+                        </Button>
+                      ))}
+                    </div>
+                  </DetailSection>
+                )}
+              </div>
             )}
-          </div>
-        )}
       </SheetContent>
     </Sheet>
   )

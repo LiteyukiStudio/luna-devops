@@ -7,6 +7,8 @@ const eventsPage = {
   filteredEmptyDescription: '검색어나 필터 조건을 조정한 후 다시 시도하세요.',
   loadFailedTitle: '이벤트 로드 실패',
   loadFailedDescription: '일시적으로 이벤트 기록을 읽을 수 없습니다. 잠시 후 다시 시도하세요.',
+  detailLoadFailedTitle: '이벤트 상세 로드 실패',
+  detailLoadFailedDescription: '일시적으로 이 이벤트의 상세 정보를 읽을 수 없습니다. 잠시 후 다시 시도하세요.',
   viewDetails: '이벤트 상세 보기',
   detailsTitle: '이벤트 상세',
   noMessage: '추가 메시지 없음',

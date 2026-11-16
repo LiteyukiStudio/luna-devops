@@ -5,7 +5,6 @@ import { CheckCircle2, Container, FlaskConical, KeyRound, MoreHorizontal, Packag
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
-import { ErrorState } from '@/components/common/error-state'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -21,9 +20,14 @@ interface PageState<T> {
   onPageSizeChange: (pageSize: number) => void
 }
 
+interface PanelErrorState {
+  onRetry: () => void
+  retrying: boolean
+}
+
 interface RegistriesPanelProps {
+  error?: PanelErrorState
   items: ArtifactRegistry[]
-  isError: boolean
   loading: boolean
   toolbar?: ReactNode
   projectMap: Record<string, { name: string }>
@@ -36,8 +40,8 @@ interface RegistriesPanelProps {
 }
 
 export function RegistriesPanel({
+  error,
   items,
-  isError,
   loading,
   projectMap,
   pagination,
@@ -49,9 +53,6 @@ export function RegistriesPanel({
   onDelete,
 }: RegistriesPanelProps) {
   const { t } = useTranslation()
-
-  if (isError)
-    return <ErrorState title={t('registriesPage.loadFailedTitle')} description={t('registriesPage.loadFailedDescription')} />
 
   return (
     <DataList
@@ -121,6 +122,11 @@ export function RegistriesPanel({
       emptyTitle={t('registriesPage.emptyTitle')}
       emptyDescription={t('registriesPage.emptyDescription')}
       emptyIcon={<Container className="size-5" />}
+      error={error && {
+        ...error,
+        description: t('registriesPage.loadFailedDescription'),
+        title: t('registriesPage.loadFailedTitle'),
+      }}
       items={items}
       loading={loading}
       pagination={dataListPagination(t, pagination)}
@@ -149,6 +155,7 @@ function registryProviderLabel(provider: ArtifactRegistry['provider'], t: Return
 }
 
 interface CredentialsPanelProps {
+  error?: PanelErrorState
   items: CredentialWithRegistry[]
   loading: boolean
   toolbar?: ReactNode
@@ -158,7 +165,7 @@ interface CredentialsPanelProps {
   onDelete: (credential: CredentialWithRegistry) => void
 }
 
-export function CredentialsPanel({ items, loading, pagination, projectMap, toolbar, onDelete, onEdit }: CredentialsPanelProps) {
+export function CredentialsPanel({ error, items, loading, pagination, projectMap, toolbar, onDelete, onEdit }: CredentialsPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -242,6 +249,11 @@ export function CredentialsPanel({ items, loading, pagination, projectMap, toolb
       emptyTitle={t('registriesPage.noCredentialsTitle')}
       emptyDescription={t('registriesPage.noCredentialsDescription')}
       emptyIcon={<KeyRound className="size-5" />}
+      error={error && {
+        ...error,
+        description: t('registriesPage.credentialsLoadFailedDescription'),
+        title: t('registriesPage.credentialsLoadFailedTitle'),
+      }}
       items={items}
       loading={loading}
       pagination={dataListPagination(t, pagination)}
@@ -252,6 +264,7 @@ export function CredentialsPanel({ items, loading, pagination, projectMap, toolb
 }
 
 interface ImagesPanelProps {
+  error?: PanelErrorState
   images: ContainerImage[]
   loading: boolean
   toolbar?: ReactNode
@@ -259,7 +272,7 @@ interface ImagesPanelProps {
   pagination: PageState<ContainerImage>
 }
 
-export function ImagesPanel({ images, loading, registries, pagination, toolbar }: ImagesPanelProps) {
+export function ImagesPanel({ error, images, loading, registries, pagination, toolbar }: ImagesPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -284,6 +297,11 @@ export function ImagesPanel({ images, loading, registries, pagination, toolbar }
       emptyTitle={t('registriesPage.noImagesTitle')}
       emptyDescription={t('registriesPage.noImagesDescription')}
       emptyIcon={<Package className="size-5" />}
+      error={error && {
+        ...error,
+        description: t('registriesPage.imagesLoadFailedDescription'),
+        title: t('registriesPage.imagesLoadFailedTitle'),
+      }}
       items={images}
       loading={loading}
       constrainedHeight

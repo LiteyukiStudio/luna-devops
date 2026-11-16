@@ -11,6 +11,8 @@ export default {
       action: 'No pending requests',
       description: 'Project collaboration, billing, and platform messages will appear here.',
     },
+    loadFailedTitle: 'Failed to load messages',
+    loadFailedDescription: 'Inbox messages are temporarily unavailable. Try again later.',
     actions: {
       viewAll: 'View all messages',
       markAllRead: 'Mark all as read',
@@ -39,7 +41,12 @@ export default {
       system: 'System',
     },
     priority: { critical: 'Critical', high: 'Important' },
-    detail: { title: 'Message details', expiresAt: 'Expires at' },
+    detail: {
+      title: 'Message details',
+      expiresAt: 'Expires at',
+      loadFailedTitle: 'Failed to load message details',
+      loadFailedDescription: 'This message could not be loaded right now. Try again later.',
+    },
     decision: {
       acceptTitle: 'Accept this request?',
       acceptDescription: 'The platform will revalidate permissions and resource state before applying the change.',

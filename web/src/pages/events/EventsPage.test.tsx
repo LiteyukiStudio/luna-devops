@@ -123,6 +123,27 @@ describe('events page resources', () => {
     expect(within(sheet).getByText('repository_binding / rpb_651266c2a50996ccb2607d54')).toBeInTheDocument()
     expect(mocks.getPlatformEvent).toHaveBeenCalledWith('evt_1')
   })
+
+  it('renders error states with retry for both the event list and the event detail drawer', async () => {
+    const user = userEvent.setup()
+    mocks.listPlatformEvents.mockRejectedValueOnce(new Error('network down'))
+
+    renderPage()
+
+    expect(await screen.findByText('Could not load events')).toBeInTheDocument()
+    expect(screen.queryByText('No events in this scope')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('LiteyukiStudio/neo-blog')).toBeInTheDocument()
+
+    mocks.getPlatformEvent.mockRejectedValueOnce(new Error('detail down'))
+    await user.click(screen.getByText('LiteyukiStudio/neo-blog'))
+
+    const sheet = await screen.findByRole('dialog')
+    expect(await within(sheet).findByText('Could not load event details')).toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Retry' }))
+    expect(await within(sheet).findByText('Repository binding · LiteyukiStudio/neo-blog')).toBeInTheDocument()
+  })
 })
 
 function renderPage() {

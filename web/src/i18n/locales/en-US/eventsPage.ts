@@ -7,6 +7,8 @@ const eventsPage = {
   filteredEmptyDescription: 'Try changing the search term or filter conditions.',
   loadFailedTitle: 'Could not load events',
   loadFailedDescription: 'Event history is temporarily unavailable. Try again later.',
+  detailLoadFailedTitle: 'Could not load event details',
+  detailLoadFailedDescription: 'Details for this event are temporarily unavailable. Try again later.',
   viewDetails: 'View event details',
   detailsTitle: 'Event details',
   noMessage: 'No additional message',

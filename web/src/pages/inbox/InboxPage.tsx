@@ -10,12 +10,14 @@ import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
+import { ErrorState } from '@/components/common/error-state'
 import { inboxKeys, invalidateInbox } from '@/components/common/inbox/inbox-query'
 import { inboxMessageText } from '@/components/common/inbox/message-format'
 import { StatusBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const filters: InboxFilter[] = ['all', 'unread', 'action']
 
@@ -147,6 +149,14 @@ export function InboxPage() {
         emptyDescription={t('inbox.empty.description')}
         emptyIcon={<Bell className="size-5" />}
         emptyTitle={t(`inbox.empty.${filter}`)}
+        error={messages.isError
+          ? {
+              description: t('inbox.loadFailedDescription'),
+              onRetry: () => void messages.refetch(),
+              retrying: messages.isFetching,
+              title: t('inbox.loadFailedTitle'),
+            }
+          : undefined}
         items={messages.data?.items ?? []}
         loading={messages.isLoading}
         pagination={messages.data && messages.data.total > 0
@@ -165,10 +175,12 @@ export function InboxPage() {
         onRowClick={openDetails}
       />
       <InboxDetail
+        decisionPending={decide.isPending}
+        error={selectedMessage.isError}
         message={selectedMessage.data}
         open={Boolean(selectedMessageId)}
         pending={selectedMessage.isLoading}
-        decisionPending={decide.isPending}
+        retrying={selectedMessage.isFetching}
         onArchive={messageId => archive.mutate(messageId)}
         onClose={closeDetails}
         onDecision={async (message, decision) => {
@@ -177,12 +189,13 @@ export function InboxPage() {
             return
           await decide.mutateAsync({ decision, expectedVersion: request.rowVersion, requestId: request.id })
         }}
+        onRetry={() => void selectedMessage.refetch()}
       />
     </ContentTabs>
   )
 }
 
-function InboxDetail({ decisionPending, message, open, pending, onArchive, onClose, onDecision }: { decisionPending: boolean, message?: InboxMessage, open: boolean, pending: boolean, onArchive: (messageId: string) => void, onClose: () => void, onDecision: (message: InboxMessage, decision: InboxDecision) => Promise<void> }) {
+function InboxDetail({ decisionPending, error, message, open, pending, retrying, onArchive, onClose, onDecision, onRetry }: { decisionPending: boolean, error: boolean, message?: InboxMessage, open: boolean, pending: boolean, retrying: boolean, onArchive: (messageId: string) => void, onClose: () => void, onDecision: (message: InboxMessage, decision: InboxDecision) => Promise<void>, onRetry: () => void }) {
   const { t } = useTranslation()
   const [decision, setDecision] = useState<InboxDecision | null>(null)
   const text = message ? inboxMessageText(message, t) : null
@@ -192,37 +205,56 @@ function InboxDetail({ decisionPending, message, open, pending, onArchive, onClo
   return (
     <>
       <Sheet open={open} onOpenChange={value => !value && onClose()}>
-        <SheetContent className="w-[min(92vw,32rem)] max-w-none overflow-y-auto p-0" side="right">
+        <SheetContent className="w-[min(92vw,32rem)] max-w-none gap-0 overflow-y-auto p-0 sm:max-w-none" side="right">
           <SheetHeader className="border-b border-border p-6 pr-14">
             <SheetTitle>{text?.title ?? t('inbox.detail.title')}</SheetTitle>
             <SheetDescription>{message ? formatAbsoluteDateTime(message.createdAt) : pending ? t('common.loading') : ''}</SheetDescription>
           </SheetHeader>
-          {message && text && (
-            <div className="space-y-6 p-6">
-              <p className="text-sm leading-6 text-muted-foreground">{text.content}</p>
-              <div className="flex flex-wrap gap-2">
-                <StatusBadge>{t(`inbox.categories.${message.category}`)}</StatusBadge>
-                {actionRequest && <StatusBadge tone={actionable ? 'warning' : 'neutral'}>{t(`inbox.states.${actionRequest.status}`)}</StatusBadge>}
-              </div>
-              {actionRequest?.expiresAt && (
-                <p className="text-sm text-muted-foreground">
-                  {t('inbox.detail.expiresAt')}
-                  :
-                  {' '}
-                  {formatAbsoluteDateTime(actionRequest.expiresAt)}
-                </p>
+          {error
+            ? (
+                <div className="p-6">
+                  <ErrorState
+                    description={t('inbox.detail.loadFailedDescription')}
+                    retrying={retrying}
+                    title={t('inbox.detail.loadFailedTitle')}
+                    onRetry={onRetry}
+                  />
+                </div>
+              )
+            : pending && !message
+              ? (
+                  <div className="grid gap-3 p-6">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-4/5" />
+                    <Skeleton className="h-6 w-24" />
+                  </div>
+                )
+              : message && text && (
+                <div className="space-y-6 p-6">
+                  <p className="text-sm leading-6 text-muted-foreground">{text.content}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusBadge>{t(`inbox.categories.${message.category}`)}</StatusBadge>
+                    {actionRequest && <StatusBadge tone={actionable ? 'warning' : 'neutral'}>{t(`inbox.states.${actionRequest.status}`)}</StatusBadge>}
+                  </div>
+                  {actionRequest?.expiresAt && (
+                    <p className="text-sm text-muted-foreground">
+                      {t('inbox.detail.expiresAt')}
+                      :
+                      {' '}
+                      {formatAbsoluteDateTime(actionRequest.expiresAt)}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button variant="ghost" onClick={() => onArchive(message.id)}>
+                      <Archive className="size-4" />
+                      {t('inbox.actions.archive')}
+                    </Button>
+                    {message.deepLink && <Button asChild variant="outline"><Link to={message.deepLink}>{t('inbox.actions.openResource')}</Link></Button>}
+                    {actionable && actionRequest.allowedDecisions.includes('reject') && <Button variant="outline" onClick={() => setDecision('reject')}>{t('inbox.actions.reject')}</Button>}
+                    {actionable && actionRequest.allowedDecisions.includes('accept') && <Button onClick={() => setDecision('accept')}>{t('inbox.actions.accept')}</Button>}
+                  </div>
+                </div>
               )}
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="ghost" onClick={() => onArchive(message.id)}>
-                  <Archive className="size-4" />
-                  {t('inbox.actions.archive')}
-                </Button>
-                {message.deepLink && <Button asChild variant="outline"><Link to={message.deepLink}>{t('inbox.actions.openResource')}</Link></Button>}
-                {actionable && actionRequest.allowedDecisions.includes('reject') && <Button variant="outline" onClick={() => setDecision('reject')}>{t('inbox.actions.reject')}</Button>}
-                {actionable && actionRequest.allowedDecisions.includes('accept') && <Button onClick={() => setDecision('accept')}>{t('inbox.actions.accept')}</Button>}
-              </div>
-            </div>
-          )}
         </SheetContent>
       </Sheet>
       <ConfirmDialog

@@ -7,6 +7,8 @@ const eventsPage = {
   filteredEmptyDescription: '可以調整搜尋詞或篩選條件後重試。',
   loadFailedTitle: '事件載入失敗',
   loadFailedDescription: '暫時無法讀取事件記錄，請稍後重試。',
+  detailLoadFailedTitle: '事件詳情載入失敗',
+  detailLoadFailedDescription: '暫時無法讀取該事件的詳細資訊，請稍後重試。',
   viewDetails: '檢視事件詳情',
   detailsTitle: '事件詳情',
   noMessage: '沒有附加訊息',

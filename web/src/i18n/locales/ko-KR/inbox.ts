@@ -11,6 +11,8 @@ export default {
       action: '처리 대기 요청이 없습니다',
       description: '새로운 프로젝트 협업, 청구, 플랫폼 메시지가 여기에 표시됩니다.',
     },
+    loadFailedTitle: '메시지 로드 실패',
+    loadFailedDescription: '일시적으로 메시지 목록을 불러올 수 없습니다. 잠시 후 다시 시도하세요.',
     actions: {
       viewAll: '모든 메시지 보기',
       markAllRead: '모두 읽음으로 표시',
@@ -39,7 +41,12 @@ export default {
       system: '시스템',
     },
     priority: { critical: '긴급', high: '중요' },
-    detail: { title: '메시지 상세', expiresAt: '만료 시간' },
+    detail: {
+      title: '메시지 상세',
+      expiresAt: '만료 시간',
+      loadFailedTitle: '메시지 상세 로드 실패',
+      loadFailedDescription: '일시적으로 이 메시지를 불러올 수 없습니다. 잠시 후 다시 시도하세요.',
+    },
     decision: {
       acceptTitle: '이 요청을 수락하시겠습니까?',
       acceptDescription: '플랫폼은 권한과 리소스 상태를 다시 검증한 후 이 작업을 실행합니다.',

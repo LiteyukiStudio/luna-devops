@@ -7,6 +7,8 @@ const eventsPage = {
   filteredEmptyDescription: '検索キーワードやフィルター条件を調整して再試行してください。',
   loadFailedTitle: 'イベントの読み込みに失敗しました',
   loadFailedDescription: '一時的にイベント記録を読み取れません。後ほど再試行してください。',
+  detailLoadFailedTitle: 'イベント詳細の読み込みに失敗しました',
+  detailLoadFailedDescription: '一時的にこのイベントの詳細を読み取れません。後ほど再試行してください。',
   viewDetails: 'イベント詳細を見る',
   detailsTitle: 'イベント詳細',
   noMessage: '追加メッセージなし',
