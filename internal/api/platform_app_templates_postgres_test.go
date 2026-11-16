@@ -4,32 +4,60 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/repository"
-	"github.com/LiteyukiStudio/devops/internal/secret"
-	"github.com/gin-gonic/gin"
+	"github.com/LiteyukiStudio/devops/internal/testdb"
+	"gorm.io/gorm"
 )
 
-func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
-	db := authIntegrationDB(t)
-	now := time.Now().UTC()
+func performJSONBearerRequest(t *testing.T, router http.Handler, method, path, token string, payload any) *httptest.ResponseRecorder {
+	t.Helper()
+	body := ""
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal %s %s payload: %v", method, path, err)
+		}
+		body = string(encoded)
+	}
+	return performBearerRequest(router, method, path, token, body)
+}
 
-	admin := model.User{ID: "usr_tpl_admin", Email: "tpl-admin@example.com", Name: "Template Admin", Role: authz.PlatformRoleAdmin, Language: "zh-CN"}
+func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REDIS_ADDR", "")
+
+	db := testdb.OpenDatabase(t, testdb.Options{
+		SchemaPrefix: "platform_app_templates_test",
+		Migrate: func(db *gorm.DB) error {
+			return database.MigrateContext(context.Background(), db)
+		},
+	})
+
+	admin := model.User{
+		ID:       "usr_tpl_admin",
+		Email:    "tpl-admin@example.com",
+		Name:     "Template Admin",
+		Role:     authz.PlatformRoleAdmin,
+		Language: "zh-CN",
+	}
 	if err := db.Create(&admin).Error; err != nil {
 		t.Fatal(err)
 	}
-	sessionToken := "sess_tpl_admin"
-	if err := db.Create(&model.UserSession{
-		ID:        "ses_tpl_admin",
+	accessToken := "pat_tpl_admin_full"
+	if err := db.Create(&model.AccessToken{
+		ID:        "pat_tpl_admin",
 		UserID:    admin.ID,
-		TokenHash: transportapi.HashToken(sessionToken),
-		ExpiresAt: now.Add(time.Hour),
+		Name:      "Template Admin Full Scope",
+		Scope:     "*",
+		TokenHash: transportapi.HashToken(accessToken),
+		Source:    "personal",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -40,6 +68,7 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 		KubernetesNamespace: "luna-tpl-suite",
 		Name:                "Template Suite Project",
 		BillingOwnerUserID:  admin.ID,
+		DeleteStatus:        "active",
 	}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatal(err)
@@ -55,29 +84,16 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 	cluster := model.RuntimeCluster{
 		ID:           "clu_tpl_suite",
 		Name:         "dev-cluster",
-		Scope:        "platform",
+		Scope:        "global",
 		DeleteStatus: "active",
 	}
 	if err := db.Create(&cluster).Error; err != nil {
 		t.Fatal(err)
 	}
 
-	codec, err := secret.NewCodec("0123456789abcdef0123456789abcdef")
-	if err != nil {
-		t.Fatal(err)
-	}
-	handlers := &Handlers{
-		db:       db,
-		configs:  newConfigCache(db),
-		mode:     "development",
-		projects: repository.NewProjectRepository(db),
-	}
-	handlers.secrets = secret.NewStore(db, func(ctx context.Context, userID, action, resource string, success bool, message string) {
-		handlers.auditWithContext(userID, action, resource, success, message, ctx)
-	}, codec)
-	handlers.domains = newDomainHandlers(handlers)
+	router := NewRouter(db, mustTestConfig(t))
 
-	// 1. Create a multi-component platform template
+	// 1. Create a multi-component platform template through the full router
 	createPayload := map[string]any{
 		"slug":             "internal-suite",
 		"name":             "Internal Suite",
@@ -108,8 +124,7 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 			{"key": "apiSecret", "label": "API Secret", "secret": true, "autoGenerate": true},
 		},
 	}
-	rec, ctx := newAPIIntegrationContext(http.MethodPost, "/api/v1/configs/app-templates", createPayload, sessionToken)
-	handlers.domains.application.CreatePlatformAppTemplate(ctx)
+	rec := performJSONBearerRequest(t, router, http.MethodPost, "/api/v1/configs/app-templates", accessToken, createPayload)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create platform template = %d %s", rec.Code, rec.Body.String())
 	}
@@ -123,8 +138,7 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 	}
 
 	// 2. Marketplace ListAppTemplates & GetAppTemplate & aitool include enabled platform template
-	rec, ctx = newAPIIntegrationContext(http.MethodGet, "/api/v1/app-templates?query=internal-suite", nil, sessionToken)
-	handlers.domains.application.ListAppTemplates(ctx)
+	rec = performJSONBearerRequest(t, router, http.MethodGet, "/api/v1/app-templates?query=internal-suite", accessToken, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list marketplace = %d %s", rec.Code, rec.Body.String())
 	}
@@ -156,20 +170,14 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 	}
 
 	// 3. Install the multi-component platform template (installNow=false so task queue is not required)
-	installNow := false
-	rec, ctx = newAPIIntegrationContext(http.MethodPost, "/api/v1/projects/"+project.ID+"/app-templates/"+createdID+"/install", map[string]any{
+	rec = performJSONBearerRequest(t, router, http.MethodPost, "/api/v1/projects/"+project.ID+"/app-templates/"+createdID+"/install", accessToken, map[string]any{
 		"applicationName":       "Portal",
 		"applicationIdentifier": "portal",
 		"deploymentName":        "prod",
-		"stage":                 "production",
+		"stage":                 "prod",
 		"clusterId":             cluster.ID,
-		"installNow":            installNow,
-	}, sessionToken)
-	ctx.Params = gin.Params{
-		{Key: "projectId", Value: project.ID},
-		{Key: "templateId", Value: createdID},
-	}
-	handlers.domains.application.InstallAppTemplate(ctx)
+		"installNow":            false,
+	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("install platform template = %d %s", rec.Code, rec.Body.String())
 	}
@@ -182,9 +190,7 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 	}
 
 	// 4. Export & Import under a new slug, then disable original template and verify marketplace hides it
-	rec, ctx = newAPIIntegrationContext(http.MethodGet, "/api/v1/configs/app-templates/"+createdID+"/export", nil, sessionToken)
-	ctx.Params = gin.Params{{Key: "templateId", Value: createdID}}
-	handlers.domains.application.ExportPlatformAppTemplate(ctx)
+	rec = performJSONBearerRequest(t, router, http.MethodGet, "/api/v1/configs/app-templates/"+createdID+"/export", accessToken, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("export platform template = %d %s", rec.Code, rec.Body.String())
 	}
@@ -194,11 +200,10 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 	}
 	exported["slug"] = "internal-suite-copy"
 	exported["name"] = "Internal Suite Copy"
-	rec, ctx = newAPIIntegrationContext(http.MethodPost, "/api/v1/configs/app-templates/import", map[string]any{
+	rec = performJSONBearerRequest(t, router, http.MethodPost, "/api/v1/configs/app-templates/import", accessToken, map[string]any{
 		"overwrite": false,
 		"bundle":    exported,
-	}, sessionToken)
-	handlers.domains.application.ImportPlatformAppTemplate(ctx)
+	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("import platform template = %d %s", rec.Code, rec.Body.String())
 	}
@@ -209,24 +214,18 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 	importedID, _ := imported["id"].(string)
 
 	createPayload["enabled"] = false
-	rec, ctx = newAPIIntegrationContext(http.MethodPut, "/api/v1/configs/app-templates/"+createdID, createPayload, sessionToken)
-	ctx.Params = gin.Params{{Key: "templateId", Value: createdID}}
-	handlers.domains.application.UpdatePlatformAppTemplate(ctx)
+	rec = performJSONBearerRequest(t, router, http.MethodPut, "/api/v1/configs/app-templates/"+createdID, accessToken, createPayload)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("disable platform template = %d %s", rec.Code, rec.Body.String())
 	}
 
-	rec, ctx = newAPIIntegrationContext(http.MethodGet, "/api/v1/app-templates/"+createdID, nil, sessionToken)
-	ctx.Params = gin.Params{{Key: "templateId", Value: createdID}}
-	handlers.domains.application.GetAppTemplate(ctx)
+	rec = performJSONBearerRequest(t, router, http.MethodGet, "/api/v1/app-templates/"+createdID, accessToken, nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("disabled template GetAppTemplate status = %d, want 404", rec.Code)
 	}
 
 	// 5. Delete imported copy and verify AuditLogs
-	rec, ctx = newAPIIntegrationContext(http.MethodDelete, "/api/v1/configs/app-templates/"+importedID, nil, sessionToken)
-	ctx.Params = gin.Params{{Key: "templateId", Value: importedID}}
-	handlers.domains.application.DeletePlatformAppTemplate(ctx)
+	rec = performJSONBearerRequest(t, router, http.MethodDelete, "/api/v1/configs/app-templates/"+importedID, accessToken, nil)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("delete platform template = %d %s", rec.Code, rec.Body.String())
 	}
@@ -243,7 +242,7 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 			t.Fatal(err)
 		}
 		if count == 0 {
-			t.Fatalf("expected audit log for %s", action)
+			t.Fatalf("expected audit log for action %q", action)
 		}
 	}
 }
