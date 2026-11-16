@@ -1,9 +1,7 @@
 const loginPage = {
   subtitle: 'ローカルアカウントでコンソールにログイン',
   email: 'メールアドレス',
-  emailHint: 'ローカルアカウントのメールアドレス。OIDC ログインは下の ID プロバイダーボタンを使用してください。',
   password: 'パスワード',
-  passwordHint: 'ローカルアカウントのパスワード。',
   passwordRequired: 'パスワードを入力してください',
   success: 'ログイン成功',
   useProviderLogin: '{{provider}} でログイン',

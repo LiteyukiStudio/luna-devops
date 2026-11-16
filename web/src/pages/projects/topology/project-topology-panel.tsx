@@ -8,8 +8,8 @@ import type {
   ServiceBinding,
 } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Plus, RefreshCw } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { AlertTriangle, Plus, RefreshCw, SearchX } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api } from '@/api'
@@ -48,6 +48,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const [dialog, setDialog] = useState<RelationDialogState | null>(null)
   const [pendingReleaseApplicationId, setPendingReleaseApplicationId] = useState('')
+  const returnToEdgeIdRef = useRef('')
   const topology = useQuery({
     queryKey: projectTopologyKeys.graph(projectId, '', allOrigins),
     queryFn: () => api.getProjectTopology(projectId, { origins: allOrigins }),
@@ -89,6 +90,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
       void manualEdges.refetch()
   }
   const handleSaved = (result: RelationSavedResult) => {
+    returnToEdgeIdRef.current = ''
     if (result.requiresRedeploy)
       setPendingReleaseApplicationId(result.sourceApplicationId)
   }
@@ -96,8 +98,13 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
     if (open)
       return
     setDialog(null)
+    if (returnToEdgeIdRef.current) {
+      setSelectedEdgeId(returnToEdgeIdRef.current)
+      returnToEdgeIdRef.current = ''
+    }
   }
   const openEdit = () => {
+    returnToEdgeIdRef.current = selectedEdgeId
     if (selectedBinding)
       setDialog({ mode: 'service_binding', serviceBinding: selectedBinding })
     else if (selectedManualEdge)
@@ -110,10 +117,12 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
 
   if (topology.isError) {
     return (
-      <div className="grid gap-3">
-        <ErrorState title={t('projectTopology.loadFailed')} description={t('projectTopology.loadFailedDescription')} />
-        <Button className="justify-self-start" variant="outline" onClick={() => topology.refetch()}>{t('common.retry')}</Button>
-      </div>
+      <ErrorState
+        description={t('projectTopology.loadFailedDescription')}
+        retrying={topology.isFetching}
+        title={t('projectTopology.loadFailed')}
+        onRetry={() => void topology.refetch()}
+      />
     )
   }
 
@@ -172,7 +181,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
           <NativeSelect
             aria-label={t('projectTopology.stageFilter')}
-            className="min-w-36"
+            className="h-8 min-w-36 text-xs"
             containerClassName="w-auto"
             value={stage}
             onChange={event => setStage(event.target.value)}
@@ -182,7 +191,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
           </NativeSelect>
           <Input
             aria-label={t('projectTopology.searchRelations')}
-            className="w-full @lg/workspace:w-52 @xl/workspace:hidden"
+            className="h-8 w-full @lg/workspace:w-52"
             placeholder={t('projectTopology.searchRelations')}
             type="search"
             value={search}
@@ -190,7 +199,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
           />
           <NativeSelect
             aria-label={t('projectTopology.originFilter')}
-            className="min-w-40"
+            className="h-8 min-w-40 text-xs"
             containerClassName="w-auto"
             value={origin}
             onChange={event => setOrigin(event.target.value as typeof origin)}
@@ -202,13 +211,19 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
           <span className="text-xs text-muted-foreground">{t('projectTopology.relationCount', { count: visibleEdges.length })}</span>
           <div className="ml-auto flex items-center gap-1">
             {canManage && (
-              <Button size="sm" onClick={() => setDialog({ mode: 'service_binding' })}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  returnToEdgeIdRef.current = ''
+                  setDialog({ mode: 'service_binding' })
+                }}
+              >
                 <Plus className="size-4" />
                 {t('projectTopology.addRelation')}
               </Button>
             )}
-            <Button aria-label={t('projectTopology.refresh')} disabled={topology.isFetching} size="icon" variant="ghost" onClick={refresh}>
-              <RefreshCw className={topology.isFetching ? 'size-4 animate-spin' : 'size-4'} />
+            <Button aria-label={t('projectTopology.refresh')} className="size-8" disabled={topology.isFetching} size="icon" variant="ghost" onClick={refresh}>
+              <RefreshCw className={topology.isFetching ? 'size-4 motion-safe:animate-spin' : 'size-4'} />
             </Button>
           </div>
         </div>
@@ -230,7 +245,28 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
                 </div>
               </>
             )
-          : <EmptyState description={t('projectTopology.noFilteredRelations')} title={t('projectTopology.listView')} variant="plain" />}
+          : (
+              <EmptyState
+                actions={(
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setStage('')
+                      setOrigin('all')
+                      setSearch('')
+                    }}
+                  >
+                    {t('projectTopology.clearFilters')}
+                  </Button>
+                )}
+                description={t('projectTopology.noFilteredRelations')}
+                icon={<SearchX className="size-5" />}
+                mode="filtered"
+                title={t('projectTopology.listView')}
+                variant="plain"
+              />
+            )}
       </Card>
 
       <ProjectTopologyDetailSheet

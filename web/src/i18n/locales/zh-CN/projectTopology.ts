@@ -15,6 +15,7 @@ const projectTopology = {
   refresh: '刷新拓扑',
   relationCount: '{{count}} 条关系',
   noFilteredRelations: '没有符合当前筛选条件的关系',
+  clearFilters: '清除筛选',
   searchRelations: '搜索服务关系',
   source: '调用方',
   target: '被依赖方',

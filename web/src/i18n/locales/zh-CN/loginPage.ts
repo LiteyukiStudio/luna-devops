@@ -1,9 +1,7 @@
 const loginPage = {
   subtitle: '使用本地账号登录控制台',
   email: '邮箱',
-  emailHint: '本地账号邮箱。OIDC 登录请使用下方身份源按钮。',
   password: '密码',
-  passwordHint: '本地账号密码。',
   passwordRequired: '请输入密码',
   success: '登录成功',
   useProviderLogin: '使用 {{provider}} 登录',

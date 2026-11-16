@@ -15,6 +15,7 @@ const projectTopology = {
   refresh: 'Refresh topology',
   relationCount: '{{count}} relations',
   noFilteredRelations: 'No relation matches the current filters',
+  clearFilters: 'Clear filters',
   searchRelations: 'Search service relations',
   source: 'Caller',
   target: 'Dependency',

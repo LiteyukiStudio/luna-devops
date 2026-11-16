@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { LogIn, TriangleAlert } from 'lucide-react'
+import { Loader2, LogIn, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -77,7 +77,7 @@ export function LoginPage() {
     <div className="grid min-h-screen place-items-center bg-primary-subtle px-3 py-4 text-foreground sm:px-6 sm:py-6 lg:px-4 lg:py-8">
       <PageMotion className="w-full max-w-5xl">
         <Card
-          className="relative overflow-visible bg-surface p-4 sm:p-6 lg:bg-[image:var(--auth-card-background)] lg:p-0"
+          className="relative overflow-visible bg-surface p-4 shadow-overlay sm:p-6 lg:bg-[image:var(--auth-card-background)] lg:p-0"
           padding="none"
         >
           <div className="grid lg:min-h-160 lg:grid-cols-[1.08fr_0.92fr]">
@@ -144,18 +144,18 @@ export function LoginPage() {
                       </div>
                     </div>
                   )}
-                  <Field error={form.formState.errors.email?.message} hint={t('loginPage.emailHint')} label={t('loginPage.email')} required>
+                  <Field error={form.formState.errors.email?.message} label={t('loginPage.email')} required>
                     <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="username" type="email" />
                   </Field>
-                  <Field error={form.formState.errors.password?.message} hint={t('loginPage.passwordHint')} label={t('loginPage.password')} required>
+                  <Field error={form.formState.errors.password?.message} label={t('loginPage.password')} required>
                     <Input {...form.register('password')} aria-invalid={Boolean(form.formState.errors.password)} autoComplete="current-password" type="password" />
                   </Field>
-                  <Button disabled={session.isLoggingIn || !form.formState.isValid} type="submit">
-                    <LogIn size={16} />
+                  <Button disabled={session.isLoggingIn} type="submit">
+                    {session.isLoggingIn ? <Loader2 className="animate-spin" size={16} /> : <LogIn size={16} />}
                     {t('login')}
                   </Button>
                   {registration.data?.emailRegistrationEnabled && (
-                    <Button asChild type="button" variant="ghost">
+                    <Button asChild variant="ghost">
                       <Link to="/register">{t('loginPage.registration.createAccount')}</Link>
                     </Button>
                   )}
@@ -166,7 +166,7 @@ export function LoginPage() {
                       <Button
                         key={provider.id}
                         type="button"
-                        variant="secondary"
+                        variant="outline"
                         onClick={() => {
                           window.location.href = oidcStartUrl(provider.id, 'login')
                         }}

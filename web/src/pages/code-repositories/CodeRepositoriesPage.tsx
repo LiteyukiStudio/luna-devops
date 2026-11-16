@@ -75,10 +75,6 @@ export function CodeRepositoriesPage() {
     mode: 'onChange',
     defaultValues: credentialDefaults,
   })
-  const providerType = providerForm.watch('type')
-  const isGithubProvider = providerType === 'github'
-  const providerScope = providerForm.watch('scope')
-  const credentialScope = credentialForm.watch('scope')
   const hasGithubProvider = providerOptionItems.some(provider => provider.type === 'github')
   const hasAnotherGithubProvider = useMemo(() => {
     if (!editingProvider)
@@ -123,25 +119,6 @@ export function CodeRepositoriesPage() {
       username: editingCredential.username,
     })
   }, [credentialForm, editingCredential])
-
-  useEffect(() => {
-    if (isGithubProvider) {
-      providerForm.setValue('baseUrl', normalizeGitBaseUrl('github'), { shouldDirty: true, shouldValidate: true })
-      providerForm.setValue('scope', 'global', { shouldDirty: true, shouldValidate: true })
-      providerForm.setValue('ownerRef', '', { shouldDirty: true, shouldValidate: true })
-      providerForm.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-    }
-  }, [isGithubProvider, providerForm])
-
-  useEffect(() => {
-    if (providerScope !== 'project')
-      providerForm.setValue('projectIds', [])
-  }, [providerScope, providerForm])
-
-  useEffect(() => {
-    if (credentialScope !== 'project')
-      credentialForm.setValue('projectIds', [])
-  }, [credentialScope, credentialForm])
 
   const saveProvider = useMutation({
     mutationFn: (payload: ProviderForm) => {

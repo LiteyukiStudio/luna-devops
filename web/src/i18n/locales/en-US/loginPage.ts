@@ -1,9 +1,7 @@
 const loginPage = {
   subtitle: 'Sign in to the console with a local account',
   email: 'Email',
-  emailHint: 'Local account email. Use an identity provider button below for OIDC login.',
   password: 'Password',
-  passwordHint: 'Local account password.',
   passwordRequired: 'Enter password',
   success: 'Signed in',
   useProviderLogin: 'Sign in with {{provider}}',

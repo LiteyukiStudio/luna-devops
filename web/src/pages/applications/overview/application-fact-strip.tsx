@@ -40,7 +40,7 @@ export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, on
   return (
     <dl
       aria-label={t('apps.factStripLabel')}
-      className="grid gap-px overflow-hidden rounded-container border border-border bg-border @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-4"
+      className="grid gap-px overflow-hidden rounded-container border border-border bg-border shadow-surface-sm @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-4"
       data-slot="application-fact-strip"
     >
       <Fact label={t('apps.runtimeStatus')} loading={loading}>

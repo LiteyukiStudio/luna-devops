@@ -11,11 +11,12 @@ import { api, buildJobLogsStreamUrl } from '@/api'
 import { BuildEnvironmentEditorDialog } from '@/components/common/build-environment-editor-dialog'
 import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
+import { ProgressiveSection } from '@/components/common/progressive-section'
 import { SearchSelect } from '@/components/common/search-select'
 import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
 import { UnitInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
@@ -237,8 +238,53 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     },
     onError: error => toast.error(error.message),
   })
+  const resolveDefaultRegistry = (items: ArtifactRegistry[]) =>
+    items.find(registry => registry.credentialSet && registry.isDefault)
+    ?? items.find(registry => registry.credentialSet)
+    ?? items.find(registry => registry.isDefault)
+    ?? items[0]
+
+  const applyDeploymentTargetDefaults = (targetId: string) => {
+    const targetConfig = deploymentTargets.find(config => config.id === targetId)
+    if (!targetConfig)
+      return
+    const nextBinding = repositoryBindings.find(item => item.id === targetConfig.repositoryBindingId) ?? binding
+    if (nextBinding)
+      form.setValue('sourceBranch', nextBinding.defaultBranch || 'main', { shouldDirty: true, shouldValidate: true })
+    if (targetConfig.targetRegistryId)
+      form.setValue('targetRegistryId', targetConfig.targetRegistryId, { shouldDirty: true, shouldValidate: true })
+    const configTargetImageRef = deploymentTargetImageRef(targetConfig)
+    if (configTargetImageRef)
+      form.setValue('targetImageRef', configTargetImageRef, { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildEnvironmentId', targetConfig.buildEnvironmentId || '', { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildCpuRequest', targetConfig.buildCpuRequest || defaultBuildCpuRequest, { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildMemoryRequest', targetConfig.buildMemoryRequest || defaultBuildMemoryRequest, { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildTimeoutSeconds', targetConfig.buildTimeoutSeconds || defaultBuildTimeoutSeconds, { shouldDirty: true, shouldValidate: true })
+  }
+
+  const openTriggerDialog = () => {
+    const defaultConfig = firstSelectableDeploymentTarget(deploymentTargets)
+    const fallbackRegistry = defaultConfig?.targetRegistryId
+      ? registries.find(registry => registry.id === defaultConfig.targetRegistryId)
+      : resolveDefaultRegistry(registries)
+    const targetRegistryId = defaultConfig?.targetRegistryId || fallbackRegistry?.id || ''
+    form.reset({
+      ...triggerDefaults,
+      applicationId,
+      deploymentTargetId: defaultConfig?.id ?? '',
+      buildEnvironmentId: defaultConfig?.buildEnvironmentId || '',
+      buildCpuRequest: defaultConfig?.buildCpuRequest || defaultBuildCpuRequest,
+      buildMemoryRequest: defaultConfig?.buildMemoryRequest || defaultBuildMemoryRequest,
+      buildTimeoutSeconds: defaultConfig?.buildTimeoutSeconds || defaultBuildTimeoutSeconds,
+      sourceBranch: (repositoryBindings.find(item => item.id === defaultConfig?.repositoryBindingId) ?? binding)?.defaultBranch || 'main',
+      targetImageRef: deploymentTargetImageRef(defaultConfig) || defaultTargetImageRef(fallbackRegistry, projectIdentifier, applicationIdentifier),
+      targetRegistryId,
+    })
+    setDialogOpen(true)
+  }
+
   useImperativeHandle(ref, () => ({
-    openTriggerDrawer: () => setDialogOpen(true),
+    openTriggerDrawer: openTriggerDialog,
   }))
   useEffect(() => {
     const syncBuildRunFromHash = () => {
@@ -303,49 +349,16 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     }
   }, [logJobId, projectId, queryClient])
 
+  // 仅当打开弹窗时镜像站尚未加载完成且用户未改动对应字段时，补齐初始默认镜像站，不覆盖用户草稿。
   useEffect(() => {
-    if (!dialogOpen)
+    if (!dialogOpen || !registries.length || form.getValues('targetRegistryId') || form.formState.dirtyFields.targetRegistryId)
       return
-    const defaultConfig = firstSelectableDeploymentTarget(deploymentTargets)
-    form.reset({
-      ...triggerDefaults,
-      applicationId,
-      deploymentTargetId: defaultConfig?.id ?? '',
-      buildEnvironmentId: defaultConfig?.buildEnvironmentId || '',
-      buildCpuRequest: defaultConfig?.buildCpuRequest || defaultBuildCpuRequest,
-      buildMemoryRequest: defaultConfig?.buildMemoryRequest || defaultBuildMemoryRequest,
-      buildTimeoutSeconds: defaultConfig?.buildTimeoutSeconds || defaultBuildTimeoutSeconds,
-      sourceBranch: (repositoryBindings.find(item => item.id === defaultConfig?.repositoryBindingId) ?? binding)?.defaultBranch || 'main',
-      targetImageRef: deploymentTargetImageRef(defaultConfig) || defaultTargetImageRef(undefined, projectIdentifier, applicationIdentifier),
-      targetRegistryId: defaultConfig?.targetRegistryId ?? '',
-    })
-  }, [applicationId, applicationIdentifier, binding, deploymentTargets, dialogOpen, form, projectIdentifier, repositoryBindings])
-
-  useEffect(() => {
-    if (!dialogOpen || !selectedDeploymentTarget)
+    const defaultRegistry = resolveDefaultRegistry(registries)
+    if (!defaultRegistry)
       return
-    const nextBinding = repositoryBindings.find(item => item.id === selectedDeploymentTarget.repositoryBindingId) ?? binding
-    if (nextBinding)
-      form.setValue('sourceBranch', nextBinding.defaultBranch || 'main', { shouldDirty: true, shouldValidate: true })
-    if (selectedDeploymentTarget.targetRegistryId)
-      form.setValue('targetRegistryId', selectedDeploymentTarget.targetRegistryId, { shouldDirty: true, shouldValidate: true })
-    const configTargetImageRef = deploymentTargetImageRef(selectedDeploymentTarget)
-    if (configTargetImageRef)
-      form.setValue('targetImageRef', configTargetImageRef, { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildEnvironmentId', selectedDeploymentTarget.buildEnvironmentId || '', { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildCpuRequest', selectedDeploymentTarget.buildCpuRequest || defaultBuildCpuRequest, { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildMemoryRequest', selectedDeploymentTarget.buildMemoryRequest || defaultBuildMemoryRequest, { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildTimeoutSeconds', selectedDeploymentTarget.buildTimeoutSeconds || defaultBuildTimeoutSeconds, { shouldDirty: true, shouldValidate: true })
-  }, [binding, dialogOpen, form, repositoryBindings, selectedDeploymentTarget])
-
-  useEffect(() => {
-    if (!dialogOpen || !registries.length || form.getValues('targetRegistryId'))
-      return
-    const defaultRegistry = registries.find(registry => registry.credentialSet && registry.isDefault) ?? registries.find(registry => registry.credentialSet) ?? registries.find(registry => registry.isDefault) ?? registries[0]
-    form.setValue('targetRegistryId', defaultRegistry.id, { shouldDirty: true, shouldValidate: true })
-    if (!form.getValues('targetImageRef')) {
-      form.setValue('targetImageRef', defaultTargetImageRef(defaultRegistry, projectIdentifier, applicationIdentifier), { shouldDirty: true, shouldValidate: true })
-    }
+    form.setValue('targetRegistryId', defaultRegistry.id, { shouldValidate: true })
+    if (!form.getValues('targetImageRef') && !form.formState.dirtyFields.targetImageRef)
+      form.setValue('targetImageRef', defaultTargetImageRef(defaultRegistry, projectIdentifier, applicationIdentifier), { shouldValidate: true })
   }, [applicationIdentifier, dialogOpen, form, projectIdentifier, registries])
 
   return (
@@ -431,97 +444,124 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
         )}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl" scrollable>
           <DialogHeader>
             <DialogTitle>{t('buildsPage.triggerBuild')}</DialogTitle>
             <DialogDescription>{t('buildsPage.triggerDialogDescription')}</DialogDescription>
           </DialogHeader>
-          <form className="grid gap-3" onSubmit={form.handleSubmit(values => triggerBuild.mutate(values))}>
-            <Field hint={t('buildsPage.buildConfigHint')} label={t('buildsPage.buildConfig')} required>
-              <Select {...form.register('deploymentTargetId', { required: true })}>
-                <option value="">{t('common.select')}</option>
-                {deploymentTargets.map(config => <option key={config.id} value={config.id}>{config.name}</option>)}
-              </Select>
-            </Field>
-            <Field label={t('repositories.defaultBranch')} required>
-              <SearchSelect
-                disabled={!selectedBinding}
-                emptyLabel={selectedBinding ? t('common.noOptions') : t('buildsPage.repositoryBindingRequired')}
-                limited={branches.data?.limited}
-                loading={branches.isFetching}
-                options={branchOptions(branches.data?.items ?? [], form.watch('sourceBranch'))}
-                placeholder={t('repositories.defaultBranchPlaceholder')}
-                search={branchSearch}
-                value={form.watch('sourceBranch') || ''}
-                onSearchChange={setBranchSearch}
-                onValueChange={value => form.setValue('sourceBranch', value, { shouldDirty: true, shouldValidate: true })}
-              />
-            </Field>
-            <Field label={t('buildsPage.targetRegistry')} required>
-              <Select {...form.register('targetRegistryId', { required: true })}>
-                <option value="">{t('common.select')}</option>
-                {registries.map(registry => <option key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</option>)}
-              </Select>
-            </Field>
-            <Field hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
-              <TargetImageRefInput
-                {...form.register('targetImageRef', { required: true })}
-                placeholder={t('buildsPage.targetImageRefPlaceholder')}
-                prefix={targetImagePrefix}
-              />
-            </Field>
-            <Field hint={t('buildsPage.inheritedModuleHint')} label={t('buildsPage.dockerfilePath')}>
-              <Input readOnly value={selectedDeploymentTarget?.dockerfilePath || 'Dockerfile'} />
-            </Field>
-            <Field hint={t('buildsPage.inheritedModuleHint')} label={t('buildsPage.buildContext')}>
-              <Input readOnly value={selectedDeploymentTarget?.buildContext || '.'} />
-            </Field>
-            {selectedDeploymentTarget?.buildArgs?.trim() && (
-              <Field hint={t('buildsPage.inheritedBuildArgsHint')} label={t('buildsPage.buildArgs')}>
-                <Textarea readOnly className="min-h-20 font-mono" value={selectedDeploymentTarget.buildArgs} />
+          <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(values => triggerBuild.mutate(values))}>
+            <input type="hidden" {...form.register('sourceBranch', { required: t('common.required') })} />
+            <DialogBody className="grid gap-3">
+              <Field error={form.formState.errors.deploymentTargetId?.message} hint={t('buildsPage.buildConfigHint')} label={t('buildsPage.buildConfig')} required>
+                <Select
+                  {...form.register('deploymentTargetId', {
+                    required: t('common.required'),
+                    onChange: event => applyDeploymentTargetDefaults(event.target.value),
+                  })}
+                  aria-invalid={Boolean(form.formState.errors.deploymentTargetId)}
+                >
+                  <option value="">{t('common.select')}</option>
+                  {deploymentTargets.map(config => <option key={config.id} value={config.id}>{config.name}</option>)}
+                </Select>
               </Field>
-            )}
-            <div className="grid gap-3">
-              <div>
-                <h3 className="text-sm font-semibold">{t('deploymentsPage.buildEnvironment')}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentOverrideHint')}</p>
+              <Field error={form.formState.errors.sourceBranch?.message} label={t('repositories.defaultBranch')} required>
+                <SearchSelect
+                  disabled={!selectedBinding}
+                  emptyLabel={selectedBinding ? t('common.noOptions') : t('buildsPage.repositoryBindingRequired')}
+                  limited={branches.data?.limited}
+                  loading={branches.isFetching}
+                  options={branchOptions(branches.data?.items ?? [], form.watch('sourceBranch'))}
+                  placeholder={t('repositories.defaultBranchPlaceholder')}
+                  search={branchSearch}
+                  value={form.watch('sourceBranch') || ''}
+                  onSearchChange={setBranchSearch}
+                  onValueChange={value => form.setValue('sourceBranch', value, { shouldDirty: true, shouldValidate: true })}
+                />
+              </Field>
+              <Field error={form.formState.errors.targetRegistryId?.message} label={t('buildsPage.targetRegistry')} required>
+                <Select
+                  {...form.register('targetRegistryId', { required: t('common.required') })}
+                  aria-invalid={Boolean(form.formState.errors.targetRegistryId)}
+                >
+                  <option value="">{t('common.select')}</option>
+                  {registries.map(registry => <option key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</option>)}
+                </Select>
+              </Field>
+              <Field error={form.formState.errors.targetImageRef?.message} hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
+                <TargetImageRefInput
+                  {...form.register('targetImageRef', { required: t('common.required') })}
+                  aria-invalid={Boolean(form.formState.errors.targetImageRef)}
+                  placeholder={t('buildsPage.targetImageRefPlaceholder')}
+                  prefix={targetImagePrefix}
+                />
+              </Field>
+              <ProgressiveSection
+                description={t('buildsPage.inheritedModuleHint')}
+                summary={`${selectedDeploymentTarget?.dockerfilePath || 'Dockerfile'} · ${selectedDeploymentTarget?.buildContext || '.'}`}
+                title={t('buildsPage.inheritedConfigTitle')}
+              >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label={t('buildsPage.dockerfilePath')}>
+                    <Input readOnly value={selectedDeploymentTarget?.dockerfilePath || 'Dockerfile'} />
+                  </Field>
+                  <Field label={t('buildsPage.buildContext')}>
+                    <Input readOnly value={selectedDeploymentTarget?.buildContext || '.'} />
+                  </Field>
+                </div>
+                {selectedDeploymentTarget?.buildArgs?.trim() && (
+                  <Field hint={t('buildsPage.inheritedBuildArgsHint')} label={t('buildsPage.buildArgs')}>
+                    <Textarea readOnly className="min-h-20 font-mono" value={selectedDeploymentTarget.buildArgs} />
+                  </Field>
+                )}
+              </ProgressiveSection>
+              <div className="grid gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">{t('deploymentsPage.buildEnvironment')}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentOverrideHint')}</p>
+                </div>
+                <div className="grid items-start gap-3 md:grid-cols-3">
+                  <Field label={t('deploymentsPage.buildCpuRequest')} required>
+                    <UnitInput
+                      unitSelectLabel={t('deploymentsPage.buildCpuRequest')}
+                      units={[
+                        { label: 'm', value: 'm' },
+                        { label: t('deploymentsPage.cpuUnits.core'), value: '' },
+                      ]}
+                      value={form.watch('buildCpuRequest') || defaultBuildCpuRequest}
+                      onChange={value => form.setValue('buildCpuRequest', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                  </Field>
+                  <Field label={t('deploymentsPage.buildMemoryRequest')} required>
+                    <UnitInput
+                      unitSelectLabel={t('deploymentsPage.buildMemoryRequest')}
+                      units={[
+                        { label: 'Mi', value: 'Mi' },
+                        { label: 'Gi', value: 'Gi' },
+                      ]}
+                      value={form.watch('buildMemoryRequest') || defaultBuildMemoryRequest}
+                      onChange={value => form.setValue('buildMemoryRequest', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                  </Field>
+                  <Field hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
+                    <div className="flex h-9 overflow-hidden rounded-control border border-input bg-background shadow-xs transition focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50">
+                      <Input
+                        className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-3 shadow-none focus-visible:ring-0"
+                        min={1}
+                        type="number"
+                        value={buildTimeoutMinutes}
+                        onChange={event => form.setValue('buildTimeoutSeconds', Math.max(1, Number(event.target.value) || 1) * 60, { shouldDirty: true, shouldValidate: true })}
+                      />
+                      <span className="flex shrink-0 items-center border-l border-border px-3 text-sm font-medium text-muted-foreground">
+                        {t('buildsPage.minutesUnit')}
+                      </span>
+                    </div>
+                  </Field>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('deploymentsPage.buildEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(buildMinuteCost) })}
+                </p>
               </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field label={t('deploymentsPage.buildCpuRequest')} required>
-                  <UnitInput
-                    unitSelectLabel={t('deploymentsPage.buildCpuRequest')}
-                    units={[
-                      { label: 'm', value: 'm' },
-                      { label: t('deploymentsPage.cpuUnits.core'), value: '' },
-                    ]}
-                    value={form.watch('buildCpuRequest') || defaultBuildCpuRequest}
-                    onChange={value => form.setValue('buildCpuRequest', value, { shouldDirty: true, shouldValidate: true })}
-                  />
-                </Field>
-                <Field label={t('deploymentsPage.buildMemoryRequest')} required>
-                  <UnitInput
-                    unitSelectLabel={t('deploymentsPage.buildMemoryRequest')}
-                    units={[
-                      { label: 'Mi', value: 'Mi' },
-                      { label: 'Gi', value: 'Gi' },
-                    ]}
-                    value={form.watch('buildMemoryRequest') || defaultBuildMemoryRequest}
-                    onChange={value => form.setValue('buildMemoryRequest', value, { shouldDirty: true, shouldValidate: true })}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t('deploymentsPage.buildEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(buildMinuteCost) })}
-                  </p>
-                </Field>
-                <Field hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
-                  <Input
-                    min={1}
-                    type="number"
-                    value={buildTimeoutMinutes}
-                    onChange={event => form.setValue('buildTimeoutSeconds', Math.max(1, Number(event.target.value) || 1) * 60, { shouldDirty: true, shouldValidate: true })}
-                  />
-                </Field>
-              </div>
-            </div>
+            </DialogBody>
             <DialogFooter>
               <DialogClose asChild>
                 <Button disabled={triggerBuild.isPending} type="button" variant="outline">{t('common.cancel')}</Button>

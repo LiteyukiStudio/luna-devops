@@ -81,20 +81,20 @@ export function ApplicationCreateReleaseDialog({
           <DialogDescription>{t('deploymentsPage.releaseDialogDescription')}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
-          <input type="hidden" {...form.register('imageRef', { required: true })} />
+          <input type="hidden" {...form.register('imageRef', { required: t('common.required') })} />
           {selectedTarget?.sourceType !== 'image' && (
-            <Field hint={registryHint} label={t('deploymentsPage.releaseImageCandidate')} required>
-              <Select value={selectedCandidateKey} onChange={event => applyCandidate(event.target.value)}>
+            <Field error={form.formState.errors.imageRef?.message} hint={registryHint} label={t('deploymentsPage.releaseImageCandidate')} required>
+              <Select aria-invalid={Boolean(form.formState.errors.imageRef)} value={selectedCandidateKey} onChange={event => applyCandidate(event.target.value)}>
                 <option value="">{t('common.select')}</option>
                 {candidates.map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.label}</option>)}
               </Select>
             </Field>
           )}
-          <Field hint={selectedTarget ? t('deploymentsPage.releaseTargetLockedHint') : undefined} label={t('buildsPage.buildConfig')} required>
+          <Field error={form.formState.errors.deploymentTargetId?.message} hint={selectedTarget ? t('deploymentsPage.releaseTargetLockedHint') : undefined} label={t('buildsPage.buildConfig')} required>
             {selectedTarget
               ? (
                   <>
-                    <input type="hidden" {...form.register('deploymentTargetId', { required: true })} />
+                    <input type="hidden" {...form.register('deploymentTargetId', { required: t('common.required') })} />
                     <Input
                       disabled
                       value={`${selectedTarget.name} · ${t(`deploymentsPage.stageLabels.${selectedTarget.stage}`, { defaultValue: selectedTarget.stage })}`}
@@ -102,7 +102,20 @@ export function ApplicationCreateReleaseDialog({
                   </>
                 )
               : (
-                  <Select {...form.register('deploymentTargetId', { required: true })}>
+                  <Select
+                    {...form.register('deploymentTargetId', {
+                      required: t('common.required'),
+                      onChange: (event) => {
+                        const targetId = event.target.value
+                        const nextTarget = releaseReadyTargets.find(item => item.id === targetId)
+                        const matchedRun = targetId ? selectableBuildRuns.find(run => run.deploymentTargetId === targetId) : undefined
+                        form.setValue('applicationId', matchedRun?.applicationId ?? applicationId, { shouldDirty: true, shouldValidate: true })
+                        form.setValue('buildRunId', matchedRun?.id ?? '', { shouldDirty: true, shouldValidate: true })
+                        form.setValue('imageRef', matchedRun ? buildRunImageRef(matchedRun) : nextTarget?.imageRef ?? '', { shouldDirty: true, shouldValidate: true })
+                      },
+                    })}
+                    aria-invalid={Boolean(form.formState.errors.deploymentTargetId)}
+                  >
                     <option value="">{t('common.select')}</option>
                     {releaseReadyTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
                   </Select>
@@ -120,8 +133,9 @@ export function ApplicationCreateReleaseDialog({
             summary={imageSummary ? shortImageRef(imageSummary) : t('common.select')}
             title={t('deploymentsPage.releaseImageOverride')}
           >
-            <Field hint={t('deploymentsPage.releaseImageOverrideHint')} label={t('deploymentsPage.image')} required>
+            <Field error={form.formState.errors.imageRef?.message} hint={t('deploymentsPage.releaseImageOverrideHint')} label={t('deploymentsPage.image')} required>
               <Input
+                aria-invalid={Boolean(form.formState.errors.imageRef)}
                 value={imageRef}
                 onChange={event => form.setValue('imageRef', event.target.value, { shouldDirty: true, shouldValidate: true })}
               />

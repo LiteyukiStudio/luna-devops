@@ -1,18 +1,21 @@
 import type { UseFormReturn } from 'react-hook-form'
 import type { CredentialForm, ImageForm, RegistryForm } from './registry-form-model'
 import type { ArtifactRegistry, Project, RegistryCredential, RegistryRepositoryItem, RegistryTagItem } from '@/api'
-import { KeyRound, PackagePlus, Plus, Search } from 'lucide-react'
+import { KeyRound, PackagePlus, Plus, Save, Search } from 'lucide-react'
+import { useId, useState } from 'react'
 import { Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { cn } from '@/lib/utils'
 import { credentialDefaults, registryDefaults } from './registry-form-model'
 
 interface RegistryDialogProps {
@@ -37,67 +40,77 @@ export function RegistryDialog({ open, editingRegistry, form, projects, pending,
           form.reset(registryDefaults)
       }}
     >
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" scrollable>
         <DialogHeader>
           <DialogTitle>{editingRegistry ? t('registriesPage.editRegistryTitle') : t('registriesPage.createRegistryTitle')}</DialogTitle>
           <DialogDescription>{t('registriesPage.description')}</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field error={form.formState.errors.name?.message} hint={t('registriesPage.registryNameHint')} label={t('registriesPage.name')} required>
-              <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('registriesPage.registryNamePlaceholder')} />
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(onSubmit)}>
+          <DialogBody className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field error={form.formState.errors.name?.message} hint={t('registriesPage.registryNameHint')} label={t('registriesPage.name')} required>
+                <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('registriesPage.registryNamePlaceholder')} />
+              </Field>
+              <Field error={form.formState.errors.provider?.message} hint={t('registriesPage.providerHint')} label={t('registriesPage.provider')} required>
+                <Select {...form.register('provider')} aria-invalid={Boolean(form.formState.errors.provider)}>
+                  <option value="harbor">{t('registriesPage.providerHarbor')}</option>
+                  <option value="dockerhub">{t('registriesPage.providerDockerHub')}</option>
+                  <option value="gitea-registry">{t('registriesPage.providerGiteaRegistry')}</option>
+                  <option value="generic-oci">{t('registriesPage.providerGenericOCI')}</option>
+                </Select>
+              </Field>
+            </div>
+            <Field error={form.formState.errors.endpoint?.message} hint={t('registriesPage.endpointHint')} label={t('registriesPage.endpoint')} required>
+              <Input {...form.register('endpoint')} aria-invalid={Boolean(form.formState.errors.endpoint)} placeholder={t('registriesPage.endpointPlaceholder')} />
             </Field>
-            <Field error={form.formState.errors.provider?.message} hint={t('registriesPage.providerHint')} label={t('registriesPage.provider')} required>
-              <Select {...form.register('provider')} aria-invalid={Boolean(form.formState.errors.provider)}>
-                <option value="harbor">{t('registriesPage.providerHarbor')}</option>
-                <option value="dockerhub">{t('registriesPage.providerDockerHub')}</option>
-                <option value="gitea-registry">{t('registriesPage.providerGiteaRegistry')}</option>
-                <option value="generic-oci">{t('registriesPage.providerGenericOCI')}</option>
+            <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.registryScopeHint')} label={t('registriesPage.scope')} required>
+              <Select
+                {...form.register('scope', {
+                  onChange: (event) => {
+                    if (event.target.value !== 'project')
+                      form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                  },
+                })}
+                aria-invalid={Boolean(form.formState.errors.scope)}
+              >
+                <option value="global">{t('registriesPage.scopeGlobal')}</option>
+                <option value="project">{t('registriesPage.scopeProject')}</option>
+                <option value="user">{t('registriesPage.scopeUser')}</option>
               </Select>
             </Field>
-          </div>
-          <Field error={form.formState.errors.endpoint?.message} hint={t('registriesPage.endpointHint')} label={t('registriesPage.endpoint')} required>
-            <Input {...form.register('endpoint')} aria-invalid={Boolean(form.formState.errors.endpoint)} placeholder={t('registriesPage.endpointPlaceholder')} />
-          </Field>
-          <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.registryScopeHint')} label={t('registriesPage.scope')} required>
-            <Select {...form.register('scope')} aria-invalid={Boolean(form.formState.errors.scope)}>
-              <option value="global">{t('registriesPage.scopeGlobal')}</option>
-              <option value="project">{t('registriesPage.scopeProject')}</option>
-              <option value="user">{t('registriesPage.scopeUser')}</option>
-            </Select>
-          </Field>
-          {form.watch('scope') === 'project' && (
-            <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')}>
-              <ProjectSpaceMultiSelect
-                projects={projects}
-                value={form.watch('projectIds')}
-                onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+            {form.watch('scope') === 'project' && (
+              <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')}>
+                <ProjectSpaceMultiSelect
+                  projects={projects}
+                  value={form.watch('projectIds')}
+                  onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                />
+              </Field>
+            )}
+            <ProgressiveSection
+              summary={[form.watch('capabilitiesText').trim() || t('registriesPage.noCapabilities'), form.watch('isDefault') ? t('common.default') : null].filter(Boolean).join(' · ')}
+              title={t('registriesPage.advancedSettings')}
+            >
+              <Field error={form.formState.errors.capabilitiesText?.message} hint={t('registriesPage.capabilitiesHint')} label={t('registriesPage.capabilities')}>
+                <Input {...form.register('capabilitiesText')} aria-invalid={Boolean(form.formState.errors.capabilitiesText)} />
+              </Field>
+              <Controller
+                control={form.control}
+                name="isDefault"
+                render={({ field }) => (
+                  <ControlledCheckboxField field={field}>
+                    {t('registriesPage.setAsDefault')}
+                  </ControlledCheckboxField>
+                )}
               />
-            </Field>
-          )}
-          <ProgressiveSection
-            summary={[form.watch('capabilitiesText').trim() || t('registriesPage.noCapabilities'), form.watch('isDefault') ? t('common.default') : null].filter(Boolean).join(' · ')}
-            title={t('registriesPage.advancedSettings')}
-          >
-            <Field error={form.formState.errors.capabilitiesText?.message} hint={t('registriesPage.capabilitiesHint')} label={t('registriesPage.capabilities')}>
-              <Input {...form.register('capabilitiesText')} aria-invalid={Boolean(form.formState.errors.capabilitiesText)} />
-            </Field>
-            <Controller
-              control={form.control}
-              name="isDefault"
-              render={({ field }) => (
-                <ControlledCheckboxField field={field}>
-                  {t('registriesPage.setAsDefault')}
-                </ControlledCheckboxField>
-              )}
-            />
-          </ProgressiveSection>
+            </ProgressiveSection>
+          </DialogBody>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">{t('common.cancel')}</Button>
             </DialogClose>
             <Button disabled={pending || !form.formState.isValid} type="submit">
-              <Plus size={16} />
+              {editingRegistry ? <Save size={16} /> : <Plus size={16} />}
               {editingRegistry ? t('registriesPage.saveRegistry') : t('registriesPage.createRegistry')}
             </Button>
           </DialogFooter>
@@ -141,107 +154,109 @@ export function CredentialDialog({ editingCredential, open, form, registries, pr
           form.reset({ ...credentialDefaults, registryId: defaultRegistryId })
       }}
     >
-      <DialogContent>
+      <DialogContent scrollable>
         <DialogHeader>
           <DialogTitle>{editingCredential ? t('registriesPage.editCredentialTitle') : t('registriesPage.createCredentialTitle')}</DialogTitle>
           <DialogDescription>{editingCredential ? t('registriesPage.editCredentialDescription') : t('registriesPage.credentialRegistryHint')}</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
-          <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.credentialRegistryHint')} label={t('registries')} required>
-            <Select
-              {...form.register('registryId')}
-              aria-invalid={Boolean(form.formState.errors.registryId)}
-              disabled={Boolean(editingCredential)}
-              onChange={(event) => {
-                form.setValue('registryId', event.target.value, { shouldValidate: true })
-                form.setValue('scope', 'user', { shouldValidate: true })
-                form.setValue('projectIds', [], { shouldValidate: true })
-              }}
-            >
-              <option value="">{t('registriesPage.selectRegistry')}</option>
-              {registries.map(registry => (
-                <option key={registry.id} value={registry.id}>{registry.name}</option>
-              ))}
-            </Select>
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field error={form.formState.errors.name?.message} hint={t('registriesPage.credentialNameHint')} label={t('registriesPage.name')} required>
-              <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} />
-            </Field>
-            <Field error={form.formState.errors.usage?.message} hint={t('registriesPage.credentialScopeHint')} label={t('registriesPage.usage')} required>
-              <Select {...form.register('usage')} aria-invalid={Boolean(form.formState.errors.usage)}>
-                <option value="push-pull">{t('registriesPage.credentialScopePushPull')}</option>
-                <option value="push">{t('registriesPage.credentialScopePush')}</option>
-                <option value="pull">{t('registriesPage.credentialScopePull')}</option>
-              </Select>
-            </Field>
-          </div>
-          <Field error={form.formState.errors.username?.message} hint={t('registriesPage.usernameHint')} label={t('registriesPage.username')}>
-            <Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} autoComplete="off" />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field error={form.formState.errors.password?.message} hint={editingCredential ? t('registriesPage.passwordEditHint') : t('registriesPage.passwordHint')} label={t('registriesPage.password')}>
-              <Input
-                {...form.register('password')}
-                aria-invalid={Boolean(form.formState.errors.password)}
-                autoComplete="off"
-                placeholder={editingCredential?.passwordSet ? t('common.secretSetPlaceholder') : undefined}
-                type="password"
-              />
-            </Field>
-            <Field error={form.formState.errors.token?.message} hint={editingCredential ? t('registriesPage.tokenEditHint') : t('registriesPage.tokenHint')} label={t('registriesPage.token')}>
-              <Input
-                {...form.register('token')}
-                aria-invalid={Boolean(form.formState.errors.token)}
-                autoComplete="off"
-                placeholder={editingCredential?.tokenSet ? t('common.secretSetPlaceholder') : undefined}
-                type="password"
-              />
-            </Field>
-          </div>
-          <ProgressiveSection
-            description={t('registriesPage.credentialAccessScopeHint')}
-            summary={credentialScopeSummary}
-            title={t('registriesPage.credentialAccessScope')}
-          >
-            <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.credentialAccessScopeHint')} label={t('registriesPage.credentialAccessScope')} required>
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(onSubmit)}>
+          <DialogBody className="grid gap-3">
+            <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.credentialRegistryHint')} label={t('registries')} required>
               <Select
-                {...form.register('scope')}
-                aria-invalid={Boolean(form.formState.errors.scope)}
-                onChange={(event) => {
-                  form.setValue('scope', event.target.value as CredentialForm['scope'], { shouldDirty: true, shouldValidate: true })
-                  if (event.target.value !== 'project')
-                    form.setValue('projectIds', [], { shouldValidate: true })
-                }}
+                {...form.register('registryId', {
+                  onChange: () => {
+                    form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
+                    form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                  },
+                })}
+                aria-invalid={Boolean(form.formState.errors.registryId)}
+                disabled={Boolean(editingCredential)}
               >
-                {credentialRegistry?.scope === 'global' && <option value="global">{t('registriesPage.scopeGlobal')}</option>}
-                {credentialRegistry?.scope !== 'user' && <option value="project">{t('registriesPage.scopeProject')}</option>}
-                <option value="user">{t('registriesPage.scopeUser')}</option>
+                <option value="">{t('registriesPage.selectRegistry')}</option>
+                {registries.map(registry => (
+                  <option key={registry.id} value={registry.id}>{registry.name}</option>
+                ))}
               </Select>
             </Field>
-            {credentialScope === 'project' && (
-              <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')} required>
-                <ProjectSpaceMultiSelect
-                  projects={allowedProjects}
-                  value={form.watch('projectIds')}
-                  onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
-                />
-              </Field>
-            )}
-          </ProgressiveSection>
-          <ProgressiveSection
-            summary={t('registriesPage.credentialNamingRulesSummary', { repositoryTemplate, tagTemplate })}
-            title={t('registriesPage.credentialNamingRulesTitle')}
-          >
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field error={form.formState.errors.repositoryTemplate?.message} hint={t('registriesPage.repositoryTemplateHint')} label={t('registriesPage.repositoryTemplate')} required>
-                <Input {...form.register('repositoryTemplate')} aria-invalid={Boolean(form.formState.errors.repositoryTemplate)} placeholder={t('registriesPage.repositoryTemplatePlaceholder')} />
+              <Field error={form.formState.errors.name?.message} hint={t('registriesPage.credentialNameHint')} label={t('registriesPage.name')} required>
+                <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} />
               </Field>
-              <Field error={form.formState.errors.tagTemplate?.message} hint={t('registriesPage.tagTemplateHint')} label={t('registriesPage.tagTemplate')} required>
-                <Input {...form.register('tagTemplate')} aria-invalid={Boolean(form.formState.errors.tagTemplate)} placeholder={t('registriesPage.tagTemplatePlaceholder')} />
+              <Field error={form.formState.errors.usage?.message} hint={t('registriesPage.credentialScopeHint')} label={t('registriesPage.usage')} required>
+                <Select {...form.register('usage')} aria-invalid={Boolean(form.formState.errors.usage)}>
+                  <option value="push-pull">{t('registriesPage.credentialScopePushPull')}</option>
+                  <option value="push">{t('registriesPage.credentialScopePush')}</option>
+                  <option value="pull">{t('registriesPage.credentialScopePull')}</option>
+                </Select>
               </Field>
             </div>
-          </ProgressiveSection>
+            <Field error={form.formState.errors.username?.message} hint={t('registriesPage.usernameHint')} label={t('registriesPage.username')}>
+              <Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} autoComplete="off" />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field error={form.formState.errors.password?.message} hint={editingCredential ? t('registriesPage.passwordEditHint') : t('registriesPage.passwordHint')} label={t('registriesPage.password')}>
+                <Input
+                  {...form.register('password')}
+                  aria-invalid={Boolean(form.formState.errors.password)}
+                  autoComplete="off"
+                  placeholder={editingCredential?.passwordSet ? t('common.secretSetPlaceholder') : undefined}
+                  type="password"
+                />
+              </Field>
+              <Field error={form.formState.errors.token?.message} hint={editingCredential ? t('registriesPage.tokenEditHint') : t('registriesPage.tokenHint')} label={t('registriesPage.token')}>
+                <Input
+                  {...form.register('token')}
+                  aria-invalid={Boolean(form.formState.errors.token)}
+                  autoComplete="off"
+                  placeholder={editingCredential?.tokenSet ? t('common.secretSetPlaceholder') : undefined}
+                  type="password"
+                />
+              </Field>
+            </div>
+            <ProgressiveSection
+              description={t('registriesPage.credentialAccessScopeHint')}
+              summary={credentialScopeSummary}
+              title={t('registriesPage.credentialAccessScope')}
+            >
+              <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.credentialAccessScopeHint')} label={t('registriesPage.credentialAccessScope')} required>
+                <Select
+                  {...form.register('scope', {
+                    onChange: (event) => {
+                      if (event.target.value !== 'project')
+                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                    },
+                  })}
+                  aria-invalid={Boolean(form.formState.errors.scope)}
+                >
+                  {credentialRegistry?.scope === 'global' && <option value="global">{t('registriesPage.scopeGlobal')}</option>}
+                  {credentialRegistry?.scope !== 'user' && <option value="project">{t('registriesPage.scopeProject')}</option>}
+                  <option value="user">{t('registriesPage.scopeUser')}</option>
+                </Select>
+              </Field>
+              {credentialScope === 'project' && (
+                <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')} required>
+                  <ProjectSpaceMultiSelect
+                    projects={allowedProjects}
+                    value={form.watch('projectIds')}
+                    onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                  />
+                </Field>
+              )}
+            </ProgressiveSection>
+            <ProgressiveSection
+              summary={t('registriesPage.credentialNamingRulesSummary', { repositoryTemplate, tagTemplate })}
+              title={t('registriesPage.credentialNamingRulesTitle')}
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field error={form.formState.errors.repositoryTemplate?.message} hint={t('registriesPage.repositoryTemplateHint')} label={t('registriesPage.repositoryTemplate')} required>
+                  <Input {...form.register('repositoryTemplate')} aria-invalid={Boolean(form.formState.errors.repositoryTemplate)} placeholder={t('registriesPage.repositoryTemplatePlaceholder')} />
+                </Field>
+                <Field error={form.formState.errors.tagTemplate?.message} hint={t('registriesPage.tagTemplateHint')} label={t('registriesPage.tagTemplate')} required>
+                  <Input {...form.register('tagTemplate')} aria-invalid={Boolean(form.formState.errors.tagTemplate)} placeholder={t('registriesPage.tagTemplatePlaceholder')} />
+                </Field>
+              </div>
+            </ProgressiveSection>
+          </DialogBody>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">{t('common.cancel')}</Button>
@@ -298,111 +313,176 @@ export function ImageDialog({
   onSubmit,
 }: ImageDialogProps) {
   const { t } = useTranslation()
+  const listboxId = useId()
+  const [activeIndex, setActiveIndex] = useState(-1)
   const registryId = form.watch('registryId')
+  const showRepositoryResults = Boolean(registryId && repositoryResultsOpen)
+  const safeActiveIndex = activeIndex >= 0 && activeIndex < repositoryResults.items.length ? activeIndex : -1
+  const activeOptionId = safeActiveIndex >= 0 ? `${listboxId}-opt-${safeActiveIndex}` : undefined
 
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
-        if (!nextOpen)
+        if (!nextOpen) {
+          setActiveIndex(-1)
           form.reset()
+        }
       }}
     >
-      <DialogContent>
+      <DialogContent scrollable>
         <DialogHeader>
           <DialogTitle>{t('registriesPage.recordImageTitle')}</DialogTitle>
           <DialogDescription>{t('registriesPage.imageRegistryHint')}</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
-          <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.imageRegistryHint')} label={t('registries')} required>
-            <Select
-              {...form.register('registryId', {
-                onChange: () => {
-                  form.setValue('repository', '', { shouldDirty: true, shouldValidate: true })
-                  form.setValue('tag', '', { shouldDirty: true, shouldValidate: true })
-                  onRepositorySearchChange('')
-                  onRepositoryResultsOpenChange(false)
-                },
-              })}
-              aria-invalid={Boolean(form.formState.errors.registryId)}
-            >
-              <option value="">{t('registriesPage.selectRegistry')}</option>
-              {registries.map(registry => (
-                <option key={registry.id} value={registry.id}>{registry.name}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field error={form.formState.errors.repository?.message} hint={t('registriesPage.repositoryHint')} label={t('registriesPage.repository')} required>
-            <div className="flex gap-2">
-              <Input
-                {...form.register('repository')}
-                aria-invalid={Boolean(form.formState.errors.repository)}
-                placeholder={t('registriesPage.repositoryPlaceholder')}
-                value={repositorySearch}
-                onChange={(event) => {
-                  onRepositorySearchChange(event.target.value)
-                  form.setValue('repository', event.target.value, { shouldDirty: true, shouldValidate: true })
-                  onRepositoryResultsOpenChange(event.target.value.trim().length >= 2)
-                }}
-                onFocus={() => onRepositoryResultsOpenChange(Boolean(registryId && repositorySearch.trim().length >= 2))}
-              />
-              <Button
-                disabled={!registryId || repositorySearch.trim().length < 2 || repositoryResults.isFetching}
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  onRepositoryResultsOpenChange(true)
-                  repositoryResults.refetch()
-                }}
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(onSubmit)}>
+          <DialogBody className="grid gap-3">
+            <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.imageRegistryHint')} label={t('registries')} required>
+              <Select
+                {...form.register('registryId', {
+                  onChange: () => {
+                    form.setValue('repository', '', { shouldDirty: true, shouldValidate: true })
+                    form.setValue('tag', '', { shouldDirty: true, shouldValidate: true })
+                    onRepositorySearchChange('')
+                    onRepositoryResultsOpenChange(false)
+                    setActiveIndex(-1)
+                  },
+                })}
+                aria-invalid={Boolean(form.formState.errors.registryId)}
               >
-                <Search size={16} />
-                {t('registriesPage.searchImages')}
-              </Button>
-            </div>
-          </Field>
-          {registryId && repositoryResultsOpen && (
-            <div className="grid max-h-52 gap-1 overflow-y-auto rounded-control border border-border p-1">
-              {repositoryResults.isFetching && (
-                <p className="px-3 py-2 text-sm text-muted-foreground">{t('registriesPage.searchingImages')}</p>
-              )}
-              {repositoryResults.items.map(repository => (
-                <button
-                  key={repository.name}
-                  className="rounded-control px-3 py-2 text-left hover:bg-muted"
-                  type="button"
-                  onClick={() => onSelectRepository(repository)}
-                >
-                  <span className="block text-sm font-medium">{repository.name}</span>
-                  {repository.description && <span className="block truncate text-xs text-muted-foreground">{repository.description}</span>}
-                </button>
-              ))}
-              {repositoryResults.isSuccess && repositoryResults.items.length === 0 && (
-                <EmptyState description={t('registriesPage.noRepositoryResultsDescription')} title={t('registriesPage.noRepositoryResultsTitle')} variant="plain" />
-              )}
-              {repositoryResults.isError && (
-                <EmptyState description={t('registriesPage.repositorySearchFailedDescription')} title={t('registriesPage.repositorySearchFailedTitle')} variant="plain" />
-              )}
-            </div>
-          )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field error={form.formState.errors.tag?.message} hint={t('registriesPage.tagHint')} label={t('registriesPage.tag')}>
-              <Input
-                {...form.register('tag')}
-                aria-invalid={Boolean(form.formState.errors.tag)}
-                list="registry-image-tag-options"
-                placeholder={tagResults.isFetching ? t('registriesPage.loadingTags') : t('registriesPage.tagPlaceholder')}
-              />
-              <datalist id="registry-image-tag-options">
-                {tagResults.items.map(tag => (
-                  <option key={tag.name} value={tag.name}>{tag.digest}</option>
+                <option value="">{t('registriesPage.selectRegistry')}</option>
+                {registries.map(registry => (
+                  <option key={registry.id} value={registry.id}>{registry.name}</option>
                 ))}
-              </datalist>
+              </Select>
             </Field>
-            <Field error={form.formState.errors.digest?.message} hint={t('registriesPage.digestHint')} label={t('registriesPage.digest')}>
-              <Input {...form.register('digest')} aria-invalid={Boolean(form.formState.errors.digest)} />
+            <Field error={form.formState.errors.repository?.message} hint={t('registriesPage.repositoryHint')} label={t('registriesPage.repository')} required>
+              <div className="flex gap-2">
+                <Input
+                  {...form.register('repository', {
+                    onChange: (event) => {
+                      const nextValue = event.target.value
+                      onRepositorySearchChange(nextValue)
+                      onRepositoryResultsOpenChange(nextValue.trim().length >= 2)
+                      setActiveIndex(-1)
+                    },
+                  })}
+                  aria-activedescendant={activeOptionId}
+                  aria-autocomplete="list"
+                  aria-controls={showRepositoryResults ? listboxId : undefined}
+                  aria-expanded={showRepositoryResults}
+                  aria-invalid={Boolean(form.formState.errors.repository)}
+                  placeholder={t('registriesPage.repositoryPlaceholder')}
+                  role="combobox"
+                  onFocus={() => onRepositoryResultsOpenChange(Boolean(registryId && repositorySearch.trim().length >= 2))}
+                  onKeyDown={(event) => {
+                    if (!showRepositoryResults)
+                      return
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      onRepositoryResultsOpenChange(false)
+                      setActiveIndex(-1)
+                      return
+                    }
+                    const total = repositoryResults.items.length
+                    if (total === 0)
+                      return
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      setActiveIndex(current => (current + 1) % total)
+                    }
+                    else if (event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      setActiveIndex(current => (current <= 0 ? total - 1 : current - 1))
+                    }
+                    else if (event.key === 'Enter' && safeActiveIndex >= 0) {
+                      event.preventDefault()
+                      const chosen = repositoryResults.items[safeActiveIndex]
+                      if (chosen) {
+                        onSelectRepository(chosen)
+                        setActiveIndex(-1)
+                      }
+                    }
+                  }}
+                />
+                <Button
+                  disabled={!registryId || repositorySearch.trim().length < 2 || repositoryResults.isFetching}
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    onRepositoryResultsOpenChange(true)
+                    repositoryResults.refetch()
+                  }}
+                >
+                  <Search size={16} />
+                  {t('registriesPage.searchImages')}
+                </Button>
+              </div>
             </Field>
-          </div>
+            {showRepositoryResults && (
+              <div
+                aria-label={t('registriesPage.repository')}
+                className="grid max-h-52 gap-1 overflow-y-auto rounded-control border border-border p-1"
+                id={listboxId}
+                role="listbox"
+              >
+                {repositoryResults.isFetching && (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">{t('registriesPage.searchingImages')}</p>
+                )}
+                {repositoryResults.items.map((repository, index) => (
+                  <div
+                    key={repository.name}
+                    aria-selected={safeActiveIndex === index}
+                    className={cn(
+                      'cursor-pointer rounded-control px-3 py-2 text-left transition-colors hover:bg-muted',
+                      safeActiveIndex === index && 'bg-accent text-accent-foreground',
+                    )}
+                    id={`${listboxId}-opt-${index}`}
+                    role="option"
+                    tabIndex={-1}
+                    onClick={() => {
+                      onSelectRepository(repository)
+                      setActiveIndex(-1)
+                    }}
+                    onMouseDown={event => event.preventDefault()}
+                  >
+                    <span className="block text-sm font-medium">{repository.name}</span>
+                    {repository.description && <span className="block truncate text-xs text-muted-foreground">{repository.description}</span>}
+                  </div>
+                ))}
+                {repositoryResults.isSuccess && repositoryResults.items.length === 0 && (
+                  <EmptyState description={t('registriesPage.noRepositoryResultsDescription')} title={t('registriesPage.noRepositoryResultsTitle')} variant="plain" />
+                )}
+                {repositoryResults.isError && (
+                  <ErrorState
+                    description={t('registriesPage.repositorySearchFailedDescription')}
+                    retrying={repositoryResults.isFetching}
+                    title={t('registriesPage.repositorySearchFailedTitle')}
+                    onRetry={() => repositoryResults.refetch()}
+                  />
+                )}
+              </div>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field error={form.formState.errors.tag?.message} hint={t('registriesPage.tagHint')} label={t('registriesPage.tag')}>
+                <Input
+                  {...form.register('tag')}
+                  aria-invalid={Boolean(form.formState.errors.tag)}
+                  list="registry-image-tag-options"
+                  placeholder={tagResults.isFetching ? t('registriesPage.loadingTags') : t('registriesPage.tagPlaceholder')}
+                />
+                <datalist id="registry-image-tag-options">
+                  {tagResults.items.map(tag => (
+                    <option key={tag.name} value={tag.name}>{tag.digest}</option>
+                  ))}
+                </datalist>
+              </Field>
+              <Field error={form.formState.errors.digest?.message} hint={t('registriesPage.digestHint')} label={t('registriesPage.digest')}>
+                <Input {...form.register('digest')} aria-invalid={Boolean(form.formState.errors.digest)} />
+              </Field>
+            </div>
+          </DialogBody>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">{t('common.cancel')}</Button>

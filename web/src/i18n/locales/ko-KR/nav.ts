@@ -31,6 +31,7 @@ const nav = {
     contextEmptyHint: '{{context}}에서 검색합니다. Backspace 키를 누르면 전역 검색으로 전환됩니다',
     clearContextChip: '{{context}} 필터를 해제하고 전역 검색으로 돌아가기',
     searching: '플랫폼 리소스를 검색하는 중…',
+    searchFailed: '플랫폼 리소스 검색에 실패했습니다. 다시 시도하세요.',
     globalBadge: '전역',
     allSpacesToggle: '전체 공간',
     allSpacesHint: '참여하지 않은 프로젝트 공간의 리소스 포함',

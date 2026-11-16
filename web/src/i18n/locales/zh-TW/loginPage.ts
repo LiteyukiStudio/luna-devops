@@ -1,9 +1,7 @@
 const loginPage = {
   subtitle: '使用本地賬號登入控制檯',
   email: '郵箱',
-  emailHint: '本地賬號郵箱。OIDC 登入請使用下方身份源按鈕。',
   password: '密碼',
-  passwordHint: '本地賬號密碼。',
   passwordRequired: '請輸入密碼',
   success: '登入成功',
   useProviderLogin: '使用 {{provider}} 登入',

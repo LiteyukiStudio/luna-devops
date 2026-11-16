@@ -31,6 +31,7 @@ const nav = {
     contextEmptyHint: '在「{{context}}」中檢索，按退格鍵可切回全域搜尋',
     clearContextChip: '移除{{context}}篩選並切回全域搜尋',
     searching: '正在檢索平台資源…',
+    searchFailed: '平臺資源檢索失敗，請重試',
     globalBadge: '全域',
     allSpacesToggle: '全平台',
     allSpacesHint: '包含未加入的專案空間資源',

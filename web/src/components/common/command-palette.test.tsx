@@ -394,6 +394,28 @@ describe('command palette', () => {
     await user.click(within(inlineGroup).getByRole('option', { name: /Memos/ }))
     expect(await screen.findByTestId('location')).toHaveTextContent('/app-templates?template=memos')
   })
+
+  it('keeps scope buttons keyboard-tabbable and surfaces a retryable error alert on server search failure', async () => {
+    const user = userEvent.setup()
+    mocks.searchPlatformResources.mockRejectedValueOnce(new Error('backend 503'))
+
+    renderPalette(['/clusters'], { role: 'platform_admin', permissions: ['user.manage'] })
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
+
+    expect(within(dialog).getByRole('combobox')).toHaveFocus()
+    expect(within(dialog).getByRole('button', { name: 'Remove Clusters filter and return to global search' })).not.toHaveAttribute('tabindex', '-1')
+    expect(within(dialog).getByRole('button', { name: 'Domains' })).not.toHaveAttribute('tabindex', '-1')
+    expect(within(dialog).getByRole('button', { name: 'All spaces' })).not.toHaveAttribute('tabindex', '-1')
+
+    await user.type(within(dialog).getByRole('combobox'), 'prod-k8s')
+    const alert = await within(dialog).findByRole('alert')
+    expect(within(alert).getByText('Could not search platform resources. Try again.')).toBeInTheDocument()
+    expect(within(dialog).queryByText('No matching results')).not.toBeInTheDocument()
+
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(mocks.searchPlatformResources).toHaveBeenCalledTimes(2))
+  })
 })
 
 const currentUser: CurrentUser = {

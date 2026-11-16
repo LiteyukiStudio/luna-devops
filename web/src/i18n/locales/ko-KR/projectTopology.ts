@@ -15,6 +15,7 @@ const projectTopology = {
   refresh: '토폴로지 새로고침',
   relationCount: '{{count}}개 관계',
   noFilteredRelations: '현재 필터 조건에 맞는 관계가 없습니다',
+  clearFilters: '필터 지우기',
   searchRelations: '서비스 관계 검색',
   source: '호출자',
   target: '피종속자',

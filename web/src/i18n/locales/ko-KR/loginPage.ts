@@ -1,9 +1,7 @@
 const loginPage = {
   subtitle: '로컬 계정으로 콘솔에 로그인',
   email: '이메일',
-  emailHint: '로컬 계정 이메일. OIDC 로그인은 아래 ID 공급자 버튼을 사용하세요.',
   password: '비밀번호',
-  passwordHint: '로컬 계정 비밀번호.',
   passwordRequired: '비밀번호를 입력하세요',
   success: '로그인 성공',
   useProviderLogin: '{{provider}}로 로그인',

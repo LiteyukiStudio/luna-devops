@@ -3,6 +3,7 @@ import type { CommandPaletteRouteContext, CommandPaletteScope } from './command-
 import type { SearchResultItem } from '@/api'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   AppWindow,
   Bell,
   Boxes,
@@ -19,6 +20,7 @@ import {
   Loader2,
   Plus,
   Rocket,
+  RotateCw,
   Search,
   Server,
   Sparkles,
@@ -481,7 +483,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
           <div className="flex items-center gap-1.5">
             <span className="truncate font-medium">{item.title}</span>
             {!item.related && (
-              <Badge className="h-4 px-1 text-[0.625rem]" variant="outline">
+              <Badge className="h-5 px-1.5 text-xs" variant="outline">
                 {t('nav.commandPalette.globalBadge')}
               </Badge>
             )}
@@ -511,7 +513,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
       >
         <Search aria-hidden="true" className="size-4" />
         <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">{t('nav.commandPalette.trigger')}</span>
-        <kbd aria-hidden="true" className="hidden rounded-sm border border-border bg-muted px-1.5 font-mono text-[0.6875rem] leading-5 text-muted-foreground sm:inline-block">{shortcut}</kbd>
+        <kbd aria-hidden="true" className="hidden rounded-control border border-border bg-muted px-1.5 font-mono text-xs leading-5 text-muted-foreground sm:inline-block">{shortcut}</kbd>
       </Button>
       <CommandDialog
         className="sm:max-w-xl"
@@ -527,14 +529,13 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
           prefix={routeContext
             ? (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-border bg-primary-subtle px-2 py-0.5 text-xs font-medium text-primary-text"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-control border border-primary-border bg-primary-subtle px-2 py-0.5 text-xs font-medium text-primary-text"
                   data-testid="command-palette-context-chip"
                 >
                   <span>{activeContextLabel}</span>
                   <button
                     aria-label={t('nav.commandPalette.clearContextChip', { context: activeContextLabel })}
-                    className="inline-flex items-center justify-center rounded-xs p-0.5 text-primary-text/80 transition-colors hover:bg-primary/15 hover:text-primary-text"
-                    tabIndex={-1}
+                    className="inline-flex items-center justify-center rounded-sm p-0.5 text-primary-text/80 transition-colors hover:bg-primary/15 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     type="button"
                     onClick={clearRouteContext}
                     onMouseDown={event => event.preventDefault()}
@@ -566,12 +567,11 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
                   key={itemScope}
                   aria-pressed={active}
                   className={cn(
-                    'rounded-md px-2 py-0.5 text-xs font-medium transition-colors',
+                    'rounded-control px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     active
                       ? 'bg-primary text-primary-foreground shadow-2xs'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                   )}
-                  tabIndex={-1}
                   type="button"
                   onClick={() => {
                     setRouteContext(null)
@@ -592,12 +592,11 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
               <button
                 aria-pressed={allSpaces}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors',
+                  'inline-flex items-center gap-1 rounded-control border px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   allSpaces
                     ? 'border-primary-border bg-primary-subtle text-primary-text'
                     : 'border-border bg-background text-muted-foreground hover:text-foreground',
                 )}
-                tabIndex={-1}
                 title={t('nav.commandPalette.allSpacesHint')}
                 type="button"
                 onClick={() => setAllSpaces(current => !current)}
@@ -610,13 +609,34 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
           </div>
         </div>
         <CommandList className="max-h-[min(28rem,66vh)]">
-          <CommandEmpty>
-            {isSearchingServer || (templateFocused && appTemplates.isLoading)
-              ? t('nav.commandPalette.searching')
-              : (hasServerOnlyRouteContext && trimmedQuery === '')
-                  ? t('nav.commandPalette.contextEmptyHint', { context: activeContextLabel })
-                  : t('nav.commandPalette.empty')}
-          </CommandEmpty>
+          {serverSearchEnabled && serverSearch.isError && (
+            <div className="mx-3 my-2 flex items-center justify-between gap-3 rounded-control border border-danger-border bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
+                <span className="truncate">{t('nav.commandPalette.searchFailed')}</span>
+              </span>
+              <Button
+                className="h-7 shrink-0 px-2.5 text-xs"
+                disabled={serverSearch.isFetching}
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => void serverSearch.refetch()}
+              >
+                <RotateCw className={cn('size-3.5', serverSearch.isFetching && 'animate-spin')} />
+                {t('common.retry')}
+              </Button>
+            </div>
+          )}
+          {!(serverSearchEnabled && serverSearch.isError) && (
+            <CommandEmpty>
+              {isSearchingServer || (templateFocused && appTemplates.isLoading)
+                ? t('nav.commandPalette.searching')
+                : (hasServerOnlyRouteContext && trimmedQuery === '')
+                    ? t('nav.commandPalette.contextEmptyHint', { context: activeContextLabel })
+                    : t('nav.commandPalette.empty')}
+            </CommandEmpty>
+          )}
 
           {trimmedQuery === '' && scope === 'all' && routeContext === null && recents.length > 0 && (
             <CommandGroup heading={t('nav.commandPalette.groups.recent')}>

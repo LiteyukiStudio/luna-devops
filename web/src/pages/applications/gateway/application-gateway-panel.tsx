@@ -17,7 +17,7 @@ import { StatusIndicator } from '@/components/common/status-indicator'
 import { statusIndicatorStateFor } from '@/components/common/status-tone'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
@@ -104,9 +104,9 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
   const servicePortOptions = selectedDeploymentTarget ? deploymentTargetServicePortOptions(selectedDeploymentTarget) : []
   const defaultHostPlaceholder = defaultGatewayHostPlaceholder(projectIdentifier, applicationIdentifier, selectedDeploymentTarget?.stage, selectedDomainSuffix)
   useEffect(() => {
-    if (!dialogOpen || selectedDomainSuffix || domainSuffixOptions.length === 0)
+    if (!dialogOpen || selectedDomainSuffix || domainSuffixOptions.length === 0 || form.formState.dirtyFields.domainSuffix)
       return
-    form.setValue('domainSuffix', domainSuffixOptions[0].value, { shouldDirty: true, shouldValidate: true })
+    form.setValue('domainSuffix', domainSuffixOptions[0].value, { shouldValidate: true })
   }, [dialogOpen, domainSuffixOptions, form, selectedDomainSuffix])
   const saveRoute = useMutation({
     mutationFn: (values: RouteForm) => {
@@ -221,76 +221,79 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
         rowKey={item => item.id}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl" scrollable>
           <DialogHeader>
             <DialogTitle>{editingRoute ? t('gatewayRoutesPage.editRoute') : t('gatewayRoutesPage.createRoute')}</DialogTitle>
             <DialogDescription>{t('gatewayRoutesPage.routeDialogDescription')}</DialogDescription>
           </DialogHeader>
-          {editingRoute ? null : <EgressExceptionWarning context="route" projectId={projectId} />}
-          <form className="grid gap-3" onSubmit={form.handleSubmit(values => saveRoute.mutate(values))}>
-            <ProgressiveSection
-              defaultOpen
-              description={t('gatewayRoutesPage.basicGatewayConfigDescription')}
-              title={t('gatewayRoutesPage.basicGatewayConfig')}
-            >
-              <GatewayRouteFormFields
-                deploymentTargetIdField={form.register('deploymentTargetId', {
-                  required: true,
-                  onChange: (event) => {
-                    const target = deploymentTargets.find(item => item.id === event.target.value)
-                    form.setValue('servicePort', deploymentTargetPrimaryServicePort(target), { shouldDirty: true, shouldValidate: true })
-                    form.setValue('domainSuffix', firstGatewayDomainSuffix(target, runtimeClusters.data ?? []), { shouldDirty: true, shouldValidate: true })
-                  },
-                })}
-                deploymentTargets={deploymentTargetOptions}
-                domainSuffixField={form.register('domainSuffix', { required: true })}
-                domainSuffixOptions={domainSuffixOptions}
-                enabledField={enabledField}
-                hostField={form.register('host')}
-                hostPlaceholder={defaultHostPlaceholder}
-                pathField={form.register('path')}
-                servicePortOptions={servicePortOptions}
-                servicePortField={form.register('servicePort', { valueAsNumber: true })}
-                tlsModeField={form.register('tlsMode')}
-              />
-            </ProgressiveSection>
-            <ProgressiveSection
-              description={t('gatewayRoutesPage.advancedGatewayConfigDescription')}
-              title={t('gatewayRoutesPage.advancedGatewayConfig')}
-            >
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field hint={t('gatewayRoutesPage.parentGatewayNameHint')} label={t('gatewayRoutesPage.parentGatewayName')}>
-                  <Input {...form.register('parentGatewayName')} placeholder={t('gatewayRoutesPage.parentGatewayNamePlaceholder')} />
+          <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(values => saveRoute.mutate(values))}>
+            <DialogBody className="grid gap-3">
+              {editingRoute ? null : <EgressExceptionWarning context="route" projectId={projectId} />}
+              <ProgressiveSection
+                defaultOpen
+                description={t('gatewayRoutesPage.basicGatewayConfigDescription')}
+                title={t('gatewayRoutesPage.basicGatewayConfig')}
+              >
+                <GatewayRouteFormFields
+                  deploymentTargetIdField={form.register('deploymentTargetId', {
+                    required: t('common.required'),
+                    onChange: (event) => {
+                      const target = deploymentTargets.find(item => item.id === event.target.value)
+                      form.setValue('servicePort', deploymentTargetPrimaryServicePort(target), { shouldDirty: true, shouldValidate: true })
+                      form.setValue('domainSuffix', firstGatewayDomainSuffix(target, runtimeClusters.data ?? []), { shouldDirty: true, shouldValidate: true })
+                    },
+                  })}
+                  deploymentTargets={deploymentTargetOptions}
+                  domainSuffixField={form.register('domainSuffix', { required: t('common.required') })}
+                  domainSuffixOptions={domainSuffixOptions}
+                  enabledField={enabledField}
+                  errors={form.formState.errors}
+                  hostField={form.register('host')}
+                  hostPlaceholder={defaultHostPlaceholder}
+                  pathField={form.register('path')}
+                  servicePortOptions={servicePortOptions}
+                  servicePortField={form.register('servicePort', { valueAsNumber: true })}
+                  tlsModeField={form.register('tlsMode')}
+                />
+              </ProgressiveSection>
+              <ProgressiveSection
+                description={t('gatewayRoutesPage.advancedGatewayConfigDescription')}
+                title={t('gatewayRoutesPage.advancedGatewayConfig')}
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field error={form.formState.errors.parentGatewayName?.message} hint={t('gatewayRoutesPage.parentGatewayNameHint')} label={t('gatewayRoutesPage.parentGatewayName')}>
+                    <Input {...form.register('parentGatewayName')} aria-invalid={Boolean(form.formState.errors.parentGatewayName)} placeholder={t('gatewayRoutesPage.parentGatewayNamePlaceholder')} />
+                  </Field>
+                  <Field error={form.formState.errors.parentGatewayNamespace?.message} hint={t('gatewayRoutesPage.parentGatewayNamespaceHint')} label={t('gatewayRoutesPage.parentGatewayNamespace')}>
+                    <Input {...form.register('parentGatewayNamespace')} aria-invalid={Boolean(form.formState.errors.parentGatewayNamespace)} placeholder={t('gatewayRoutesPage.parentGatewayNamespacePlaceholder')} />
+                  </Field>
+                  <Field error={form.formState.errors.pathMatchType?.message} hint={t('gatewayRoutesPage.pathMatchTypeHint')} label={t('gatewayRoutesPage.pathMatchType')}>
+                    <Select {...form.register('pathMatchType')} aria-invalid={Boolean(form.formState.errors.pathMatchType)}>
+                      <option value="PathPrefix">{t('gatewayRoutesPage.pathMatchPrefix')}</option>
+                      <option value="Exact">{t('gatewayRoutesPage.pathMatchExact')}</option>
+                    </Select>
+                  </Field>
+                  <Field error={form.formState.errors.backendWeight?.message} hint={t('gatewayRoutesPage.backendWeightHint')} label={t('gatewayRoutesPage.backendWeight')}>
+                    <Input {...form.register('backendWeight', { valueAsNumber: true })} aria-invalid={Boolean(form.formState.errors.backendWeight)} min={1} type="number" />
+                  </Field>
+                  <Field error={form.formState.errors.hostnameAliases?.message} hint={t('gatewayRoutesPage.hostnameAliasesHint')} label={t('gatewayRoutesPage.hostnameAliases')}>
+                    <Input {...form.register('hostnameAliases')} aria-invalid={Boolean(form.formState.errors.hostnameAliases)} placeholder={t('gatewayRoutesPage.hostnameAliasesPlaceholder')} />
+                  </Field>
+                </div>
+                <Field error={form.formState.errors.requestHeaders?.message} hint={t('gatewayRoutesPage.requestHeadersHint')} label={t('gatewayRoutesPage.requestHeaders')}>
+                  <Textarea {...form.register('requestHeaders')} aria-invalid={Boolean(form.formState.errors.requestHeaders)} placeholder={t('gatewayRoutesPage.headersPlaceholder')} rows={4} />
                 </Field>
-                <Field hint={t('gatewayRoutesPage.parentGatewayNamespaceHint')} label={t('gatewayRoutesPage.parentGatewayNamespace')}>
-                  <Input {...form.register('parentGatewayNamespace')} placeholder={t('gatewayRoutesPage.parentGatewayNamespacePlaceholder')} />
+                <Field error={form.formState.errors.responseHeaders?.message} hint={t('gatewayRoutesPage.responseHeadersHint')} label={t('gatewayRoutesPage.responseHeaders')}>
+                  <Textarea {...form.register('responseHeaders')} aria-invalid={Boolean(form.formState.errors.responseHeaders)} placeholder={t('gatewayRoutesPage.headersPlaceholder')} rows={4} />
                 </Field>
-                <Field hint={t('gatewayRoutesPage.pathMatchTypeHint')} label={t('gatewayRoutesPage.pathMatchType')}>
-                  <Select {...form.register('pathMatchType')}>
-                    <option value="PathPrefix">{t('gatewayRoutesPage.pathMatchPrefix')}</option>
-                    <option value="Exact">{t('gatewayRoutesPage.pathMatchExact')}</option>
-                  </Select>
+                <Field error={form.formState.errors.urlRewrite?.message} hint={t('gatewayRoutesPage.urlRewriteHint')} label={t('gatewayRoutesPage.urlRewrite')}>
+                  <Textarea {...form.register('urlRewrite')} aria-invalid={Boolean(form.formState.errors.urlRewrite)} placeholder={t('gatewayRoutesPage.urlRewritePlaceholder')} rows={3} />
                 </Field>
-                <Field hint={t('gatewayRoutesPage.backendWeightHint')} label={t('gatewayRoutesPage.backendWeight')}>
-                  <Input {...form.register('backendWeight', { valueAsNumber: true })} min={1} type="number" />
+                <Field error={form.formState.errors.requestRedirect?.message} hint={t('gatewayRoutesPage.requestRedirectHint')} label={t('gatewayRoutesPage.requestRedirect')}>
+                  <Textarea {...form.register('requestRedirect')} aria-invalid={Boolean(form.formState.errors.requestRedirect)} placeholder={t('gatewayRoutesPage.requestRedirectPlaceholder')} rows={3} />
                 </Field>
-                <Field hint={t('gatewayRoutesPage.hostnameAliasesHint')} label={t('gatewayRoutesPage.hostnameAliases')}>
-                  <Input {...form.register('hostnameAliases')} placeholder={t('gatewayRoutesPage.hostnameAliasesPlaceholder')} />
-                </Field>
-              </div>
-              <Field hint={t('gatewayRoutesPage.requestHeadersHint')} label={t('gatewayRoutesPage.requestHeaders')}>
-                <Textarea {...form.register('requestHeaders')} placeholder={t('gatewayRoutesPage.headersPlaceholder')} rows={4} />
-              </Field>
-              <Field hint={t('gatewayRoutesPage.responseHeadersHint')} label={t('gatewayRoutesPage.responseHeaders')}>
-                <Textarea {...form.register('responseHeaders')} placeholder={t('gatewayRoutesPage.headersPlaceholder')} rows={4} />
-              </Field>
-              <Field hint={t('gatewayRoutesPage.urlRewriteHint')} label={t('gatewayRoutesPage.urlRewrite')}>
-                <Textarea {...form.register('urlRewrite')} placeholder={t('gatewayRoutesPage.urlRewritePlaceholder')} rows={3} />
-              </Field>
-              <Field hint={t('gatewayRoutesPage.requestRedirectHint')} label={t('gatewayRoutesPage.requestRedirect')}>
-                <Textarea {...form.register('requestRedirect')} placeholder={t('gatewayRoutesPage.requestRedirectPlaceholder')} rows={3} />
-              </Field>
-            </ProgressiveSection>
+              </ProgressiveSection>
+            </DialogBody>
             <DialogFooter>
               <DialogClose asChild>
                 <Button disabled={saveRoute.isPending} type="button" variant="outline">{t('common.cancel')}</Button>

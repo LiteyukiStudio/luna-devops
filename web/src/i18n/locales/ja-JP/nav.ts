@@ -31,6 +31,7 @@ const nav = {
     contextEmptyHint: '「{{context}}」内を検索します。Backspace キーで全体検索に戻ります',
     clearContextChip: '{{context}}フィルターを解除して全体検索に戻る',
     searching: 'プラットフォームリソースを検索中…',
+    searchFailed: 'プラットフォームリソースの検索に失敗しました。再試行してください。',
     globalBadge: '全体',
     allSpacesToggle: '全スペース',
     allSpacesHint: '未参加のプロジェクトスペースのリソースを含める',

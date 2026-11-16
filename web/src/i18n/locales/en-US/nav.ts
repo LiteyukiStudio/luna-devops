@@ -31,6 +31,7 @@ const nav = {
     contextEmptyHint: 'Type to search in {{context}}, or press Backspace for global search',
     clearContextChip: 'Remove {{context}} filter and return to global search',
     searching: 'Searching platform resources…',
+    searchFailed: 'Could not search platform resources. Try again.',
     globalBadge: 'Global',
     allSpacesToggle: 'All spaces',
     allSpacesHint: 'Include resources from non-member project spaces',

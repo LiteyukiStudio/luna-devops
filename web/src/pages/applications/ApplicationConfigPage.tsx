@@ -191,15 +191,20 @@ export function ApplicationConfigPage() {
     mode: 'onChange',
     defaultValues: { icon: 'box', name: '', identifier: '' },
   })
+  const syncedApplicationIdRef = useRef('')
 
   useEffect(() => {
     if (!application.data)
       return
-    updateForm.reset({
-      name: application.data.name,
-      identifier: application.data.identifier,
-      icon: application.data.icon ?? 'box',
-    })
+    // 切换应用或表单无未保存修改时才同步远端值，防止后台轮询刷新冲掉用户正在输入的草稿。
+    if (syncedApplicationIdRef.current !== application.data.id || !updateForm.formState.isDirty) {
+      syncedApplicationIdRef.current = application.data.id
+      updateForm.reset({
+        name: application.data.name,
+        identifier: application.data.identifier,
+        icon: application.data.icon ?? 'box',
+      })
+    }
   }, [application.data, updateForm])
 
   useEffect(() => {
@@ -219,6 +224,12 @@ export function ApplicationConfigPage() {
     }),
     onSuccess: (result) => {
       toast.success(t('apps.configSaved'))
+      syncedApplicationIdRef.current = result.id
+      updateForm.reset({
+        name: result.name,
+        identifier: result.identifier,
+        icon: result.icon ?? 'box',
+      })
       queryClient.setQueryData(['application', projectId, applicationId], result)
       queryClient.setQueryData(['applications', projectId], (items?: Application[]) => (items ?? []).map(item => item.id === result.id ? result : item))
       queryClient.invalidateQueries({ queryKey: ['applications', projectId] })
@@ -314,12 +325,7 @@ export function ApplicationConfigPage() {
           { label: t('apps.configTab'), value: 'settings' },
         ]}
         tools={activeTab === 'settings'
-          ? (
-              <Button disabled={updateApplication.isPending || !updateForm.formState.isValid} form={APPLICATION_CONFIG_FORM_ID} type="submit">
-                <Save size={16} />
-                {t('apps.saveConfig')}
-              </Button>
-            )
+          ? null
           : (
               <>
                 {activeTab === 'deployments' && (
@@ -391,7 +397,7 @@ export function ApplicationConfigPage() {
                 )}
         </TabsContent>
         <TabsContent value="settings">
-          <div className="grid max-w-5xl gap-section">
+          <div className="grid gap-section">
             <Section description={t('apps.configDescription')} title={t('apps.basicInfo')} variant="bordered">
               <form id={APPLICATION_CONFIG_FORM_ID} onSubmit={updateForm.handleSubmit(values => updateApplication.mutate(values))}>
                 <ApplicationBasicFields
@@ -405,6 +411,12 @@ export function ApplicationConfigPage() {
                   identifierReadOnly
                   onIconChange={icon => updateForm.setValue('icon', icon, { shouldDirty: true, shouldValidate: true })}
                 />
+                <div className="mt-4 flex justify-end border-t border-border pt-4">
+                  <Button disabled={updateApplication.isPending || !updateForm.formState.isValid} type="submit">
+                    <Save size={16} />
+                    {t('apps.saveConfig')}
+                  </Button>
+                </div>
               </form>
             </Section>
             <Section description={t('apps.repositorySectionDescription')} title={t('apps.repoBinding')}>
@@ -516,7 +528,7 @@ function PrerequisiteGuard({ blocker, children, helpLabel }: { blocker: ActionBl
     return children
 
   return (
-    <span className="inline-flex items-center gap-0.5" data-slot="prerequisite-guard">
+    <span className="inline-flex items-center gap-1.5" data-slot="prerequisite-guard">
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="inline-flex">{children}</span>
@@ -524,11 +536,22 @@ function PrerequisiteGuard({ blocker, children, helpLabel }: { blocker: ActionBl
         <TooltipContent className="max-w-72 leading-5" side="bottom">{blocker.reason}</TooltipContent>
       </Tooltip>
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button aria-label={helpLabel} className="size-8 text-muted-foreground" size="icon" type="button" variant="ghost">
-            <CircleHelp className="size-4" />
-          </Button>
-        </PopoverTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                aria-label={helpLabel}
+                className="size-8 rounded-control text-muted-foreground hover:text-foreground"
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <CircleHelp className="size-4" />
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-72 leading-5" side="bottom">{blocker.reason}</TooltipContent>
+        </Tooltip>
         <PopoverContent align="end" className="grid w-72 gap-3">
           <p className="text-sm leading-5">{blocker.reason}</p>
           <Button

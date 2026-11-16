@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react'
-import type { UseFormRegisterReturn } from 'react-hook-form'
+import type { FieldErrors, UseFormRegisterReturn } from 'react-hook-form'
+import type { GatewayRoute } from '@/api'
 import { useTranslation } from 'react-i18next'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
@@ -14,6 +15,7 @@ export function GatewayRouteFormFields({
   domainSuffixField,
   domainSuffixOptions = [],
   enabledField,
+  errors,
   hostField,
   hostPlaceholder,
   pathField,
@@ -29,6 +31,7 @@ export function GatewayRouteFormFields({
   domainSuffixField: UseFormRegisterReturn<'domainSuffix'>
   domainSuffixOptions?: Array<{ label: string, value: string }>
   enabledField: ComponentProps<typeof ControlledCheckboxField>['field']
+  errors?: FieldErrors<Partial<GatewayRoute>>
   hostField: UseFormRegisterReturn<'host'>
   hostPlaceholder?: string
   pathField: UseFormRegisterReturn<'path'>
@@ -42,43 +45,43 @@ export function GatewayRouteFormFields({
   return (
     <>
       {showApplication && (
-        <Field label={t('apps.title')} required>
-          <Select {...applicationIdField}>
+        <Field error={errors?.applicationId?.message} label={t('apps.title')} required>
+          <Select {...applicationIdField} aria-invalid={Boolean(errors?.applicationId)}>
             <option value="">{t('common.select')}</option>
             {applications.map(app => <option key={app.id} value={app.id}>{app.name}</option>)}
           </Select>
         </Field>
       )}
-      <Field label={t('gatewayRoutesPage.deploymentTarget')} required>
-        <Select {...deploymentTargetIdField}>
+      <Field error={errors?.deploymentTargetId?.message} label={t('gatewayRoutesPage.deploymentTarget')} required>
+        <Select {...deploymentTargetIdField} aria-invalid={Boolean(errors?.deploymentTargetId)}>
           <option value="">{t('common.select')}</option>
           {deploymentTargets.map(target => <option key={target.id} value={target.id}>{target.label}</option>)}
         </Select>
       </Field>
-      <Field hint={t('gatewayRoutesPage.hostHint')} label={t('gatewayRoutesPage.host')}>
-        <Input {...hostField} placeholder={hostPlaceholder || t('gatewayRoutesPage.hostPlaceholder')} />
+      <Field error={errors?.host?.message} hint={t('gatewayRoutesPage.hostHint')} label={t('gatewayRoutesPage.host')}>
+        <Input {...hostField} aria-invalid={Boolean(errors?.host)} placeholder={hostPlaceholder || t('gatewayRoutesPage.hostPlaceholder')} />
       </Field>
-      <Field hint={t('gatewayRoutesPage.domainSuffixHint')} label={t('gatewayRoutesPage.domainSuffix')} required>
-        <Select {...domainSuffixField}>
+      <Field error={errors?.domainSuffix?.message} hint={t('gatewayRoutesPage.domainSuffixHint')} label={t('gatewayRoutesPage.domainSuffix')} required>
+        <Select {...domainSuffixField} aria-invalid={Boolean(errors?.domainSuffix)}>
           {domainSuffixOptions.length === 0 && <option value="">{t('common.select')}</option>}
           {domainSuffixOptions.map(option => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </Select>
       </Field>
-      <Field label={t('gatewayRoutesPage.path')}>
-        <Input {...pathField} />
+      <Field error={errors?.path?.message} label={t('gatewayRoutesPage.path')}>
+        <Input {...pathField} aria-invalid={Boolean(errors?.path)} />
       </Field>
-      <Field label={t('gatewayRoutesPage.servicePort')}>
-        <Select {...servicePortField}>
+      <Field error={errors?.servicePort?.message} label={t('gatewayRoutesPage.servicePort')}>
+        <Select {...servicePortField} aria-invalid={Boolean(errors?.servicePort)}>
           {servicePortOptions.length === 0 && <option value="">{t('common.select')}</option>}
           {servicePortOptions.map(option => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </Select>
       </Field>
-      <Field label={t('gatewayRoutesPage.tlsMode')}>
-        <Select {...tlsModeField}>
+      <Field error={errors?.tlsMode?.message} label={t('gatewayRoutesPage.tlsMode')}>
+        <Select {...tlsModeField} aria-invalid={Boolean(errors?.tlsMode)}>
           <option value="http-only">{t('gatewayRoutesPage.tlsHttpOnly')}</option>
           <option value="http-challenge">{t('gatewayRoutesPage.tlsHttpChallenge')}</option>
           <option value="manual-cert">{t('gatewayRoutesPage.tlsManualCert')}</option>

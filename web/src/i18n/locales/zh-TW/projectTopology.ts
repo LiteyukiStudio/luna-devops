@@ -15,6 +15,7 @@ const projectTopology = {
   refresh: '重新整理拓撲',
   relationCount: '{{count}} 條關係',
   noFilteredRelations: '沒有符合當前篩選條件的關係',
+  clearFilters: '清除篩選',
   searchRelations: '搜尋服務關係',
   source: '呼叫方',
   target: '被依賴方',

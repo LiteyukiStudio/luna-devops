@@ -31,6 +31,7 @@ const nav = {
     contextEmptyHint: '在「{{context}}」中检索，按退格键可切回全局搜索',
     clearContextChip: '移除{{context}}过滤并切回全局搜索',
     searching: '正在检索平台资源…',
+    searchFailed: '平台资源检索失败，请重试',
     globalBadge: '全局',
     allSpacesToggle: '全平台',
     allSpacesHint: '包含未加入的项目空间资源',

@@ -15,6 +15,7 @@ const projectTopology = {
   refresh: 'トポロジーを更新',
   relationCount: '{{count}} 件の関係',
   noFilteredRelations: '現在のフィルター条件に一致する関係がありません',
+  clearFilters: 'フィルターをクリア',
   searchRelations: 'サービス関係を検索',
   source: '呼び出し元',
   target: '依存先',

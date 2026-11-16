@@ -97,7 +97,6 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
     ...liveObservationQueryPolicy,
   })
   const runtimeClusterMap = useMemo(() => Object.fromEntries((runtimeClusters.data ?? []).map(cluster => [cluster.id, cluster])), [runtimeClusters.data])
-  const buildRunMap = useMemo(() => Object.fromEntries(buildRuns.map(run => [run.id, run])), [buildRuns])
   const latestReleaseByTarget = useMemo(() => latestReleasesByTarget(releases), [releases])
   const deployableBuildRuns = useMemo(() => latestDeployableBuildRuns(buildRuns), [buildRuns])
   const selectedDeploymentTargetId = form.watch('deploymentTargetId')
@@ -107,7 +106,6 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
     [deployableBuildRuns, selectedDeploymentTargetId],
   )
   const releaseReadyTargets = useMemo(() => deploymentTargets.filter(target => deploymentTargetCanRelease(target, deployableBuildRuns)), [deployableBuildRuns, deploymentTargets])
-  const selectedBuildRun = buildRunMap[form.watch('buildRunId')]
   // 生效集群由后端统一解析（effectiveClusterId），前端不推断默认集群。
   const workloadClusterIds = useMemo(() => {
     const ids = new Set<string>()
@@ -185,20 +183,6 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
     setDialogOpen(true)
   }
   useImperativeHandle(ref, () => ({ openImportDialog: () => setBundleImportOpen(true), openReleaseDialog }))
-  useEffect(() => {
-    if (!selectedBuildRun)
-      return
-    form.setValue('deploymentTargetId', selectedBuildRun.deploymentTargetId, { shouldDirty: true, shouldValidate: true })
-    form.setValue('applicationId', selectedBuildRun.applicationId, { shouldDirty: true, shouldValidate: true })
-    form.setValue('imageRef', buildRunImageRef(selectedBuildRun), { shouldDirty: true, shouldValidate: true })
-  }, [form, selectedBuildRun])
-  useEffect(() => {
-    if (!selectedReleaseTarget || selectedBuildRun)
-      return
-    form.setValue('applicationId', applicationId, { shouldDirty: true, shouldValidate: true })
-    if (selectedReleaseTarget.sourceType === 'image')
-      form.setValue('imageRef', selectedReleaseTarget.imageRef, { shouldDirty: true, shouldValidate: true })
-  }, [applicationId, form, selectedBuildRun, selectedReleaseTarget])
   // 长任务创建后在 toast 中直接给出进度入口，日志面板按发布 ID 读取最新状态；互斥收起终端抽屉但保留底层详情抽屉。
   const viewLogsAction = (release: Release, view: LogTarget['view'] = 'deployment') => ({
     label: t(view === 'runtime' ? 'deploymentsPage.viewRuntimeLogs' : 'deploymentsPage.viewProgress'),
