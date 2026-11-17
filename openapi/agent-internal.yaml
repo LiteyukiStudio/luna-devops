@@ -265,6 +265,28 @@ components:
         sortOrder: { type: string, enum: [asc, desc] }
         total: { type: integer, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
+    AgentTimelineTurn:
+      type: object
+      additionalProperties: false
+      required: [id, turnIndex, status, input]
+      properties:
+        id: { type: string }
+        turnIndex: { type: integer, minimum: 0 }
+        status: { type: string, enum: [queued, running, waiting_approval, waiting_input, waiting_external, completed, failed, canceled, expired, interrupted] }
+        input:
+          type: object
+          additionalProperties: true
+        selectedRun:
+          type: object
+          additionalProperties: true
+          required: [id, runIndex, status, items]
+          properties:
+            id: { type: string }
+            runIndex: { type: integer, minimum: 0 }
+            status: { type: string, enum: [queued, running, waiting_approval, waiting_input, waiting_external, completed, failed, canceled, interrupted] }
+            expectedVersion: { type: integer, format: int64, minimum: 0 }
+            errorCode: { type: string }
+            items: { type: array, items: { $ref: "#/components/schemas/AgentObject" } }
     AgentTimelinePage:
       type: object
       additionalProperties: false
@@ -275,7 +297,7 @@ components:
         turns:
           type: array
           description: Complete turns in chronological order within this page; a turn is never split across pages.
-          items: { $ref: "#/components/schemas/AgentObject" }
+          items: { $ref: "#/components/schemas/AgentTimelineTurn" }
         eventCursors:
           type: array
           items:

@@ -144,23 +144,15 @@ func seedAuthoritativeUsageFixture(t *testing.T, tx *gorm.DB, fixture authoritat
 		{suffix: "previous", runID: fixture.RunB, operation: "assistant", attempt: 1, prompt: 11, completion: 3, cacheRead: &zero, occurredAt: previousUsageTime},
 	}
 	for _, row := range rows {
-		holdID := fixture.Prefix + "_hold_" + row.suffix
 		usageID := fixture.Prefix + "_usage_" + row.suffix
-		if err := tx.Exec(`INSERT INTO ai.model_credit_holds (
-			id, run_id, owner_user_id, operation, attempt, state, model_id, model_name,
-			max_context_tokens_snapshot, max_output_tokens_snapshot,
-			input_credits_per_million, output_credits_per_million, cached_input_credits_per_million,
-			max_risk_credits, actual_credits, expires_at
-		) VALUES (?, ?, ?, ?, ?, 'usage_recorded', 'model-fixture', 'fixture', 4096, 512, 0, 0, 0, 0, 0, ?)`,
-			holdID, row.runID, fixture.OwnerID, row.operation, row.attempt, fixture.PeriodStart.AddDate(2, 0, 0)).Error; err != nil {
-			t.Fatalf("seed usage hold %s: %v", row.suffix, err)
-		}
 		if err := tx.Exec(`INSERT INTO ai.model_usages (
-			id, credit_hold_id, run_id, owner_user_id, operation, attempt, status, settlement_status,
-			model_id, model_name, max_context_tokens_snapshot, prompt_tokens, completion_tokens, total_tokens,
+			id, run_id, owner_user_id, operation, attempt, status, settlement_status,
+			model_id, model_name, max_context_tokens_snapshot, max_output_tokens_snapshot,
+			input_credits_per_million, output_credits_per_million, cached_input_credits_per_million,
+			prompt_tokens, completion_tokens, total_tokens,
 			cached_prompt_tokens, cache_write_prompt_tokens, reasoning_completion_tokens, call_type, occurred_at
-		) VALUES (?, ?, ?, ?, ?, ?, 'reported', 'pending', 'model-fixture', 'fixture', 4096, ?, ?, ?, ?, ?, ?, 'stream', ?)`,
-			usageID, holdID, row.runID, fixture.OwnerID, row.operation, row.attempt,
+		) VALUES (?, ?, ?, ?, ?, 'reported', 'pending', 'model-fixture', 'fixture', 4096, 512, 0, 0, 0, ?, ?, ?, ?, ?, ?, 'stream', ?)`,
+			usageID, row.runID, fixture.OwnerID, row.operation, row.attempt,
 			row.prompt, row.completion, row.prompt+row.completion,
 			row.cacheRead, row.cacheWrite, row.reasoning, row.occurredAt).Error; err != nil {
 			t.Fatalf("seed authoritative usage %s: %v", row.suffix, err)

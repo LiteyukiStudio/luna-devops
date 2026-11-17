@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { DeepSeekChatCompletionsProvider } from "../src/provider/deepseek-chat-completions.js"
-import { modelRequestSpanAttributes, modelUsageSpanAttributes, OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
+import { modelRequestSpanAttributes, modelUsageSpanAttributes, OpenAIChatCompletionsProvider, parseUsage } from "../src/provider/openai-chat-completions.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 
 const options = { baseUrl: "https://provider.example/v1", apiKey: "secret", channelAffinityEnabled: true, promptCacheKeyEnabled: false, model: "model-a", timeoutMs: 5_000 }
@@ -198,30 +198,101 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
 
   it.each([
     ["missing", undefined, "missing_usage"],
+    ["null", null, "missing_usage"],
     ["empty", {}, "invalid_usage"],
-    ["mismatched total", { prompt_tokens: 2, completion_tokens: 3, total_tokens: 6 }, "invalid_usage"],
     ["negative", { prompt_tokens: -1, completion_tokens: 1, total_tokens: 0 }, "invalid_usage"],
     ["fractional", { prompt_tokens: 1.5, completion_tokens: 1, total_tokens: 2.5 }, "invalid_usage"],
     ["unsafe", { prompt_tokens: Number.MAX_SAFE_INTEGER + 1, completion_tokens: 0, total_tokens: Number.MAX_SAFE_INTEGER + 1 }, "invalid_usage"],
-    ["cached overflow", { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3, prompt_tokens_details: { cached_tokens: 3 } }, "invalid_usage"],
-    ["reasoning overflow", { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3, completion_tokens_details: { reasoning_tokens: 2 } }, "invalid_usage"],
-  ])("marks %s usage unavailable", async (_name, usage, reason) => {
+  ])("rejects %s usage by throwing ai.provider_usage_unavailable", async (_name, usage, reason) => {
+    expect(parseUsage(usage, "missing_usage")).toEqual({ status: "unavailable", reason })
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       id: "chatcmpl_invalid", model: "model-a", choices: [{ message: { content: "done" } }], ...(usage === undefined ? {} : { usage }),
     }), { status: 200 })))
 
-    const result = await new OpenAIChatCompletionsProvider(options).complete(request)
-    expect(result.usage).toEqual({ status: "unavailable", reason })
+    await expect(new OpenAIChatCompletionsProvider(options).complete(request))
+      .rejects.toMatchObject({ message: "ai.provider_usage_unavailable" })
   })
 
-  it("returns unavailable when a stream ends without usage", async () => {
+  it("throws ai.provider_usage_unavailable when a stream ends without usage", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
       JSON.stringify({ id: "chatcmpl_4", model: "model-a", choices: [{ delta: { content: "done" } }] }),
       "[DONE]",
     ])))
-    expect((await collect(new OpenAIChatCompletionsProvider(options))).at(-1)).toMatchObject({
-      type: "completed", usage: { status: "unavailable", reason: "stream_ended_without_usage" },
+    await expect(collect(new OpenAIChatCompletionsProvider(options)))
+      .rejects.toMatchObject({ message: "ai.provider_usage_unavailable" })
+  })
+
+  it("preserves valid reported usage when a gateway emits a trailing usage:null chunk and tolerates nullish fields", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
+      JSON.stringify({
+        id: null, model: null, service_tier: null, system_fingerprint: null,
+        choices: [{ delta: { content: "done", tool_calls: null }, finish_reason: "stop" }],
+        usage: null,
+      }),
+      JSON.stringify({
+        id: "chatcmpl_valid", model: "model-a", choices: null,
+        usage: { prompt_tokens: 14, completion_tokens: 6, total_tokens: 20 },
+      }),
+      JSON.stringify({ id: "chatcmpl_valid", model: "model-a", choices: [], usage: null }),
+      "[DONE]",
+    ])))
+    const events = await collect(new OpenAIChatCompletionsProvider(options))
+    expect(events.at(-1)).toMatchObject({
+      type: "completed",
+      usage: { status: "reported", value: { inputTokens: 14, outputTokens: 6, totalTokens: 20 } },
     })
+  })
+
+  it("normalizes Claude-proxy unmerged cached tokens and Gemini-proxy thinking total_tokens without false errors", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      id: "claude_proxy", model: "claude-sonnet", choices: [{ message: { content: "ok" } }],
+      usage: {
+        prompt_tokens: 50,
+        completion_tokens: 30,
+        total_tokens: 80,
+        prompt_tokens_details: { cached_tokens: 200, cache_write_tokens: 40 },
+      },
+    }), { status: 200 })))
+    const claudeResult = await new OpenAIChatCompletionsProvider(options).complete(request)
+    expect(claudeResult.usage).toEqual({
+      status: "reported",
+      value: {
+        inputTokens: 290,
+        outputTokens: 30,
+        totalTokens: 320,
+        cacheReadInputTokens: 200,
+        cacheWriteInputTokens: 40,
+      },
+    })
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      id: "gemini_proxy", model: "gemini-2.5-pro", choices: [{ message: { content: "ok" } }],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 40,
+        total_tokens: 220,
+        completion_tokens_details: { reasoning_tokens: 80 },
+      },
+    }), { status: 200 })))
+    const geminiResult = await new OpenAIChatCompletionsProvider(options).complete(request)
+    expect(geminiResult.usage).toEqual({
+      status: "reported",
+      value: {
+        inputTokens: 100,
+        outputTokens: 40,
+        totalTokens: 220,
+        reasoningOutputTokens: 80,
+      },
+    })
+  })
+
+  it("maps top-level SSE error frames without choices before chunk schema validation", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
+      JSON.stringify({ error: { code: "rate_limit_exceeded", type: "rate_limit_error", message: "too many requests" } }),
+      "[DONE]",
+    ])))
+    await expect(collect(new OpenAIChatCompletionsProvider(options)))
+      .rejects.toMatchObject({ message: "ai.provider_rate_limited" })
   })
 
   it("parses the final SSE frame even without a trailing blank line", async () => {

@@ -5,7 +5,7 @@ import { z } from "zod"
 import { redact } from "../redaction.js"
 import { genAIClientTokenUsageAttributes, genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
 import { agentMetrics, clientSpanOptions, errorDiagnostic, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
-import { mapProviderError, parseProviderErrorBody, ProviderRequestError } from "./provider-error.js"
+import { mapProviderError, parseProviderErrorBody, ProviderRequestError, type ProviderFailureStage } from "./provider-error.js"
 import type {
   ModelCapabilities,
   ModelEvent,
@@ -28,6 +28,7 @@ export type OpenAIChatCompletionsOptions = {
 
 type ProviderHTTPResponse = {
   response: Response
+  signal: AbortSignal
   dispose: () => void
 }
 
@@ -77,68 +78,54 @@ const requestSchema = z.object({
   if ((request.tools === undefined) !== (request.tool_choice === undefined))
     context.addIssue({ code: "custom", message: "tools_and_choice_must_coexist", path: ["tools"] })
 })
+
 const usageSchema = z.object({
   prompt_tokens: nonNegativeSafeInteger,
   completion_tokens: nonNegativeSafeInteger,
-  total_tokens: nonNegativeSafeInteger,
+  total_tokens: nonNegativeSafeInteger.nullish(),
   prompt_tokens_details: z.object({
-    cached_tokens: nonNegativeSafeInteger.optional(),
-    cache_write_tokens: nonNegativeSafeInteger.optional(),
-  }).passthrough().optional(),
+    cached_tokens: nonNegativeSafeInteger.nullish(),
+    cache_write_tokens: nonNegativeSafeInteger.nullish(),
+  }).passthrough().nullish(),
   completion_tokens_details: z.object({
-    reasoning_tokens: nonNegativeSafeInteger.optional(),
-  }).passthrough().optional(),
-}).passthrough().superRefine((usage, context) => {
-  if (usage.total_tokens !== usage.prompt_tokens + usage.completion_tokens) {
-    context.addIssue({ code: "custom", message: "total_tokens_mismatch", path: ["total_tokens"] })
-  }
-  if ((usage.prompt_tokens_details?.cached_tokens ?? 0) > usage.prompt_tokens) {
-    context.addIssue({ code: "custom", message: "cached_tokens_exceed_prompt", path: ["prompt_tokens_details", "cached_tokens"] })
-  }
-  if ((usage.prompt_tokens_details?.cache_write_tokens ?? 0) > usage.prompt_tokens) {
-    context.addIssue({ code: "custom", message: "cache_write_tokens_exceed_prompt", path: ["prompt_tokens_details", "cache_write_tokens"] })
-  }
-  if ((usage.prompt_tokens_details?.cached_tokens ?? 0) + (usage.prompt_tokens_details?.cache_write_tokens ?? 0) > usage.prompt_tokens) {
-    context.addIssue({ code: "custom", message: "prompt_detail_tokens_exceed_prompt", path: ["prompt_tokens_details"] })
-  }
-  if ((usage.completion_tokens_details?.reasoning_tokens ?? 0) > usage.completion_tokens) {
-    context.addIssue({ code: "custom", message: "reasoning_tokens_exceed_completion", path: ["completion_tokens_details", "reasoning_tokens"] })
-  }
-})
+    reasoning_tokens: nonNegativeSafeInteger.nullish(),
+  }).passthrough().nullish(),
+}).passthrough()
 
 const toolCallSchema = z.object({
-  id: z.string().optional(),
-  function: z.object({ name: z.string().optional(), arguments: z.string().optional() }).passthrough().optional(),
+  id: z.string().nullish(),
+  function: z.object({ name: z.string().nullish(), arguments: z.string().nullish() }).passthrough().nullish(),
 }).passthrough()
 const messageSchema = z.object({
   content: z.unknown().optional(),
-  tool_calls: z.array(toolCallSchema).optional(),
+  tool_calls: z.array(toolCallSchema).nullish(),
 }).passthrough()
 const completionSchema = z.object({
-  id: z.string(),
-  model: z.string(),
-  choices: z.array(z.object({ message: messageSchema.optional(), finish_reason: z.string().nullable().optional() }).passthrough()),
+  id: z.string().nullish(),
+  model: z.string().nullish(),
+  choices: z.array(z.object({ message: messageSchema.nullish(), finish_reason: z.string().nullish() }).passthrough()).nullish().transform(value => value ?? []),
   usage: z.unknown().optional(),
-  service_tier: z.string().optional(),
-  system_fingerprint: z.string().optional(),
+  service_tier: z.string().nullish(),
+  system_fingerprint: z.string().nullish(),
+  error: z.unknown().optional(),
 }).passthrough()
 const streamChunkSchema = z.object({
-  id: z.string().optional(),
-  model: z.string().optional(),
+  id: z.string().nullish(),
+  model: z.string().nullish(),
   choices: z.array(z.object({
     delta: z.object({
       content: z.unknown().optional(),
       tool_calls: z.array(z.object({
         index: nonNegativeSafeInteger,
-        id: z.string().optional(),
-        function: z.object({ name: z.string().optional(), arguments: z.string().optional() }).passthrough().optional(),
-      }).passthrough()).optional(),
-    }).passthrough().optional(),
-    finish_reason: z.string().nullable().optional(),
-  }).passthrough()),
+        id: z.string().nullish(),
+        function: z.object({ name: z.string().nullish(), arguments: z.string().nullish() }).passthrough().nullish(),
+      }).passthrough()).nullish(),
+    }).passthrough().nullish(),
+    finish_reason: z.string().nullish(),
+  }).passthrough()).nullish().transform(value => value ?? []),
   usage: z.unknown().optional(),
-  service_tier: z.string().optional(),
-  system_fingerprint: z.string().optional(),
+  service_tier: z.string().nullish(),
+  system_fingerprint: z.string().nullish(),
   error: z.unknown().optional(),
 }).passthrough()
 
@@ -166,30 +153,46 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
         try {
           const response = providerResponse.response
           const providerRequestId = response.headers.get("x-request-id") ?? undefined
-          const raw = await response.json().catch((error) => {
-            if (request.signal?.aborted || error instanceof Error && error.name === "AbortError") throw transportError(error, request.signal)
+          const raw: unknown = await response.json().catch((error) => {
+            if (providerResponse.signal.aborted || request.signal?.aborted || error instanceof Error && (error.name === "AbortError" || error.message === "ai.provider_timeout")) {
+              throw transportError(providerResponse.signal.aborted ? providerResponse.signal.reason : error, request.signal, "response_body", { providerRequestId })
+            }
             throw new ProviderRequestError("ai.provider_response_invalid", {
               stage: "response_body", requestOutcome: "unknown", ...(providerRequestId ? { providerRequestId } : {}),
             })
           })
+          if (isRecord(raw) && raw.error !== undefined && raw.error !== null) {
+            throw providerPayloadError(raw.error, "response_body", providerRequestId)
+          }
           const parsed = completionSchema.safeParse(raw)
           if (!parsed.success) throw this.schemaError("ai.provider_response_invalid", "response_body", providerRequestId)
           const body = parsed.data
+          const responseId = body.id ?? undefined
+          const responseModel = body.model ?? undefined
           const message = body.choices[0]?.message
           const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
           const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
           const finishReason = body.choices[0]?.finish_reason ?? undefined
-          this.recordResponse(span, usage, finishReason, toolCalls.length, body.id, body.model)
+          this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
           const text = contentText(message?.content)
           recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({ text, toolCalls, ...(finishReason ? { finishReason } : {}) }, request.tools))
+          if (usage.status !== "reported") {
+            throw new ProviderRequestError("ai.provider_usage_unavailable", {
+              stage: "response_body",
+              requestOutcome: "unknown",
+              ...(providerRequestId ? { providerRequestId } : {}),
+              ...(responseId ? { responseId } : {}),
+              ...(responseModel ? { responseModel } : {}),
+            })
+          }
           return {
             text,
             usage,
             ...(toolCalls.length ? { toolCalls } : {}),
             ...(finishReason ? { finishReason } : {}),
             ...(providerRequestId ? { providerRequestId } : {}),
-            responseId: body.id,
-            responseModel: body.model,
+            ...(responseId ? { responseId } : {}),
+            ...(responseModel ? { responseModel } : {}),
             ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
             ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
           }
@@ -199,7 +202,9 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
         }
       }
       catch (error) {
-        span.setAttributes(modelUsageSpanAttributes({ status: "unavailable", reason: "request_failed" }))
+        if (!(error instanceof ProviderRequestError && error.message === "ai.provider_usage_unavailable")) {
+          span.setAttributes(modelUsageSpanAttributes({ status: "unavailable", reason: "request_failed" }))
+        }
         throw error
       }
     })
@@ -290,19 +295,21 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
         let reasoningText = ""
         let toolDeltaEmitted = false
         const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
-        for await (const data of readSSEData(response.body, request.signal)) {
+        for await (const data of readSSEData(response.body, request.signal, () => ({ providerRequestId, responseId, responseModel }))) {
           if (!data || data === "[DONE]") continue
           let raw: unknown
           try { raw = JSON.parse(data) }
           catch { throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId) }
+          if (isRecord(raw) && raw.error !== undefined && raw.error !== null) {
+            throw providerPayloadError(raw.error, "stream", providerRequestId, responseId, responseModel)
+          }
           const parsed = streamChunkSchema.safeParse(raw)
           if (!parsed.success) throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId)
           const chunk = parsed.data
-          if (chunk.error !== undefined) throw providerPayloadError(chunk.error, providerRequestId, responseId, responseModel)
           responseId = chunk.id ?? responseId
           responseModel = chunk.model ?? responseModel
           const choice = chunk.choices[0]
-          const delta = choice?.delta as Record<string, unknown> | undefined
+          const delta = (choice?.delta ?? undefined) as Record<string, unknown> | undefined
           finishReason = choice?.finish_reason ?? finishReason
           const reasoning = this.reasoningDelta(delta)
           const content = contentText(delta?.content)
@@ -316,7 +323,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
             current.arguments += fragment.function?.arguments ?? ""
             toolFragments.set(fragment.index, current)
           }
-          if (chunk.usage !== undefined) {
+          if (chunk.usage !== undefined && chunk.usage !== null) {
             usageSeen = true
             usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
           }
@@ -327,6 +334,15 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
         recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
           text: responseText, ...(reasoningText ? { reasoningSummary: reasoningText } : {}), ...(toolCalls.length ? { toolCalls } : {}), ...(finishReason ? { finishReason } : {}),
         }, request.tools))
+        if (usage.status !== "reported") {
+          throw new ProviderRequestError("ai.provider_usage_unavailable", {
+            stage: "stream",
+            requestOutcome: "unknown",
+            ...(providerRequestId ? { providerRequestId } : {}),
+            ...(responseId ? { responseId } : {}),
+            ...(responseModel ? { responseModel } : {}),
+          })
+        }
         yield {
           type: "completed", usage,
           ...(toolCalls.length ? { toolCalls } : {}),
@@ -341,14 +357,16 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       }
     }
     catch (error) {
-      span.setAttributes(modelUsageSpanAttributes({ status: "unavailable", reason: "request_failed" }))
+      if (!(error instanceof ProviderRequestError && error.message === "ai.provider_usage_unavailable")) {
+        span.setAttributes(modelUsageSpanAttributes({ status: "unavailable", reason: "request_failed" }))
+      }
       throw error
     }
   }
 
   private async fetchCompletion(request: ModelRequest, stream: boolean): Promise<ProviderHTTPResponse> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs)
+    const timer = setTimeout(() => controller.abort(new Error("ai.provider_timeout")), this.options.timeoutMs)
     const abort = () => controller.abort(request.signal?.reason)
     let listening = false
     let disposed = false
@@ -374,14 +392,14 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
         })
       }
       catch (error) {
-        const mapped = transportError(error, request.signal)
+        const mapped = transportError(error, request.signal, "dispatch")
         telemetryLog("agent.provider.request_failed", "warn", { operation: stream ? "agent.provider.chat_stream" : "agent.provider.chat_complete", outcome: "failed", ...errorDiagnostic(mapped, mapped.message) })
         throw mapped
       }
       const providerRequestId = response.headers.get("x-request-id") ?? undefined
       if (!response.ok) {
         const raw = await response.clone().json().catch((error) => {
-          if (request.signal?.aborted) throw transportError(error, request.signal)
+          if (request.signal?.aborted) throw transportError(error, request.signal, "response_headers", { providerRequestId })
           return undefined
         })
         const detail = parseProviderErrorBody(raw)
@@ -405,7 +423,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       agentMetrics.externalRequests.add(1, { target: "model_provider", operation: stream ? "chat_stream" : "chat_complete", outcome: "success" })
       trace.getActiveSpan()?.setAttribute("http.response.status_code", response.status)
       if (providerRequestId) trace.getActiveSpan()?.setAttribute("server.request.id", providerRequestId)
-      return { response, dispose }
+      return { response, signal: controller.signal, dispose }
     }
     catch (error) {
       controller.abort()
@@ -485,23 +503,46 @@ export function modelUsageSpanAttributes(usage: ModelUsage | { status: "unavaila
   }
 }
 
-function parseUsage(raw: unknown, absentReason: "missing_usage" | "invalid_usage"): ModelUsage {
-  if (raw === undefined) return { status: "unavailable", reason: absentReason }
+export function parseUsage(raw: unknown, absentReason: "missing_usage" | "invalid_usage"): ModelUsage {
+  if (raw === undefined || raw === null) return { status: "unavailable", reason: absentReason }
   const parsed = usageSchema.safeParse(raw)
   if (!parsed.success) return { status: "unavailable", reason: "invalid_usage" }
   const usage = parsed.data
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? undefined
+  const cacheWriteTokens = usage.prompt_tokens_details?.cache_write_tokens ?? undefined
+  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? undefined
+  const cacheTotal = (cachedTokens ?? 0) + (cacheWriteTokens ?? 0)
+  // pi-ai 归一化：OpenAI/DeepSeek 口径下 prompt_tokens 已含缓存；Anthropic 兼容代理下 prompt_tokens 仅为未缓存输入。
+  const uncachedInput = cacheTotal <= usage.prompt_tokens
+    ? usage.prompt_tokens - cacheTotal
+    : usage.prompt_tokens
+  const inputTokens = uncachedInput + cacheTotal
+  const totalTokens = Math.max(usage.total_tokens ?? 0, inputTokens + usage.completion_tokens)
+  if (!Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(totalTokens)) {
+    return { status: "unavailable", reason: "invalid_usage" }
+  }
   const value: OfficialModelUsage = {
-    inputTokens: usage.prompt_tokens,
+    inputTokens,
     outputTokens: usage.completion_tokens,
-    totalTokens: usage.total_tokens,
-    ...(usage.prompt_tokens_details?.cached_tokens !== undefined ? { cacheReadInputTokens: usage.prompt_tokens_details.cached_tokens } : {}),
-    ...(usage.prompt_tokens_details?.cache_write_tokens !== undefined ? { cacheWriteInputTokens: usage.prompt_tokens_details.cache_write_tokens } : {}),
-    ...(usage.completion_tokens_details?.reasoning_tokens !== undefined ? { reasoningOutputTokens: usage.completion_tokens_details.reasoning_tokens } : {}),
+    totalTokens,
+    ...(cachedTokens !== undefined ? { cacheReadInputTokens: cachedTokens } : {}),
+    ...(cacheWriteTokens !== undefined ? { cacheWriteInputTokens: cacheWriteTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningOutputTokens: reasoningTokens } : {}),
   }
   return { status: "reported", value }
 }
 
-async function* readSSEData(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncIterable<string> {
+type StreamDiagnosticMetadata = {
+  providerRequestId?: string | undefined
+  responseId?: string | undefined
+  responseModel?: string | undefined
+}
+
+async function* readSSEData(
+  body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+  metadata?: () => StreamDiagnosticMetadata,
+): AsyncIterable<string> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
@@ -512,9 +553,9 @@ async function* readSSEData(body: ReadableStream<Uint8Array>, signal?: AbortSign
   if (!signal?.aborted) signal?.addEventListener("abort", abort, { once: true })
   try {
     while (true) {
-      if (signal?.aborted) throw transportError(signal.reason, signal)
-      const result = await reader.read().catch((error) => { throw transportError(error, signal) })
-      if (signal?.aborted) throw transportError(signal.reason, signal)
+      if (signal?.aborted) throw transportError(signal.reason, signal, "stream", metadata?.())
+      const result = await reader.read().catch((error) => { throw transportError(error, signal, "stream", metadata?.()) })
+      if (signal?.aborted) throw transportError(signal.reason, signal, "stream", metadata?.())
       if (result.done) {
         completed = true
         break
@@ -538,20 +579,51 @@ function sseFrameData(frame: string): string {
   return frame.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n")
 }
 
-function providerPayloadError(value: unknown, providerRequestId?: string, responseId?: string, responseModel?: string): ProviderRequestError {
+function providerPayloadError(
+  value: unknown,
+  stage: "response_body" | "stream",
+  providerRequestId?: string,
+  responseId?: string,
+  responseModel?: string,
+): ProviderRequestError {
   const detail = parseProviderErrorBody({ error: value })
   return new ProviderRequestError(mapProviderError(500, detail), {
-    stage: "stream", requestOutcome: "unknown",
+    stage, requestOutcome: "unknown",
     ...(detail.code ? { providerCode: detail.code } : {}), ...(detail.type ? { providerType: detail.type } : {}), ...(detail.param ? { providerParam: detail.param } : {}),
     ...(providerRequestId ? { providerRequestId } : {}), ...(responseId ? { responseId } : {}), ...(responseModel ? { responseModel } : {}),
   })
 }
 
-function transportError(error: unknown, signal?: AbortSignal): ProviderRequestError {
+function abortReasonCode(reason: unknown): string {
+  if (reason instanceof Error && /^ai\.[a-z0-9_.-]+$/.test(reason.message)) return reason.message
+  if (typeof reason === "string" && /^ai\.[a-z0-9_.-]+$/.test(reason)) return reason
+  return "ai.run_canceled"
+}
+
+function transportError(
+  error: unknown,
+  signal: AbortSignal | undefined,
+  stage: ProviderFailureStage,
+  metadata?: StreamDiagnosticMetadata,
+): ProviderRequestError {
   if (error instanceof ProviderRequestError) return error
-  if (signal?.aborted) return new ProviderRequestError("ai.run_canceled", { stage: "dispatch", requestOutcome: "not_dispatched" })
-  if (error instanceof Error && error.name === "AbortError") return new ProviderRequestError("ai.provider_timeout", { stage: "dispatch", requestOutcome: "unknown" })
-  return new ProviderRequestError("ai.provider_unavailable", { stage: "dispatch", requestOutcome: "unknown" })
+  const diagnostic = {
+    ...(metadata?.providerRequestId ? { providerRequestId: metadata.providerRequestId } : {}),
+    ...(metadata?.responseId ? { responseId: metadata.responseId } : {}),
+    ...(metadata?.responseModel ? { responseModel: metadata.responseModel } : {}),
+  }
+  if (signal?.aborted) {
+    const code = abortReasonCode(signal.reason ?? error)
+    return new ProviderRequestError(code, {
+      stage,
+      requestOutcome: stage === "dispatch" ? "not_dispatched" : "unknown",
+      ...diagnostic,
+    })
+  }
+  if (error instanceof Error && (error.name === "AbortError" || error.message === "ai.provider_timeout")) {
+    return new ProviderRequestError("ai.provider_timeout", { stage, requestOutcome: "unknown", ...diagnostic })
+  }
+  return new ProviderRequestError("ai.provider_unavailable", { stage, requestOutcome: "unknown", ...diagnostic })
 }
 
 export function modelRequestSpanAttributes(request: ModelRequest): Record<string, string | boolean> {
@@ -596,6 +668,10 @@ function contentText(value: unknown): string {
     const record = part as Record<string, unknown>
     return typeof record.text === "string" ? record.text : ""
   }).join("")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 function ensureTrailingSlash(value: string): string {

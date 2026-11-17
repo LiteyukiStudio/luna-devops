@@ -3,6 +3,7 @@ import type { Pool } from "pg"
 import type {
   ConversationHistoryEntry,
   ConversationSummary,
+  ConversationToolInteraction,
   ConversationTitleSource,
   CreatedTurn,
   CreateTurn,
@@ -15,19 +16,20 @@ import type {
 import { createId } from "../id.js"
 import type { PayloadCipher } from "../payload-cipher.js"
 import { parseRemoteProviderConfig } from "../provider/config-client.js"
-import type { OfficialModelUsage, UsageUnavailableReason } from "../provider/provider.js"
 import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, internalSpanOptions, withSpan } from "../telemetry.js"
 import {
   RunStateConflictError,
   RunCheckpointConflictError,
+  selectOperationsWithExecutedProtection,
   type ConversationListOptions,
   type Repository,
   type OrphanedRunRecovery,
-  type ModelAttemptMetadata,
-  type ModelCallOperation,
+  type RecordReportedModelUsageInput,
+  type ResolveWaitingExternalRunInput,
   type TimelinePageOptions,
   type RunStreamBatch,
+  type UpdateRunOptions,
 } from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
 import { AgentDatabase, type AgentDatabaseOptions, type AgentDb, type AgentTx } from "./database.js"
@@ -96,166 +98,99 @@ export class PostgresRepository implements Repository {
     await this.database.assertReady()
   }
 
-  async createModelCreditHold(input: {
-    id: string
-    runId: string
-    ownerUserId: string
-    operation: ModelCallOperation
-    requestedOutputTokens: number
-    leaseSeconds: number
-  }) {
-    if (!Number.isSafeInteger(input.requestedOutputTokens) || input.requestedOutputTokens < 1
-      || !Number.isSafeInteger(input.leaseSeconds) || input.leaseSeconds < 5 || input.leaseSeconds > 10_800)
-      throw new Error("ai.model_output_limit_invalid")
-    return withSpan("agent.credit_hold.create", internalSpanOptions({
-      "luna.credit_hold.operation": input.operation,
-    }), () => this.db.transaction(async tx => {
-      const wallet = (await tx.execute<Record<string, unknown>>(sql`
+  async assertPositiveAvailableBalance(ownerUserId: string): Promise<void> {
+    await this.assertPositiveAvailableBalanceWith(this.db, ownerUserId)
+  }
+
+  private async assertPositiveAvailableBalanceWith(db: Querier, ownerUserId: string): Promise<void> {
+    const row = (await db.execute<{ allowed: boolean }>(sql`
+      with wallet as (
         select balance_credits::numeric as balance_credits
-        from user_wallets where user_id = ${input.ownerUserId} for update
-      `)).rows[0]
-      if (!wallet) throw new Error("ai.wallet_balance_insufficient")
+        from user_wallets
+        where user_id = ${ownerUserId}
+      ), pending_billing as (
+        select coalesce(sum(amount_credits), 0)::numeric as credits
+        from billing_usage_records
+        where billed_user_id = ${ownerUserId}
+          and status = 'pending'
+      ), pending_ai as (
+        select coalesce(sum((
+          ((prompt_tokens - coalesce(cached_prompt_tokens, 0) - coalesce(cache_write_prompt_tokens, 0))::numeric * input_credits_per_million)
+          + ((coalesce(cached_prompt_tokens, 0) + coalesce(cache_write_prompt_tokens, 0))::numeric * cached_input_credits_per_million)
+          + (completion_tokens::numeric * output_credits_per_million)
+        ) / 1000000), 0)::numeric as credits
+        from ai.model_usages
+        where owner_user_id = ${ownerUserId}
+          and status = 'reported'
+          and settlement_status = 'pending'
+      )
+      select exists(select 1 from wallet)
+        and ((select balance_credits from wallet) - pending_billing.credits - pending_ai.credits) > 0 as allowed
+      from pending_billing, pending_ai
+    `)).rows[0]
+    if (row?.allowed !== true) throw new Error("ai.wallet_balance_insufficient")
+  }
+
+  async recordReportedModelUsage(input: RecordReportedModelUsageInput): Promise<{ id: string, attempt: number }> {
+    return withSpan("agent.usage.persist", internalSpanOptions({
+      "luna.usage.operation": input.operation,
+    }), () => this.db.transaction(async tx => {
       const run = (await tx.execute<Record<string, unknown>>(sql`
         select id, owner_user_id,
-               coalesce(max_context_tokens, 524288)::bigint as max_context_tokens,
-               coalesce(max_output_tokens, 65536)::bigint as max_output_tokens,
                coalesce(model_id, 'legacy') as model_id,
                coalesce(model_name, 'legacy') as model_name,
+               coalesce(max_context_tokens, 524288)::bigint as max_context_tokens,
+               coalesce(max_output_tokens, 65536)::bigint as max_output_tokens,
                coalesce(input_credits_per_million, 0)::numeric as input_price,
                coalesce(output_credits_per_million, 0)::numeric as output_price,
                coalesce(cached_input_credits_per_million, 0)::numeric as cached_input_price
-        from ai.runs where id = ${input.runId} and owner_user_id = ${input.ownerUserId}
-        for update
+        from ai.runs
+        where id = ${input.runId} and owner_user_id = ${input.ownerUserId}
       `)).rows[0]
-      if (!run) throw new Error("ai.run_not_found")
-      await tx.execute(sql`
-        update ai.model_credit_holds
-        set state = 'reconciliation_required', reconciliation_reason = 'hold_expired', updated_at = now()
-        where owner_user_id = ${input.ownerUserId}
-          and state = 'held' and expires_at <= now()
-      `)
-      const decision = (await tx.execute<Record<string, unknown>>(sql`
-        with owner_holds as (
-          select coalesce(sum(coalesce(actual_credits, max_risk_credits)), 0)::numeric as credits
-          from ai.model_credit_holds
-          where owner_user_id = ${input.ownerUserId}
-            and state in ('held', 'usage_recorded', 'hold_deficit', 'reconciliation_required')
-        ), risk as (
-          select least(${input.requestedOutputTokens}::bigint, ${String(run.max_output_tokens)}::bigint)::bigint as output_limit,
-                 ((${String(run.max_context_tokens)}::numeric * greatest(${String(run.input_price)}::numeric, ${String(run.cached_input_price)}::numeric))
-                  + (${String(run.max_output_tokens)}::numeric * ${String(run.output_price)}::numeric)) / 1000000 as max_risk_credits,
-                 ${String(wallet.balance_credits)}::numeric - owner_holds.credits as wallet_credit_available
-          from owner_holds
-        )
-        select output_limit, max_risk_credits,
-               max_risk_credits <= wallet_credit_available as allowed
-        from risk
-      `)).rows[0]!
-      if (decision.allowed !== true) throw new Error("ai.wallet_balance_insufficient")
-      const maxOutputTokens = Number(decision.output_limit)
-      const attemptRow = (await tx.execute<Record<string, unknown>>(sql`
-        select coalesce(max(attempt), 0) + 1 as attempt
-        from ai.model_credit_holds where run_id = ${input.runId} and operation = ${input.operation}
-      `)).rows[0]!
-      const attempt = Number(attemptRow.attempt)
-      await tx.execute(sql`
-        insert into ai.model_credit_holds (
-          id, run_id, owner_user_id, operation, attempt, state, model_id, model_name,
-          max_context_tokens_snapshot, max_output_tokens_snapshot,
-          input_credits_per_million, output_credits_per_million,
-          cached_input_credits_per_million, max_risk_credits, expires_at
-        ) values (
-          ${input.id}, ${input.runId}, ${input.ownerUserId}, ${input.operation}, ${attempt}, 'held',
-          ${String(run.model_id)}, ${String(run.model_name)},
-          ${String(run.max_context_tokens)}::bigint, ${String(run.max_output_tokens)}::bigint,
-          ${String(run.input_price)}::numeric, ${String(run.output_price)}::numeric,
-          ${String(run.cached_input_price)}::numeric, ${String(decision.max_risk_credits)}::numeric,
-          now() + make_interval(secs => ${input.leaseSeconds})
-        )
-      `)
-      return { id: input.id, attempt, maxOutputTokens }
-    }))
-  }
-
-  async recordReportedModelUsage(creditHoldId: string, usage: OfficialModelUsage, metadata: ModelAttemptMetadata & { callType: "stream" | "complete" }) {
-    return withSpan("agent.usage.persist", internalSpanOptions(), () => this.db.transaction(async tx => {
-      const current = (await tx.execute<Record<string, unknown>>(sql`
-        select * from ai.model_credit_holds where id = ${creditHoldId} for update
-      `)).rows[0]
-      if (!current) throw new Error("ai.credit_hold_not_found")
-      if (current.state !== "held") throw new Error("ai.credit_hold_not_active")
-      const cached = usage.cacheReadInputTokens ?? 0
-      const cacheWrite = usage.cacheWriteInputTokens ?? 0
-      const normalPrompt = usage.inputTokens - cached - cacheWrite
-      const actual = (await tx.execute<Record<string, unknown>>(sql`
-        select calculated.credits,
-               calculated.credits > ${String(current.max_risk_credits)}::numeric as deficit
-        from (select ((${normalPrompt}::numeric * ${String(current.input_credits_per_million)}::numeric)
-          + ((${cached}::numeric + ${cacheWrite}::numeric) * ${String(current.cached_input_credits_per_million)}::numeric)
-          + (${usage.outputTokens}::numeric * ${String(current.output_credits_per_million)}::numeric)) / 1000000 as credits) calculated
-      `)).rows[0]!
-      const deficit = actual.deficit === true
+      if (!run && !input.model) throw new Error("ai.run_not_found")
+      const modelId = input.model?.id ?? String(run!.model_id)
+      const modelName = input.model?.name ?? String(run!.model_name)
+      const maxContextTokens = input.model?.maxContextTokens ?? Number(run!.max_context_tokens)
+      const maxOutputTokens = input.model?.maxOutputTokens ?? Number(run!.max_output_tokens)
+      const inputPrice = input.model?.inputCreditsPerMillion ?? String(run!.input_price)
+      const outputPrice = input.model?.outputCreditsPerMillion ?? String(run!.output_price)
+      const cachedInputPrice = input.model?.cachedInputCreditsPerMillion ?? String(run!.cached_input_price)
       const usageId = createId("aiuse")
-      await tx.execute(sql`
+      const inserted = (await tx.execute<{ attempt: number }>(sql`
         insert into ai.model_usages (
-          id, credit_hold_id, run_id, owner_user_id, operation, attempt, status, settlement_status,
-          model_id, model_name, max_context_tokens_snapshot,
+          id, run_id, owner_user_id, operation, attempt, status, settlement_status,
+          model_id, model_name, max_context_tokens_snapshot, max_output_tokens_snapshot,
+          input_credits_per_million, output_credits_per_million, cached_input_credits_per_million,
           prompt_tokens, completion_tokens, total_tokens, cached_prompt_tokens,
           cache_write_prompt_tokens, reasoning_completion_tokens,
           provider_request_id, response_id, response_model, finish_reason, call_type
         ) values (
-          ${usageId}, ${creditHoldId}, ${String(current.run_id)}, ${String(current.owner_user_id)},
-          ${String(current.operation)}, ${Number(current.attempt)}, 'reported',
-          ${deficit ? "reconciliation_required" : "pending"},
-          ${String(current.model_id)}, ${String(current.model_name)}, ${String(current.max_context_tokens_snapshot)}::bigint,
-          ${usage.inputTokens}, ${usage.outputTokens}, ${usage.totalTokens},
-          ${usage.cacheReadInputTokens ?? null}, ${usage.cacheWriteInputTokens ?? null}, ${usage.reasoningOutputTokens ?? null},
-          ${metadata.providerRequestId ?? null}, ${metadata.responseId ?? null}, ${metadata.responseModel ?? null},
-          ${metadata.finishReason ?? null}, ${metadata.callType}
+          ${usageId}, ${input.runId}, ${input.ownerUserId}, ${input.operation},
+          (select coalesce(max(attempt), 0) + 1 from ai.model_usages where run_id = ${input.runId} and operation = ${input.operation}),
+          'reported', 'pending',
+          ${modelId}, ${modelName}, ${maxContextTokens}::bigint, ${maxOutputTokens}::bigint,
+          ${inputPrice}::numeric, ${outputPrice}::numeric, ${cachedInputPrice}::numeric,
+          ${input.usage.inputTokens}, ${input.usage.outputTokens}, ${input.usage.totalTokens},
+          ${input.usage.cacheReadInputTokens ?? null}, ${input.usage.cacheWriteInputTokens ?? null}, ${input.usage.reasoningOutputTokens ?? null},
+          ${input.providerRequestId ?? null}, ${input.responseId ?? null}, ${input.responseModel ?? null},
+          ${input.finishReason ?? null}, ${input.callType}
         )
-      `)
-      if (current.operation === "assistant") {
+        returning attempt
+      `)).rows[0]!
+      if (input.operation === "assistant") {
         await tx.execute(sql`
           update ai.conversations conversation
-          set context_usage_run_id = ${String(current.run_id)},
-              context_usage_model_id = ${String(current.model_id)},
-              context_used_tokens = ${usage.totalTokens}::bigint,
-              context_max_tokens_snapshot = ${String(current.max_context_tokens_snapshot)}::bigint,
+          set context_usage_run_id = ${input.runId},
+              context_usage_model_id = ${modelId},
+              context_used_tokens = ${input.usage.totalTokens}::bigint,
+              context_max_tokens_snapshot = ${maxContextTokens}::bigint,
               context_usage_recorded_at = now()
           from ai.runs run
-          where run.id = ${String(current.run_id)} and conversation.id = run.conversation_id
+          where run.id = ${input.runId} and conversation.id = run.conversation_id
         `)
       }
-      await tx.execute(sql`
-        update ai.model_credit_holds
-        set state = ${deficit ? "hold_deficit" : "usage_recorded"}, actual_credits = ${String(actual.credits)}::numeric,
-            provider_request_id = ${metadata.providerRequestId ?? null}, response_id = ${metadata.responseId ?? null},
-            response_model = ${metadata.responseModel ?? null},
-            reconciliation_reason = ${deficit ? "hold_deficit" : null},
-            updated_at = now()
-        where id = ${creditHoldId} and state = 'held'
-      `)
-      return { reconciliationRequired: deficit }
+      return { id: usageId, attempt: Number(inserted.attempt) }
     }))
-  }
-
-  async markModelUsageUnavailable(creditHoldId: string, reason: UsageUnavailableReason | "request_outcome_unknown", metadata: ModelAttemptMetadata): Promise<void> {
-    await withSpan("agent.usage.reconciliation_required", internalSpanOptions(), async () => {
-      await this.db.execute(sql`
-        update ai.model_credit_holds
-        set state = 'reconciliation_required', reconciliation_reason = ${reason},
-            provider_request_id = ${metadata.providerRequestId ?? null}, response_id = ${metadata.responseId ?? null},
-            response_model = ${metadata.responseModel ?? null}, failure_stage = ${metadata.failureStage ?? null},
-            updated_at = now()
-        where id = ${creditHoldId} and state = 'held'
-      `)
-    })
-  }
-
-  async releaseModelCreditHold(creditHoldId: string): Promise<void> {
-    await withSpan("agent.credit_hold.release", internalSpanOptions(), async () => {
-      await this.db.execute(sql`update ai.model_credit_holds set state = 'released', updated_at = now() where id = ${creditHoldId} and state = 'held'`)
-    })
   }
 
   async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string) {
@@ -368,17 +303,62 @@ export class PostgresRepository implements Repository {
     })
   }
 
+  async listActiveConversationRuns(ownerUserId: string, conversationId: string): Promise<Run[]> {
+    const rows = await this.db.select().from(runs)
+      .where(and(
+        eq(runs.conversationId, conversationId),
+        eq(runs.ownerUserId, ownerUserId),
+        inArray(runs.status, ["queued", "running", "waiting_approval", "waiting_input", "waiting_external"]),
+      ))
+      .orderBy(asc(runs.createdAt), asc(runs.id))
+    return rows.map(mapRun)
+  }
+
   async deleteConversation(ownerUserId: string, id: string) {
-    const deleted = await this.db.delete(conversations)
-      .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
-      .returning({ id: conversations.id })
-    return deleted.length === 1
+    return this.db.transaction(async (tx) => {
+      const owned = (await tx.select({ id: conversations.id }).from(conversations)
+        .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
+        .for("update"))[0]
+      if (!owned) return false
+      const activeRuns = await tx.select({ id: runs.id, turnId: runs.turnId }).from(runs)
+        .where(and(
+          eq(runs.conversationId, id),
+          eq(runs.ownerUserId, ownerUserId),
+          inArray(runs.status, ["queued", "running", "waiting_approval", "waiting_input", "waiting_external"]),
+        ))
+        .for("update")
+      if (activeRuns.length > 0) {
+        const activeRunIds = activeRuns.map(run => run.id)
+        const activeTurnIds = [...new Set(activeRuns.map(run => run.turnId))]
+        await tx.update(runs)
+          .set({ status: "canceled", wakeAt: null, rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
+          .where(inArray(runs.id, activeRunIds))
+        await tx.update(turns)
+          .set({ status: "canceled" })
+          .where(inArray(turns.id, activeTurnIds))
+        await tx.update(toolCalls).set({
+          status: "canceled",
+          rowVersion: sql`${toolCalls.rowVersion} + 1`,
+          result: { code: "ai.run_canceled", retryable: false },
+          errorCode: "ai.run_canceled",
+          updatedAt: sql`now()`,
+        }).where(and(
+          inArray(toolCalls.runId, activeRunIds),
+          sql`${toolCalls.status} not in ('succeeded', 'failed', 'rejected', 'canceled', 'skipped')`,
+        ))
+      }
+      const deleted = await tx.delete(conversations)
+        .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
+        .returning({ id: conversations.id })
+      return deleted.length === 1
+    })
   }
 
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {
     const actorSessionId = input.actorSessionId
     if (!actorSessionId) throw new Error("ai.actor_session_required")
     return withSpan("agent.repository.turn.create", internalSpanOptions(), () => this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${ownerUserId}:${input.idempotencyKey}`}))`)
       const hash = createTurnRequestHash(input)
       const existing = (await tx.select().from(idempotencyKeys)
         .where(and(eq(idempotencyKeys.ownerUserId, ownerUserId), eq(idempotencyKeys.idempotencyKey, input.idempotencyKey))))[0]
@@ -394,11 +374,28 @@ export class PostgresRepository implements Repository {
         .where(and(eq(conversations.id, input.conversationId), eq(conversations.ownerUserId, ownerUserId)))
         .for("update"))[0]
       if (!owned) throw new Error("ai.conversation_not_found")
+      if (input.modelSnapshot && input.pageContext.__lunaDirectToolAction !== true) {
+        await this.assertPositiveAvailableBalanceWith(tx, ownerUserId)
+      }
       if (input.modelId) {
         await tx.update(conversations)
           .set({ modelId: input.modelId, updatedAt: sql`now()` })
           .where(eq(conversations.id, input.conversationId))
       }
+      const previousSelected = input.pageContext.__lunaDirectToolAction === true
+        ? undefined
+        : (await tx.select({ selectedOperationIds: runs.selectedOperationIds })
+            .from(turns)
+            .innerJoin(runs, eq(turns.selectedRunId, runs.id))
+            .where(and(
+              eq(turns.conversationId, input.conversationId),
+              sql`coalesce((${runs.pageContext} ->> '__lunaDirectToolAction')::boolean, false) = false`,
+            ))
+            .orderBy(desc(turns.turnIndex))
+            .limit(1))[0]
+      const inheritedOperationIds = (previousSelected?.selectedOperationIds ?? [])
+        .filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
+        .slice(-16)
       const index = (await tx.select({ value: count() }).from(turns)
         .where(eq(turns.conversationId, input.conversationId)))[0]?.value ?? 0
       const turnId = createId("aitrn")
@@ -422,7 +419,7 @@ export class PostgresRepository implements Repository {
         promptVersion: "system-v4",
         actorSessionId,
         toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1",
-        selectedOperationIds: [],
+        selectedOperationIds: inheritedOperationIds,
         pageContext: input.pageContext,
         traceContext: input.traceContext ?? {},
         modelId: input.modelSnapshot?.id ?? input.modelId ?? null,
@@ -433,13 +430,22 @@ export class PostgresRepository implements Repository {
         outputCreditsPerMillion: input.modelSnapshot?.outputCreditsPerMillion ?? null,
         cachedInputCreditsPerMillion: input.modelSnapshot?.cachedInputCreditsPerMillion ?? null,
       })
-      await tx.insert(idempotencyKeys).values({
+      const insertedIdempotency = await tx.insert(idempotencyKeys).values({
         ownerUserId,
         idempotencyKey: input.idempotencyKey,
         requestHash: hash,
         turnId,
         runId,
-      })
+      }).onConflictDoNothing({
+        target: [idempotencyKeys.ownerUserId, idempotencyKeys.idempotencyKey],
+      }).returning({ turnId: idempotencyKeys.turnId })
+      if (insertedIdempotency.length === 0) {
+        await tx.delete(turns).where(eq(turns.id, turnId))
+        const raceWinner = (await tx.select().from(idempotencyKeys)
+          .where(and(eq(idempotencyKeys.ownerUserId, ownerUserId), eq(idempotencyKeys.idempotencyKey, input.idempotencyKey))))[0]
+        if (!raceWinner || raceWinner.requestHash !== hash) throw new Error("idempotency_conflict")
+        return this.loadCreated(tx, raceWinner.turnId, raceWinner.runId)
+      }
       const userItem = await this.appendItemWith(tx, { id: `${turnId}:input`, runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
       await this.appendEventWith(tx, runId, "run.input_received", {
         initial: true,
@@ -548,6 +554,19 @@ export class PostgresRepository implements Repository {
             .where(eq(conversations.id, run.conversationId))
         }
         if (batch.terminal) {
+          const lingeringStreaming = await tx.select().from(items)
+            .where(and(eq(items.runId, batch.runId), eq(items.status, "streaming")))
+            .orderBy(asc(items.timelineIndex))
+            .for("update")
+          const finalizedStatus = batch.terminal.to === "completed" ? "completed" : "failed"
+          for (const current of lingeringStreaming) {
+            const itemStatus = current.type === "tool_call" ? "failed" : finalizedStatus
+            const itemContent = current.type === "tool_call" && current.content.status === "running"
+              ? { ...current.content, status: "failed" }
+              : current.content
+            const finalized = await this.updateItemWith(tx, current.id, itemStatus, itemContent)
+            await this.appendEventWith(tx, batch.runId, "item.finalized", { item: finalized })
+          }
           if (batch.terminal.conversationTitle) {
             const renamed = await tx.update(conversations).set({
               title: batch.terminal.conversationTitle,
@@ -562,6 +581,7 @@ export class PostgresRepository implements Repository {
           }
           const row = (await tx.update(runs).set({
             status: batch.terminal.to,
+            wakeAt: null,
             rowVersion: sql`${runs.rowVersion} + 1`,
             completedAt: new Date(batch.terminal.completedAt),
             ...(batch.terminal.errorCode ? { errorCode: batch.terminal.errorCode } : {}),
@@ -589,35 +609,46 @@ export class PostgresRepository implements Repository {
     }
   }
 
-  async touchRunSelectedOperations(runId: string, operationIds: string[], limit: number) {
-    const boundedLimit = Math.max(1, Math.min(64, Math.floor(limit)))
+  async touchRunSelectedOperations(
+    runId: string,
+    operationIds: string[],
+    limit: number,
+    protectedOperationIds?: ReadonlySet<string>,
+  ) {
     const requested = [...new Set(operationIds)].filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
     return this.db.transaction(async (tx) => {
       const row = (await tx.select({ selectedOperationIds: runs.selectedOperationIds })
         .from(runs).where(eq(runs.id, runId)).for("update"))[0]
       if (!row) throw new Error("ai.run_not_found")
-      const alreadySelectedOperationIds = requested.filter(operationId => row.selectedOperationIds.includes(operationId))
-      const touched = new Set(requested)
-      const reordered = [...row.selectedOperationIds.filter(operationId => !touched.has(operationId)), ...requested]
-      const evictedOperationIds = reordered.slice(0, Math.max(0, reordered.length - boundedLimit))
-      const selectedOperationIds = reordered.slice(-boundedLimit)
-      if (requested.length || evictedOperationIds.length) {
-        await tx.update(runs).set({ selectedOperationIds }).where(eq(runs.id, runId))
+      const executedRows = await tx.selectDistinct({ operationId: toolCalls.operationId })
+        .from(toolCalls)
+        .where(and(
+          eq(toolCalls.runId, runId),
+          ne(toolCalls.inputMode, "verification"),
+          sql`not (${toolCalls.status} = 'skipped' and ${toolCalls.executionCount} = 0)`,
+        ))
+      const executedInRun = new Set<string>([
+        ...executedRows.map(item => item.operationId),
+        ...(protectedOperationIds ?? []),
+      ])
+      const selection = selectOperationsWithExecutedProtection(row.selectedOperationIds, requested, executedInRun, limit)
+      if (requested.length || selection.evictedOperationIds.length) {
+        await tx.update(runs).set({ selectedOperationIds: selection.selectedOperationIds }).where(eq(runs.id, runId))
       }
-      return { selectedOperationIds, alreadySelectedOperationIds, evictedOperationIds }
+      return selection
     })
   }
 
   async listActiveToolCatalogDigests() {
     const rows = await this.db.selectDistinct({ digest: runs.toolCatalogDigest }).from(runs)
-      .where(inArray(runs.status, ["queued", "running", "waiting_approval", "waiting_input"]))
+      .where(inArray(runs.status, ["queued", "running", "waiting_approval", "waiting_input", "waiting_external"]))
     return rows.map(row => row.digest)
   }
 
   async cancelRun(ownerUserId: string, id: string) {
     return this.db.transaction(async (tx) => {
       const row = (await tx.update(runs)
-        .set({ status: "canceled", rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
+        .set({ status: "canceled", wakeAt: null, rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
         .where(and(
           eq(runs.id, id),
           eq(runs.ownerUserId, ownerUserId),
@@ -655,6 +686,23 @@ export class PostgresRepository implements Repository {
           await this.appendEventWith(tx, id, "item.finalized", { itemId: item.id, toolCallId, item })
         }
       }
+      const remainingStreaming = await tx.select().from(items)
+        .where(and(eq(items.runId, id), eq(items.status, "streaming")))
+        .orderBy(asc(items.timelineIndex))
+        .for("update")
+      for (const current of remainingStreaming) {
+        const nextStatus = current.type === "tool_call" ? "completed" : "failed"
+        const nextContent = current.type === "tool_call"
+          ? { ...current.content, status: "canceled", result: canceledResult, errorCode: "ai.run_canceled" }
+          : current.content
+        const item = await this.updateItemWith(tx, current.id, nextStatus, nextContent)
+        const toolCallId = typeof current.content.toolCallId === "string" ? current.content.toolCallId : undefined
+        await this.appendEventWith(tx, id, "item.finalized", {
+          itemId: item.id,
+          ...(toolCallId ? { toolCallId } : {}),
+          item,
+        })
+      }
       await this.appendEventWith(tx, id, "run.canceled", { state: "canceled", rowVersion: row.rowVersion })
       return mapRun(row)
     }).then(async (run) => {
@@ -664,17 +712,34 @@ export class PostgresRepository implements Repository {
     })
   }
 
-  async claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot) {
+  async claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot, userConcurrentRuns?: number) {
     const candidateToolCatalogDigest = executionSnapshot?.toolCatalogDigest ?? null
+    const maxPerUser = userConcurrentRuns ?? executionSnapshot?.runtimeSettings.userConcurrentRuns
     return withSpan("agent.repository.run.claim", internalSpanOptions(), async () => this.db.transaction(async (tx) => {
-      const candidate = (await tx.execute<Record<string, unknown>>(sql`
-        select id, execution_snapshot_ciphertext
-        from ai.runs
-        where status = 'queued'
-        order by created_at, id
-        for update skip locked
-        limit 1
-      `)).rows[0]
+      const candidate = (maxPerUser === undefined
+        ? await tx.execute<Record<string, unknown>>(sql`
+            select id, execution_snapshot_ciphertext
+            from ai.runs
+            where status = 'queued'
+            order by created_at, id
+            for update skip locked
+            limit 1
+          `)
+        : await tx.execute<Record<string, unknown>>(sql`
+            select q.id, q.execution_snapshot_ciphertext
+            from ai.runs q
+            where q.status = 'queued'
+              and pg_try_advisory_xact_lock(hashtext('ai.run_claim_owner'), hashtext(q.owner_user_id))
+              and (
+                select count(*)::int
+                from ai.runs active
+                where active.owner_user_id = q.owner_user_id
+                  and active.status = 'running'
+              ) < ${Math.max(1, Math.floor(maxPerUser))}
+            order by q.created_at, q.id
+            for update of q skip locked
+            limit 1
+          `)).rows[0]
       if (!candidate || typeof candidate.id !== "string") return undefined
       const candidateCiphertext = candidate.execution_snapshot_ciphertext === null && executionSnapshot
         ? this.encryptRunExecutionSnapshot(executionSnapshot)
@@ -682,6 +747,7 @@ export class PostgresRepository implements Repository {
       const raw = (await tx.execute<Record<string, unknown>>(sql`
         update ai.runs r
         set status = 'running',
+            wake_at = null,
             row_version = r.row_version + 1,
             started_at = coalesce(r.started_at, now()),
             tool_catalog_digest = case
@@ -702,6 +768,104 @@ export class PostgresRepository implements Repository {
       await tx.update(turns).set({ status: "running" }).where(eq(turns.id, row.turnId))
       await this.appendEventWith(tx, row.id, "run.running", { state: "running", rowVersion: row.rowVersion })
       return mapClaimedRun(row, restoredSnapshot)
+    }))
+  }
+
+  async claimDueWaitingExternalRuns(limit: number, leaseMs: number, now?: Date): Promise<Run[]> {
+    const boundedLimit = Math.max(1, Math.min(64, Math.floor(limit)))
+    const boundedLeaseMs = Math.max(1_000, Math.floor(leaseMs))
+    const referenceIso = (now ?? new Date()).toISOString()
+    const nextLeaseIso = new Date(Date.parse(referenceIso) + boundedLeaseMs).toISOString()
+    return withSpan("agent.repository.run.claim_due_external", internalSpanOptions(), async () => {
+      const result = await this.db.execute<Record<string, unknown>>(sql`
+        update ai.runs r
+        set wake_at = ${nextLeaseIso}::timestamptz
+        where r.id in (
+          select candidate.id
+          from ai.runs candidate
+          where candidate.status = 'waiting_external'
+            and candidate.wake_at is not null
+            and candidate.wake_at <= ${referenceIso}::timestamptz
+          order by candidate.wake_at asc, candidate.id asc
+          for update skip locked
+          limit ${boundedLimit}
+        )
+        returning r.*
+      `)
+      return result.rows.map(raw => mapRun(driverRow(runs, raw) as RunRow))
+    })
+  }
+
+  async rescheduleWaitingExternalRun(
+    runId: string,
+    expectedCheckpointRevision: number,
+    pollCount: number,
+    wakeAt: string,
+  ): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const runRow = (await tx.select({ id: runs.id }).from(runs)
+        .where(and(eq(runs.id, runId), eq(runs.status, "waiting_external")))
+        .for("update"))[0]
+      if (!runRow) return false
+      const checkpoint = (await tx.select().from(runCheckpoints)
+        .where(eq(runCheckpoints.runId, runId))
+        .for("update"))[0]
+      if (!checkpoint || checkpoint.revision !== expectedCheckpointRevision || !checkpoint.state.waitingTask)
+        return false
+      await tx.update(runCheckpoints).set({
+        revision: expectedCheckpointRevision + 1,
+        state: {
+          ...checkpoint.state,
+          waitingTask: {
+            ...checkpoint.state.waitingTask,
+            pollCount,
+          },
+        },
+        updatedAt: sql`now()`,
+      }).where(eq(runCheckpoints.runId, runId))
+      await tx.update(runs).set({
+        wakeAt: new Date(wakeAt),
+      }).where(and(eq(runs.id, runId), eq(runs.status, "waiting_external")))
+      return true
+    })
+  }
+
+  async resolveWaitingExternalRun(input: ResolveWaitingExternalRunInput): Promise<boolean> {
+    return withSpan("agent.repository.run.resolve_external", internalSpanOptions(), () => this.db.transaction(async (tx) => {
+      const runRow = (await tx.select({ id: runs.id, turnId: runs.turnId }).from(runs)
+        .where(and(eq(runs.id, input.runId), eq(runs.status, "waiting_external")))
+        .for("update"))[0]
+      if (!runRow) return false
+      const checkpoint = (await tx.select({ revision: runCheckpoints.revision }).from(runCheckpoints)
+        .where(eq(runCheckpoints.runId, input.runId))
+        .for("update"))[0]
+      if (!checkpoint || checkpoint.revision !== input.expectedCheckpointRevision) return false
+      const item = await this.updateItemWith(tx, input.itemId, input.itemStatus, input.itemContent)
+      await this.appendEventWith(tx, input.runId, input.eventType, {
+        ...input.eventData,
+        itemId: item.id,
+        toolCallId: input.toolCallId,
+        item,
+      })
+      await tx.update(runCheckpoints).set({
+        revision: input.expectedCheckpointRevision + 1,
+        phase: input.nextPhase,
+        state: input.nextCheckpointState,
+        updatedAt: sql`now()`,
+      }).where(eq(runCheckpoints.runId, input.runId))
+      const updated = (await tx.update(runs).set({
+        status: "queued",
+        wakeAt: null,
+        rowVersion: sql`${runs.rowVersion} + 1`,
+      }).where(and(eq(runs.id, input.runId), eq(runs.status, "waiting_external")))
+        .returning({ rowVersion: runs.rowVersion }))[0]
+      if (!updated) return false
+      await tx.update(turns).set({ status: "queued" }).where(eq(turns.id, runRow.turnId))
+      await this.appendEventWith(tx, input.runId, "run.queued", {
+        state: "queued",
+        rowVersion: updated.rowVersion,
+      })
+      return true
     }))
   }
 
@@ -839,7 +1003,7 @@ export class PostgresRepository implements Repository {
       .from(runs)
       .where(and(
         eq(runs.ownerUserId, userId),
-        inArray(runs.status, ["queued", "running"]),
+        eq(runs.status, "running"),
       ))
     return rows[0]?.count ?? 0
   }
@@ -855,6 +1019,7 @@ export class PostgresRepository implements Repository {
       selectedOperationIds: runs.selectedOperationIds,
       title: conversations.title,
       titleSource: conversations.titleSource,
+      contextUsedTokens: conversations.contextUsedTokens,
       modelId: runs.modelId,
       modelName: runs.modelName,
       maxContextTokens: runs.maxContextTokens,
@@ -873,16 +1038,22 @@ export class PostgresRepository implements Repository {
     const [currentToolInteractions, historyRows, historyItems] = await Promise.all([
       this.db.select({ id: items.id, type: items.type, status: items.status, content: items.content })
         .from(items)
-        .where(and(eq(items.runId, runId), inArray(items.type, ["reasoning_summary", "tool_call", "tool_result"])))
+        .where(and(
+          eq(items.runId, runId),
+          ne(items.id, `${row.turnId}:input`),
+          inArray(items.type, ["reasoning_summary", "progress", "tool_call", "tool_result", "user_message"]),
+        ))
         .orderBy(asc(items.timelineIndex)),
-      this.db.execute<{ turn_index: number, input: string, page_context: Record<string, unknown>, assistant: string, reasoning: string }>(sql`
+      this.db.execute<{ turn_index: number, input: string, supplemental_input: string, page_context: Record<string, unknown>, assistant: string, reasoning: string }>(sql`
         select recent.turn_index, recent.input, recent.page_context,
+               coalesce(string_agg(i.content->'parts'->0->>'text', E'\n\n' order by i.timeline_index)
+                 filter (where i.type = 'user_message' and i.id <> (recent.turn_id || ':input')), '') supplemental_input,
                coalesce(string_agg(i.content->'parts'->0->>'text', E'\n' order by i.timeline_index)
                  filter (where i.type = 'assistant_message'), '') assistant,
                coalesce(string_agg(i.content->>'summary', E'\n' order by i.timeline_index)
                  filter (where i.type = 'reasoning_summary'), '') reasoning
         from (
-          select t.turn_index, t.input, t.selected_run_id, r.page_context
+          select t.id as turn_id, t.turn_index, t.input, t.selected_run_id, r.page_context
           from ai.turns t
           inner join ai.runs r on r.id = t.selected_run_id
           where t.conversation_id = ${row.conversationId} and t.turn_index < ${row.turnIndex}
@@ -890,7 +1061,7 @@ export class PostgresRepository implements Repository {
           limit ${historyTurnWindow}
         ) recent
         left join ai.items i on i.run_id = recent.selected_run_id
-        group by recent.turn_index, recent.input, recent.page_context
+        group by recent.turn_id, recent.turn_index, recent.input, recent.page_context
         order by recent.turn_index
       `),
       this.db.select({
@@ -925,6 +1096,7 @@ export class PostgresRepository implements Repository {
       pageContext: row.pageContext,
       toolCatalogDigest: row.toolCatalogDigest,
       selectedOperationIds: row.selectedOperationIds,
+      ...(row.contextUsedTokens !== null ? { lastTotalTokens: row.contextUsedTokens } : {}),
       ...(row.modelId && row.modelName ? {
         model: {
           id: row.modelId,
@@ -936,10 +1108,10 @@ export class PostgresRepository implements Repository {
           cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",
         },
       } : {}),
-      toolInteractions: currentToolInteractions.map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result" | "reasoning_summary", status: item.status, content: item.content })),
+      toolInteractions: currentToolInteractions.map(item => ({ itemId: item.id, type: item.type as ConversationToolInteraction["type"], status: item.status, content: item.content })),
       history: historyRows.rows.map((item): ConversationHistoryEntry => ({
         turnIndex: item.turn_index,
-        user: item.input,
+        user: item.supplemental_input ? `${item.input}\n\n${item.supplemental_input}` : item.input,
         assistant: item.assistant,
         ...(item.reasoning ? { reasoning: item.reasoning } : {}),
         pageContext: item.page_context,
@@ -959,6 +1131,7 @@ export class PostgresRepository implements Repository {
 
   async listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number) {
     const boundedTurns = await this.db.select({
+      turnId: turns.id,
       turnIndex: turns.turnIndex,
       input: turns.input,
       selectedRunId: turns.selectedRunId,
@@ -976,6 +1149,7 @@ export class PostgresRepository implements Repository {
     if (boundedTurns.length === 0) return []
     const runIds = boundedTurns.map(turn => turn.selectedRunId)
     const turnItems = await this.db.select({
+      id: items.id,
       runId: items.runId,
       type: items.type,
       status: items.status,
@@ -983,7 +1157,7 @@ export class PostgresRepository implements Repository {
       timelineIndex: items.timelineIndex,
     })
       .from(items)
-      .where(and(inArray(items.runId, runIds), inArray(items.type, ["assistant_message", "reasoning_summary", "tool_call", "tool_result"])))
+      .where(and(inArray(items.runId, runIds), inArray(items.type, ["user_message", "assistant_message", "reasoning_summary", "tool_call", "tool_result"])))
       .orderBy(asc(items.runId), asc(items.timelineIndex))
     const byRun = new Map<string, typeof turnItems>()
     for (const item of turnItems) {
@@ -993,6 +1167,11 @@ export class PostgresRepository implements Repository {
     }
     return boundedTurns.map((turn) => {
       const runItems = byRun.get(turn.selectedRunId) ?? []
+      const supplementalInputs = runItems
+        .filter(item => item.type === "user_message" && item.id !== `${turn.turnId}:input`)
+        .map(item => timelineContentText(item.content))
+        .filter(Boolean)
+      const user = supplementalInputs.length > 0 ? `${turn.input}\n\n${supplementalInputs.join("\n\n")}` : turn.input
       const assistant = runItems
         .filter(item => item.type === "assistant_message")
         .map(item => timelineContentText(item.content))
@@ -1008,7 +1187,7 @@ export class PostgresRepository implements Repository {
         .join("\n")
       return {
         turnIndex: turn.turnIndex,
-        user: turn.input,
+        user,
         assistant,
         ...(reasoning ? { reasoning } : {}),
         pageContext: turn.pageContext,
@@ -1045,15 +1224,20 @@ export class PostgresRepository implements Repository {
   }
 
   async appendRunInput(runId: string, text: string) {
-    const updated = await this.db.update(turns)
-      .set({ input: sql`${turns.input} || E'\n' || ${text}` })
-      .from(runs)
-      .where(and(eq(runs.id, runId), eq(turns.id, runs.turnId)))
-      .returning({ id: turns.id })
-    if (!updated.length) throw new Error("ai.run_not_found")
+    return this.db.transaction(async (tx) => {
+      const boundRun = (await tx.select({ turnId: runs.turnId }).from(runs).where(eq(runs.id, runId)).for("update"))[0]
+      if (!boundRun) throw new Error("ai.run_not_found")
+      return this.appendItemWith(tx, {
+        runId,
+        turnId: boundRun.turnId,
+        type: "user_message",
+        status: "completed",
+        content: { parts: [{ type: "text", text }] },
+      })
+    })
   }
 
-  async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: Partial<Run> = {}) {
+  async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: UpdateRunOptions = {}) {
     return withSpan("agent.repository.run.transition", internalSpanOptions({
       "luna.run.expected_status": from,
       "luna.run.target_status": to,
@@ -1061,6 +1245,11 @@ export class PostgresRepository implements Repository {
       const startedAt = typeof fields.startedAt === "string" ? fields.startedAt : null
       const completedAt = typeof fields.completedAt === "string" ? fields.completedAt : null
       const errorCode = typeof fields.errorCode === "string" ? fields.errorCode : null
+      const wakeAtPatch = fields.clearWakeAt || to !== "waiting_external"
+        ? { wakeAt: null }
+        : typeof fields.wakeAt === "string"
+          ? { wakeAt: new Date(fields.wakeAt) }
+          : {}
       const row = (await tx.update(runs)
         .set({
           status: to,
@@ -1068,6 +1257,7 @@ export class PostgresRepository implements Repository {
           startedAt: sql`coalesce(${startedAt}::timestamptz, ${runs.startedAt})`,
           completedAt: sql`coalesce(${completedAt}::timestamptz, ${runs.completedAt})`,
           errorCode: sql`coalesce(${errorCode}, ${runs.errorCode})`,
+          ...wakeAtPatch,
         })
         .where(and(eq(runs.id, runId), eq(runs.status, from)))
         .returning())[0]
@@ -1083,6 +1273,7 @@ export class PostgresRepository implements Repository {
         state: to,
         rowVersion: row.rowVersion,
         ...(fields.errorCode ? { errorCode: fields.errorCode } : {}),
+        ...(fields.eventData ? fields.eventData : {}),
       })
       return mapRun(row)
     }))
@@ -1147,7 +1338,11 @@ export class PostgresRepository implements Repository {
         .orderBy(asc(items.timelineIndex))
         .for("update")
       for (const current of streaming) {
-        const item = await this.updateItemWith(tx, current.id, status, current.content)
+        const itemStatus = current.type === "tool_call" ? "failed" : status
+        const itemContent = current.type === "tool_call" && current.content.status === "running"
+          ? { ...current.content, status: "failed" }
+          : current.content
+        const item = await this.updateItemWith(tx, current.id, itemStatus, itemContent)
         await this.appendEventWith(tx, runId, "item.finalized", { item })
       }
     })

@@ -2,34 +2,34 @@ import type { AIInternalRouteName } from './internal-routes'
 
 interface PageContextOptions {
   hash?: string
-  now?: Date
   timeZone?: string
 }
 
+type AIPageRouteName = AIInternalRouteName | 'ai-assistant' | 'inbox' | 'notification-channels' | 'settings' | 'unknown'
+type AIPageKind = 'dashboard' | 'collection' | 'project' | 'application' | 'settings' | 'ai-assistant' | 'unknown'
+
 interface RouteContext {
-  routeName: AIInternalRouteName | 'unknown'
+  routeName: AIPageRouteName
   routeTemplate: string
-  pageKind: 'dashboard' | 'collection' | 'project' | 'application' | 'settings' | 'unknown'
+  pageKind: AIPageKind
   projectId?: string
   applicationId?: string
-  availableTabs?: string[]
-  relatedRouteNames: AIInternalRouteName[]
+  targetId?: string
 }
 
 const identifierPattern = /^[\w.:-]{1,160}$/
-const safeViewKeys = new Set(['tab', 'config', 'buildRunId', 'releaseId', 'deploymentId', 'page', 'sortBy', 'sortOrder'])
-const projectTabs = ['overview', 'apps', 'shared-config', 'volumes', 'members', 'topology']
-const applicationTabs = ['overview', 'builds', 'deployments', 'gateway', 'topology', 'settings']
+const safeViewKeys = new Set(['tab', 'config', 'buildRunId', 'releaseId', 'deploymentId', 'clusterId', 'envId', 'page', 'sortBy', 'sortOrder'])
 
 export function buildAIPageContext(pathname: string, search: string, locale: string, options: PageContextOptions = {}) {
   const route = resolveRouteContext(pathname)
   const query = safeViewState(new URLSearchParams(search))
   const hash = safeViewState(new URLSearchParams(options.hash?.replace(/^#/, '') ?? ''))
   const activeTab = query.tab ?? hash.tab
+  const clusterId = query.clusterId ?? hash.clusterId
+  const envId = query.envId ?? hash.envId
   const selectedResourceIds = ['buildRunId', 'releaseId', 'deploymentId']
     .flatMap(key => query[key] ?? hash[key] ?? [])
     .filter(value => identifierPattern.test(value))
-  const now = options.now ?? new Date()
   const timeZone = options.timeZone ?? resolvedTimeZone()
 
   return {
@@ -40,50 +40,68 @@ export function buildAIPageContext(pathname: string, search: string, locale: str
     pageKind: route.pageKind,
     ...(route.projectId ? { projectId: route.projectId } : {}),
     ...(route.applicationId ? { applicationId: route.applicationId } : {}),
+    ...(route.targetId ? { targetId: route.targetId } : {}),
+    ...(clusterId && identifierPattern.test(clusterId) ? { clusterId } : {}),
+    ...(envId && identifierPattern.test(envId) ? { envId } : {}),
     ...(activeTab ? { activeTab } : {}),
     view: {
       query,
       hash,
       selectedResourceIds,
-      availableTabs: route.availableTabs ?? [],
-    },
-    navigation: {
-      relatedRouteNames: route.relatedRouteNames,
-    },
-    client: {
-      locale,
-      timeZone,
-      timestamp: now.toISOString(),
-      utcOffsetMinutes: -now.getTimezoneOffset(),
     },
     locale,
+    timeZone,
   }
 }
 
 const staticRoutes: Record<string, RouteContext> = {
-  '/dashboard': route('dashboard', 'dashboard', ['projects', 'events']),
-  '/projects': route('projects', 'collection', ['dashboard', 'events']),
-  '/events': route('events', 'collection', ['dashboard', 'projects']),
-  '/code-repositories': route('code-repositories', 'collection', ['projects', 'registries']),
-  '/registries': route('registries', 'collection', ['code-repositories', 'clusters']),
-  '/clusters': route('clusters', 'collection', ['projects', 'events']),
-  '/app-templates': route('app-templates', 'collection', ['projects', 'registries']),
-  '/billing': route('billing', 'collection', ['dashboard', 'settings.operations']),
-  '/settings/account': route('settings.account', 'settings', ['settings.notifications']),
-  '/settings/auth-providers': route('settings.auth-providers', 'settings', ['settings.users', 'settings.site']),
-  '/settings/notifications': route('settings.notifications', 'settings', ['events', 'settings.account']),
-  '/settings/operations': route('settings.operations', 'settings', ['dashboard', 'events']),
-  '/settings/site': route('settings.site', 'settings', ['settings.users', 'settings.auth-providers']),
-  '/settings/users': route('settings.users', 'settings', ['settings.auth-providers', 'settings.site']),
+  '/ai': { routeName: 'ai-assistant', routeTemplate: '/ai', pageKind: 'ai-assistant' },
+  '/ai-assistant': { routeName: 'ai-assistant', routeTemplate: '/ai-assistant', pageKind: 'ai-assistant' },
+  '/dashboard': route('dashboard', 'dashboard'),
+  '/projects': route('projects', 'collection'),
+  '/events': route('events', 'collection'),
+  '/inbox': { routeName: 'inbox', routeTemplate: '/inbox', pageKind: 'collection' },
+  '/code-repositories': route('code-repositories', 'collection'),
+  '/registries': route('registries', 'collection'),
+  '/clusters': route('clusters', 'collection'),
+  '/notification-channels': { routeName: 'notification-channels', routeTemplate: '/notification-channels', pageKind: 'collection' },
+  '/app-templates': route('app-templates', 'collection'),
+  '/billing': route('billing', 'collection'),
+  '/settings': { routeName: 'settings', routeTemplate: '/settings', pageKind: 'settings' },
+  '/settings/account': route('settings.account', 'settings'),
+  '/settings/auth-providers': route('settings.auth-providers', 'settings'),
+  '/settings/notifications': route('settings.notifications', 'settings'),
+  '/settings/operations': route('settings.operations', 'settings'),
+  '/settings/site': route('settings.site', 'settings'),
+  '/settings/users': route('settings.users', 'settings'),
 }
 
-function route(routeName: AIInternalRouteName, pageKind: RouteContext['pageKind'], relatedRouteNames: AIInternalRouteName[]): RouteContext {
-  return { routeName, routeTemplate: `/${routeName.replaceAll('.', '/')}`, pageKind, relatedRouteNames }
+function route(routeName: AIInternalRouteName, pageKind: AIPageKind): RouteContext {
+  return { routeName, routeTemplate: `/${routeName.replaceAll('.', '/')}`, pageKind }
 }
 
 function resolveRouteContext(pathname: string): RouteContext {
-  // 部署配置编辑页属于应用详情的子页面，沿用应用上下文。
-  const applicationMatch = pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)(?:\/deployments\/(?:new|[^/]+\/edit))?$/)
+  const normalized = pathname.replace(/\/+$/u, '') || '/'
+  if (normalized === '/ai' || normalized.startsWith('/ai/') || normalized === '/ai-assistant' || normalized.startsWith('/ai-assistant/')) {
+    return {
+      routeName: 'ai-assistant',
+      routeTemplate: normalized.startsWith('/ai-assistant') ? '/ai-assistant' : '/ai',
+      pageKind: 'ai-assistant',
+    }
+  }
+  const deploymentEditMatch = normalized.match(/^\/projects\/([^/]+)\/apps\/([^/]+)\/deployments\/([^/]+)\/edit$/)
+  if (deploymentEditMatch?.[1] && deploymentEditMatch[2] && deploymentEditMatch[3]) {
+    return {
+      routeName: 'application.detail',
+      routeTemplate: '/projects/:projectId/apps/:applicationId/deployments/:targetId/edit',
+      pageKind: 'application',
+      projectId: deploymentEditMatch[1],
+      applicationId: deploymentEditMatch[2],
+      targetId: deploymentEditMatch[3],
+    }
+  }
+  // 部署配置新建页属于应用详情的子页面，沿用应用上下文。
+  const applicationMatch = normalized.match(/^\/projects\/([^/]+)\/apps\/([^/]+)(?:\/deployments\/new)?$/)
   if (applicationMatch?.[1] && applicationMatch[2]) {
     return {
       routeName: 'application.detail',
@@ -91,27 +109,32 @@ function resolveRouteContext(pathname: string): RouteContext {
       pageKind: 'application',
       projectId: applicationMatch[1],
       applicationId: applicationMatch[2],
-      availableTabs: applicationTabs,
-      relatedRouteNames: ['project.workspace', 'events'],
     }
   }
-  const projectMatch = pathname.match(/^\/projects\/([^/]+)$/)
+  const projectMatch = normalized.match(/^\/projects\/([^/]+)$/)
   if (projectMatch?.[1]) {
     return {
       routeName: 'project.workspace',
       routeTemplate: '/projects/:projectId',
       pageKind: 'project',
       projectId: projectMatch[1],
-      availableTabs: projectTabs,
-      relatedRouteNames: ['projects', 'events'],
     }
   }
-  const staticRoute = staticRoutes[pathname]
-  return staticRoute ?? {
+  const staticRoute = staticRoutes[normalized]
+  if (staticRoute)
+    return staticRoute
+  const settingsMatch = normalized.match(/^\/settings\/([\w-]+)$/)
+  if (settingsMatch?.[1]) {
+    return {
+      routeName: 'settings',
+      routeTemplate: '/settings/:section',
+      pageKind: 'settings',
+    }
+  }
+  return {
     routeName: 'unknown',
     routeTemplate: '',
     pageKind: 'unknown',
-    relatedRouteNames: ['dashboard', 'projects'],
   }
 }
 

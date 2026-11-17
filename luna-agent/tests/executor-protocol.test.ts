@@ -94,7 +94,7 @@ describe("模型协议错误处理", () => {
     expect(run?.status).toBe("failed")
     expect(run?.errorCode).toBe("ai.model_protocol_violation")
     expect(modelCalls()).toBe(2)
-    expect(requests[1]?.at(-1)).toMatchObject({ role: "system" })
+    expect(requests[1]?.at(-1)).toMatchObject({ role: "user" })
     const items = (await repository.getTimeline(owner, conversation.id))?.turns[0]?.items ?? []
     expect(progressTexts(items)).toHaveLength(2)
     expect(progressTexts(items).every(text => text === planText)).toBe(true)

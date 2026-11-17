@@ -1,7 +1,8 @@
-export const DEFAULT_RUN_MAX_TOOL_CALLS = 256
+export const DEFAULT_RUN_MAX_TOOL_CALLS = 64
 export const MIN_RUN_MAX_TOOL_CALLS = 32
 export const MAX_RUN_MAX_TOOL_CALLS = 2048
 export const DEFAULT_SAME_CALL_LIMIT = 3
+export const DEFAULT_SAME_OPERATION_SOFT_WARN_THRESHOLD = 5
 
 export type ToolLoopCall = {
   runId: string
@@ -43,6 +44,7 @@ export interface LoopGuard {
   beforePropose(call: ToolLoopCall): void
   beforeExecute(call: ToolLoopCall): void
   blockNonRetryable(call: ToolLoopCall): void
+  operationCallCount(runId: string, operationId: string): number
   snapshot(runId: string): ToolLoopSnapshot
   exportRun(runId: string): LoopGuardState | undefined
   restoreRun(runId: string, state: LoopGuardState | undefined, executed: number): void
@@ -119,6 +121,16 @@ export class InMemoryLoopGuard implements LoopGuard {
     this.state(call.runId).nonRetryableCalls.add(callKey(call))
   }
 
+  operationCallCount(runId: string, operationId: string): number {
+    const state = this.runs.get(runId)
+    if (!state) return 0
+    let total = 0
+    for (const [key, count] of state.occurrences) {
+      if (parseCallKey(key).operationId === operationId) total += count
+    }
+    return total
+  }
+
   snapshot(runId: string): ToolLoopSnapshot {
     const state = this.runs.get(runId)
     return {
@@ -188,6 +200,21 @@ export class InMemoryLoopGuard implements LoopGuard {
     }
     return state
   }
+}
+
+export function sameOperationSoftWarnGuidance(toolName: string): string {
+  return `你已在当前回合多次调用 ${toolName}，请停止盲目变换参数重试；请直接基于已有事实回答，或向用户确认缺失条件。`
+}
+
+export function withSameOperationSoftWarning(
+  guidance: string | undefined,
+  toolName: string,
+  count: number,
+  threshold = DEFAULT_SAME_OPERATION_SOFT_WARN_THRESHOLD,
+): string | undefined {
+  if (count < threshold) return guidance
+  const warning = sameOperationSoftWarnGuidance(toolName)
+  return guidance ? `${guidance} ${warning}` : warning
 }
 
 export function validateMaxToolCalls(limit: number): number {

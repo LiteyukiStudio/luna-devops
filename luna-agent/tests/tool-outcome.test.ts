@@ -1,9 +1,9 @@
+import { createServer } from "node:http"
 import { describe, expect, it } from "vitest"
-import { evaluateVerification } from "../src/executor/verification.js"
 import { resumedToolMessages } from "../src/executor/resume.js"
-import type { RunToolVerification } from "../src/domain.js"
 import type { ToolCallRecord } from "../src/tools/orchestrator.js"
 import { toolEffect, toolOutcome, verificationForCall } from "../src/tools/outcome.js"
+import { HttpLunaApiTaskStatusClient } from "../src/tools/wait-for-task.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 
 function call(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
@@ -156,17 +156,9 @@ describe("tool outcomes", () => {
       arguments: { thingId: "thing_1" },
       resource: { singleton: false, collection: false, targetField: "id" },
     })
-    expect(evaluateVerification(plan, call({
-      operationId: "getThing",
-      result: { id: "thing_1", status: "provisioning" },
-    }))).toMatchObject({ kind: "pending" })
-    expect(evaluateVerification(plan, call({
-      operationId: "getThing",
-      result: { id: "thing_1", status: "ready" },
-    }))).toMatchObject({ kind: "verified" })
   })
 
-  it("verifies collection deletion by target ID absence", () => {
+  it("builds a collection deletion verification plan targeting absence", () => {
     const read = testToolOperation("listThings")
     const plan = verificationForCall(testToolOperation("deleteThing", {
       method: "DELETE",
@@ -186,14 +178,12 @@ describe("tool outcomes", () => {
     }), operationId => operationId === "listThings" ? read : undefined)
     if (!plan) throw new Error("missing deletion verification plan")
 
-    expect(evaluateVerification(plan, call({
-      operationId: "listThings",
-      result: { items: [{ id: "thing_1" }] },
-    }))).toMatchObject({ kind: "pending" })
-    expect(evaluateVerification(plan, call({
-      operationId: "listThings",
-      result: { items: [] },
-    }))).toMatchObject({ kind: "verified" })
+    expect(plan).toMatchObject({
+      family: "resource",
+      expectation: "absent",
+      externalOperationId: "thing_1",
+      resource: { collection: true, targetField: "id" },
+    })
   })
 
   it("uses the full bounded page when a collection read exposes pagination", () => {
@@ -222,7 +212,7 @@ describe("tool outcomes", () => {
     expect(plan).toMatchObject({ arguments: { page: 1, pageSize: 100 } })
   })
 
-  it("reads root-array collections and honors delete and cancel terminal states", () => {
+  it("preserves delete and cancel status configuration in verification plans", () => {
     const read = testToolOperation("listThings")
     const deletePlan = verificationForCall(testToolOperation("deleteThing", {
       method: "DELETE",
@@ -242,14 +232,15 @@ describe("tool outcomes", () => {
     operationId => operationId === "listThings" ? read : undefined)
     if (!deletePlan) throw new Error("missing delete verification plan")
 
-    expect(evaluateVerification(deletePlan, call({
-      operationId: "listThings",
-      result: [{ id: "thing_1", status: "delete_failed" }],
-    }))).toMatchObject({ kind: "failed", errorCode: "ai.tool_execution_failed" })
-    expect(evaluateVerification(deletePlan, call({
-      operationId: "listThings",
-      result: [],
-    }))).toMatchObject({ kind: "verified" })
+    expect(deletePlan).toMatchObject({
+      expectation: "absent",
+      resource: {
+        statusField: "status",
+        pendingStatuses: ["deleting"],
+        successStatuses: ["deleted"],
+        failureStatuses: ["delete_failed"],
+      },
+    })
 
     const cancelPlan = verificationForCall(testToolOperation("cancelThing", {
       method: "POST",
@@ -277,17 +268,13 @@ describe("tool outcomes", () => {
       : undefined)
     if (!cancelPlan) throw new Error("missing cancel verification plan")
 
-    expect(evaluateVerification(cancelPlan, call({
-      operationId: "getThing",
-      result: { id: "thing_1", status: "running" },
-    }))).toMatchObject({ kind: "pending" })
-    expect(evaluateVerification(cancelPlan, call({
-      operationId: "getThing",
-      result: { id: "thing_1", status: "cancelled" },
-    }))).toMatchObject({ kind: "verified" })
+    expect(cancelPlan).toMatchObject({
+      expectation: "canceled",
+      arguments: { thingId: "thing_1" },
+    })
   })
 
-  it("verifies bulk project order and billing rule updates against authoritative lists", () => {
+  it("builds bulk project order and billing rule verification plans", () => {
     const projectRead = testToolOperation("listProjects", {
       inputSchema: {
         type: "object",
@@ -308,14 +295,6 @@ describe("tool outcomes", () => {
     if (!projectPlan) throw new Error("missing project order verification plan")
 
     expect(projectPlan).toMatchObject({ arguments: { page: 1, pageSize: 100 }, expected: ["prj_1", "prj_2"] })
-    expect(evaluateVerification(projectPlan, call({
-      operationId: "listProjects",
-      result: { items: [{ id: "prj_1", dashboardOrder: 1 }, { id: "prj_2", dashboardOrder: 2 }] },
-    }))).toMatchObject({ kind: "verified" })
-    expect(evaluateVerification(projectPlan, call({
-      operationId: "listProjects",
-      result: { items: [{ id: "prj_1", dashboardOrder: 2 }, { id: "prj_2", dashboardOrder: 1 }] },
-    }))).toMatchObject({ kind: "failed", errorCode: "ai.verification_inconclusive" })
 
     const billingPlan = verificationForCall(testToolOperation("updateBillingRateRules", {
       method: "PUT",
@@ -330,17 +309,13 @@ describe("tool outcomes", () => {
       : undefined)
     if (!billingPlan) throw new Error("missing billing verification plan")
 
-    expect(evaluateVerification(billingPlan, call({
-      operationId: "listBillingRateRules",
-      result: [{ id: "brr_cpu", meter: "cpu", creditsPerUnit: "2.5", enabled: true }],
-    }))).toMatchObject({ kind: "verified" })
-    expect(evaluateVerification(billingPlan, call({
-      operationId: "listBillingRateRules",
-      result: [{ id: "brr_cpu", meter: "cpu", creditsPerUnit: "3", enabled: true }],
-    }))).toMatchObject({ kind: "failed", errorCode: "ai.verification_inconclusive" })
+    expect(billingPlan).toMatchObject({
+      family: "billing_rate_rules",
+      expected: [{ meter: "cpu", creditsPerUnit: "2.50", enabled: true }],
+    })
   })
 
-  it("verifies project runtime config secrets without exposing plaintext", () => {
+  it("builds project runtime config secret verification plans without exposing plaintext", () => {
     const read = testToolOperation("getProjectRuntimeConfigSetRuntimeSecretsSummary", {
       inputSchema: {
         type: "object",
@@ -374,65 +349,6 @@ describe("tool outcomes", () => {
       requiredKeys: ["TOKEN"],
     })
     expect(JSON.stringify(plan)).not.toContain("secret-value")
-    expect(evaluateVerification(plan, call({
-      operationId: "getProjectRuntimeConfigSetRuntimeSecretsSummary",
-      result: { environmentVariables: [{ key: "TOKEN", valueMode: "secret", configured: true }] },
-    }))).toMatchObject({ kind: "verified" })
-  })
-})
-
-describe("authoritative verification outcomes", () => {
-  const plan: RunToolVerification = {
-    runId: "airun_1",
-    sourceToolCallId: "aitool_source",
-    sourceOperationId: "createGatewayRoute",
-    operationId: "getGatewayRoute",
-    family: "gateway_route",
-    expectation: "present",
-    arguments: { projectId: "prj_1", routeId: "route_1" },
-    externalOperationId: "route_1",
-    attempts: 0,
-  }
-
-  it("waits for both the route and its TLS certificate to become ready", () => {
-    expect(evaluateVerification(plan, call({
-      operationId: "getGatewayRoute",
-      result: { id: "route_1", status: "ready", tlsMode: "http-challenge", certificateStatus: "pending" },
-    }))).toMatchObject({ kind: "pending" })
-    expect(evaluateVerification(plan, call({
-      operationId: "getGatewayRoute",
-      result: { id: "route_1", status: "ready", tlsMode: "http-challenge", certificateStatus: "issued" },
-    }))).toMatchObject({ kind: "verified" })
-  })
-
-  it("accepts manual and disabled certificates but fails degraded routes", () => {
-    expect(evaluateVerification(plan, call({
-      operationId: "getGatewayRoute",
-      result: { id: "route_1", status: "ready", tlsMode: "manual-cert", certificateStatus: "manual" },
-    }))).toMatchObject({ kind: "verified" })
-    expect(evaluateVerification(plan, call({
-      operationId: "getGatewayRoute",
-      result: { id: "route_1", status: "ready", tlsMode: "http-only", certificateStatus: "disabled" },
-    }))).toMatchObject({ kind: "verified" })
-    expect(evaluateVerification(plan, call({
-      operationId: "getGatewayRoute",
-      result: { id: "route_1", status: "degraded", tlsMode: "manual-cert", certificateStatus: "manual" },
-    }))).toMatchObject({ kind: "failed", errorCode: "ai.tool_execution_failed" })
-  })
-
-  it("does not turn a failed external operation into business completion", () => {
-    expect(evaluateVerification({
-      ...plan,
-      operationId: "getBuildRun",
-      family: "build_run",
-      externalOperationId: "bldr_1",
-    }, call({
-      operationId: "getBuildRun",
-      result: { id: "bldr_1", status: "timeout" },
-    }))).toMatchObject({
-      kind: "failed",
-      errorCode: "ai.tool_execution_failed",
-    })
   })
 })
 
@@ -520,5 +436,65 @@ describe("durable verification projection", () => {
     })
     expect(messages[1]?.content).toContain('"verifiedBy"')
     expect(messages[1]?.content).toContain('"status":"succeeded"')
+  })
+
+  it("[P2-2] clears pendingContent across tool-less model steps so earlier progress never bleeds into a later tool batch", () => {
+    const messages = resumedToolMessages([
+      {
+        itemId: "step0-progress",
+        type: "progress",
+        status: "completed",
+        content: { parts: [{ type: "text", text: "无工具协议修复过渡文本" }], standalone: true },
+      },
+      {
+        itemId: "step1-reasoning",
+        type: "reasoning_summary",
+        status: "completed",
+        content: { summary: "第二步思考" },
+      },
+      {
+        itemId: "step1-call",
+        type: "tool_call",
+        status: "completed",
+        content: {
+          toolCallId: "call_step1",
+          modelCallId: "call_step1",
+          batchId: "batch_1",
+          operationId: "search_tools",
+          status: "succeeded",
+          arguments: { query: "build" },
+          result: { items: [] },
+        },
+      },
+    ])
+    expect(messages[0]).toEqual({
+      role: "assistant",
+      content: "",
+      reasoning: "第二步思考",
+      toolCalls: [{ id: "call_step1", operationId: "search_tools", arguments: { query: "build" } }],
+    })
+  })
+
+  it("[P1-4] times out hung task status requests and returns transient_error without hanging forever", async () => {
+    const server = createServer((_req, res) => {
+      // 模拟半开挂起连接，不结束响应
+      setTimeout(() => res.end(), 500).unref()
+    })
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", () => resolve()))
+    const address = server.address()
+    const port = typeof address === "object" && address ? address.port : 0
+    try {
+      const client = new HttpLunaApiTaskStatusClient(`http://127.0.0.1:${port}`, "svc_token", 40)
+      const result = await client.checkTaskStatus({
+        runId: "airun_timeout",
+        projectId: "prj_1",
+        taskType: "build_run",
+        taskId: "bldr_1",
+      })
+      expect(result).toEqual({ kind: "transient_error", errorCode: "ai.progress.unavailable" })
+    }
+    finally {
+      server.close()
+    }
   })
 })

@@ -11,16 +11,23 @@ export type AIBlock
 
 export interface AIRunUsage {
   /** 只有 reported 状态允许参与上下文比例展示。 */
-  status: 'reported' | 'unavailable' | 'reconciliation_required'
+  status: 'reported' | 'unavailable'
   promptTokens?: number
   modelId?: string
   maxContextTokensSnapshot?: number
+}
+
+export interface AIWaitingExternalInfo {
+  projectId?: string
+  taskType?: 'build_run' | 'release'
+  taskId?: string
 }
 
 export interface AIAssistantState {
   blocks: AIBlock[]
   runStatuses: Record<string, string>
   runExpectedVersions: Record<string, number>
+  waitingExternalByRun: Record<string, AIWaitingExternalInfo>
   lastEventSequences: Record<string, number>
   turnIndexes: Record<string, number>
   itemRevisions: Record<string, number>
@@ -170,7 +177,20 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
       createdAt: turn.input.createdAt,
     })
     for (const item of [...(turn.selectedRun?.items ?? [])].sort((a, b) => a.timelineIndex - b.timelineIndex)) {
-      if (item.type === 'assistant_message') {
+      if (item.type === 'user_message' && item.id !== turn.input.id) {
+        blocks.push({
+          id: item.id,
+          turnId: turn.id,
+          runId: turn.selectedRun?.id,
+          index: blockIndex(turn.turnIndex, item.timelineIndex),
+          type: 'message',
+          role: 'user',
+          status: item.status,
+          text: textFromParts(item.parts),
+          createdAt: item.createdAt,
+        })
+      }
+      else if (item.type === 'assistant_message') {
         blocks.push({ id: item.id, turnId: turn.id, runId: turn.selectedRun?.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'message', role: 'assistant', status: item.status, text: textFromParts(item.parts), createdAt: item.createdAt })
       }
       else if (item.type === 'reasoning_summary' || item.type === 'progress') {
@@ -212,10 +232,24 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
       })
     }
   }
+  const waitingExternalByRun = Object.fromEntries(timeline.turns.flatMap((turn) => {
+    const run = turn.selectedRun
+    if (!run || run.status !== 'waiting_external')
+      return []
+    const waitingItem = [...run.items].reverse().find(item => item.type === 'tool_call' && item.toolCall?.operationId === 'wait_for_task')
+    const args = waitingItem?.toolCall?.arguments ?? {}
+    const taskType = args.taskType === 'build_run' || args.taskType === 'release' ? args.taskType : undefined
+    return [[run.id, {
+      ...(typeof args.projectId === 'string' && args.projectId ? { projectId: args.projectId } : {}),
+      ...(taskType ? { taskType } : {}),
+      ...(typeof args.taskId === 'string' && args.taskId ? { taskId: args.taskId } : {}),
+    } satisfies AIWaitingExternalInfo]]
+  }))
   return {
     blocks: blocks.sort((a, b) => a.index - b.index),
     runStatuses: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun ? [[turn.selectedRun.id, turn.selectedRun.status]] : [])),
     runExpectedVersions: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun?.expectedVersion === undefined ? [] : [[turn.selectedRun.id, turn.selectedRun.expectedVersion]])),
+    waitingExternalByRun,
     lastEventSequences: Object.fromEntries(timeline.eventCursors.map(cursor => [cursor.runId, cursor.after])),
     turnIndexes: Object.fromEntries(timeline.turns.map(turn => [turn.id, turn.turnIndex])),
     itemRevisions: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun?.items.map(item => [item.id, item.revision]) ?? [])),
@@ -294,13 +328,24 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
       blocks.push(block)
     })
   const itemRevisionIds = new Set([...Object.keys(snapshot.itemRevisions), ...retainedCurrentIds])
+  const mergedRunStatuses = mergeRunStatuses(
+    snapshot.runStatuses,
+    current.runStatuses,
+    snapshot.lastEventSequences,
+    current.lastEventSequences,
+  )
+  const mergedWaitingExternal = Object.fromEntries(
+    Object.entries({ ...current.waitingExternalByRun, ...snapshot.waitingExternalByRun })
+      .filter(([runId]) => mergedRunStatuses[runId] === 'waiting_external'),
+  )
   return {
     ...snapshot,
     blocks: blocks.sort((a, b) => a.index - b.index),
     lastEventSequences: Object.fromEntries([...new Set([...Object.keys(snapshot.lastEventSequences), ...Object.keys(current.lastEventSequences)])]
       .map(runId => [runId, Math.max(snapshot.lastEventSequences[runId] ?? 0, current.lastEventSequences[runId] ?? 0)])),
-    runStatuses: mergeRunStatuses(snapshot.runStatuses, current.runStatuses),
-    runExpectedVersions: { ...snapshot.runExpectedVersions, ...current.runExpectedVersions },
+    runStatuses: mergedRunStatuses,
+    runExpectedVersions: mergeRunExpectedVersions(snapshot.runExpectedVersions, current.runExpectedVersions),
+    waitingExternalByRun: mergedWaitingExternal,
     turnIndexes: { ...snapshot.turnIndexes, ...current.turnIndexes },
     itemRevisions: Object.fromEntries([...itemRevisionIds]
       .map(itemId => [itemId, Math.max(current.itemRevisions[itemId] ?? 0, snapshot.itemRevisions[itemId] ?? 0)])),
@@ -313,11 +358,32 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
   }
 }
 
-function mergeRunStatuses(snapshot: Record<string, string>, current: Record<string, string>) {
+function mergeRunExpectedVersions(snapshot: Record<string, number>, current: Record<string, number>) {
+  return Object.fromEntries(
+    [...new Set([...Object.keys(snapshot), ...Object.keys(current)])]
+      .map(runId => [runId, Math.max(snapshot[runId] ?? 0, current[runId] ?? 0)]),
+  )
+}
+
+function mergeRunStatuses(
+  snapshot: Record<string, string>,
+  current: Record<string, string>,
+  snapshotSequences: Record<string, number>,
+  currentSequences: Record<string, number>,
+) {
   return Object.fromEntries([...new Set([...Object.keys(snapshot), ...Object.keys(current)])].map((runId) => {
     const currentStatus = current[runId]
     const snapshotStatus = snapshot[runId]
-    return [runId, isTerminalRunStatus(currentStatus) ? currentStatus : snapshotStatus ?? currentStatus]
+    if (isTerminalRunStatus(snapshotStatus))
+      return [runId, snapshotStatus]
+    if (isTerminalRunStatus(currentStatus))
+      return [runId, currentStatus]
+    if (snapshotStatus && currentStatus) {
+      const snapshotSeq = snapshotSequences[runId] ?? 0
+      const currentSeq = currentSequences[runId] ?? 0
+      return [runId, currentSeq > snapshotSeq ? currentStatus : snapshotStatus]
+    }
+    return [runId, snapshotStatus ?? currentStatus]
   }))
 }
 
@@ -381,10 +447,12 @@ function updateBlock(state: AIAssistantState, id: string, update: (block: AIBloc
 function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: string, turnIndex: number): AIBlock | undefined {
   const index = blockIndex(turnIndex, item.timelineIndex)
   if (item.type === 'user_message') {
+    const isInitialInput = item.id === `${turnId}:input`
     return {
       id: item.id,
       turnId,
-      index: blockIndex(turnIndex, -1),
+      ...(isInitialInput ? {} : { runId }),
+      index: isInitialInput ? blockIndex(turnIndex, -1) : index,
       type: 'message',
       role: 'user',
       status: item.status,
@@ -597,10 +665,12 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
   if (event.type === 'thinking.delta')
     return applyThinkingDelta(next, event, turnIndex)
 
-  if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_input' || event.type === 'run.waiting_external' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
-    const status = event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.waiting_external'
+  if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.requeued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_input' || event.type === 'run.waiting_external' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
+    const status = event.type === 'run.started' || event.type === 'run.running'
       ? 'running'
-      : event.type.slice(4)
+      : event.type === 'run.requeued'
+        ? 'queued'
+        : event.type.slice(4)
     const terminalBlock = status === 'failed' || status === 'canceled' || status === 'interrupted'
       ? updateBlock(next, `${event.runId}:status`, block => block.type === 'run_status'
           ? { ...block, status, errorCode: stringPayload(event.payload, 'errorCode') || block.errorCode }
@@ -614,13 +684,33 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
           errorCode: stringPayload(event.payload, 'errorCode') || undefined,
         }))
       : next.blocks
+    const nextVersion = typeof event.payload.rowVersion === 'number'
+      ? event.payload.rowVersion
+      : typeof event.payload.expectedVersion === 'number'
+        ? event.payload.expectedVersion
+        : undefined
+    const waitingExternalByRun = { ...next.waitingExternalByRun }
+    if (status === 'waiting_external') {
+      const taskType = event.payload.taskType === 'build_run' || event.payload.taskType === 'release'
+        ? event.payload.taskType
+        : undefined
+      waitingExternalByRun[event.runId] = {
+        ...(stringPayload(event.payload, 'projectId') ? { projectId: stringPayload(event.payload, 'projectId') } : {}),
+        ...(taskType ? { taskType } : {}),
+        ...(stringPayload(event.payload, 'taskId') ? { taskId: stringPayload(event.payload, 'taskId') } : {}),
+      }
+    }
+    else {
+      delete waitingExternalByRun[event.runId]
+    }
     return {
       ...next,
       blocks: terminalBlock,
       runStatuses: { ...next.runStatuses, [event.runId]: status },
-      runExpectedVersions: typeof event.payload.expectedVersion === 'number'
-        ? { ...next.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
+      runExpectedVersions: nextVersion !== undefined
+        ? { ...next.runExpectedVersions, [event.runId]: nextVersion }
         : next.runExpectedVersions,
+      waitingExternalByRun,
     }
   }
   if (event.type === 'model.completed') {
@@ -643,7 +733,7 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
       && outputTokens >= 0
       && typeof totalTokens === 'number'
       && Number.isSafeInteger(totalTokens)
-      && totalTokens === inputTokens + outputTokens
+      && totalTokens >= inputTokens + outputTokens
       && typeof modelId === 'string'
       && modelId.length > 0
       && typeof maxContextTokensSnapshot === 'number'
@@ -665,7 +755,7 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
         ...next.runUsage,
         [event.runId]: hasReportedUsage
           ? { status: 'reported', promptTokens: inputTokens, modelId, maxContextTokensSnapshot }
-          : { status: status === 'reconciliation_required' ? 'reconciliation_required' : 'unavailable' },
+          : { status: 'unavailable' },
       },
     }
   }
@@ -686,6 +776,7 @@ export const emptyAIAssistantState: AIAssistantState = {
   blocks: [],
   runStatuses: {},
   runExpectedVersions: {},
+  waitingExternalByRun: {},
   lastEventSequences: {},
   turnIndexes: {},
   itemRevisions: {},

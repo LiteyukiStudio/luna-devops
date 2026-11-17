@@ -44,8 +44,8 @@ export function groupAIAssistantBlocksByTurn(blocks: AIBlock[]): AIAssistantTurn
       responseBlocks: [],
     }
     turn.index = Math.min(turn.index, block.index)
-    if (block.type === 'message' && block.role === 'user') {
-      turn.userMessage ??= block
+    if (block.type === 'message' && block.role === 'user' && !turn.userMessage) {
+      turn.userMessage = block
     }
     else {
       turn.responseBlocks.push(block)

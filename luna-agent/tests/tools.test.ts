@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient, UnknownToolOutcomeError } from "../src/tools/luna-api-client.js"
-import { MemoryToolCallStore, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
+import { MemoryToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 
 const catalog = ToolCatalog.load([
@@ -61,10 +61,18 @@ describe("tool catalog and orchestration", () => {
     expect(client.calls).toHaveLength(2)
   })
 
-  it("asks for missing required input", async () => {
+  it("returns recoverable ai.tool_arguments_invalid on missing required input without interrupting the Run", async () => {
     const orchestrator = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: {} })), new MemoryToolCallStore())
-    await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: {} }))
-      .rejects.toMatchObject({ state: "waiting_input", fields: ["buildId"] } satisfies Partial<ToolInterruption>)
+    const result = await orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: {} })
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "ai.tool_arguments_invalid",
+      result: {
+        code: "ai.tool_arguments_invalid",
+        retryable: true,
+        issues: [expect.objectContaining({ code: "required", path: "/buildId" })],
+      },
+    })
   })
 
   it("executes an ordinary tool directly and redacts the stored result", async () => {

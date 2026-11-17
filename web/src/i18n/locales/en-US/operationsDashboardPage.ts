@@ -110,10 +110,12 @@ const operationsDashboardPage = {
     running: 'Running',
     waiting_approval: 'Waiting for approval',
     waiting_input: 'Waiting for input',
+    waiting_external: 'Waiting for background task',
     completed: 'Completed',
     failed: 'Failed',
     canceled: 'Canceled',
     expired: 'Expired',
+    interrupted: 'Interrupted',
   },
   toolDetail: {
     titleFallback: 'Tool call details',

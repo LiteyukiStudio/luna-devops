@@ -6,10 +6,10 @@ import { ToolStepRunner, type ToolStepState } from "../src/executor/tool-step.js
 import { ModelRuntime } from "../src/model-runtime.js"
 import { RunCheckpointConflictError } from "../src/persistence/repository.js"
 import type { ModelMessage, ModelProvider, ModelToolCall } from "../src/provider/provider.js"
-import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
-import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator, type ToolCallRecord } from "../src/tools/orchestrator.js"
+import { MemoryToolCallStore, ProjectingToolCallStore, ToolInterruption, ToolOrchestrator, type ToolCallRecord } from "../src/tools/orchestrator.js"
+import { searchToolsTool } from "../src/tools/tool-search.js"
 import { testRegistry } from "./support/model-tool-registry.js"
 import { testExecutor } from "./support/run-executor.js"
 import { TestRepository } from "./support/test-repository.js"
@@ -19,6 +19,7 @@ const reportedUsage = { status: "reported" as const, value: { inputTokens: 3, ou
 
 type ScriptedStep = {
   text?: string
+  reasoning?: string
   toolCalls?: ModelToolCall[]
 }
 
@@ -30,6 +31,7 @@ function scriptedProvider(steps: ScriptedStep[]) {
       const step = steps[Math.min(state.modelCalls, steps.length - 1)] ?? {}
       state.modelCalls += 1
       messages.push(request.messages)
+      if (step.reasoning) yield { type: "reasoning_summary_delta", delta: step.reasoning }
       if (step.text) yield { type: "message_delta", delta: step.text }
       if (step.toolCalls?.length) yield { type: "tool_call_delta" }
       yield {
@@ -69,7 +71,11 @@ function assistantTexts(items: TimelineItem[]): string[] {
     .map(item => (item.content as { parts?: Array<{ text?: string }> }).parts?.[0]?.text ?? "")
 }
 
-function platformTool(repository: TestRepository, catalog: ToolCatalog, result: () => { status: number, body: unknown }) {
+function platformTool(
+  repository: TestRepository,
+  catalog: ToolCatalog,
+  result: ConstructorParameters<typeof DeterministicLunaApiClient>[0],
+) {
   const store = repository.toolCallStore
   const client = new DeterministicLunaApiClient(result)
   return {
@@ -419,17 +425,18 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     const state: ToolStepState = {
       continuationMessages: [],
       selectedOperationIds: [],
+      executedOperationIds: new Set(),
+      internalReadCallCounts: new Map(),
       conversation: { title: "recover", titleSource: "default", turnIndex: 0 },
       assistantRenamed: false,
       cardRepairExhausted: false,
       providerArgumentRepairAttempts: new Map(),
       searchedToolQueries: new Map(),
       detailedToolRequests: new Map(),
-      completionBlockers: [],
     }
-    await toolStep.recoverInterruptedBatch(runId, state, defaultRuntimeSettings)
+    await toolStep.recoverInterruptedBatch(runId, state)
     const eventCount = (await repository.getEvents(owner, runId, 0)).length
-    await toolStep.recoverInterruptedBatch(runId, state, defaultRuntimeSettings)
+    await toolStep.recoverInterruptedBatch(runId, state)
     expect((await repository.getEvents(owner, runId, 0)).length).toBe(eventCount)
     await repository.saveRunCheckpoint(runId, {
       expectedRevision: 1, phase: "model", modelStep: 1, toolCallCount: 1, state: {},
@@ -646,13 +653,22 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
   })
 
-  it("等待用户输入时写入 checkpoint，重新排队后继续到完成", async () => {
+  it("等待用户输入时写入 checkpoint，追加补充消息不篡改首轮 turns.input，重新排队后继续到完成", async () => {
     const owner = "usr_cp_waiting_input"
-    const { repository, runId } = await queuedRun(owner, "cp-waiting-input")
+    const { repository, runId } = await queuedRun(owner, "cp-waiting-input", "请检查项目")
     const catalog = ToolCatalog.load([testToolOperation("getProject", { inputSchema: requiredProjectInput })])
     const { tools, client } = platformTool(repository, catalog, () => ({ status: 200, body: { id: "prj_1" } }))
-    const { provider, modelCalls } = scriptedProvider([
-      { toolCalls: [{ id: "missing", operationId: "getProject", arguments: {} }] },
+    const originalPropose = tools.propose.bind(tools)
+    let interceptedOnce = false
+    tools.propose = async (input, signal) => {
+      if (!interceptedOnce) {
+        interceptedOnce = true
+        throw new ToolInterruption("waiting_input", ["projectId"])
+      }
+      return originalPropose(input, signal)
+    }
+    const { provider, modelCalls, messages } = scriptedProvider([
+      { toolCalls: [{ id: "need-input", operationId: "getProject", arguments: { projectId: "placeholder" } }] },
       { toolCalls: [{ id: "filled", operationId: "getProject", arguments: { projectId: "prj_1" } }] },
       { text: "已查询项目。" },
     ])
@@ -667,11 +683,235 @@ describe("Phase 2：checkpoint 恢复边界", () => {
 
     await repository.appendRunInput(runId, "项目为 prj_1")
     await repository.updateRun(runId, "waiting_input", "queued")
+    expect((await repository.getExecutionInput(runId))?.input).toBe("请检查项目")
+
     await testExecutor(repository, runtime, { catalog, tools }).runOnce()
 
     expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
     expect(client.calls).toHaveLength(1)
     expect(modelCalls()).toBe(3)
+    expect(messages[1]?.some(msg => msg.role === "user" && msg.content === "项目为 prj_1")).toBe(true)
+  })
+
+  it("恢复时完整保留内部工具结果，按模型步合并并行调用且严格隔离每步 reasoning", async () => {
+    const owner = "usr_cp_internal_and_parallel"
+    const { repository, runId } = await queuedRun(owner, "cp-internal-parallel", "查找项目并重启应用")
+    const catalog = ToolCatalog.load([
+      testToolOperation("getProject", { inputSchema: requiredProjectInput }),
+      testToolOperation("listDeployments", { inputSchema: requiredProjectInput }),
+      testToolOperation("restartApplication", {
+        effect: "read",
+        method: "POST",
+        path: "/api/v1/applications/:id/restart",
+        requiresApproval: true,
+        requestBody: true,
+        inputSchema: {
+          type: "object",
+          properties: { applicationId: { type: "string" } },
+          required: ["applicationId"],
+          additionalProperties: false,
+        },
+      }),
+    ])
+    const { tools, client } = platformTool(repository, catalog, request => ({
+      status: 200,
+      body: { ok: true, op: request.operation.operationId },
+    }))
+    const { provider, messages } = scriptedProvider([
+      {
+        reasoning: "第一步思考：先检索工具并并行读取项目和部署。",
+        toolCalls: [
+          { id: "call_search", operationId: "search_tools", arguments: { query: "项目" } },
+          { id: "call_proj", operationId: "getProject", arguments: { projectId: "prj_1" } },
+          { id: "call_deploys", operationId: "listDeployments", arguments: { projectId: "prj_1" } },
+        ],
+      },
+      {
+        reasoning: "第二步思考：发起需要审批的应用重启。",
+        toolCalls: [
+          { id: "call_restart", operationId: "restartApplication", arguments: { applicationId: "app_1" } },
+        ],
+      },
+      { text: "已完成全部读取与重启。" },
+    ])
+    const runtime = new ModelRuntime(provider, testRegistry({
+      resolve: () => [...catalog.modelTools(["getProject", "listDeployments", "restartApplication"]), searchToolsTool],
+      search: input => ({
+        ...catalog.search(input),
+        loadedOperationIds: ["getProject"],
+        missingOperationIds: [],
+        catalogDigest: catalog.digest,
+        duplicate: false,
+        cacheHit: false,
+      }),
+    }))
+    const executor = testExecutor(repository, runtime, { catalog, tools })
+
+    await executor.runOnce()
+    expect(await repository.getRun(owner, runId)).toMatchObject({ status: "waiting_approval" })
+
+    const pending = [...repository.toolCallStore.records.values()].find(call => call.status === "awaiting_approval")
+    if (!pending) throw new Error("missing pending approval")
+    await tools.resolveApproval(pending.id, "approve")
+    await repository.updateRun(runId, "waiting_approval", "queued")
+    await executor.runOnce()
+
+    expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
+    expect(client.calls).toHaveLength(3)
+
+    // 检查审批恢复后第 3 次模型调用收到的完整上下文：
+    const resumedRequest = messages[2] ?? []
+    const assistantToolMsgs = resumedRequest.filter(
+      (msg): msg is Extract<ModelMessage, { role: "assistant" }> => msg.role === "assistant" && Boolean(msg.toolCalls?.length),
+    )
+    expect(assistantToolMsgs).toHaveLength(2)
+    expect(assistantToolMsgs[0]?.reasoning).toBe("第一步思考：先检索工具并并行读取项目和部署。")
+    expect(assistantToolMsgs[0]?.toolCalls?.map(c => c.id)).toEqual(["call_search", "call_proj", "call_deploys"])
+    expect(assistantToolMsgs[1]?.reasoning).toBe("第二步思考：发起需要审批的应用重启。")
+    expect(assistantToolMsgs[1]?.toolCalls?.map(c => c.id)).toEqual(["call_restart"])
+
+    const toolMsgs = resumedRequest.filter((msg): msg is Extract<ModelMessage, { role: "tool" }> => msg.role === "tool")
+    expect(toolMsgs.map(m => m.toolCallId)).toEqual(["call_search", "call_proj", "call_deploys", "call_restart"])
+  })
+
+  it("同批次 [toolA, toolB_approval, toolC] 在 toolB 暂停时持久化剩余队列，恢复后自动执行完 toolC", async () => {
+    const owner = "usr_cp_mid_batch_pause"
+    const { repository, runId } = await queuedRun(owner, "cp-mid-batch-pause", "读取、重启并拉取部署列表")
+    const catalog = ToolCatalog.load([
+      testToolOperation("getProject", { inputSchema: requiredProjectInput }),
+      testToolOperation("restartApplication", {
+        effect: "read",
+        method: "POST",
+        path: "/api/v1/applications/:id/restart",
+        requiresApproval: true,
+        requestBody: true,
+        inputSchema: {
+          type: "object",
+          properties: { applicationId: { type: "string" } },
+          required: ["applicationId"],
+          additionalProperties: false,
+        },
+      }),
+      testToolOperation("listDeployments", { inputSchema: requiredProjectInput }),
+    ])
+    const { tools, client } = platformTool(repository, catalog, request => ({
+      status: 200,
+      body: { executed: request.operation.operationId },
+    }))
+    const { provider, modelCalls, messages } = scriptedProvider([
+      {
+        reasoning: "单步并行下发三个工具。",
+        toolCalls: [
+          { id: "step_a", operationId: "getProject", arguments: { projectId: "prj_1" } },
+          { id: "step_b", operationId: "restartApplication", arguments: { applicationId: "app_1" } },
+          { id: "step_c", operationId: "listDeployments", arguments: { projectId: "prj_1" } },
+        ],
+      },
+      { text: "三个工具均已顺序执行完成。" },
+    ])
+    const runtime = new ModelRuntime(provider, testRegistry({
+      resolve: () => catalog.modelTools(["getProject", "restartApplication", "listDeployments"]),
+    }))
+    const executor = testExecutor(repository, runtime, { catalog, tools })
+
+    await executor.runOnce()
+    expect(await repository.getRun(owner, runId)).toMatchObject({ status: "waiting_approval" })
+    expect(client.calls.map(c => c.operation.operationId)).toEqual(["getProject"])
+    const pausedCheckpoint = await repository.loadRunCheckpoint(runId)
+    expect(pausedCheckpoint?.state.pendingBatchCalls).toEqual([
+      { id: "step_c", operationId: "listDeployments", arguments: { projectId: "prj_1" } },
+    ])
+
+    const pending = [...repository.toolCallStore.records.values()].find(call => call.status === "awaiting_approval")
+    if (!pending) throw new Error("missing pending approval")
+    await tools.resolveApproval(pending.id, "approve")
+    await repository.updateRun(runId, "waiting_approval", "queued")
+
+    await executor.runOnce()
+    expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
+    expect(modelCalls()).toBe(2)
+    expect(client.calls.map(c => c.operation.operationId)).toEqual(["getProject", "restartApplication", "listDeployments"])
+
+    const finalStepMessages = messages[1] ?? []
+    const assistantBatch = finalStepMessages.find(
+      (msg): msg is Extract<ModelMessage, { role: "assistant" }> => msg.role === "assistant" && Boolean(msg.toolCalls?.length),
+    )
+    expect(assistantBatch?.toolCalls?.map(c => c.id)).toEqual(["step_a", "step_b", "step_c"])
+    expect(finalStepMessages.filter(m => m.role === "tool").map(m => m.toolCallId)).toEqual(["step_a", "step_b", "step_c"])
+  })
+
+  it("清理崩溃遗留的未发出孤儿 proposed（executionCount === 0）记录，不毒化后续幂等重试", async () => {
+    const owner = "usr_cp_orphan_proposed"
+    const { repository, runId } = await queuedRun(owner, "cp-orphan-proposed", "触发构建")
+    const catalog = ToolCatalog.load([
+      testToolOperation("triggerBuildRun", {
+        method: "POST",
+        path: "/api/v1/projects/{projectId}/build-runs/trigger",
+        effect: "async",
+        verification: [{ operationId: "getBuildRun", family: "build_run" }],
+        parameters: [{ inputName: "projectId", wireName: "projectId", in: "path", required: true }],
+        requestBody: true,
+        requestRequired: true,
+        inputSchema: {
+          type: "object",
+          properties: { projectId: { type: "string" }, body: { type: "object" } },
+          required: ["projectId", "body"],
+          additionalProperties: false,
+        },
+      }),
+      testToolOperation("getBuildRun", {
+        method: "GET",
+        path: "/api/v1/projects/{projectId}/build-runs/{runId}",
+        effect: "read",
+        parameters: [
+          { inputName: "projectId", wireName: "projectId", in: "path", required: true },
+          { inputName: "runId", wireName: "runId", in: "path", required: true },
+        ],
+        inputSchema: {
+          type: "object",
+          properties: { projectId: { type: "string" }, runId: { type: "string" } },
+          required: ["projectId", "runId"],
+          additionalProperties: false,
+        },
+      }),
+    ])
+    const { client, store } = platformTool(repository, catalog, () => ({ status: 201, body: { id: "bldr_real", status: "queued" } }))
+    await claimOrThrow(repository)
+    // 模拟崩溃前刚 insert 到 ai.tool_calls 但尚未发往 Go API（executionCount === 0）
+    await store.insert({
+      id: "aitool_orphan_proposed",
+      idempotencyKey: "aiidem_orphan",
+      runId,
+      operationId: "triggerBuildRun",
+      status: "proposed",
+      arguments: { projectId: "prj_1", body: { applicationId: "app_1" } },
+      argumentsHash: "sha256:any",
+      attempt: 1,
+      rowVersion: 1,
+      executionCount: 0,
+    })
+    await repository.saveRunCheckpoint(runId, {
+      expectedRevision: 0,
+      phase: "tool_execution",
+      modelStep: 0,
+      toolCallCount: 0,
+      state: {},
+    })
+
+    const { provider } = scriptedProvider([
+      { toolCalls: [{ id: "retry_trigger", operationId: "triggerBuildRun", arguments: { projectId: "prj_1", body: { applicationId: "app_1" } } }] },
+      { text: "已真实触发构建 bldr_real。" },
+    ])
+    const executor = testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["triggerBuildRun"]) })),
+      { catalog, tools: restartedTool(repository, catalog, client) },
+    )
+    expect(await restart(executor)).toBe(true)
+
+    expect(store.records.get("aitool_orphan_proposed")?.status).toBe("skipped")
+    expect(client.calls).toHaveLength(1)
+    expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
   })
 
   it("恢复次数达到上限后按中断终止，不再续跑", async () => {
@@ -697,5 +937,148 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     })
     expect((await repository.loadRunCheckpoint(runId))?.recoveries).toBe(maxRunRecoveries)
     expect(modelCalls()).toBe(0)
+  })
+
+  it("[P0-1] 真实 PG 下 ToolCallRecord.modelCallId 为 undefined 时，recoverInterruptedBatch 从 projected item 回退读取且绝不重复注入消息", async () => {
+    const owner = "usr_p0_1_pg_model_call_id"
+    const { repository, runId } = await queuedRun(owner, "p0-1-pg-model-call-id")
+    const catalog = ToolCatalog.load([testToolOperation("getProject")])
+    const { tools, client, store } = platformTool(repository, catalog, () => ({ status: 200, body: { id: "prj_pg" } }))
+    const claimed = await claimOrThrow(repository)
+
+    const proposed = await tools.propose({
+      runId,
+      modelCallId: "call_pg_0",
+      batchId: "batch_0",
+      operationId: "getProject",
+      arguments: {},
+    })
+    expect(proposed.status).toBe("succeeded")
+    // 模拟真实 PostgreSQL：ai.tool_calls 无 model_call_id / batch_id 列，listByRun 返回的对象上这两个属性恒为 undefined
+    const rawRecord = store.records.get(proposed.id)!
+    delete rawRecord.modelCallId
+    delete rawRecord.batchId
+
+    const executionInput = await repository.getExecutionInput(runId)
+    if (!executionInput) throw new Error("missing executionInput")
+    const checkpointVal = await repository.saveRunCheckpoint(runId, {
+      expectedRevision: 0, phase: "tool_execution", modelStep: 1, toolCallCount: 1, state: {},
+    })
+    const toolStep = new ToolStepRunner(
+      repository,
+      new ModelRuntime(scriptedProvider([]).provider, testRegistry()),
+      restartedTool(repository, catalog, client),
+    )
+    const state = await toolStep.initialState(claimed, executionInput, checkpointVal)
+    expect(state.continuationMessages.filter(m => m.role === "tool")).toHaveLength(1)
+
+    await toolStep.recoverInterruptedBatch(runId, state)
+    const toolMessages = state.continuationMessages.filter(m => m.role === "tool")
+    expect(toolMessages).toHaveLength(1)
+    expect(toolMessages[0]).toMatchObject({ role: "tool", toolCallId: "call_pg_0" })
+  })
+
+  it("[P0-3] pendingBatchCalls 续跑途中部分工具落库后崩溃，重启恢复不重复执行已完成工具且不产生重复 toolCallId", async () => {
+    const owner = "usr_p0_3_pending_batch_crash"
+    const { repository, runId } = await queuedRun(owner, "p0-3-pending-batch-crash")
+    const catalog = ToolCatalog.load([
+      testToolOperation("getProject"),
+      testToolOperation("listApplications"),
+    ])
+    let failSecondTool = true
+    const client = new DeterministicLunaApiClient((req) => {
+      if (req.operation.operationId === "listApplications" && failSecondTool) {
+        throw new Error("simulated crash during toolC")
+      }
+      return { status: 200, body: { ok: req.operation.operationId } }
+    })
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(repository.toolCallStore, repository))
+    await claimOrThrow(repository)
+
+    // 先完成批次内 toolB（call_0_1），模拟其在进程崩溃前已完整持久化到 ai.tool_calls 与 ai.items
+    const settledB = await tools.propose({
+      runId,
+      modelCallId: "call_0_1",
+      batchId: "batch_0",
+      operationId: "getProject",
+      arguments: {},
+    })
+    // 同时模拟真实 PG 无 modelCallId 列
+    delete repository.toolCallStore.records.get(settledB.id)!.modelCallId
+    expect(failSecondTool).toBe(true)
+    failSecondTool = false
+
+    await repository.saveRunCheckpoint(runId, {
+      expectedRevision: 0,
+      phase: "tool_execution",
+      modelStep: 1,
+      toolCallCount: 1,
+      state: {
+        pendingBatchId: "batch_0",
+        pendingBatchCalls: [
+          { id: "call_0_1", operationId: "getProject", arguments: {} },
+          { id: "call_0_2", operationId: "listApplications", arguments: {} },
+        ],
+      },
+    })
+
+    const { provider, messages } = scriptedProvider([{ text: "续跑全部完成。" }])
+    const executor = testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject", "listApplications"]) })),
+      { catalog, tools: restartedTool(repository, catalog, client) },
+    )
+    expect(await restart(executor)).toBe(true)
+    expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
+    // getProject 绝不能在恢复时被重复调用，全程只有初始 1 次 getProject + 续跑 1 次 listApplications
+    expect(client.calls.map(c => c.operation.operationId)).toEqual(["getProject", "listApplications"])
+    const sentToolIds = messages[0]?.flatMap(m => m.role === "tool" ? [m.toolCallId] : []) ?? []
+    expect(sentToolIds).toEqual(["call_0_1", "call_0_2"])
+  })
+
+  it("[P2-2] 多步模型循环每次调用 streamModel 前均校验可用余额，且无工具模型步的 progress 不会串入后续工具步", async () => {
+    const owner = "usr_p2_2_balance_loop"
+    const repository = new TestRepository()
+    repository.setWalletBalance(owner, 10)
+    const conversation = await repository.createConversation(owner, "balance-loop", "aimod_test")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      modelId: "aimod_test",
+      modelSnapshot: {
+        id: "aimod_test",
+        name: "Test Model",
+        maxContextTokens: 128_000,
+        maxOutputTokens: 8_192,
+        inputCreditsPerMillion: "1",
+        outputCreditsPerMillion: "2",
+        cachedInputCreditsPerMillion: "0.5",
+      },
+      input: "多步任务",
+      pageContext: {},
+      idempotencyKey: "p2-2-balance",
+      actorSessionId: "ses_p2_2",
+    })
+    const catalog = ToolCatalog.load([testToolOperation("getProject")])
+    const client = new DeterministicLunaApiClient(() => {
+      // 第一步工具执行期间模拟上一轮计费结算将钱包扣至 0
+      repository.setWalletBalance(owner, 0)
+      return { status: 200, body: { id: "prj_1" } }
+    })
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(repository.toolCallStore, repository))
+    const { provider, modelCalls } = scriptedProvider([
+      { toolCalls: [{ id: "call_step0", operationId: "getProject", arguments: {} }] },
+      { text: "不应到达第 2 步模型调用。" },
+    ])
+    const executor = testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    )
+    await executor.runOnce()
+    expect(modelCalls()).toBe(1)
+    expect(await repository.getRun(owner, created.run.id)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.wallet_balance_insufficient",
+    })
   })
 })

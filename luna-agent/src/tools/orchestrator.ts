@@ -3,7 +3,7 @@ import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.j
 import { createId } from "../id.js"
 import { redact, redactSensitivePaths } from "../redaction.js"
 import { agentMetrics, errorDiagnostic, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
-import { ToolArgumentsInvalidError, requiredInputFields, validateToolArguments } from "./argument-validator.js"
+import { ToolArgumentsInvalidError, validateToolArguments } from "./argument-validator.js"
 import type { Repository } from "../persistence/repository.js"
 import type { ToolCatalog } from "./catalog.js"
 import { UnknownToolOutcomeError, type LunaApiToolClient, type ToolExecutionResult } from "./luna-api-client.js"
@@ -16,6 +16,8 @@ export type ToolCallRecord = {
   id: string
   idempotencyKey: string
   verificationForToolCallId?: string
+  modelCallId?: string
+  batchId?: string
   runId: string
   operationId: string
   status: ToolCallStatus
@@ -71,6 +73,8 @@ export class ToolOrchestrator {
     arguments: unknown
     inputMode?: "model" | "direct" | "verification"
     verificationForToolCallId?: string
+    modelCallId?: string
+    batchId?: string
   }, signal?: AbortSignal): Promise<ToolCallRecord> {
     const catalog = await this.catalogForRun(input.runId)
     const operation = catalog.get(input.operationId)
@@ -83,6 +87,7 @@ export class ToolOrchestrator {
     const history = sideEffect
       ? (await this.store.listByRun(input.runId)).filter(call =>
           call.inputMode !== "verification"
+          && !(call.status === "skipped" && call.executionCount === 0)
           && isSideEffectOperation(catalog, call.operationId))
       : []
     const previous = history.at(-1)
@@ -100,7 +105,7 @@ export class ToolOrchestrator {
       ? history.filter(call => call.idempotencyKey === idempotencyKey)
       : []
     const reusable = existingCalls.find(call =>
-      call.status === "proposed" || call.status === "running" || call.status === "awaiting_approval" || call.status === "succeeded")
+      (call.status === "proposed" && call.executionCount > 0) || call.status === "running" || call.status === "awaiting_approval" || call.status === "succeeded")
     if (reusable) return reusable
     const attempt = existingCalls.reduce((maximum, call) => Math.max(maximum, call.attempt), 0) + 1
     if (inputMode !== "verification")
@@ -111,8 +116,6 @@ export class ToolOrchestrator {
     }
     catch (error) {
       if (!(error instanceof ToolArgumentsInvalidError)) throw error
-      const fields = requiredInputFields(error)
-      if (fields) throw new ToolInterruption("waiting_input", fields)
       return this.rejectInvalidArguments(input, argumentsHash, idempotencyKey, attempt, error)
     }
     const id = createId("aitool")
@@ -120,6 +123,8 @@ export class ToolOrchestrator {
       id,
       idempotencyKey,
       ...(input.verificationForToolCallId ? { verificationForToolCallId: input.verificationForToolCallId } : {}),
+      ...(input.modelCallId ? { modelCallId: input.modelCallId } : {}),
+      ...(input.batchId ? { batchId: input.batchId } : {}),
       runId: input.runId,
       operationId: input.operationId,
       status: "proposed",
@@ -135,13 +140,136 @@ export class ToolOrchestrator {
     await this.store.emit({
       type: "tool.started",
       toolCallId: record.id,
-      data: { operationId: record.operationId, parameterSummary: redact(record.arguments) },
+      data: {
+        operationId: record.operationId,
+        parameterSummary: redact(record.arguments),
+        ...(record.modelCallId ? { modelCallId: record.modelCallId } : {}),
+        ...(record.batchId ? { batchId: record.batchId } : {}),
+      },
     })
     return this.advance(record, false, signal)
   }
 
-  async resolveApproval(id: string, decision: ApprovalDecision, signal?: AbortSignal): Promise<ToolCallRecord> {
-    const call = await this.requireAwaitingApproval(id)
+  async isCallableOperation(runId: string, operationId: string): Promise<boolean> {
+    const catalog = await this.catalogForRun(runId)
+    try {
+      const operation = catalog.get(operationId)
+      if (operation.verificationOnly) return false
+      const effect = toolEffect(operation)
+      if ((effect === "write" || effect === "async") && !operation.verification?.length) return false
+      return true
+    }
+    catch {
+      return false
+    }
+  }
+
+  async isReadOrDiscoveryOperation(runId: string, operationId: string): Promise<boolean> {
+    const catalog = await this.catalogForRun(runId)
+    try {
+      const effect = toolEffect(catalog.get(operationId))
+      return effect === "read" || effect === "discovery"
+    }
+    catch {
+      return false
+    }
+  }
+
+  operationCallCount(runId: string, operationId: string): number {
+    return this.loopGuard.operationCallCount(runId, operationId)
+  }
+
+  listByRun(runId: string): Promise<ToolCallRecord[]> {
+    return this.store.listByRun(runId)
+  }
+
+  /**
+   * 仅校验并持久化直接工具动作（HTTP 接收阶段不执行外部平台工具请求）。
+   * - 若静态策略需审批：写入 awaiting_approval 并发出 approval.required 事件；
+   * - 若参数不合法：写入 failed；
+   * - 否则保留 proposed，交由后台 RunExecutor 在 running 态独占执行。
+   */
+  async prepareDirectAction(input: {
+    runId: string
+    operationId: string
+    arguments: unknown
+  }): Promise<ToolCallRecord> {
+    const existingDirect = (await this.store.listByRun(input.runId)).find(call => call.inputMode === "direct")
+    if (existingDirect) return existingDirect
+    const catalog = await this.catalogForRun(input.runId)
+    const operation = catalog.get(input.operationId)
+    const effect = toolEffect(operation)
+    if ((effect === "write" || effect === "async") && !operation.verification?.length) {
+      throw new Error("ai.tool_not_available")
+    }
+    const argumentsHash = safeArgumentsHash(input.arguments)
+    const idempotencyKey = logicalIdempotencyKey(input.runId, input.operationId, argumentsHash, 1)
+    let args: Record<string, unknown>
+    try {
+      args = validateToolArguments(operation.inputSchema, input.arguments)
+    }
+    catch (error) {
+      if (!(error instanceof ToolArgumentsInvalidError)) throw error
+      return this.rejectInvalidArguments(
+        { runId: input.runId, operationId: input.operationId, inputMode: "direct" },
+        argumentsHash,
+        idempotencyKey,
+        1,
+        error,
+      )
+    }
+    const id = createId("aitool")
+    const record: ToolCallRecord = {
+      id,
+      idempotencyKey,
+      runId: input.runId,
+      operationId: input.operationId,
+      status: "proposed",
+      arguments: args,
+      argumentsHash,
+      attempt: 1,
+      rowVersion: 1,
+      executionCount: 0,
+      inputMode: "direct",
+    }
+    await this.store.insert(record)
+    telemetryLog("agent.tool.proposed", "info", { "luna.run.id": input.runId, "tool.name": input.operationId })
+    await this.store.emit({
+      type: "tool.started",
+      toolCallId: record.id,
+      data: {
+        operationId: record.operationId,
+        parameterSummary: redact(record.arguments),
+      },
+    })
+    const decision = this.policy.evaluate(operation, false)
+    if (decision.action === "wait_approval") {
+      return this.transition(record, "awaiting_approval", {}, "approval.required", {
+        operationId: record.operationId,
+        parameterSummary: redact(record.arguments),
+      })
+    }
+    return record
+  }
+
+  /**
+   * 原子持久化用户审批决定，不在此处执行外部平台工具 HTTP 调用。
+   * 重复提交相同决定幂等返回，后续执行统一由 RunExecutor 接管。
+   */
+  async recordApprovalDecision(
+    id: string,
+    decision: ApprovalDecision,
+  ): Promise<{ call: ToolCallRecord, alreadyDecided: boolean }> {
+    const call = await this.require(id)
+    if (decision === "approve" && call.approvalDecision === "approve" && call.status !== "canceled") {
+      return { call, alreadyDecided: true }
+    }
+    if (decision === "reject" && call.status === "rejected") {
+      return { call, alreadyDecided: true }
+    }
+    if (call.status !== "awaiting_approval") {
+      throw new Error("ai.approval_not_pending")
+    }
     await this.recoverToolBatch(call.runId)
     agentMetrics.approvals.add(1, { decision, tool: call.operationId })
     telemetryLog("agent.approval.resolved", "info", {
@@ -149,22 +277,51 @@ export class ToolOrchestrator {
       "tool.name": call.operationId,
       decision,
     })
+    if (decision === "reject") {
+      await this.store.emit({
+        type: "approval.resolved",
+        toolCallId: call.id,
+        data: { decision, operationId: call.operationId, parameterSummary: redact(call.arguments) },
+      })
+      const rejected = await this.transition(call, "rejected", {
+        errorCode: "ai.tool_rejected",
+        result: { code: "ai.tool_rejected", retryable: false },
+      }, "tool_call.rejected", { decision })
+      return { call: rejected, alreadyDecided: false }
+    }
+    const approved = await this.store.update(call.id, "awaiting_approval", {
+      status: "proposed",
+      approvalDecision: "approve",
+      rowVersion: call.rowVersion + 1,
+    })
     await this.store.emit({
       type: "approval.resolved",
       toolCallId: call.id,
       data: { decision, operationId: call.operationId, parameterSummary: redact(call.arguments) },
     })
-    if (decision === "reject") {
-      return this.transition(call, "rejected", {
-        errorCode: "ai.tool_rejected",
-        result: { code: "ai.tool_rejected", retryable: false },
-      }, "tool_call.rejected", { decision })
+    return { call: approved, alreadyDecided: false }
+  }
+
+  /**
+   * 仅供 RunExecutor 在 Run 处于 running 状态时执行待处理的 direct 或已批准工具调用。
+   */
+  async executePendingCall(id: string, signal?: AbortSignal): Promise<ToolCallRecord> {
+    const call = await this.require(id)
+    if (call.status !== "proposed") return call
+    if (call.inputMode === "direct" && call.executionCount === 0) {
+      this.loopGuard.beforePropose({
+        runId: call.runId,
+        operationId: call.operationId,
+        argumentsHash: call.argumentsHash,
+      })
     }
-    const approved = await this.store.update(call.id, call.status, {
-      approvalDecision: decision,
-      rowVersion: call.rowVersion + 1,
-    })
-    return this.advance(approved, true, signal)
+    return this.advance(call, call.approvalDecision === "approve", signal)
+  }
+
+  async resolveApproval(id: string, decision: ApprovalDecision, signal?: AbortSignal): Promise<ToolCallRecord> {
+    const { call } = await this.recordApprovalDecision(id, decision)
+    if (decision === "reject") return call
+    return this.executePendingCall(call.id, signal)
   }
 
   async inspect(id: string): Promise<ToolCallRecord> {
@@ -190,8 +347,21 @@ export class ToolOrchestrator {
    * 使重启后 Run 的工具预算不放宽。事实表是权威结果，Timeline 投影缺失不影响计数。
    */
   async recoverToolBatch(runId: string): Promise<ToolCallRecord[]> {
-    const calls = await this.store.listByRun(runId)
-    const modelCalls = calls.filter(call => call.inputMode !== "verification")
+    const rawCalls = await this.store.listByRun(runId)
+    const calls: ToolCallRecord[] = []
+    for (const call of rawCalls) {
+      if (call.status === "proposed" && call.executionCount === 0 && call.inputMode !== "direct" && call.approvalDecision !== "approve") {
+        const skipped = await this.store.update(call.id, "proposed", {
+          status: "skipped",
+          errorCode: "ai.agent_restarted",
+          rowVersion: call.rowVersion + 1,
+        }).catch(() => call)
+        calls.push(skipped)
+        continue
+      }
+      calls.push(call)
+    }
+    const modelCalls = calls.filter(call => call.inputMode !== "verification" && !(call.status === "skipped" && call.executionCount === 0))
     this.loopGuard.raiseFromSettledCalls(runId, {
       proposed: modelCalls.length,
       executed: modelCalls.reduce((count, call) => count + call.executionCount, 0),
@@ -439,7 +609,10 @@ export class ToolOrchestrator {
     if (result.status === 401 || result.status === 403)
       return this.fail(call, code ?? "ai.tool_forbidden", storedResult, diagnostics)
     if (result.status < 200 || result.status >= 300) {
-      const failed = await this.fail(call, code ?? "ai.tool_failed", storedResult, diagnostics)
+      const errorStoredResult = storedResult && typeof storedResult === "object" && !Array.isArray(storedResult)
+        ? { ...(storedResult as Record<string, unknown>), httpStatus: result.status }
+        : { ...(storedResult === undefined ? {} : { body: storedResult }), httpStatus: result.status }
+      const failed = await this.fail(call, code ?? "ai.tool_failed", errorStoredResult, diagnostics)
       if (isExplicitlyNonRetryable(result.body)) {
         this.loopGuard.blockNonRetryable({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
       }
@@ -457,7 +630,7 @@ export class ToolOrchestrator {
   }
 
   private async rejectInvalidArguments(
-    input: { runId: string, operationId: string, inputMode?: "model" | "direct" | "verification" },
+    input: { runId: string, operationId: string, inputMode?: "model" | "direct" | "verification", modelCallId?: string, batchId?: string },
     argumentsHash: string,
     idempotencyKey: string,
     attempt: number,
@@ -468,6 +641,8 @@ export class ToolOrchestrator {
     const record: ToolCallRecord = {
       id,
       idempotencyKey,
+      ...(input.modelCallId ? { modelCallId: input.modelCallId } : {}),
+      ...(input.batchId ? { batchId: input.batchId } : {}),
       runId: input.runId,
       operationId: input.operationId,
       status: "proposed",
@@ -493,7 +668,12 @@ export class ToolOrchestrator {
     await this.store.emit({
       type: "tool.started",
       toolCallId: record.id,
-      data: { operationId: record.operationId, parameterSummary: {} },
+      data: {
+        operationId: record.operationId,
+        parameterSummary: {},
+        ...(record.modelCallId ? { modelCallId: record.modelCallId } : {}),
+        ...(record.batchId ? { batchId: record.batchId } : {}),
+      },
     })
     const failed = await this.transition(record, "failed", { errorCode: error.code, result }, "tool_call.failed")
     agentMetrics.toolCalls.add(1, { tool: input.operationId, outcome: error.code })
@@ -505,7 +685,14 @@ export class ToolOrchestrator {
     await this.store.emit({
       type: event,
       toolCallId: call.id,
-      data: redact({ status, result: next.result, errorCode: next.errorCode, ...eventData }),
+      data: redact({
+        status,
+        result: next.result,
+        errorCode: next.errorCode,
+        ...(call.modelCallId ? { modelCallId: call.modelCallId } : {}),
+        ...(call.batchId ? { batchId: call.batchId } : {}),
+        ...eventData,
+      }),
     })
     return next
   }
@@ -513,12 +700,6 @@ export class ToolOrchestrator {
   private async require(id: string): Promise<ToolCallRecord> {
     const call = await this.store.get(id)
     if (!call) throw new Error("ai.tool_call_not_found")
-    return call
-  }
-
-  private async requireAwaitingApproval(id: string): Promise<ToolCallRecord> {
-    const call = await this.require(id)
-    if (call.status !== "awaiting_approval") throw new Error("ai.approval_not_pending")
     return call
   }
 
@@ -610,7 +791,12 @@ export class ProjectingToolCallStore implements ToolCallStore {
     const execution = await this.repository.getExecutionInput(call.runId)
     if (!execution) return
     const itemId = `${call.id}:item`
-    const content = redact({ ...toolCallContent(call), ...toolDiagnostics(event.data) })
+    const content = redact({
+      ...toolCallContent(call),
+      ...(typeof event.data.modelCallId === "string" ? { modelCallId: event.data.modelCallId } : {}),
+      ...(typeof event.data.batchId === "string" ? { batchId: event.data.batchId } : {}),
+      ...toolDiagnostics(event.data),
+    })
     const publicType = publicToolEventType(event.type)
     const eventData = { itemId, toolCallId: call.id, ...event.data }
     if (event.type === "tool.started") {
@@ -635,9 +821,12 @@ export class ProjectingToolCallStore implements ToolCallStore {
 function toolCallContent(call: ToolCallRecord) {
   return {
     toolCallId: call.id,
+    ...(call.modelCallId ? { modelCallId: call.modelCallId } : {}),
+    ...(call.batchId ? { batchId: call.batchId } : {}),
     operationId: call.operationId,
     status: call.status,
     inputMode: call.inputMode ?? "model",
+    ...(call.approvalDecision ? { approvalDecision: call.approvalDecision } : {}),
     ...(call.verificationForToolCallId ? { verificationForToolCallId: call.verificationForToolCallId } : {}),
     arguments: call.arguments,
     result: call.result,

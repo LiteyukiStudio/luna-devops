@@ -1,7 +1,11 @@
+import type { AIAssistantRuntimeValue } from './runtime-context'
 import type { AIUIAction } from '@/api'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { toast } from 'sonner'
 import { describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api'
 import { AIInteractionCards } from './interaction-cards'
+import { AIAssistantRuntimeContext } from './runtime-context'
 
 const candidatesCard = {
   schemaVersion: 1,
@@ -698,5 +702,190 @@ describe('ai interaction cards', () => {
 
     expect(screen.getByText('可信来源').tagName).toBe('STRONG')
     expect(container.querySelector('script')).not.toBeInTheDocument()
+  })
+
+  it('allows submitting when a required field is hidden by visibleWhen, omits hidden defaults/residuals, and re-enforces validation when revealed', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const conditionalCard = {
+      schemaVersion: 1,
+      generationId: 'visible-when-deadlock-fix',
+      title: '配置访问入口',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'gateway',
+        presentation: { variant: 'form', title: '网关配置' },
+        form: {
+          sections: [{
+            id: 'main',
+            fields: [
+              {
+                id: 'exposeMode',
+                type: 'select',
+                display: 'radio',
+                label: '暴露模式',
+                required: true,
+                defaultValue: 'auto',
+                options: [
+                  { value: 'auto', label: '自动分配域名' },
+                  { value: 'custom', label: '自定义域名' },
+                ],
+              },
+              {
+                id: 'customDomain',
+                type: 'text',
+                label: '自定义域名',
+                required: true,
+                defaultValue: 'hidden-default.example.com',
+                visibleWhen: { fieldId: 'exposeMode', operator: 'equals', value: 'custom' },
+              },
+              {
+                id: 'emptyRequiredHidden',
+                type: 'text',
+                label: '必填隐藏证书名',
+                required: true,
+                visibleWhen: { fieldId: 'exposeMode', operator: 'equals', value: 'custom' },
+              },
+            ],
+          }],
+        },
+        actions: [{
+          id: 'save',
+          type: 'tool',
+          label: '保存网关',
+          emphasis: 'primary',
+          repeatable: true,
+          operationId: 'saveGateway',
+          bindings: [
+            { target: '/exposeMode', value: { type: 'field', fieldId: 'exposeMode' } },
+            { target: '/customDomain', value: { type: 'field', fieldId: 'customDomain' } },
+            { target: '/certName', value: { type: 'field', fieldId: 'emptyRequiredHidden' } },
+          ],
+        }],
+      }],
+    }
+
+    render(<AIInteractionCards arguments={conditionalCard} onAction={onAction} />)
+
+    // 初始 exposeMode=auto：两个 required 隐藏字段不应阻塞提交，且默认值不得混入提交载荷。
+    const submitButton = screen.getByRole('button', { name: '保存网关' })
+    await waitFor(() => expect(submitButton).toBeEnabled())
+    fireEvent.click(submitButton)
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledTimes(1))
+    expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'request_tool',
+      payload: {
+        operationId: 'saveGateway',
+        arguments: { exposeMode: 'auto' },
+        message: '保存网关',
+      },
+    }))
+
+    // 切换为 custom：空的必填字段显现后动态恢复必填拦截。
+    fireEvent.click(screen.getByRole('radio', { name: '自定义域名' }))
+    await waitFor(() => expect(submitButton).toBeDisabled())
+
+    fireEvent.change(screen.getByLabelText('自定义域名 *'), { target: { value: 'app.example.com' } })
+    fireEvent.change(screen.getByLabelText('必填隐藏证书名 *'), { target: { value: 'tls-main' } })
+    await waitFor(() => expect(submitButton).toBeEnabled())
+
+    fireEvent.click(submitButton)
+    await waitFor(() => expect(onAction).toHaveBeenCalledTimes(2))
+    expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({
+      payload: {
+        operationId: 'saveGateway',
+        arguments: {
+          exposeMode: 'custom',
+          customDomain: 'app.example.com',
+          certName: 'tls-main',
+        },
+        message: '保存网关',
+      },
+    }))
+  })
+
+  it('unlocks a non-repeatable action button after request failure or downstream tool rejection/failure and surfaces specific errors', async () => {
+    const toastErrorSpy = vi.spyOn(toast, 'error').mockImplementation(() => '')
+    try {
+      const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>()
+        .mockRejectedValueOnce(new ApiError('余额不足，请先充值后重试', { status: 422, code: 'billing.insufficient_balance', path: '/api/v1/ai/conversations/c1/tool-actions' }))
+        .mockResolvedValue(true)
+
+      const singleShotCard = {
+        schemaVersion: 1,
+        generationId: 'retry-card-action',
+        title: '创建发布',
+        mode: 'interactive',
+        template: 'form',
+        cards: [{
+          id: 'release',
+          presentation: { variant: 'form', title: '发布版本' },
+          form: {
+            sections: [{
+              id: 'main',
+              fields: [{ id: 'tag', type: 'text', label: '镜像标签', required: true, defaultValue: 'v1.0.0' }],
+            }],
+          },
+          actions: [{
+            id: 'deploy',
+            type: 'tool',
+            label: '执行发布',
+            emphasis: 'primary',
+            operationId: 'createRelease',
+            bindings: [{ target: '/tag', value: { type: 'field', fieldId: 'tag' } }],
+          }],
+        }],
+      }
+
+      const makeRuntime = (blocks: AIAssistantRuntimeValue['timelineProps']['blocks']): AIAssistantRuntimeValue => ({
+        timelineProps: { blocks },
+      } as unknown as AIAssistantRuntimeValue)
+
+      const { rerender } = render(
+        <AIAssistantRuntimeContext value={makeRuntime([])}>
+          <AIInteractionCards arguments={singleShotCard} onAction={onAction} />
+        </AIAssistantRuntimeContext>,
+      )
+
+      const deployButton = screen.getByRole('button', { name: '执行发布' })
+      await waitFor(() => expect(deployButton).toBeEnabled())
+
+      // 第一次点击抛错：展示具体后端错误文案且按钮不永久锁死
+      fireEvent.click(deployButton)
+      await waitFor(() => expect(toastErrorSpy).toHaveBeenCalledWith('余额不足，请先充值后重试'))
+      expect(deployButton).toBeEnabled()
+
+      // 第二次点击入队成功：非可重复按钮进入已消费锁定态
+      fireEvent.click(deployButton)
+      await waitFor(() => expect(onAction).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(deployButton).toBeDisabled())
+
+      // 下游关联工具被用户拒绝（rejected）：按钮自动解锁允许修改参数重试
+      rerender(
+        <AIAssistantRuntimeContext
+          value={makeRuntime([{
+            id: 'tool-1',
+            turnId: 'turn-2',
+            runId: 'run-2',
+            index: 1,
+            type: 'tool_call',
+            toolCallId: 'aitool_1',
+            operationId: 'createRelease',
+            visibility: 'normal',
+            status: 'rejected',
+            arguments: { tag: 'v1.0.0' },
+            uiActions: [],
+          }])}
+        >
+          <AIInteractionCards arguments={singleShotCard} onAction={onAction} />
+        </AIAssistantRuntimeContext>,
+      )
+
+      await waitFor(() => expect(deployButton).toBeEnabled())
+    }
+    finally {
+      toastErrorSpy.mockRestore()
+    }
   })
 })

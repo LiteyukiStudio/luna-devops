@@ -59,10 +59,12 @@ describe('api error boundary', () => {
 
   it.each([
     'billing.wallet_unavailable',
+    'ai.provider_usage_unavailable',
     'ai.model_context_limit_invalid',
     'ai.model_context_insufficient',
     'ai.model_output_limit_invalid',
     'ai.wallet_balance_insufficient',
+    'idempotency_conflict',
   ])('localizes the stable model execution code %s', async (code) => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ code, error: 'generic backend error' }, 422))
     vi.stubGlobal('fetch', fetchMock)
@@ -70,6 +72,22 @@ describe('api error boundary', () => {
     const error = await request('/ai/model').catch((requestError: unknown) => requestError)
 
     expect(error).toMatchObject({ code, message: i18next.t(`errors.${code}`) })
+  })
+
+  it('extracts and localizes nested error.code envelopes when upstream returns an object error', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      error: { code: 'ai.provider_usage_unavailable', requestId: 'req_nested_usage' },
+    }, 502))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await request('/ai/provider/test').catch((requestError: unknown) => requestError)
+
+    expect(error).toMatchObject({
+      code: 'ai.provider_usage_unavailable',
+      message: i18next.t('errors.ai.provider_usage_unavailable'),
+      requestId: 'req_nested_usage',
+      status: 502,
+    })
   })
 
   it.each([

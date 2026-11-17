@@ -63,6 +63,7 @@ export function mapRun(row: RunRow): Run {
     createdAt: row.createdAt.toISOString(),
     ...(row.startedAt ? { startedAt: row.startedAt.toISOString() } : {}),
     ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {}),
+    ...(row.wakeAt ? { wakeAt: row.wakeAt.toISOString() } : {}),
     ...(row.errorCode ? { errorCode: row.errorCode } : {}),
     ...(row.modelId && row.modelName ? {
       model: {

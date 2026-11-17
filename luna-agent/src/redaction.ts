@@ -57,7 +57,7 @@ function maskSecrets(item: unknown): unknown {
   return visit(item, new WeakSet())
 }
 
-function visit(value: unknown, seen: WeakSet<object>): unknown {
+function visit(value: unknown, seen: WeakSet<object>, inSecretContainer = false): unknown {
   if (typeof value === "string") {
     const redacted = value
       .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
@@ -69,20 +69,21 @@ function visit(value: unknown, seen: WeakSet<object>): unknown {
   if (!value || typeof value !== "object") return value
   if (seen.has(value)) return "[CIRCULAR]"
   seen.add(value)
-  if (Array.isArray(value)) return value.map(item => visit(item, seen))
+  if (Array.isArray(value)) return value.map(item => visit(item, seen, inSecretContainer))
   const record = value as Record<string, unknown>
-  const secretContainer = record.type === "secret" || record.valueMode === "secret"
-  const keyValuePair = typeof record.key === "string" && Object.prototype.hasOwnProperty.call(record, "value")
+  const secretContainer = inSecretContainer || record.type === "secret" || record.valueMode === "secret"
+  const sensitiveKeyValuePair = typeof record.key === "string"
+    && Object.prototype.hasOwnProperty.call(record, "value")
+    && (secretContainer || isSensitiveKey(record.key))
   return Object.fromEntries(Object.entries(record).map(([key, item]) => {
     // 生成值数组按等长 `*` 掩码，保留可辨识的位数信息；
     // 其余敏感键继续使用固定 [REDACTED] 占位。
     if (key === "secrets" && Array.isArray(item)) return [key, maskSecrets(item)]
-    return [
-      key,
-      isSensitiveKey(key) || keyValuePair && key === "value" || (secretContainer && /^(default)?value$/i.test(key))
-        ? "[REDACTED]"
-        : visit(item, seen),
-    ]
+    if (isSensitiveKey(key) || (sensitiveKeyValuePair && key === "value")) return [key, "[REDACTED]"]
+    if (secretContainer && /^(default)?value$/i.test(key)) {
+      return [key, item && typeof item === "object" ? visit(item, seen, true) : "[REDACTED]"]
+    }
+    return [key, visit(item, seen, secretContainer)]
   }))
 }
 

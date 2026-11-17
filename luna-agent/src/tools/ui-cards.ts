@@ -27,6 +27,46 @@ const icon = z.discriminatedUnion("type", [
   }),
 ])
 
+const cardPresentation = z.object({
+  variant: z.enum(["application", "resource", "form", "finding", "plan", "task", "receipt", "summary"]),
+  title: shortText,
+  subtitle: z.string().trim().max(160).optional(),
+  description,
+  icon: icon.optional(),
+  badges: z.array(z.object({ label: z.string().trim().min(1).max(60), tone })).max(6).optional(),
+})
+
+const presentCardPresentation = z.object({
+  variant: z.enum(["application", "resource", "finding", "plan", "task", "receipt", "summary"]),
+  title: shortText,
+  subtitle: z.string().trim().max(160).optional(),
+  description,
+  icon: icon.optional(),
+  badges: z.array(z.object({ label: z.string().trim().min(1).max(60), tone })).max(6).optional(),
+})
+
+const requestInputPresentation = z.object({
+  variant: z.enum(["form", "application", "resource", "summary"]).default("form"),
+  title: shortText,
+  subtitle: z.string().trim().max(160).optional(),
+  description,
+  icon: icon.optional(),
+  badges: z.array(z.object({ label: z.string().trim().min(1).max(60), tone })).max(6).optional(),
+})
+
+const requestChoicePresentation = z.object({
+  variant: z.enum(["application", "resource", "plan", "summary"]).default("resource"),
+  title: shortText,
+  subtitle: z.string().trim().max(160).optional(),
+  description,
+  icon: icon.optional(),
+  badges: z.array(z.object({ label: z.string().trim().min(1).max(60), tone })).max(6).optional(),
+})
+
+const displayConfig = z.object({
+  density: z.enum(["comfortable", "compact"]).optional(),
+})
+
 const blockBase = {
   id: identifier,
   title: shortText.optional(),
@@ -35,19 +75,29 @@ const blockBase = {
   defaultExpanded: z.boolean().optional(),
 }
 
+const markdownBlock = z.object({ ...blockBase, type: z.literal("markdown"), content: z.string().trim().min(1).max(8000) })
+const calloutBlock = z.object({ ...blockBase, type: z.literal("callout"), tone, content: z.string().trim().min(1).max(2000) })
+const keyValueBlock = z.object({
+  ...blockBase,
+  type: z.literal("key_value"),
+  items: z.array(z.object({
+    label: shortText,
+    value: z.string().max(2000),
+    format: z.enum(["text", "code", "status", "duration", "date_time", "bytes", "currency"]).optional(),
+    copyable: z.boolean().optional(),
+  })).min(1).max(16),
+})
+
+const lightweightContextBlock = z.discriminatedUnion("type", [
+  markdownBlock,
+  calloutBlock,
+  keyValueBlock,
+])
+
 const contentBlock = z.discriminatedUnion("type", [
-  z.object({ ...blockBase, type: z.literal("markdown"), content: z.string().trim().min(1).max(8000) }),
-  z.object({ ...blockBase, type: z.literal("callout"), tone, content: z.string().trim().min(1).max(2000) }),
-  z.object({
-    ...blockBase,
-    type: z.literal("key_value"),
-    items: z.array(z.object({
-      label: shortText,
-      value: z.string().max(2000),
-      format: z.enum(["text", "code", "status", "duration", "date_time", "bytes", "currency"]).optional(),
-      copyable: z.boolean().optional(),
-    })).min(1).max(16),
-  }),
+  markdownBlock,
+  calloutBlock,
+  keyValueBlock,
   z.object({
     ...blockBase,
     type: z.literal("metrics"),
@@ -172,12 +222,14 @@ const fieldBase = {
   required: z.boolean().optional(),
   visibleWhen: condition.optional(),
 }
+
 const selectOption = z.object({
   value: z.string().min(1).max(240),
   label: shortText,
   description,
   disabled: z.boolean().optional(),
 })
+
 const keyValueFieldBase = {
   ...fieldBase,
   type: z.literal("key_value"),
@@ -186,6 +238,7 @@ const keyValueFieldBase = {
   maxItems: z.number().int().min(1).max(30).optional(),
 }
 const keyValueEntry = z.object({ key: z.string().max(200), value: z.string().max(2000) })
+
 const formField = z.union([
   z.object({
     ...fieldBase,
@@ -223,7 +276,7 @@ const formField = z.union([
     placeholder: z.string().max(200).optional(),
     display: z.enum(["select", "radio", "segmented"]).optional(),
     submissionFormat: z.enum(["value", "label_value"]).optional().describe(
-      "生成 send_message 回复时的选择值格式。平台资源必须使用 label_value，使回复包含“资源名称 (资源 ID)”；普通枚举使用 value。工具参数始终提交原始 value。",
+      "平台资源使用 label_value（回传“名称 (ID)”）；普通枚举使用 value。",
     ),
     options: z.array(selectOption).min(1).max(50),
   }),
@@ -235,7 +288,7 @@ const formField = z.union([
     minItems: z.number().int().min(0).max(50).optional(),
     maxItems: z.number().int().min(1).max(50).optional(),
     submissionFormat: z.enum(["value", "label_value"]).optional().describe(
-      "生成 send_message 回复时的选择值格式。平台资源必须使用 label_value，使每项包含“资源名称 (资源 ID)”；普通枚举使用 value。工具参数始终提交原始 value。",
+      "平台资源使用 label_value（回传“名称 (ID)”）；普通枚举使用 value。",
     ),
     options: z.array(selectOption).min(1).max(50),
   }),
@@ -246,18 +299,27 @@ const formField = z.union([
   }),
   z.object({
     ...keyValueFieldBase,
-    defaultValue: z.never().optional().describe("Secret 键值字段禁止模型提供默认值，必须由用户当次手动输入。"),
+    defaultValue: z.never().optional().describe("Secret 键值字段禁止提供默认值。"),
     valueMode: z.literal("secret"),
   }),
   z.object({
     ...fieldBase,
     type: z.literal("secret"),
-    defaultValue: z.never().optional().describe("Secret 字段禁止模型提供默认值，必须由用户当次手动输入。"),
+    defaultValue: z.never().optional().describe("Secret 字段禁止提供默认值。"),
     placeholder: z.string().max(200).optional(),
     generation: z.enum(["disabled", "optional", "required"]),
     defaultMode: z.enum(["manual", "generate"]).optional(),
   }),
 ])
+
+const nonFieldBindingValue = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("card"), property: z.literal("id") }),
+  z.object({ type: z.literal("literal"), value: z.union([z.string(), z.number(), z.boolean(), z.null()]) }),
+])
+const nonFieldBinding = z.object({
+  target: safeJsonPointer,
+  value: nonFieldBindingValue,
+})
 
 const bindingValue = z.discriminatedUnion("type", [
   z.object({ type: z.literal("field"), fieldId: identifier }),
@@ -268,6 +330,7 @@ const binding = z.object({
   target: safeJsonPointer,
   value: bindingValue,
 })
+
 const actionBase = {
   id: identifier,
   label: shortText,
@@ -275,6 +338,29 @@ const actionBase = {
   emphasis: z.enum(["primary", "secondary", "ghost"]).optional(),
   repeatable: z.boolean().optional(),
 }
+
+const navigateAction = z.object({
+  ...actionBase,
+  type: z.literal("navigate"),
+  routeName: registeredRouteName,
+  routeParams: routeIdentifiers.optional(),
+})
+
+const nonFieldCardAction = z.discriminatedUnion("type", [
+  z.object({
+    ...actionBase,
+    type: z.literal("tool"),
+    operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{2,100}$/),
+    bindings: z.array(nonFieldBinding).max(40),
+  }),
+  z.object({
+    ...actionBase,
+    type: z.literal("send_message"),
+    message: z.string().trim().min(1).max(2000),
+  }),
+  navigateAction,
+])
+
 const cardAction = z.discriminatedUnion("type", [
   z.object({
     ...actionBase,
@@ -286,21 +372,61 @@ const cardAction = z.discriminatedUnion("type", [
     ...actionBase,
     type: z.literal("send_message"),
     message: z.string().trim().min(1).max(2000)
-      .describe("发送给助手的消息。需要带入非敏感表单值时使用 {{field_id}}；field_id 必须是当前卡片的字段 ID。"),
+      .describe("发送给助手的消息。带入非敏感字段值时使用 {{field_id}}。"),
   }),
-  z.object({ ...actionBase, type: z.literal("navigate"), routeName: registeredRouteName, routeParams: routeIdentifiers.optional() }),
+  navigateAction,
 ])
+
+const choiceSelectionSchema = z.object({
+  id: identifier,
+  label: shortText,
+  description,
+  required: z.boolean().optional(),
+  multiple: z.boolean().optional(),
+  display: z.enum(["select", "radio", "segmented"]).optional(),
+  defaultValue: z.union([z.string().max(240), z.array(z.string().max(240)).max(50)]).optional(),
+  minItems: z.number().int().min(0).max(50).optional(),
+  maxItems: z.number().int().min(1).max(50).optional(),
+  submissionFormat: z.enum(["value", "label_value"]).optional().describe(
+    "平台资源使用 label_value（回传“名称 (ID)”）；普通枚举使用 value。",
+  ),
+  options: z.array(selectOption).min(1).max(50),
+})
+
+const presentCardItem = z.object({
+  id: identifier,
+  presentation: presentCardPresentation,
+  sourceRefs: z.array(sourceRef).max(12).optional(),
+  blocks: z.array(contentBlock).max(12).optional(),
+  actions: z.array(nonFieldCardAction).max(4).optional(),
+})
+
+const requestInputCardItem = z.object({
+  id: identifier,
+  presentation: requestInputPresentation,
+  blocks: z.array(lightweightContextBlock).max(4).optional(),
+  form: z.object({
+    sections: z.array(z.object({
+      id: identifier,
+      title: shortText.optional(),
+      description,
+      fields: z.array(formField).min(1).max(12),
+    })).min(1).max(6),
+  }),
+  actions: z.array(cardAction).min(1).max(4),
+})
+
+const requestChoiceCardItem = z.object({
+  id: identifier,
+  presentation: requestChoicePresentation,
+  blocks: z.array(z.discriminatedUnion("type", [markdownBlock, keyValueBlock])).max(4).optional(),
+  selection: choiceSelectionSchema.optional(),
+  actions: z.array(cardAction).max(4).optional(),
+})
 
 const card = z.object({
   id: identifier,
-  presentation: z.object({
-    variant: z.enum(["application", "resource", "form", "finding", "plan", "task", "receipt", "summary"]),
-    title: shortText,
-    subtitle: z.string().trim().max(160).optional(),
-    description,
-    icon: icon.optional(),
-    badges: z.array(z.object({ label: z.string().trim().min(1).max(60), tone })).max(6).optional(),
-  }),
+  presentation: cardPresentation,
   sourceRefs: z.array(sourceRef).max(12).optional(),
   blocks: z.array(contentBlock).max(12).optional(),
   form: z.object({
@@ -314,6 +440,73 @@ const card = z.object({
   actions: z.array(cardAction).max(4).optional(),
 })
 
+/**
+ * 1. present_card 专属输入 Schema：仅展示态（result / change_review / live_task），物理移除 form 与全部表单字段。
+ */
+export const presentCardToolInput = z.object({
+  schemaVersion: z.literal(1).optional(),
+  mode: z.literal("presentation").optional(),
+  title: shortText,
+  description,
+  template: z.enum(["result", "change_review", "live_task"]),
+  display: displayConfig.optional(),
+  cards: z.array(presentCardItem).min(1).max(12),
+  groupActions: z.array(nonFieldCardAction).max(3).optional(),
+}).strict().superRefine((input, context) => {
+  const normalized = normalizePresentCardInput(input)
+  validateNormalizedCardGroup(normalized, context)
+})
+
+/**
+ * 2. request_input 专属输入 Schema：仅表单收集（interactive + form），物理移除 chart / relations / diff / live_progress 等重型展示块。
+ */
+export const requestInputToolInput = z.object({
+  schemaVersion: z.literal(1).optional(),
+  mode: z.literal("interactive").optional(),
+  template: z.literal("form").optional(),
+  placement: z.enum(["inline", "turn_end"]).optional(),
+  title: shortText,
+  description,
+  display: displayConfig.optional(),
+  cards: z.array(requestInputCardItem).min(1).max(12),
+}).strict().superRefine((input, context) => {
+  const normalized = normalizeRequestInputInput(input)
+  validateNormalizedCardGroup(normalized, context)
+})
+
+/**
+ * 3. request_choice 专属输入 Schema：仅候选选择（interactive + candidates），物理移除 form 块与重型展示块。
+ */
+export const requestChoiceToolInput = z.object({
+  schemaVersion: z.literal(1).optional(),
+  mode: z.literal("interactive").optional(),
+  template: z.literal("candidates").optional(),
+  title: shortText,
+  description,
+  display: displayConfig.optional(),
+  cards: z.array(requestChoiceCardItem).min(1).max(12),
+}).strict().superRefine((input, context) => {
+  input.cards.forEach((item, cardIndex) => {
+    if (!item.selection) return
+    if (item.selection.multiple && typeof item.selection.defaultValue === "string") {
+      context.addIssue({
+        code: "custom",
+        message: "Multi-select defaultValue must be an array of option values.",
+        path: ["cards", cardIndex, "selection", "defaultValue"],
+      })
+    }
+    if (!item.selection.multiple && Array.isArray(item.selection.defaultValue)) {
+      context.addIssue({
+        code: "custom",
+        message: "Single-select defaultValue must be a string option value.",
+        path: ["cards", cardIndex, "selection", "defaultValue"],
+      })
+    }
+  })
+  const normalized = normalizeRequestChoiceInput(input)
+  validateNormalizedCardGroup(normalized, context)
+})
+
 export const createInteractionCardsInput = z.object({
   schemaVersion: z.literal(1),
   title: shortText,
@@ -325,12 +518,88 @@ export const createInteractionCardsInput = z.object({
     "卡片在本轮助手回复中的渲染位置。inline 保持真实事件位置；turn_end 将单张、等待提交的交互表单投影到本轮回复末尾。默认 inline。",
   ),
   template: z.enum(["candidates", "form", "change_review", "result", "live_task"]),
-  display: z.object({
-    density: z.enum(["comfortable", "compact"]).optional(),
-  }).optional(),
+  display: displayConfig.optional(),
   cards: z.array(card).min(1).max(12),
   groupActions: z.array(cardAction).max(3).optional(),
 }).strict().superRefine((input, context) => {
+  validateNormalizedCardGroup(input, context)
+})
+
+export type CreateInteractionCardsInput = Omit<InteractionCardGroup, "generationId">
+export type PresentCardToolInput = z.infer<typeof presentCardToolInput>
+export type RequestInputToolInput = z.infer<typeof requestInputToolInput>
+export type RequestChoiceToolInput = z.infer<typeof requestChoiceToolInput>
+
+export function normalizePresentCardInput(input: z.output<typeof presentCardToolInput>): z.input<typeof createInteractionCardsInput> {
+  return {
+    ...input,
+    schemaVersion: 1,
+    mode: "presentation",
+    cards: input.cards.map(item => ({
+      ...item,
+      ...(item.actions ? { actions: item.actions } : {}),
+    })),
+  }
+}
+
+export function normalizeRequestInputInput(input: z.output<typeof requestInputToolInput>): z.input<typeof createInteractionCardsInput> {
+  return {
+    ...input,
+    schemaVersion: 1,
+    mode: "interactive",
+    template: "form",
+  }
+}
+
+export function normalizeRequestChoiceInput(input: z.output<typeof requestChoiceToolInput>): z.input<typeof createInteractionCardsInput> {
+  return {
+    schemaVersion: 1,
+    title: input.title,
+    ...(input.description !== undefined ? { description: input.description } : {}),
+    mode: "interactive",
+    template: "candidates",
+    ...(input.display !== undefined ? { display: input.display } : {}),
+    cards: input.cards.map((item) => {
+      const { selection, ...rest } = item
+      if (!selection) return rest
+      const field = selection.multiple
+        ? {
+            id: selection.id,
+            type: "multi_select" as const,
+            label: selection.label,
+            ...(selection.description !== undefined ? { description: selection.description } : {}),
+            required: selection.required ?? true,
+            ...(Array.isArray(selection.defaultValue) ? { defaultValue: selection.defaultValue } : {}),
+            ...(selection.minItems !== undefined ? { minItems: selection.minItems } : {}),
+            ...(selection.maxItems !== undefined ? { maxItems: selection.maxItems } : {}),
+            ...(selection.submissionFormat !== undefined ? { submissionFormat: selection.submissionFormat } : {}),
+            options: selection.options,
+          }
+        : {
+            id: selection.id,
+            type: "select" as const,
+            label: selection.label,
+            ...(selection.description !== undefined ? { description: selection.description } : {}),
+            required: selection.required ?? true,
+            display: selection.display ?? "radio",
+            ...(typeof selection.defaultValue === "string" ? { defaultValue: selection.defaultValue } : {}),
+            ...(selection.submissionFormat !== undefined ? { submissionFormat: selection.submissionFormat } : {}),
+            options: selection.options,
+          }
+      return {
+        ...rest,
+        form: {
+          sections: [{
+            id: `${selection.id}_section`.slice(0, 64),
+            fields: [field],
+          }],
+        },
+      }
+    }),
+  }
+}
+
+function validateNormalizedCardGroup(input: z.input<typeof createInteractionCardsInput>, context: z.RefinementCtx): void {
   const formCards = input.cards.filter(item => item.form)
   const responseActions = [
     ...input.cards.flatMap(item => item.actions ?? []),
@@ -374,13 +643,6 @@ export const createInteractionCardsInput = z.object({
       code: "custom",
       message: `${input.template} templates must contain input fields.`,
       path: ["cards"],
-    })
-  }
-  if (input.template === "change_review" && input.mode !== "interactive") {
-    context.addIssue({
-      code: "custom",
-      message: "Change-review templates must use interactive mode so the user can confirm or revise the proposed change.",
-      path: ["mode"],
     })
   }
   if (input.template === "result" && input.mode !== "presentation") {
@@ -643,7 +905,7 @@ export const createInteractionCardsInput = z.object({
     })
   })
   input.groupActions?.forEach((action, actionIndex) => {
-    if (action.type === "tool" && action.bindings.some(binding => binding.value.type === "field")) {
+    if (action.type === "tool" && action.bindings.some(itemBinding => itemBinding.value.type === "field")) {
       context.addIssue({
         code: "custom",
         message: "组级动作不能引用卡片表单字段。",
@@ -660,9 +922,7 @@ export const createInteractionCardsInput = z.object({
   })
   if (Buffer.byteLength(JSON.stringify(input), "utf8") > 96 * 1024)
     context.addIssue({ code: "custom", message: "Card group exceeds 96 KiB." })
-})
-
-export type CreateInteractionCardsInput = Omit<InteractionCardGroup, "generationId">
+}
 
 function messageTemplateFieldIds(message: string): string[] {
   return [...message.matchAll(/\{\{([a-zA-Z0-9_-]{1,64})\}\}/g)].map(match => match[1]!)

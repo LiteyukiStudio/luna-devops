@@ -1,6 +1,6 @@
 import type { DocsKnowledge } from "../knowledge/docs-knowledge.js"
 import type { Span } from "@opentelemetry/api"
-import type { ClaimedRun, RunCheckpointState, RunToolVerification } from "../domain.js"
+import type { ClaimedRun, RunCheckpointState } from "../domain.js"
 import { genAIInputMessages } from "../genai-semconv.js"
 import type { ModelRuntime } from "../model-runtime.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
@@ -11,16 +11,18 @@ import { TerminalPersistenceExhaustedError } from "../run-stream-bus.js"
 import type { RuntimeSettings } from "../runtime-settings.js"
 import { recordAIContent, recordSpanError, stableErrorCode, telemetryLog } from "../telemetry.js"
 import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
+import type { TaskStatusClient } from "../tools/wait-for-task.js"
 import { checkpointState, resumePlan } from "./checkpoint.js"
 import { modelDecision } from "./decision.js"
 import { RunFinalizer, type TerminalCommit } from "./finalize.js"
 import { decisionAction, resumeAction, toolBatchAction } from "./graph.js"
 import { StreamModelFinalizationError, streamModel } from "./streaming.js"
-import { stableError } from "./tool-results.js"
-import { ToolStepInterruption, ToolStepRunner, type ToolStepState } from "./tool-step.js"
-import { ToolVerificationRunner } from "./verification.js"
+import { reasoningByToolCallItemId } from "./resume.js"
+import { stableError, toolResultMessage } from "./tool-results.js"
+import { ToolStepRunner, type RunExecutionInput, type ToolBatchResult, type ToolStepState } from "./tool-step.js"
 
-const protocolRepairInstruction = "系统指令：上一步的结束原因表明需要调用工具，但没有任何可解析的工具调用。请直接调用所需工具，或给出最终答复。"
+const protocolRepairInstruction = "[系统协议提示] 上一步的结束原因表明需要调用工具，但没有任何可解析的工具调用。请直接调用所需工具，或给出最终答复。"
+const gracefulFinalSummaryInstruction = "[系统收尾提示] 已达到单轮工具探索步数上限，本步不再提供任何工具。请立即基于目前已获取的真实结果，向用户诚实总结：1) 已确认的事实与已完成的操作；2) 尚未完成的部分及原因；3) 建议用户的下一步操作。严禁编造未执行的工具结果。"
 
 export type RunLoopInput = {
   run: ClaimedRun
@@ -34,30 +36,28 @@ export type RunLoopInput = {
 export class RunLoop {
   private readonly toolStep: ToolStepRunner
   private readonly finalizer: RunFinalizer
-  private readonly verification: ToolVerificationRunner
 
   constructor(
     private readonly repository: Repository,
     private readonly modelRuntime: ModelRuntime,
     private readonly tools: ToolOrchestrator,
     private readonly streamBus: RunStreamBus,
-    verificationPollIntervalMs = 1_500,
     docsKnowledge?: DocsKnowledge,
+    taskStatusClient?: TaskStatusClient,
   ) {
-    this.toolStep = new ToolStepRunner(repository, modelRuntime, tools, docsKnowledge)
+    this.toolStep = new ToolStepRunner(repository, modelRuntime, tools, docsKnowledge, taskStatusClient)
     this.finalizer = new RunFinalizer(repository, streamBus, modelRuntime)
-    this.verification = new ToolVerificationRunner(tools, verificationPollIntervalMs)
   }
 
   async execute(input: RunLoopInput): Promise<string> {
     const { run, runtimeSettings, providerConfig, signal, span } = input
     let outcome = "completed"
     let pendingTerminal: TerminalCommit | undefined
+    let pendingFlushStream: ((fallbackStatus?: "completed" | "failed") => Promise<void>) | undefined
     let checkpointRevision = 0
     let modelStep = 0
     let protocolRepairCount = 0
     let toolState: ToolStepState | undefined
-    let pendingVerifications: RunToolVerification[] = []
     try {
       telemetryLog("agent.run.started", "info", { "luna.run.id": run.id })
       await this.repository.appendEvent(run.id, "run.started", { state: "running" })
@@ -75,94 +75,96 @@ export class RunLoop {
       checkpointRevision = checkpoint?.revision ?? 0
       modelStep = checkpoint?.modelStep ?? 0
       protocolRepairCount = checkpoint?.state.protocolRepairCount ?? 0
-      pendingVerifications = [...checkpoint?.state.pendingVerifications ?? []]
       toolState = await this.toolStep.initialState(run, executionInput, checkpoint)
-      const currentState = (extra: Omit<Parameters<typeof checkpointState>[0], "loopGuard" | "protocolRepairCount" | "argumentRepairAttempts"> = {}) => checkpointState({
+      const currentState = (extra: Omit<Parameters<typeof checkpointState>[0], "loopGuard" | "protocolRepairCount" | "argumentRepairAttempts" | "cardGeneration" | "cardRepairExhausted"> = {}) => checkpointState({
         loopGuard: this.tools.runLoopState(run.id),
         protocolRepairCount,
         argumentRepairAttempts: toolState?.providerArgumentRepairAttempts ?? new Map(),
-        pendingVerifications,
-        completionBlockers: toolState?.completionBlockers ?? [],
+        ...(toolState?.cardGeneration ? { cardGeneration: toolState.cardGeneration } : {}),
+        ...(toolState?.cardRepairExhausted ? { cardRepairExhausted: true } : {}),
         ...extra,
       })
-      const writeCheckpoint = async (phase: "model" | "tool_execution" | "verification" | "awaiting_input" | "awaiting_approval" | "waiting_external" | "finalizing", step: number, state: RunCheckpointState) => {
+      const writeCheckpoint = async (
+        phase: "model" | "tool_execution" | "verification" | "awaiting_input" | "awaiting_approval" | "waiting_external" | "finalizing",
+        step: number,
+        state: RunCheckpointState,
+      ) => {
         checkpointRevision = await this.saveCheckpoint(run.id, checkpointRevision, phase, step, state)
       }
-      const settleVerifications = async () => {
-        while (pendingVerifications.length > 0) {
-          const current = pendingVerifications[0]!
-          await writeCheckpoint("verification", modelStep, currentState())
-          const execution = await this.verification.verify(current, signal)
-          if (execution.kind === "pending") {
-            const waiting = { ...current, attempts: current.attempts + 1 }
-            pendingVerifications = [waiting, ...pendingVerifications.slice(1)]
-            if (waiting.attempts === 1) {
-              await this.repository.appendEvent(run.id, "run.waiting_external", {
-                operationId: current.operationId,
-                externalOperationId: current.externalOperationId,
-              })
-              telemetryLog("agent.run.waiting_external", "info", {
-                "luna.run.id": run.id,
-                "tool.name": current.operationId,
-                "luna.verification.family": current.family,
-              })
-            }
-            await writeCheckpoint("waiting_external", modelStep, currentState())
-            span.addEvent("run.waiting_external", {
-              "luna.verification.operation": current.operationId,
-              "luna.verification.attempt": waiting.attempts,
-            })
-            await this.verification.wait(waiting.attempts, signal)
-            continue
-          }
-          await this.toolStep.recordVerification(toolState!, current, execution, runtimeSettings)
-          if (execution.kind === "failed") throw new Error(execution.errorCode)
-          pendingVerifications = pendingVerifications.slice(1)
-          if (pendingVerifications.length > 0)
-            await writeCheckpoint("verification", modelStep, currentState())
-        }
+
+      if (checkpoint?.phase === "waiting_external" && checkpoint.state.waitingTask) {
+        signal.throwIfAborted()
+        const waitingTask = checkpoint.state.waitingTask
+        const wakeAt = new Date().toISOString()
+        outcome = "waiting_external"
+        await this.repository.updateRun(run.id, "running", "waiting_external", {
+          wakeAt,
+          eventData: {
+            projectId: waitingTask.projectId,
+            taskType: waitingTask.taskType,
+            taskId: waitingTask.taskId,
+            timeoutSeconds: waitingTask.timeoutSeconds,
+            deadlineAt: waitingTask.deadlineAt,
+          },
+        })
+        span.setAttribute("luna.run.outcome", outcome)
+        return outcome
       }
+
       let awaitingToolCallId = resume.type === "waiting_approval" ? resume.toolCallId : undefined
       if (resume.type === "settle_tools" || resume.type === "waiting_approval") {
         try {
-          const pending = await this.toolStep.recoverInterruptedBatch(run.id, toolState, runtimeSettings)
+          const pending = await this.toolStep.recoverInterruptedBatch(run.id, toolState)
           awaitingToolCallId = pending.awaitingToolCallId ?? awaitingToolCallId
-          pendingVerifications.push(...pending.verifications)
         }
         catch (error) {
           if (error instanceof Error && error.message.startsWith("ai.")) throw error
           throw new Error("ai.tool_persistence_failed", { cause: error })
         }
       }
-      if (resume.type === "verify" || pendingVerifications.length > 0)
-        await settleVerifications()
+
       if (executionInput.pageContext.__lunaDirectToolAction === true) {
-        const directTool = executionInput.toolInteractions.find(item =>
+        const directFromStore = (await this.tools.listByRun(run.id)).find(call => call.inputMode === "direct")
+        const directToolItem = executionInput.toolInteractions.find(item =>
           item.type === "tool_call"
           && item.content.inputMode !== "verification"
           && typeof item.content.toolCallId === "string")
-        if (!directTool) throw new Error("ai.direct_tool_not_ready")
-        const toolCallId = String(directTool.content.toolCallId)
-        const directCall = await this.tools.inspect(toolCallId)
-        const directOutcome = await this.tools.outcome(toolCallId)
-        this.toolStep.trackOutcome(toolState, directCall, directOutcome)
-        if (directOutcome.kind === "failed") throw new Error(directOutcome.errorCode)
-        if (pendingVerifications.length === 0 && directCall.status === "succeeded") {
-          const verification = await this.verification.verificationForToolCall(toolCallId)
-          if (verification) {
-            pendingVerifications.push(verification)
-            await settleVerifications()
-          }
+        const toolCallId = directFromStore?.id ?? (directToolItem ? String(directToolItem.content.toolCallId) : undefined)
+        if (!toolCallId) throw new Error("ai.direct_tool_not_ready")
+        let directCall = await this.tools.inspect(toolCallId)
+        if (directCall.status === "proposed") {
+          directCall = await this.tools.executePendingCall(directCall.id, signal)
         }
-        this.toolStep.assertCompletionAllowed(toolState)
-        const directStatus = directCall.status === "failed" || directCall.status === "rejected" || directCall.status === "canceled"
-          ? "failed"
-          : "completed"
+        if (directCall.status === "awaiting_approval") {
+          signal.throwIfAborted()
+          outcome = "waiting_approval"
+          telemetryLog("agent.run.waiting_approval", "info", { "luna.run.id": run.id, "tool.name": directCall.operationId })
+          await writeCheckpoint("awaiting_approval", modelStep, currentState({ pendingToolCallId: directCall.id }))
+          signal.throwIfAborted()
+          await this.repository.updateRun(run.id, "running", "waiting_approval")
+          span.setAttribute("luna.run.outcome", outcome)
+          return outcome
+        }
+        if (directCall.status === "rejected") {
+          await writeCheckpoint("finalizing", modelStep, currentState())
+          try {
+            outcome = await this.finalizer.completeDirectTool(run, "completed", directCall.operationId)
+          }
+          catch (error) {
+            return await this.handleTerminalPersistenceFailure(run, span, error)
+          }
+          span.setAttribute("luna.run.outcome", outcome)
+          return outcome
+        }
+        const directOutcome = await this.tools.outcome(directCall.id)
+        if (directOutcome.kind === "failed" || directCall.status === "failed" || directCall.status === "canceled") {
+          throw new Error(directOutcome.kind === "failed" ? directOutcome.errorCode : (directCall.errorCode ?? "ai.tool_execution_failed"))
+        }
         await writeCheckpoint("finalizing", modelStep, currentState())
         try {
           outcome = await this.finalizer.completeDirectTool(
             run,
-            directStatus,
+            "completed",
             directCall.operationId,
           )
         }
@@ -172,29 +174,186 @@ export class RunLoop {
         span.setAttribute("luna.run.outcome", outcome)
         return outcome
       }
+
       if (awaitingToolCallId) {
-        const settled = await this.resumeToolCall(awaitingToolCallId)
+        const settled = await this.resumeToolCall(awaitingToolCallId, toolState, executionInput, signal)
         if (!settled) {
+          signal.throwIfAborted()
           outcome = "waiting_approval"
           telemetryLog("agent.run.waiting_approval", "info", { "luna.run.id": run.id })
-          await writeCheckpoint("awaiting_approval", modelStep, currentState({ pendingToolCallId: awaitingToolCallId }))
+          await writeCheckpoint("awaiting_approval", modelStep, currentState({
+            pendingToolCallId: awaitingToolCallId,
+            ...(checkpoint?.state.pendingBatchId ? { pendingBatchId: checkpoint.state.pendingBatchId } : {}),
+            ...(checkpoint?.state.pendingBatchCalls?.length ? { pendingBatchCalls: checkpoint.state.pendingBatchCalls } : {}),
+          }))
+          signal.throwIfAborted()
           await this.repository.updateRun(run.id, "running", "waiting_approval")
           span.setAttribute("luna.run.outcome", outcome)
           return outcome
         }
       }
+
+      const handlePausedBatch = async (batch: ToolBatchResult): Promise<string | undefined> => {
+        if (batch.kind === "waiting_approval") {
+          signal.throwIfAborted()
+          outcome = "waiting_approval"
+          await writeCheckpoint("awaiting_approval", modelStep, currentState({
+            pendingToolCallId: batch.toolCallId,
+            ...(batch.batchId ? { pendingBatchId: batch.batchId } : {}),
+            ...(batch.remainingCalls?.length ? { pendingBatchCalls: batch.remainingCalls } : {}),
+          }))
+          signal.throwIfAborted()
+          await this.repository.updateRun(run.id, "running", "waiting_approval")
+          span.setAttribute("luna.run.outcome", outcome)
+          return outcome
+        }
+        if (batch.kind === "waiting_external") {
+          signal.throwIfAborted()
+          outcome = "waiting_external"
+          telemetryLog("agent.run.waiting_external", "info", {
+            "luna.run.id": run.id,
+            "tool.name": "wait_for_task",
+            "luna.task.type": batch.waitingTask.taskType,
+          })
+          await writeCheckpoint("waiting_external", modelStep, currentState({
+            waitingTask: batch.waitingTask,
+            ...(batch.batchId ? { pendingBatchId: batch.batchId } : {}),
+            ...(batch.remainingCalls?.length ? { pendingBatchCalls: batch.remainingCalls } : {}),
+          }))
+          signal.throwIfAborted()
+          await this.repository.updateRun(run.id, "running", "waiting_external", {
+            wakeAt: batch.wakeAt,
+            eventData: {
+              projectId: batch.waitingTask.projectId,
+              taskType: batch.waitingTask.taskType,
+              taskId: batch.waitingTask.taskId,
+              timeoutSeconds: batch.waitingTask.timeoutSeconds,
+              deadlineAt: batch.waitingTask.deadlineAt,
+            },
+          })
+          span.setAttribute("luna.run.outcome", outcome)
+          return outcome
+        }
+        return undefined
+      }
+
       let finalAnswer = ""
       let completed = false
       let finalResponseMissing = false
       let finalFinishReason: string | undefined
+      let lastTotalTokens = executionInput.lastTotalTokens
       const recoveredFinal = resume.type === "finalize"
       const recoveredFinalOutput = resume.type === "finalize" ? resume.finalOutput : undefined
       if (resume.type === "finalize") {
         if (resume.finalOutput !== undefined) finalAnswer = resume.finalOutput
         completed = true
       }
+
+      if (!completed && checkpoint?.state.pendingBatchCalls?.length) {
+        const settledCallIds = new Set(
+          toolState.continuationMessages.flatMap(message => message.role === "tool" ? [message.toolCallId] : []),
+        )
+        const remainingPendingCalls = checkpoint.state.pendingBatchCalls.filter(call => !settledCallIds.has(call.id))
+        if (remainingPendingCalls.length > 0) {
+          await writeCheckpoint("tool_execution", modelStep, currentState({
+            ...(checkpoint.state.pendingBatchId ? { pendingBatchId: checkpoint.state.pendingBatchId } : {}),
+            pendingBatchCalls: remainingPendingCalls,
+          }))
+          const resumedBatch = await this.toolStep.execute({
+            run,
+            executionInput,
+            runtimeSettings,
+            answer: "",
+            reasoning: "",
+            calls: remainingPendingCalls.map(call => ({
+              id: call.id,
+              operationId: call.operationId,
+              arguments: call.arguments,
+              ...(call.argumentError ? { argumentError: call.argumentError } : {}),
+            })),
+            ...(checkpoint.state.pendingBatchId ? { batchId: checkpoint.state.pendingBatchId } : {}),
+            appendToExistingBatch: true,
+            signal,
+          }, toolState)
+          const resumedAction = toolBatchAction(resumedBatch, "tool_execution")
+          const pausedOutcome = await handlePausedBatch(resumedBatch)
+          if (pausedOutcome) return pausedOutcome
+          if (resumedAction.type === "complete") {
+            completed = true
+          }
+        }
+      }
+
+      let finalSummaryAttempted = false
+      const runGracefulFinalSummaryStep = async (stepIndex: number): Promise<void> => {
+        finalSummaryAttempted = true
+        modelStep = stepIndex
+        if (executionInput.model) {
+          await this.repository.assertPositiveAvailableBalance(run.ownerUserId)
+        }
+        toolState!.continuationMessages.push({
+          role: "user",
+          content: gracefulFinalSummaryInstruction,
+        })
+        await writeCheckpoint("model", stepIndex, currentState())
+        const summaryResult = await this.streamModel(run.id, run.turnId, {
+          runId: run.id,
+          ownerUserId: run.ownerUserId,
+          conversationId: executionInput.conversationId,
+          input: executionInput.input,
+          pageContext: executionInput.pageContext,
+          history: executionInput.history,
+          conversation: toolState!.conversation,
+          promptVersion: run.promptVersion,
+          reasoning: "",
+          answer: "",
+          toolCalls: [],
+          continuationMessages: toolState!.continuationMessages,
+          loadedOperationIds: [],
+          disableTools: true,
+          toolCatalogDigest: input.toolCatalogDigest,
+          runtimeSettings,
+          providerConfig,
+          ...(lastTotalTokens !== undefined ? { lastTotalTokens } : {}),
+          ...(executionInput.model ? { model: executionInput.model } : {}),
+        }, signal, run.rowVersion)
+        lastTotalTokens = summaryResult.lastTotalTokens
+        pendingTerminal = summaryResult.finalizeTerminal
+        pendingFlushStream = summaryResult.flushStream
+        finalAnswer = summaryResult.answer
+        finalResponseMissing = false
+        const summaryAction = decisionAction(modelDecision(summaryResult), {
+          protocolRepairCount,
+          cardRepairExhausted: toolState!.cardRepairExhausted,
+        }, "model")
+        if (summaryAction.type === "fail") throw new Error(summaryAction.errorCode)
+        if (summaryAction.type === "finalize") {
+          finalFinishReason = summaryAction.finishReason
+          completed = true
+          return
+        }
+        if (summaryResult.answer.trim().length > 0) {
+          finalFinishReason = summaryResult.finishReason
+          completed = true
+          return
+        }
+        throw new Error("ai.final_response_missing")
+      }
+
       for (let step = modelStep; !completed && step < runtimeSettings.maxModelSteps; step += 1) {
+        const hasPriorToolStep = toolState.continuationMessages.some(message => message.role === "tool")
+        const isFinalSummaryStep = runtimeSettings.maxModelSteps >= 2
+          && step === runtimeSettings.maxModelSteps - 1
+          && !finalResponseMissing
+          && hasPriorToolStep
+        if (isFinalSummaryStep) {
+          await runGracefulFinalSummaryStep(step)
+          break
+        }
         modelStep = step
+        if (executionInput.model) {
+          await this.repository.assertPositiveAvailableBalance(run.ownerUserId)
+        }
         await writeCheckpoint("model", step, currentState())
         const result = await this.streamModel(run.id, run.turnId, {
           runId: run.id,
@@ -213,9 +372,12 @@ export class RunLoop {
           toolCatalogDigest: input.toolCatalogDigest,
           runtimeSettings,
           providerConfig,
+          ...(lastTotalTokens !== undefined ? { lastTotalTokens } : {}),
           ...(executionInput.model ? { model: executionInput.model } : {}),
         }, signal, run.rowVersion)
+        lastTotalTokens = result.lastTotalTokens
         pendingTerminal = result.finalizeTerminal
+        pendingFlushStream = result.flushStream
         finalAnswer = result.answer
         finalResponseMissing = false
         const action = decisionAction(modelDecision(result), {
@@ -225,8 +387,12 @@ export class RunLoop {
         if (action.type === "fail") throw new Error(action.errorCode)
         if (action.type === "repair") {
           protocolRepairCount += 1
-          if (result.answer.trim()) toolState.continuationMessages.push({ role: "assistant", content: result.answer, reasoning: result.reasoning })
-          toolState.continuationMessages.push({ role: "system", content: protocolRepairInstruction })
+          toolState.continuationMessages.push({
+            role: "assistant",
+            content: result.answer.trim() || "（未输出有效工具调用）",
+            ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+          })
+          toolState.continuationMessages.push({ role: "user", content: protocolRepairInstruction })
           continue
         }
         if (action.type === "retry") {
@@ -238,6 +404,7 @@ export class RunLoop {
           completed = true
           break
         }
+        const batchId = `batch_${step}`
         const calls = action.calls.map((call, index) => ({
           ...call,
           id: call.id ?? `call_${step}_${index}`,
@@ -251,29 +418,21 @@ export class RunLoop {
           answer: result.answer,
           reasoning: result.reasoning,
           calls,
+          batchId,
           signal,
         }, toolState)
         const batchAction = toolBatchAction(batch, "tool_execution")
-        if (batchAction.type === "verify") {
-          if (batch.kind !== "verification") throw new Error("ai.run_graph_illegal_transition")
-          pendingVerifications.push(...batch.verifications)
-          await settleVerifications()
-          continue
-        }
-        if (batchAction.type === "waiting_approval") {
-          outcome = "waiting_approval"
-          await writeCheckpoint("awaiting_approval", modelStep, currentState({ pendingToolCallId: batchAction.toolCallId }))
-          await this.repository.updateRun(run.id, "running", "waiting_approval")
-          span.setAttribute("luna.run.outcome", outcome)
-          return outcome
-        }
+        const pausedOutcome = await handlePausedBatch(batch)
+        if (pausedOutcome) return pausedOutcome
         if (batchAction.type === "complete") {
           completed = true
           break
         }
       }
+      if (!completed && !finalSummaryAttempted && !finalResponseMissing && toolState.continuationMessages.some(message => message.role === "tool")) {
+        await runGracefulFinalSummaryStep(modelStep)
+      }
       if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
-      this.toolStep.assertCompletionAllowed(toolState)
       const finalOutputForCheckpoint = pendingTerminal ? redact(finalAnswer) : recoveredFinalOutput
       await writeCheckpoint("finalizing", modelStep, currentState(
         finalOutputForCheckpoint === undefined ? {} : { finalOutput: finalOutputForCheckpoint },
@@ -298,8 +457,14 @@ export class RunLoop {
       span.setAttribute("luna.run.outcome", outcome)
       return outcome
     }
-    catch (error) {
-      if (error instanceof StreamModelFinalizationError) pendingTerminal = error.finalizeTerminal
+    catch (caughtError) {
+      const error = caughtError instanceof ToolInterruption && signal.aborted
+        ? (signal.reason instanceof Error ? signal.reason : new Error("ai.run_canceled"))
+        : caughtError
+      if (error instanceof StreamModelFinalizationError) {
+        pendingTerminal = error.finalizeTerminal
+        pendingFlushStream = error.flushStream
+      }
       if (error instanceof TerminalPersistenceExhaustedError) {
         return await this.handleTerminalPersistenceFailure(run, span, error)
       }
@@ -310,6 +475,11 @@ export class RunLoop {
       if (toolState?.cardGeneration) {
         const cardError = canceled ? "ai.run_canceled" : errorCode === "ai.agent_stopping" ? "ai.agent_stopping" : stableError(message)
         try {
+          if (pendingFlushStream) {
+            await pendingFlushStream("failed")
+            pendingFlushStream = undefined
+            pendingTerminal = undefined
+          }
           await this.toolStep.failCard(run.id, toolState, cardError)
         }
         catch (persistenceError) {
@@ -350,8 +520,6 @@ export class RunLoop {
       }
       if (error instanceof ToolInterruption && error.state === "waiting_input") {
         outcome = "waiting_input"
-        if (error instanceof ToolStepInterruption)
-          pendingVerifications = mergeVerifications(pendingVerifications, error.pendingVerifications)
         telemetryLog("agent.run.waiting_input", "info", {
           "luna.run.id": run.id,
           "operation": "agent.run",
@@ -362,8 +530,8 @@ export class RunLoop {
             loopGuard: this.tools.runLoopState(run.id),
             protocolRepairCount,
             argumentRepairAttempts: toolState?.providerArgumentRepairAttempts ?? new Map(),
-            completionBlockers: toolState?.completionBlockers ?? [],
-            pendingVerifications,
+            ...(toolState?.cardGeneration ? { cardGeneration: toolState.cardGeneration } : {}),
+            ...(toolState?.cardRepairExhausted ? { cardRepairExhausted: true } : {}),
           }))
           await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })
           await this.repository.updateRun(run.id, "running", "waiting_input")
@@ -421,9 +589,44 @@ export class RunLoop {
     return saved.revision
   }
 
-  private async resumeToolCall(toolCallId: string): Promise<boolean> {
-    const call = await this.tools.inspect(toolCallId)
+  private async resumeToolCall(
+    toolCallId: string,
+    toolState: ToolStepState,
+    executionInput: RunExecutionInput,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    let call = await this.tools.inspect(toolCallId)
     if (!call) throw new Error("ai.tool_call_not_found")
+    if (call.status === "proposed" && call.approvalDecision === "approve") {
+      call = await this.tools.executePendingCall(toolCallId, signal)
+      if (call.status !== "awaiting_approval") {
+        const itemId = `${call.id}:item`
+        const projected = executionInput.toolInteractions.find(item => item.itemId === itemId)
+        const projectedModelCallId = typeof projected?.content.modelCallId === "string" && projected.content.modelCallId
+          ? projected.content.modelCallId
+          : undefined
+        const effectiveCallId = call.modelCallId ?? projectedModelCallId ?? call.id
+        const alreadyInMessages = toolState.continuationMessages.some(
+          message => message.role === "tool" && (message.toolCallId === effectiveCallId || message.toolCallId === call.id),
+        )
+        if (!alreadyInMessages) {
+          const outcome = await this.tools.outcome(call.id)
+          const reasoning = reasoningByToolCallItemId(executionInput.toolInteractions).get(itemId)
+          const toolCall = { id: effectiveCallId, operationId: call.operationId, arguments: call.arguments }
+          toolState.continuationMessages.push({
+            role: "assistant",
+            content: "",
+            toolCalls: [toolCall],
+            ...(reasoning ? { reasoning } : {}),
+          })
+          toolState.continuationMessages.push(toolResultMessage(toolCall, {
+            status: outcome.kind === "failed" ? "failed" : call.status,
+            ...(call.result !== undefined ? { result: call.result } : {}),
+            ...(outcome.kind === "failed" ? { errorCode: outcome.errorCode } : call.errorCode ? { errorCode: call.errorCode } : {}),
+          }))
+        }
+      }
+    }
     if (call.status === "awaiting_approval") return false
     if (call.status === "proposed" || call.status === "running") throw new Error("ai.tool_outcome_unknown")
     return true
@@ -432,10 +635,4 @@ export class RunLoop {
   private streamModel(runId: string, turnId: string, input: Parameters<typeof streamModel>[4], signal: AbortSignal, expectedRunVersion?: number) {
     return streamModel(this.streamBus, this.modelRuntime, runId, turnId, input, signal, expectedRunVersion)
   }
-}
-
-function mergeVerifications(current: RunToolVerification[], pending: RunToolVerification[]): RunToolVerification[] {
-  const merged = new Map(current.map(item => [item.sourceToolCallId, item]))
-  for (const item of pending) merged.set(item.sourceToolCallId, item)
-  return [...merged.values()]
 }

@@ -87,8 +87,7 @@ export type ModelEvent =
   | {
       type: "completed"
       usage: ModelUsage
-      creditHoldId?: string
-      reconciliationRequired?: boolean
+      usageId?: string
       toolCalls?: ModelToolCall[]
       finishReason?: string
       providerRequestId?: string
@@ -125,8 +124,7 @@ export type ModelResponse = {
   reasoningSummary?: string
   toolCalls?: ModelToolCall[]
   finishReason?: string
-  creditHoldId?: string
-  reconciliationRequired?: boolean
+  usageId?: string
   providerRequestId?: string
   responseId?: string
   responseModel?: string

@@ -53,14 +53,15 @@ export class RunFinalizer {
     }))
     input.span.setAttribute("gen_ai.response.finish_reasons", [input.finalFinishReason ?? "stop"])
     const result = await this.commitTerminal(async () => {
-      await this.repository.finalizeStreamingItems(run.id, "completed")
       if (pendingTerminal) {
         await pendingTerminal("completed")
       }
       else if (recoveredFinal && finalAnswer.trim()) {
+        await this.repository.finalizeStreamingItems(run.id, "completed")
         await this.commitRecoveredFinalMessage(run, finalAnswer)
       }
       else {
+        await this.repository.finalizeStreamingItems(run.id, "completed")
         await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
       }
       return { status: "completed", committed: true }
@@ -117,12 +118,12 @@ export class RunFinalizer {
   ): Promise<ClaimedRun["status"]> {
     const errorCode = stableErrorCode(error)
     const result = await this.commitTerminal(async () => {
-      await this.repository.finalizeStreamingItems(run.id, "failed")
       if (pendingTerminal) {
         await pendingTerminal("canceled", errorCode)
         return { status: "canceled", committed: true }
       }
       else {
+        await this.repository.finalizeStreamingItems(run.id, "failed")
         const canceled = await this.repository.cancelRun(run.ownerUserId, run.id)
         if (canceled) return { status: "canceled", committed: true }
         return { status: await this.requireConfirmedTerminal(run), committed: false }
@@ -147,11 +148,11 @@ export class RunFinalizer {
   async interrupt(run: ClaimedRun, pendingTerminal?: TerminalCommit): Promise<ClaimedRun["status"]> {
     const errorCode = "ai.agent_stopping"
     const result = await this.commitTerminal(async () => {
-      await this.repository.finalizeStreamingItems(run.id, "failed")
       if (pendingTerminal) {
         await pendingTerminal("interrupted", errorCode)
       }
       else {
+        await this.repository.finalizeStreamingItems(run.id, "failed")
         await this.repository.updateRun(run.id, "running", "interrupted", {
           completedAt: new Date().toISOString(),
           errorCode,
@@ -176,11 +177,11 @@ export class RunFinalizer {
     const message = error instanceof Error ? error.message : "ai.run_failed"
     const errorCode = stableError(message)
     const result = await this.commitTerminal(async () => {
-      await this.repository.finalizeStreamingItems(run.id, "failed")
       if (pendingTerminal) {
         await pendingTerminal("failed", errorCode)
       }
       else {
+        await this.repository.finalizeStreamingItems(run.id, "failed")
         await this.repository.updateRun(run.id, "running", "failed", {
           completedAt: new Date().toISOString(),
           errorCode,

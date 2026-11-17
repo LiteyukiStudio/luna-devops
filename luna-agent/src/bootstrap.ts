@@ -10,7 +10,7 @@ import { deriveInternalKeys } from "./internal-secret.js"
 import { PostgresRepository } from "./persistence/postgres.js"
 import { RemoteConfigSnapshot } from "./provider/config-client.js"
 import { ManagedProvider } from "./provider/managed.js"
-import { BudgetedModelProvider } from "./provider/budgeted.js"
+import { UsageRecordingModelProvider } from "./provider/usage-recorder.js"
 import { buildServer } from "./server.js"
 import { agentMetrics, configureAgentTelemetry, configureAIContentCapture, internalSpanOptions, shutdownTelemetry, telemetryLog, withSpan } from "./telemetry.js"
 import { ToolCatalogRegistry } from "./tools/catalog-registry.js"
@@ -21,6 +21,7 @@ import { businessCardTools } from "./tools/business-card-tools.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 import { searchToolsTool } from "./tools/tool-search.js"
 import { getToolDetailsTool } from "./tools/tool-details.js"
+import { HttpLunaApiTaskStatusClient, waitForTaskTool } from "./tools/wait-for-task.js"
 import { InMemoryRunStreamBus } from "./run-stream-bus.js"
 import { runtimeSettingsFromRemote } from "./runtime-settings.js"
 
@@ -53,7 +54,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   // 输入、模型循环、工具、卡片和上下文预算是 Agent 内部固定不变量。
   const initialRemoteConfig = await remoteConfig.initialize()
   const rawProvider = new ManagedProvider(remoteConfig)
-  const provider = new BudgetedModelProvider(rawProvider, repository)
+  const provider = new UsageRecordingModelProvider(rawProvider, repository)
   const requestVerifier = config.AUTH_MODE === "bff-hmac"
     ? new BffHmacRequestVerifier(internalKeys.serviceToken, internalKeys.actorSigningKey)
     : new DevelopmentRequestVerifier()
@@ -66,7 +67,11 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   if (!catalog) throw new Error("ai.provider_config_unavailable")
   const catalogRegistry = new ToolCatalogRegistry(catalog, initialRemoteConfig.version)
   const toolStore = new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
-  const runtime = runtimeSettingsFromRemote(initialRemoteConfig.runtime)
+  const budgetOverrides = {
+    ...(config.AI_RUN_MAX_MODEL_STEPS !== undefined ? { maxModelSteps: config.AI_RUN_MAX_MODEL_STEPS } : {}),
+    ...(config.AI_RUN_MAX_TOOL_CALLS !== undefined ? { runMaxToolCalls: config.AI_RUN_MAX_TOOL_CALLS } : {}),
+  }
+  const runtime = runtimeSettingsFromRemote(initialRemoteConfig.runtime, budgetOverrides)
   const tools = new ToolOrchestrator(async (runId) => {
     const state = await repository.getRunToolState(runId)
     if (!state) throw new Error("ai.run_not_found")
@@ -83,12 +88,8 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   tools.setRunMaxToolCalls(runtime.runMaxToolCalls)
   const contextCompiler = new ContextCompiler(repository, provider, {
     recentTurnCount: runtime.contextRecentTurnCount,
-    maxUncompressedTurnCount: runtime.contextMaxUncompressedTurnCount,
     maxCompressionTurnsPerCompile: runtime.contextMaxCompressionTurnsPerCompile,
     summaryMaxOutputTokens: runtime.contextSummaryMaxOutputTokens,
-    maxHistoryPayloadBytes: runtime.contextMaxHistoryPayloadBytes,
-    maxSummaryPayloadBytes: runtime.contextMaxSummaryPayloadBytes,
-    maxContinuationPayloadBytes: runtime.contextMaxContinuationPayloadBytes,
   })
   const modelRuntime = new ModelRuntime(provider, {
     resolve: async (_pageContext, _userInput, loadedOperationIds, _signal, toolCatalogDigest) => {
@@ -118,6 +119,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
             readDocTool,
             ...businessCardTools,
             navigateToRouteTool,
+            waitForTaskTool,
           ]
         })
       }
@@ -164,11 +166,13 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     catalogRegistry,
     streamBus,
     docsKnowledge: loadBundledDocsKnowledge(config.AI_DOCS_BASE_URL),
+    taskStatusClient: new HttpLunaApiTaskStatusClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken),
   })
   const server = buildServer({
     config, repository, requestVerifier,
     cancelRun: runId => executor.cancel(runId),
     cancelExecutingRun: runId => executor.cancelExecuting(runId),
+    notifyRunQueued: () => executor.notifyWorkAvailable(),
     toolCatalogDigest: () => catalogRegistry.digest(),
     tools,
     remoteConfig,

@@ -8,6 +8,7 @@ interface ApiErrorBody {
   code?: unknown
   developerDetail?: unknown
   detail?: unknown
+  error?: unknown
   message?: unknown
   requestId?: unknown
   traceId?: unknown
@@ -160,11 +161,23 @@ async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
 
 async function apiErrorFromResponse(response: Response, path: string) {
   const body = await parseErrorBody(response)
-  const code = typeof body.code === 'string' && body.code.trim() ? body.code.trim() : ''
+  const nestedError = typeof body.error === 'object' && body.error !== null
+    ? body.error as Record<string, unknown>
+    : undefined
+  const rawCode = typeof body.code === 'string' && body.code.trim()
+    ? body.code.trim()
+    : typeof nestedError?.code === 'string' && nestedError.code.trim()
+      ? nestedError.code.trim()
+      : ''
+  const code = rawCode === 'invalid_request' ? 'request.invalid' : rawCode
   const developerDetail = typeof body.developerDetail === 'string' && body.developerDetail.trim()
     ? body.developerDetail.trim()
     : typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : ''
-  const requestId = typeof body.requestId === 'string' && body.requestId.trim() ? body.requestId.trim() : undefined
+  const requestId = typeof body.requestId === 'string' && body.requestId.trim()
+    ? body.requestId.trim()
+    : typeof nestedError?.requestId === 'string' && nestedError.requestId.trim()
+      ? nestedError.requestId.trim()
+      : undefined
   const traceId = typeof body.traceId === 'string' && body.traceId.trim() ? body.traceId.trim() : undefined
   const message = translatedErrorMessage(code) || fallbackMessageForStatus(response.status) || response.statusText
   return new ApiError(message, {

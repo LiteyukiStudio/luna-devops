@@ -17,7 +17,7 @@ import type {
   TimelineMutation,
   TimelinePage,
 } from "../domain.js"
-import type { OfficialModelUsage, UsageUnavailableReason } from "../provider/provider.js"
+import type { OfficialModelUsage } from "../provider/provider.js"
 
 export class RunStateConflictError extends Error {
   override readonly name = "RunStateConflictError"
@@ -62,19 +62,67 @@ export type TimelinePageOptions = {
 }
 
 export type ModelCallOperation = "assistant" | "summary" | "title"
-export type ModelCreditHold = { id: string, attempt: number, maxOutputTokens: number }
 export type ModelAttemptMetadata = {
   providerRequestId?: string
   responseId?: string
   responseModel?: string
   finishReason?: string
-  failureStage?: string
+}
+export type RecordReportedModelUsageInput = ModelAttemptMetadata & {
+  runId: string
+  ownerUserId: string
+  operation: ModelCallOperation
+  usage: OfficialModelUsage
+  callType: "stream" | "complete"
+  model?: AIModelSnapshot
 }
 export type RepositoryReadiness = { database: boolean, schema: boolean }
 export type RunToolSelection = {
   selectedOperationIds: string[]
   alreadySelectedOperationIds: string[]
   evictedOperationIds: string[]
+}
+
+/**
+ * 淘汰策略：当前 Run 内已经实际调用过的平台工具（executedInRun）优先保留，
+ * 仅对未实际调用的最早闲置工具按 FIFO/LRU 淘汰；只有当已调用工具数本身超过上限时才淘汰最旧项。
+ */
+export function selectOperationsWithExecutedProtection(
+  current: readonly string[],
+  requested: readonly string[],
+  executedInRun: ReadonlySet<string>,
+  limit: number,
+): RunToolSelection {
+  const boundedLimit = Math.max(1, Math.min(64, Math.floor(limit)))
+  const alreadySelectedOperationIds = requested.filter(operationId => current.includes(operationId))
+  const touched = new Set(requested)
+  const reordered = [...current.filter(operationId => !touched.has(operationId)), ...requested]
+  if (reordered.length <= boundedLimit) {
+    return {
+      selectedOperationIds: reordered,
+      alreadySelectedOperationIds,
+      evictedOperationIds: [],
+    }
+  }
+  const excess = reordered.length - boundedLimit
+  const evicted = new Set<string>()
+  for (const operationId of reordered) {
+    if (evicted.size >= excess) break
+    if (!executedInRun.has(operationId)) {
+      evicted.add(operationId)
+    }
+  }
+  if (evicted.size < excess) {
+    for (const operationId of reordered) {
+      if (evicted.size >= excess) break
+      evicted.add(operationId)
+    }
+  }
+  return {
+    selectedOperationIds: reordered.filter(operationId => !evicted.has(operationId)),
+    alreadySelectedOperationIds,
+    evictedOperationIds: reordered.filter(operationId => evicted.has(operationId)),
+  }
 }
 export type RunStreamPosition = { nextItemPosition: number, nextEventSequence: number, runVersion: number }
 export type RunStreamBatch = {
@@ -95,6 +143,24 @@ export type RunStreamBatch = {
   }
 }
 
+export type UpdateRunOptions = Partial<Run> & {
+  clearWakeAt?: boolean
+  eventData?: Record<string, unknown>
+}
+
+export type ResolveWaitingExternalRunInput = {
+  runId: string
+  expectedCheckpointRevision: number
+  nextPhase: RunCheckpoint["phase"]
+  nextCheckpointState: RunCheckpoint["state"]
+  itemId: string
+  toolCallId: string
+  itemStatus: Exclude<TimelineItem["status"], "streaming">
+  itemContent: Record<string, unknown>
+  eventType: "tool.completed" | "tool.failed"
+  eventData: Record<string, unknown>
+}
+
 export interface Repository {
   health(): Promise<boolean>
   readiness(): Promise<RepositoryReadiness>
@@ -105,16 +171,26 @@ export interface Repository {
   updateConversation(ownerUserId: string, conversationId: string, input: { title?: string, modelId?: string }): Promise<Conversation | undefined>
   renameConversation(ownerUserId: string, conversationId: string, title: string): Promise<Conversation | undefined>
   renameConversationByAssistant(conversationId: string, title: string, runId?: string): Promise<Conversation | undefined>
+  listActiveConversationRuns(ownerUserId: string, conversationId: string): Promise<Run[]>
   deleteConversation(ownerUserId: string, conversationId: string): Promise<boolean>
+  assertPositiveAvailableBalance(ownerUserId: string): Promise<void>
   createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn>
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   getRunToolState(runId: string): Promise<Pick<Run, "toolCatalogDigest" | "selectedOperationIds"> | undefined>
   getRunStreamPosition(runId: string): Promise<RunStreamPosition | undefined>
   persistRunStreamBatch(batch: RunStreamBatch): Promise<void>
-  touchRunSelectedOperations(runId: string, operationIds: string[], limit: number): Promise<RunToolSelection>
+  touchRunSelectedOperations(
+    runId: string,
+    operationIds: string[],
+    limit: number,
+    protectedOperationIds?: ReadonlySet<string>,
+  ): Promise<RunToolSelection>
   listActiveToolCatalogDigests(): Promise<string[]>
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
-  claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot): Promise<ClaimedRun | undefined>
+  claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot, userConcurrentRuns?: number): Promise<ClaimedRun | undefined>
+  claimDueWaitingExternalRuns(limit: number, leaseMs: number, now?: Date): Promise<Run[]>
+  rescheduleWaitingExternalRun(runId: string, expectedCheckpointRevision: number, pollCount: number, wakeAt: string): Promise<boolean>
+  resolveWaitingExternalRun(input: ResolveWaitingExternalRunInput): Promise<boolean>
   listRunningRuns(): Promise<Array<Pick<Run, "id" | "rowVersion">>>
   interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean>
   recoverOrphanedRun(runId: string, expectedRunVersion: number, maxRecoveries: number): Promise<OrphanedRunRecovery>
@@ -132,32 +208,15 @@ export interface Repository {
     toolInteractions: ConversationToolInteraction[]
     history: ConversationHistoryEntry[]
     conversation: Pick<Conversation, "title" | "titleSource">
+    lastTotalTokens?: number
     model?: AIModelSnapshot
   } | undefined>
-  createModelCreditHold(input: {
-    id: string
-    runId: string
-    ownerUserId: string
-    operation: ModelCallOperation
-    requestedOutputTokens: number
-    leaseSeconds: number
-  }): Promise<ModelCreditHold>
-  recordReportedModelUsage(
-    creditHoldId: string,
-    usage: OfficialModelUsage,
-    metadata: ModelAttemptMetadata & { callType: "stream" | "complete" },
-  ): Promise<{ reconciliationRequired: boolean }>
-  markModelUsageUnavailable(
-    creditHoldId: string,
-    reason: UsageUnavailableReason | "request_outcome_unknown",
-    metadata: ModelAttemptMetadata,
-  ): Promise<void>
-  releaseModelCreditHold(creditHoldId: string): Promise<void>
+  recordReportedModelUsage(input: RecordReportedModelUsageInput): Promise<{ id: string, attempt: number }>
   getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
   saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>
   listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number): Promise<ConversationHistoryEntry[]>
-  appendRunInput(runId: string, text: string): Promise<void>
-  updateRun(runId: string, from: Run["status"], to: Run["status"], fields?: Partial<Run>): Promise<Run>
+  appendRunInput(runId: string, text: string): Promise<TimelineItem>
+  updateRun(runId: string, from: Run["status"], to: Run["status"], fields?: UpdateRunOptions): Promise<Run>
   appendItem(item: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }): Promise<TimelineItem>
   updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>): Promise<TimelineItem>
   appendItemWithEvent(item: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }, eventType: string, eventData?: Record<string, unknown>): Promise<TimelineMutation>

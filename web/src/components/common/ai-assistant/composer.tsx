@@ -29,6 +29,7 @@ export interface AIAssistantComposerProps {
   sending: boolean
   submitting: boolean
   surface?: 'page' | 'window'
+  waitingExternal?: boolean
   waitingInput: boolean
   onCancel: () => void
   onDraftChange: (value: string) => void
@@ -103,6 +104,7 @@ export function AIAssistantComposer({
   sending,
   submitting,
   surface = 'window',
+  waitingExternal = false,
   waitingInput,
   onCancel,
   onDraftChange,
@@ -151,13 +153,26 @@ export function AIAssistantComposer({
       data-ai-assistant-surface={surface}
     >
       <div className="mx-auto w-full max-w-3xl">
+        {waitingExternal && (
+          <div
+            className={cn(
+              'mb-1.5 flex items-center gap-2 rounded-control border border-info-border bg-info-subtle px-3 py-1.5 text-info',
+              page ? 'text-xs sm:text-sm' : 'text-xs',
+            )}
+            data-ai-waiting-external
+            role="status"
+          >
+            <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />
+            <span className="min-w-0 flex-1 leading-5">{t('aiAssistant.waitingExternalStatus')}</span>
+          </div>
+        )}
         <div
           className={cn(
             'flex flex-col rounded-container border border-input bg-surface shadow-xs transition-[border-color,box-shadow] duration-fast focus-within:border-primary-border focus-within:ring-3 focus-within:ring-primary/15',
             inputTooLarge && 'border-danger-border focus-within:border-danger-border focus-within:ring-danger/15',
             busy && 'bg-surface-subtle',
           )}
-          data-ai-composer-state={inputTooLarge ? 'invalid' : busy ? 'sending' : activeRun && !waitingInput ? 'running' : 'idle'}
+          data-ai-composer-state={inputTooLarge ? 'invalid' : busy ? 'sending' : waitingExternal ? 'waiting_external' : activeRun && !waitingInput ? 'running' : 'idle'}
         >
           <textarea
             ref={inputRef}
@@ -168,7 +183,7 @@ export function AIAssistantComposer({
               ? 'min-h-12 max-h-40 w-full resize-none overflow-y-auto bg-transparent px-3.5 pt-3 !text-base leading-6 outline-none [field-sizing:content] placeholder:text-muted-foreground disabled:cursor-not-allowed'
               : 'min-h-11 max-h-36 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 !text-base leading-5.5 outline-none [field-sizing:content] placeholder:text-muted-foreground disabled:cursor-not-allowed sm:!text-[13px]'}
             disabled={busy}
-            placeholder={waitingInput ? t('aiAssistant.inputRequired') : activeRun ? t('aiAssistant.inputRunning') : t('aiAssistant.inputPlaceholder')}
+            placeholder={waitingInput ? t('aiAssistant.inputRequired') : waitingExternal ? t('aiAssistant.inputWaitingExternal') : activeRun ? t('aiAssistant.inputRunning') : t('aiAssistant.inputPlaceholder')}
             rows={1}
             value={draft}
             onChange={event => onDraftChange(event.target.value)}

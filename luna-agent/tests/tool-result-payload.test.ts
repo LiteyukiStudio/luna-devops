@@ -1,32 +1,26 @@
 import { describe, expect, it } from "vitest"
-import { serializeToolResultPayload } from "../src/executor/tool-results.js"
+import { serializeToolResultPayload, toolResultMessage } from "../src/executor/tool-results.js"
 
-describe("tool result payload bounding", () => {
-  const testPayloadBudget = 24 * 1024
-
-  it("passes through small results unchanged", () => {
-    const result = { status: "succeeded", result: { data: { items: [{ id: "1", name: "a" }] } } }
-    expect(serializeToolResultPayload(result)).toBe(JSON.stringify(result))
-  })
-
-  it("bounds a large list result and keeps valid JSON with a truncation marker", () => {
-    const items = Array.from({ length: 100 }, (_, index) => ({
+describe("tool result payload preservation", () => {
+  it("passes through small and large results intact without local byte-budget truncation", () => {
+    const items = Array.from({ length: 120 }, (_, index) => ({
       id: `item-${index}`,
       name: `名称-${index}`,
-      description: "很长的描述文本".repeat(30),
+      description: "完整的工具返回描述文本".repeat(30),
+      env: [{ key: "LOG_LEVEL", value: "info" }],
     }))
-    const result = { status: "succeeded", result: { data: { items, truncated: true } } }
-    const serialized = serializeToolResultPayload(result, testPayloadBudget)
-    expect(() => { JSON.parse(serialized) }).not.toThrow()
-    expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(26_000)
-    expect(serialized).toContain("_truncated")
-  })
+    const result = { status: "succeeded", result: { data: { items } } }
+    const serialized = serializeToolResultPayload(result)
+    expect(JSON.parse(serialized)).toEqual(result)
+    expect(serialized).not.toContain("_truncated")
 
-  it("bounds a very large single text payload", () => {
-    const result = { status: "succeeded", result: { data: { text: "正文".repeat(50_000) } } }
-    const serialized = serializeToolResultPayload(result, testPayloadBudget)
-    expect(() => { JSON.parse(serialized) }).not.toThrow()
-    expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(26_000)
+    const message = toolResultMessage({ id: "call_1", operationId: "listItems", arguments: {} }, {
+      ...result,
+      apiKey: "sk-secret-token-value",
+    })
+    expect(message.role).toBe("tool")
+    expect(message.content).toContain('"LOG_LEVEL"')
+    expect(message.content).toContain('"info"')
+    expect(message.content).not.toContain("sk-secret-token-value")
   })
-
 })

@@ -84,7 +84,9 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
         if (!retryableOperation || !isRetryableHTTPStatus(response.status) || retry >= maxRetries)
           return response
         agentMetrics.externalRequests.add(1, { target: "luna_api", operation, outcome: String(response.status) })
-        await this.scheduleRetry(operation, retry + 1, maxRetries, signal, parseRetryAfter(response.headers), String(response.status))
+        const retryAfterMs = parseRetryAfter(response.headers)
+        await response.body?.cancel().catch(() => undefined)
+        await this.scheduleRetry(operation, retry + 1, maxRetries, signal, retryAfterMs, String(response.status))
       }
       catch (error) {
         if (signal?.aborted || !retryableOperation || retry >= maxRetries) throw error

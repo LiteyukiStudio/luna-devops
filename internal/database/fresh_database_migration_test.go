@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 132
+	latestMigrationVersion   = 134
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -86,6 +86,10 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000131_notification_scopes_and_runtime_alerts.down.sql":     false,
 		"000132_platform_app_templates.up.sql":                       false,
 		"000132_platform_app_templates.down.sql":                     false,
+		"000133_decouple_ai_model_usages.up.sql":                     false,
+		"000133_decouple_ai_model_usages.down.sql":                   false,
+		"000134_ai_run_waiting_external.up.sql":                     false,
+		"000134_ai_run_waiting_external.down.sql":                   false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -511,7 +515,6 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"project_volume_quota_reservations",
 		"platform_app_templates",
 		"ai.conversation_summaries",
-		"ai.model_credit_holds",
 		"ai.model_usages",
 		"ai.run_checkpoints",
 	} {
@@ -519,7 +522,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			t.Fatalf("fresh database is missing table %s", table)
 		}
 	}
-	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions", "kube_access_bindings"} {
+	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions", "ai.model_credit_holds", "kube_access_bindings"} {
 		if db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database still contains retired table %s", table)
 		}

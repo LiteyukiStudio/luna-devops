@@ -5,7 +5,7 @@ import { DeterministicProvider } from "../src/provider/deterministic.js"
 import type { ModelProvider } from "../src/provider/provider.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
-import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
+import { MemoryToolCallStore, ProjectingToolCallStore, ToolInterruption, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { getToolDetailsTool } from "../src/tools/tool-details.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
 import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
@@ -34,50 +34,79 @@ describe("RunExecutor slim lifecycle", () => {
     await expect(executor.stop()).resolves.toBeUndefined()
   })
 
-  it("converges a claimed Run when the concurrent-run query fails", async () => {
-    class CountFailureRepository extends TestRepository {
-      override async countActiveUserRuns(): Promise<never> {
-        throw new Error("database unavailable")
-      }
-    }
-    const repository = new CountFailureRepository()
-    const conversation = await repository.createConversation("usr_init_count", "init count")
-    const created = await repository.createTurn("usr_init_count", {
-      conversationId: conversation.id, input: "hello", pageContext: {},
-      idempotencyKey: "init-count-failure", actorSessionId: "ses_init_count",
+  it("skips queued Runs for a user at userConcurrentRuns capacity while claiming another user's queued Run", async () => {
+    const repository = new TestRepository()
+    const convA = await repository.createConversation("usr_busy", "busy")
+    const firstBusy = await repository.createTurn("usr_busy", {
+      conversationId: convA.id, input: "running-1", pageContext: {},
+      idempotencyKey: "busy-1", actorSessionId: "ses_busy",
     })
-    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
+    const secondBusy = await repository.createTurn("usr_busy", {
+      conversationId: convA.id, input: "queued-2", pageContext: {},
+      idempotencyKey: "busy-2", actorSessionId: "ses_busy",
+    })
+    // 将第一个任务置为 running，占据 usr_busy 的唯一并发运行槽位；第二个保持 queued
+    await repository.claimNextQueuedRun(undefined, 1)
+    expect(await repository.countActiveUserRuns("usr_busy")).toBe(1)
+
+    const convB = await repository.createConversation("usr_free", "free")
+    const freeTurn = await repository.createTurn("usr_free", {
+      conversationId: convB.id, input: "hello", pageContext: {},
+      idempotencyKey: "free-1", actorSessionId: "ses_free",
+    })
+
+    const remote = testRemoteConfigSource(testRemoteProviderConfig({ runtime: { userConcurrentRuns: 1 } }))
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()), {
+      runtimeConfig: remote.source,
+      initialRuntimeSettings: { ...defaultRuntimeSettings, userConcurrentRuns: 1 },
+    })
 
     await expect(executor.runOnce()).resolves.toBe(true)
 
-    expect(await repository.getRun("usr_init_count", created.run.id)).toMatchObject({
-      status: "interrupted",
-      errorCode: "ai.agent_restarted",
-    })
+    // usr_busy 的排队任务保持 queued（绝不被处决为 failed），而 usr_free 的任务顺利完成
+    expect(await repository.getRun("usr_busy", firstBusy.run.id)).toMatchObject({ status: "running" })
+    expect(await repository.getRun("usr_busy", secondBusy.run.id)).toMatchObject({ status: "queued" })
+    expect(await repository.getRun("usr_free", freeTurn.run.id)).toMatchObject({ status: "completed" })
   })
 
-  it("converges a claimed Run when quota rejection cannot be persisted", async () => {
+  it("commits open stream session before failCard so stream sequences never collide", async () => {
     const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_init_quota", "init quota")
-    const created = await repository.createTurn("usr_init_quota", {
-      conversationId: conversation.id, input: "hello", pageContext: {},
-      idempotencyKey: "init-quota-failure", actorSessionId: "ses_init_quota",
+    const conversation = await repository.createConversation("usr_card_seq", "card sequence")
+    const created = await repository.createTurn("usr_card_seq", {
+      conversationId: conversation.id, input: "展示卡片", pageContext: {},
+      idempotencyKey: "card-seq-conflict-free", actorSessionId: "ses_card_seq",
     })
-    repository.countActiveUserRuns = async () => 11
-    const updateRun = repository.updateRun.bind(repository)
-    repository.updateRun = async (runId, from, to, fields) => {
-      if (to === "failed" && fields?.errorCode === "ai.quota.user_concurrent_runs_exceeded")
-        throw new Error("database unavailable")
-      return updateRun(runId, from, to, fields)
+    let step = 0
+    const provider: ModelProvider = {
+      async *stream() {
+        step += 1
+        if (step === 1) {
+          yield { type: "tool_call_delta" }
+          yield {
+            type: "completed",
+            usage: { status: "reported" as const, value: { inputTokens: 2, outputTokens: 2, totalTokens: 4 } },
+            toolCalls: [{ id: "card-invalid", operationId: "present_card", arguments: {} }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "正在回退文本但流意外中断" }
+        throw new Error("ai.provider_unavailable")
+      },
+      async complete() {
+        return { text: "", toolCalls: [], usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
     }
-    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
+    const streamBus = new InMemoryRunStreamBus(repository)
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry()), { streamBus }).runOnce()
 
-    await expect(executor.runOnce()).resolves.toBe(true)
-
-    expect(await repository.getRun("usr_init_quota", created.run.id)).toMatchObject({
-      status: "interrupted",
-      errorCode: "ai.agent_restarted",
+    expect(await repository.getRun("usr_card_seq", created.run.id)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.provider_unavailable",
     })
+    const events = await repository.getEvents("usr_card_seq", created.run.id, 0)
+    expect(events.every((event, index) => index === 0 || event.sequence > events[index - 1]!.sequence)).toBe(true)
   })
 
   it("converges a claimed Run when awaiting_input checkpoint persistence fails", async () => {
@@ -87,14 +116,13 @@ describe("RunExecutor slim lifecycle", () => {
       conversationId: conversation.id, input: "检查项目", pageContext: {},
       idempotencyKey: "input-checkpoint-failure", actorSessionId: "ses_input_checkpoint",
     })
-    const catalog = ToolCatalog.load([testToolOperation("getProject", {
-      inputSchema: {
-        type: "object",
-        properties: { projectId: { type: "string" } },
-        required: ["projectId"],
-        additionalProperties: false,
-      },
-    })])
+    const catalog = ToolCatalog.load([testToolOperation("getProject")])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(() => ({ status: 200, body: {} })),
+      new ProjectingToolCallStore(repository.toolCallStore, repository),
+    )
+    vi.spyOn(tools, "propose").mockRejectedValueOnce(new ToolInterruption("waiting_input", ["projectId"]))
     const provider: ModelProvider = {
       async *stream() {
         yield { type: "tool_call_delta" }
@@ -117,7 +145,7 @@ describe("RunExecutor slim lifecycle", () => {
       return saveCheckpoint(runId, advance)
     }
 
-    await testExecutor(repository, new ModelRuntime(provider, testRegistry()), { catalog }).runOnce()
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry()), { catalog, tools }).runOnce()
 
     expect(await repository.getRun("usr_input_checkpoint", created.run.id)).toMatchObject({
       status: "interrupted",

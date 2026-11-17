@@ -54,6 +54,6 @@ export const aiApi = {
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
   decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'reject' | 'approve' }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(toolCallId)}/decision`, { method: 'POST', body: JSON.stringify(payload) }),
-  submitAIRunInput: (runId: string, payload: { input: { parts: Array<{ type: 'text', text: string }> }, expectedVersion: number }) =>
+  submitAIRunInput: (runId: string, payload: { text: string, expectedVersion: number }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/input`, { method: 'POST', body: JSON.stringify(payload) }),
 }

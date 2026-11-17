@@ -23,11 +23,12 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import { useId, useMemo, useState } from 'react'
+import { use, useId, useMemo, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { ApiError } from '@/api'
 import { SearchSelect } from '@/components/common/search-select'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
@@ -45,6 +46,7 @@ import { readValidatedInteractionCardGroup } from './interaction-card-schema'
 import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInteractionCard } from './interaction-card-templates'
 import { LiveProgressBlock } from './live-progress-block'
 import { AIInlineMarkdown, AIMarkdown } from './markdown'
+import { AIAssistantRuntimeContext } from './runtime-context'
 import { AIStepStatusGlyph } from './step-status'
 
 const compactActionClassName = 'h-auto min-h-8 max-w-full gap-1.5 whitespace-normal px-3 py-1.5 text-xs leading-4 [&_svg]:size-3.5'
@@ -332,7 +334,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       )
     }
     if (block.type === 'live_progress')
-      return <LiveProgressBlock key={`${block.binding.projectId}:${block.binding.operationType}:${block.binding.operationId}`} block={block} />
+      return <LiveProgressBlock key={`${block.binding.projectId}:${block.binding.operationType}:${block.binding.operationId}`} block={block} onAction={onAction} />
     if (block.type === 'resource_links') {
       return (
         <div className="flex flex-wrap gap-1.5">
@@ -564,24 +566,49 @@ function KeyValueInput({ controlId, describedBy, labelId, value, secret, onChang
 
 function CardActionButton({ action, cardId, values, messageValues = values, disabled = false, onAction }: { action: InteractionCardAction, cardId: string, values: FormValues, messageValues?: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
   const { t } = useTranslation()
+  const runtime = use(AIAssistantRuntimeContext)
+  const executingRef = useRef(false)
   const [pending, setPending] = useState(false)
-  const [done, setDone] = useState(false)
+  const [consumedAtBlockCount, setConsumedAtBlockCount] = useState<number | null>(null)
   const repeatable = action.repeatable ?? action.type === 'navigate'
+  const downstreamFailed = useMemo(() => {
+    if (consumedAtBlockCount === null || !runtime)
+      return false
+    const subsequentBlocks = runtime.timelineProps.blocks.slice(consumedAtBlockCount)
+    for (let index = subsequentBlocks.length - 1; index >= 0; index -= 1) {
+      const block = subsequentBlocks[index]!
+      if (action.type === 'tool' && block.type === 'tool_call' && block.operationId === action.operationId) {
+        return block.status === 'rejected' || block.status === 'failed' || block.status === 'canceled'
+      }
+      if (block.type === 'run_status' && (block.status === 'failed' || block.status === 'canceled')) {
+        return true
+      }
+    }
+    return false
+  }, [action, consumedAtBlockCount, runtime])
+  const done = consumedAtBlockCount !== null && !downstreamFailed
   const run = async () => {
-    if (pending || (done && !repeatable))
+    if (executingRef.current || pending || (done && !repeatable))
       return
+    executingRef.current = true
     setPending(true)
+    const baselineBlockCount = runtime?.timelineProps.blocks.length ?? 0
     try {
       const success = await executeCardAction(action, cardId, values, messageValues, onAction)
-      if (success && !repeatable)
-        setDone(true)
-      if (!success)
-        throw new Error('ai.card_action_failed')
+      if (!success) {
+        setConsumedAtBlockCount(null)
+        toast.error(t('aiAssistant.cards.actionFailed'))
+        return
+      }
+      if (!repeatable)
+        setConsumedAtBlockCount(baselineBlockCount)
     }
-    catch {
-      toast.error(t('aiAssistant.cards.actionFailed'))
+    catch (error) {
+      setConsumedAtBlockCount(null)
+      toast.error(formatCardActionError(error, t('aiAssistant.cards.actionFailed')))
     }
     finally {
+      executingRef.current = false
       setPending(false)
     }
   }
@@ -593,13 +620,21 @@ function CardActionButton({ action, cardId, values, messageValues = values, disa
   )
 }
 
+function formatCardActionError(error: unknown, fallbackMessage: string): string {
+  if (error instanceof ApiError && error.message)
+    return error.message
+  if (error instanceof Error && error.message && error.message !== 'ai.card_action_failed' && !/^[a-z]+\.[\w.-]+$/i.test(error.message))
+    return error.message
+  return fallbackMessage
+}
+
 async function runInlineCardAction(action: AIUIAction, onAction: (action: AIUIAction) => Promise<boolean>, failureMessage: string) {
   try {
     if (!await onAction(action))
       toast.error(failureMessage)
   }
-  catch {
-    toast.error(failureMessage)
+  catch (error) {
+    toast.error(error instanceof Error && error.message && !/^[a-z]+\.[\w.-]+$/i.test(error.message) ? error.message : failureMessage)
   }
 }
 
@@ -711,7 +746,23 @@ function isUnsafeJsonPointerPart(part: string) {
 }
 
 function buildFormSchema(fields: InteractionFormField[]) {
-  return z.object(Object.fromEntries(fields.map(field => [field.id, fieldSchema(field)])))
+  return z.object(Object.fromEntries(fields.map(field => [field.id, z.unknown()])))
+    .superRefine((values, context) => {
+      for (const field of fields) {
+        if (!isFieldVisible(field, values))
+          continue
+        const parsed = fieldSchema(field).safeParse(values[field.id])
+        if (!parsed.success) {
+          for (const issue of parsed.error.issues) {
+            context.addIssue({
+              code: 'custom',
+              message: issue.message,
+              path: [field.id, ...issue.path],
+            })
+          }
+        }
+      }
+    })
 }
 
 function fieldSchema(field: InteractionFormField): z.ZodType {
@@ -787,6 +838,8 @@ function defaultValues(fields: InteractionFormField[]): FormValues {
 
 function getToolFormValues(fields: InteractionFormField[], values: FormValues): FormValues {
   return Object.fromEntries(fields.flatMap((field) => {
+    if (!isFieldVisible(field, values))
+      return []
     const value = values[field.id]
     if (field.type === 'secret')
       return typeof value === 'string' && value.length > 0 ? [[field.id, value]] : []
@@ -808,8 +861,12 @@ function getToolFormValues(fields: InteractionFormField[], values: FormValues): 
 }
 
 function getPublicFormValues(fields: InteractionFormField[], values: FormValues): FormValues {
-  const sensitiveIds = new Set(fields.filter(field => field.type === 'secret' || (field.type === 'key_value' && field.valueMode === 'secret')).map(field => field.id))
-  return Object.fromEntries(Object.entries(values).filter(([key]) => !sensitiveIds.has(key)))
+  const allowedIds = new Set(
+    fields
+      .filter(field => isFieldVisible(field, values) && field.type !== 'secret' && !(field.type === 'key_value' && field.valueMode === 'secret'))
+      .map(field => field.id),
+  )
+  return Object.fromEntries(Object.entries(values).filter(([key]) => allowedIds.has(key)))
 }
 
 function messageFormValues(fields: InteractionFormField[], values: FormValues): FormValues {

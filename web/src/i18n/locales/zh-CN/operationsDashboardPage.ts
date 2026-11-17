@@ -110,10 +110,12 @@ const operationsDashboardPage = {
     running: '运行中',
     waiting_approval: '等待审批',
     waiting_input: '等待输入',
+    waiting_external: '等待后台任务',
     completed: '已完成',
     failed: '失败',
     canceled: '已取消',
     expired: '已过期',
+    interrupted: '已中断',
   },
   toolDetail: {
     titleFallback: '工具调用详情',

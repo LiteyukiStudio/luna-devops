@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { isAIUIActionRepeatable } from './actions'
 import { runFailureTranslationKey } from './errors'
+import { LiveProgressBlock } from './live-progress-block'
 import { aiToolIndicatorState } from './status-indicator-states'
 import { AIToolCallDetails } from './tool-call-details'
 import { toolDisplayName } from './tool-display-name'
@@ -18,16 +19,74 @@ import { toolDisplayName } from './tool-display-name'
 export type ToolCallBlock = Extract<AIBlock, { type: 'tool_call' }>
 export type AIApprovalDecision = 'reject' | 'approve'
 
+interface WaitForTaskDisplayInfo {
+  projectId: string
+  taskType: 'build_run' | 'release'
+  taskId: string
+  taskStatus?: 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled'
+  timedOut?: boolean
+}
+
+const safeResourceIdentifierPattern = /^[a-z0-9][\w.:-]{0,63}$/i
+
+function extractWaitForTaskInfo(block: ToolCallBlock): WaitForTaskDisplayInfo | undefined {
+  if (block.operationId !== 'wait_for_task')
+    return undefined
+  const projectId = typeof block.arguments.projectId === 'string' ? block.arguments.projectId.trim() : ''
+  const taskType = block.arguments.taskType === 'build_run' || block.arguments.taskType === 'release'
+    ? block.arguments.taskType
+    : undefined
+  const taskId = typeof block.arguments.taskId === 'string' ? block.arguments.taskId.trim() : ''
+  if (!safeResourceIdentifierPattern.test(projectId) || !taskType || !safeResourceIdentifierPattern.test(taskId))
+    return undefined
+  const data = block.result?.data && typeof block.result.data === 'object' && !Array.isArray(block.result.data)
+    ? block.result.data as Record<string, unknown>
+    : undefined
+  const rawTaskStatus = data?.taskStatus
+  const taskStatus = rawTaskStatus === 'pending'
+    || rawTaskStatus === 'running'
+    || rawTaskStatus === 'succeeded'
+    || rawTaskStatus === 'failed'
+    || rawTaskStatus === 'canceled'
+    ? rawTaskStatus
+    : undefined
+  return {
+    projectId,
+    taskType,
+    taskId,
+    ...(taskStatus ? { taskStatus } : {}),
+    ...(typeof data?.timedOut === 'boolean' ? { timedOut: data.timedOut } : {}),
+  }
+}
+
 export function AIToolCallCard({ block, onAction, onApproval, surface = 'window' }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface?: 'page' | 'window' }) {
   const { t, i18n } = useTranslation()
   const page = surface === 'page'
-  const title = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : toolDisplayName(t, block.operationId)
+  const waitTask = extractWaitForTaskInfo(block)
+  const waitTargetLabel = waitTask
+    ? waitTask.taskType === 'build_run'
+      ? t('aiAssistant.waitForTask.targetBuild', { id: waitTask.taskId })
+      : t('aiAssistant.waitForTask.targetRelease', { id: waitTask.taskId })
+    : undefined
+  const baseTitle = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : toolDisplayName(t, block.operationId)
+  const title = waitTargetLabel ? `${baseTitle} · ${waitTargetLabel}` : baseTitle
   const errorCode = block.errorCode ?? block.result?.errorCode
   const summary = block.status === 'failed'
     ? t(runFailureTranslationKey(errorCode))
     : block.result?.summaryKey && i18n.exists(block.result.summaryKey)
       ? t(block.result.summaryKey, block.result.summaryParams)
       : t('aiAssistant.resultAvailable')
+  const waitOutcomeBadge = waitTask && block.status === 'succeeded'
+    ? waitTask.timedOut
+      ? { tone: 'warning' as const, label: t('aiAssistant.waitForTask.timedOut') }
+      : waitTask.taskStatus === 'failed'
+        ? { tone: 'danger' as const, label: t('aiAssistant.cards.liveProgress.states.operation_failed') }
+        : waitTask.taskStatus === 'canceled'
+          ? { tone: 'warning' as const, label: t('aiAssistant.cards.liveProgress.states.cancelled') }
+          : waitTask.taskStatus === 'succeeded'
+            ? { tone: 'success' as const, label: t('aiAssistant.cards.liveProgress.states.succeeded') }
+            : undefined
+    : undefined
   return (
     <div
       className={cn(
@@ -35,6 +94,7 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
         block.status === 'failed' ? 'border-danger-border' : block.status === 'awaiting_approval' ? 'border-warning-border' : 'border-border',
       )}
       data-ai-tool-call={block.status}
+      data-ai-tool-operation={block.operationId}
     >
       <details className="group/tool">
         <summary className={cn('relative flex cursor-pointer list-none items-center gap-2 outline-none transition-colors hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden', page ? 'min-h-11 px-3 py-1.5 pointer-fine:min-h-9' : 'min-h-9 px-2.5 py-1.5')} data-ai-tool-summary data-ai-tool-surface={surface}>
@@ -45,6 +105,11 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
           {block.visibility === 'internal' && (
             <StatusBadge className="shrink-0 px-1.5 py-0 text-[11px] leading-4" tone="warning">
               {t('aiAssistant.toolDebug.internal')}
+            </StatusBadge>
+          )}
+          {waitOutcomeBadge && (
+            <StatusBadge className="shrink-0 px-1.5 py-0 text-[11px] leading-4" tone={waitOutcomeBadge.tone}>
+              {waitOutcomeBadge.label}
             </StatusBadge>
           )}
           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -72,6 +137,22 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
           </div>
         )}
       </details>
+      {waitTask && block.status === 'running' && waitTargetLabel && (
+        <div className="border-t border-border px-3 py-2.5" data-ai-wait-for-task-progress>
+          <LiveProgressBlock
+            block={{
+              id: `${block.id}:progress`,
+              type: 'live_progress',
+              label: waitTargetLabel,
+              binding: {
+                projectId: waitTask.projectId,
+                operationType: waitTask.taskType,
+                operationId: waitTask.taskId,
+              },
+            }}
+          />
+        </div>
+      )}
       {block.status === 'awaiting_approval' && (
         <div className="border-t border-warning-border" data-ai-tool-intervention>
           <ApprovalControls block={block} surface={surface} onApproval={onApproval} />

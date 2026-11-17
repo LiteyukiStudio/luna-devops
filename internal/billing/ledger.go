@@ -86,11 +86,11 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 		}
 		balanceAfter := wallet.BalanceCredits.Add(amount)
 		if amount.IsNegative() {
-			holds, holdErr := activeAIReservationHolds(tx, input.UserID, "")
-			if holdErr != nil {
-				return holdErr
+			pendingAI, pendingErr := pendingAIModelUsageCredits(tx, []string{input.UserID})
+			if pendingErr != nil {
+				return pendingErr
 			}
-			if holds.IsPositive() && balanceAfter.LessThan(holds) {
+			if pendingAI.IsPositive() && balanceAfter.LessThan(pendingAI) {
 				return ErrReservedBalance
 			}
 		}
@@ -130,7 +130,7 @@ func (s Service) debitUsages(usages []model.BillingUsageRecord, reason string, d
 		if err != nil {
 			return err
 		}
-		return debitUsagesForUser(tx, usages, reason, description, actorID, billedUserID, "")
+		return debitUsagesForUser(tx, usages, reason, description, actorID, billedUserID)
 	})
 }
 
@@ -143,12 +143,11 @@ func (s Service) debitUserUsages(usages []model.BillingUsageRecord, reason strin
 		return errors.New("billed user id is required")
 	}
 	return s.DB.Transaction(func(tx *gorm.DB) error {
-		return debitUsagesForUser(tx, usages, reason, description, actorID, billedUserID, "")
+		return debitUsagesForUser(tx, usages, reason, description, actorID, billedUserID)
 	})
 }
 
-func debitUsagesForUser(tx *gorm.DB, usages []model.BillingUsageRecord, reason string, description string, actorID string, billedUserID string, excludedReservationID string) error {
-	projectID := usages[0].ProjectID
+func debitUsagesForUser(tx *gorm.DB, usages []model.BillingUsageRecord, reason string, description string, actorID string, billedUserID string) error {
 	if err := ensureWallet(tx, billedUserID); err != nil {
 		return err
 	}
@@ -156,15 +155,27 @@ func debitUsagesForUser(tx *gorm.DB, usages []model.BillingUsageRecord, reason s
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "user_id = ?", billedUserID).Error; err != nil {
 		return err
 	}
-	balanceAfter := wallet.BalanceCredits
-	holds, err := activeAIReservationHolds(tx, billedUserID, excludedReservationID)
+	created, err := appendDebitedUsagesForLockedWallet(tx, &wallet, usages, reason, description, actorID)
 	if err != nil {
 		return err
 	}
+	if created == 0 {
+		return ErrAlreadySettled
+	}
+	return tx.Model(&model.UserWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", wallet.BalanceCredits).Error
+}
+
+func appendDebitedUsagesForLockedWallet(tx *gorm.DB, wallet *model.UserWallet, usages []model.BillingUsageRecord, reason string, description string, actorID string) (int, error) {
+	if len(usages) == 0 {
+		return 0, nil
+	}
+	projectID := usages[0].ProjectID
+	billedUserID := wallet.UserID
+	balanceAfter := wallet.BalanceCredits
 	created := 0
 	for _, usage := range usages {
 		if usage.ProjectID != projectID {
-			return errors.New("billing usage batch must belong to one project")
+			return 0, errors.New("billing usage batch must belong to one project")
 		}
 		var existing model.BillingUsageRecord
 		err := tx.First(&existing, "resource_type = ? and resource_id = ? and meter = ?", usage.ResourceType, usage.ResourceID, usage.Meter).Error
@@ -172,16 +183,12 @@ func debitUsagesForUser(tx *gorm.DB, usages []model.BillingUsageRecord, reason s
 			continue
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			return 0, err
 		}
 		usage.BilledUserID = billedUserID
-		nextBalance := balanceAfter.Sub(usage.AmountCredits)
-		if holds.IsPositive() && nextBalance.LessThan(holds) {
-			return ErrReservedBalance
-		}
-		balanceAfter = nextBalance
+		balanceAfter = balanceAfter.Sub(usage.AmountCredits)
 		if err := tx.Create(&usage).Error; err != nil {
-			return err
+			return 0, err
 		}
 		entry := model.BillingLedgerEntry{
 			ID:                  id.New("bled"),
@@ -199,26 +206,29 @@ func debitUsagesForUser(tx *gorm.DB, usages []model.BillingUsageRecord, reason s
 			CreatedBy:           actorID,
 		}
 		if err := tx.Create(&entry).Error; err != nil {
-			return err
+			return 0, err
 		}
 		created++
 	}
-	if created == 0 {
-		return ErrAlreadySettled
-	}
-	return tx.Model(&model.UserWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
+	wallet.BalanceCredits = balanceAfter
+	return created, nil
 }
 
-func activeAIReservationHolds(tx *gorm.DB, userID, excludedReservationID string) (decimal.Decimal, error) {
-	query := tx.Table("ai.model_credit_holds").
-		Where("owner_user_id = ? AND state IN ?", userID, []string{"held", "usage_recorded", "hold_deficit", "reconciliation_required"})
-	if strings.TrimSpace(excludedReservationID) != "" {
-		query = query.Where("id <> ?", excludedReservationID)
+func pendingAIModelUsageCredits(tx *gorm.DB, userIDs []string) (decimal.Decimal, error) {
+	if len(userIDs) == 0 {
+		return decimal.Zero, nil
 	}
 	var result struct {
 		Credits decimal.Decimal `gorm:"column:credits"`
 	}
-	err := query.Select("COALESCE(SUM(COALESCE(actual_credits, max_risk_credits)), 0) AS credits").Scan(&result).Error
+	err := tx.Table("ai.model_usages").
+		Where("owner_user_id IN ? AND status = ? AND settlement_status = ?", userIDs, "reported", "pending").
+		Select(`COALESCE(SUM((
+			((prompt_tokens - COALESCE(cached_prompt_tokens, 0) - COALESCE(cache_write_prompt_tokens, 0))::numeric * input_credits_per_million)
+			+ ((COALESCE(cached_prompt_tokens, 0) + COALESCE(cache_write_prompt_tokens, 0))::numeric * cached_input_credits_per_million)
+			+ (completion_tokens::numeric * output_credits_per_million)
+		) / 1000000), 0) AS credits`).
+		Scan(&result).Error
 	return result.Credits, err
 }
 

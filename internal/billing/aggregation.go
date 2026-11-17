@@ -152,13 +152,25 @@ func (s Service) spend(userIDs []string, projectIDs []string, period spendPeriod
 }
 
 func (s Service) pendingSpend(userIDs []string, projectIDs []string) (decimal.Decimal, error) {
+	if len(userIDs) == 0 {
+		return decimal.Zero, nil
+	}
 	query := s.DB.Table("billing_usage_records").Where("billed_user_id IN ? AND status = ?", userIDs, "pending")
 	if len(projectIDs) > 0 {
 		query = query.Where("project_id IN ?", projectIDs)
 	}
 	var total decimal.Decimal
-	err := query.Select("COALESCE(SUM(amount_credits), 0)").Scan(&total).Error
-	return total, err
+	if err := query.Select("COALESCE(SUM(amount_credits), 0)").Scan(&total).Error; err != nil {
+		return decimal.Zero, err
+	}
+	if len(projectIDs) == 0 {
+		pendingAI, err := pendingAIModelUsageCredits(s.DB, userIDs)
+		if err != nil {
+			return decimal.Zero, err
+		}
+		total = total.Add(pendingAI)
+	}
+	return total, nil
 }
 
 func (s Service) spendCategories(userIDs []string, projectIDs []string, period spendPeriod) ([]BillingSpendCategory, error) {

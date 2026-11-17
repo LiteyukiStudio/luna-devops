@@ -31,17 +31,23 @@ describe("redact", () => {
       .toEqual({ secrets: ["******", "**********"], encoding: "base64", length: 6 })
     expect(redact({ secrets: [] })).toEqual({ secrets: [] })
   })
-  it("redacts values inside secret key-value fields", () => {
+  it("redacts values inside secret key-value fields while keeping public key-value pairs intact", () => {
     const value = redact({
-      field: {
-        environment: [{ key: "CONFIG_VALUE", value: "database-secret" }],
+      secretField: {
+        valueMode: "secret",
+        defaultValue: [{ key: "CONFIG_VALUE", value: "database-secret" }],
       },
+      sensitiveKeyPair: { key: "API_KEY", value: "sk-sensitive-1234567890" },
+      publicEnv: [{ key: "LOG_LEVEL", value: "info" }, { key: "PORT", value: "8080" }],
     })
 
     expect(value).toEqual({
-      field: {
-        environment: [{ key: "CONFIG_VALUE", value: "[REDACTED]" }],
+      secretField: {
+        valueMode: "secret",
+        defaultValue: [{ key: "CONFIG_VALUE", value: "[REDACTED]" }],
       },
+      sensitiveKeyPair: { key: "API_KEY", value: "[REDACTED]" },
+      publicEnv: [{ key: "LOG_LEVEL", value: "info" }, { key: "PORT", value: "8080" }],
     })
     expect(JSON.stringify(value)).not.toContain("database-secret")
   })

@@ -110,10 +110,12 @@ const operationsDashboardPage = {
     running: '実行中',
     waiting_approval: '承認待ち',
     waiting_input: '入力待ち',
+    waiting_external: 'バックグラウンド待機',
     completed: '完了',
     failed: '失敗',
     canceled: 'キャンセル済み',
     expired: '期限切れ',
+    interrupted: '中断済み',
   },
   toolDetail: {
     titleFallback: 'ツール呼び出し詳細',

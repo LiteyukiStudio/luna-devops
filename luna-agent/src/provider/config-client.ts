@@ -220,7 +220,9 @@ export class RemoteConfigSnapshot implements RemoteConfigSource {
           if (!isRetryableHTTPStatus(response.status) || retry >= maxRetries)
             return response
           agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: String(response.status) })
-          await this.scheduleRetry(retry + 1, maxRetries, request.signal, parseRetryAfter(response.headers), String(response.status))
+          const retryAfterMs = parseRetryAfter(response.headers)
+          await response.body?.cancel().catch(() => undefined)
+          await this.scheduleRetry(retry + 1, maxRetries, request.signal, retryAfterMs, String(response.status))
         }
         catch (error) {
           if (request.signal.aborted || retry >= maxRetries) throw error

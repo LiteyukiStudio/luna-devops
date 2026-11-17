@@ -110,10 +110,12 @@ const operationsDashboardPage = {
     running: '실행 중',
     waiting_approval: '승인 대기',
     waiting_input: '입력 대기',
+    waiting_external: '백그라운드 작업 대기',
     completed: '완료됨',
     failed: '실패',
     canceled: '취소됨',
     expired: '만료됨',
+    interrupted: '중단됨',
   },
   toolDetail: {
     titleFallback: '도구 호출 상세',

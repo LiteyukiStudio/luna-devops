@@ -50,6 +50,7 @@ export type BuildServerDependencies = {
   remoteConfig: Pick<RemoteConfigSource, "current">
   cancelRun: (runId: string) => boolean | Promise<boolean>
   cancelExecutingRun: (runId: string) => Promise<boolean>
+  notifyRunQueued?: () => void
   toolCatalogDigest: () => string
   streamBus: RunStreamBus
   streamHubLimits?: { perRun: number, perInstance: number, pendingEvents?: number, pendingBytes?: number }
@@ -169,6 +170,20 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
     })
     secured.delete("/internal/v1/conversations/:conversationId", async (request, reply) => {
       const { conversationId } = z.object({ conversationId: id }).parse(request.params)
+      const existing = await input.repository.getConversation(request.actor.userId, conversationId)
+      if (!existing) return reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
+      const activeRuns = await input.repository.listActiveConversationRuns(request.actor.userId, conversationId)
+      for (const activeRun of activeRuns) {
+        let executorOwned = false
+        try { executorOwned = await input.cancelExecutingRun(activeRun.id) } catch { /* 本地执行器未持有或中止失败时回退持久层取消 */ }
+        if (!executorOwned) {
+          const canceled = await input.repository.cancelRun(request.actor.userId, activeRun.id)
+          if (canceled?.status === "canceled") {
+            try { await input.cancelRun(activeRun.id) } catch { /* best effort */ }
+          }
+        }
+        await input.streamBus.cleanup(activeRun.id).catch(() => undefined)
+      }
       const deleted = await input.repository.deleteConversation(request.actor.userId, conversationId)
       return deleted ? reply.code(204).send() : reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
     })
@@ -214,6 +229,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         span.setAttribute("luna.run.id", value.run.id)
         return value
       })
+      if (created.run.status === "queued") input.notifyRunQueued?.()
       return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: created.run.status, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
     })
     secured.post("/internal/v1/conversations/:conversationId/tool-actions", async (request, reply) => {
@@ -236,6 +252,10 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
           conversationId,
           input: body.message,
           pageContext: { __lunaDirectToolAction: true },
+          directToolAction: {
+            operationId: body.operationId,
+            arguments: body.arguments,
+          },
           traceContext: captureTraceContext(request.headers),
           actorSessionId: request.actor.sessionId,
           idempotencyKey: key,
@@ -247,64 +267,51 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         return value
       })
       try {
-        await input.repository.updateRun(created.run.id, "queued", "running", { startedAt: new Date().toISOString() })
         await input.repository.touchRunSelectedOperations(created.run.id, [body.operationId], 16)
-        const call = await input.tools.propose({
+        const call = await input.tools.prepareDirectAction({
           runId: created.run.id,
           operationId: body.operationId,
           arguments: body.arguments,
-          inputMode: "direct",
         })
-        if (call.status === "awaiting_approval") {
-          await input.repository.saveRunCheckpoint(created.run.id, {
-            expectedRevision: 0,
-            phase: "awaiting_approval",
-            modelStep: 0,
-            toolCallCount: 0,
-            state: { pendingToolCallId: call.id },
-          })
-          await input.repository.updateRun(created.run.id, "running", "waiting_approval")
-        }
-        else if (call.status === "failed" || call.status === "rejected" || call.status === "canceled")
-          await input.repository.updateRun(created.run.id, "running", "failed", {
-            completedAt: new Date().toISOString(),
-            errorCode: call.errorCode ?? "ai.tool_execution_failed",
-          })
-        else {
-          const outcome = await input.tools.outcome(call.id)
-          if (outcome.kind === "failed")
-            await input.repository.updateRun(created.run.id, "running", "failed", {
-              completedAt: new Date().toISOString(),
-              errorCode: outcome.errorCode,
+        if (created.run.status === "queued") {
+          if (call.status === "awaiting_approval") {
+            await input.repository.saveRunCheckpoint(created.run.id, {
+              expectedRevision: 0,
+              phase: "awaiting_approval",
+              modelStep: 0,
+              toolCallCount: 0,
+              state: { pendingToolCallId: call.id },
             })
-          else if (outcome.kind === "running" || outcome.kind === "succeeded" && outcome.verificationRequired)
-            await input.repository.updateRun(created.run.id, "running", "queued")
-          else if (outcome.kind === "succeeded")
-            await input.repository.updateRun(created.run.id, "running", "completed", { completedAt: new Date().toISOString() })
-          else
-            await input.repository.updateRun(created.run.id, "running", "failed", {
+            await input.repository.updateRun(created.run.id, "queued", "waiting_approval")
+          }
+          else if (call.status === "failed") {
+            await input.repository.updateRun(created.run.id, "queued", "failed", {
               completedAt: new Date().toISOString(),
-              errorCode: "ai.tool_execution_failed",
+              errorCode: call.errorCode ?? "ai.tool_arguments_invalid",
             })
+          }
+          else {
+            input.notifyRunQueued?.()
+          }
         }
         const run = await input.repository.getRun(request.actor.userId, created.run.id)
-        return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: run?.status ?? "completed", toolCallId: call.id, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
-      } catch (error) {
+        return reply.code(202).send({
+          turnId: created.turn.id,
+          turnIndex: created.turn.turnIndex,
+          runId: created.run.id,
+          state: run?.status ?? created.run.status,
+          toolCallId: call.id,
+          eventsUrl: `/api/v1/ai/runs/${created.run.id}/events`,
+        })
+      }
+      catch (error) {
         try {
-          await input.repository.updateRun(created.run.id, "running", "failed", {
+          await input.repository.updateRun(created.run.id, "queued", "failed", {
             completedAt: new Date().toISOString(),
             errorCode: telemetryErrorCode(error),
           })
         }
-        catch {
-          try {
-            await input.repository.updateRun(created.run.id, "queued", "failed", {
-              completedAt: new Date().toISOString(),
-              errorCode: telemetryErrorCode(error),
-            })
-          }
-          catch { /* the tool may already have transitioned the run */ }
-        }
+        catch { /* Run 状态可能已流转，保留原始业务错误供上层错误处理转换。 */ }
         throw error
       }
     })
@@ -324,7 +331,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         let executorOwned = false
         try { executorOwned = await input.cancelExecutingRun(runId) } catch { /* 本地中止失败时退回直接取消。 */ }
         if (executorOwned) value = await input.repository.getRun(request.actor.userId, runId)
-        else {
+        if (!executorOwned || (value && !isTerminalRun(value))) {
           value = await input.repository.cancelRun(request.actor.userId, runId)
           if (value?.status === "canceled") {
             try { await input.cancelRun(runId) } catch { /* 权威 canceled 已持久化，本地中止仅为 best effort。 */ }
@@ -338,70 +345,68 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
     secured.post("/internal/v1/runs/:runId/approvals/:toolCallId/decision", async (request, reply) => {
       const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
       const body = z.object({
-		decision: z.enum(["reject", "approve"]),
-	  }).parse(request.body)
+        decision: z.enum(["reject", "approve"]),
+      }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
-      if (!run || run.status !== "waiting_approval") return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-      const selected = await input.tools.inspect(toolCallId)
+      if (!run) return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
+      let selected: Awaited<ReturnType<typeof input.tools.inspect>>
+      try {
+        selected = await input.tools.inspect(toolCallId)
+      }
+      catch {
+        return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
+      }
       if (selected.runId !== runId) return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
-      if (body.decision === "reject") {
-        try {
-          await input.tools.resolveApproval(toolCallId, "reject")
-          await input.repository.updateRun(runId, "waiting_approval", "queued")
-          return reply.code(202).send({ runId, state: "queued" })
-        }
-        catch (error) {
+      if (
+        (body.decision === "approve" && selected.approvalDecision === "approve" && selected.status !== "canceled")
+        || (body.decision === "reject" && selected.status === "rejected")
+      ) {
+        return reply.code(202).send({ runId, state: run.status })
+      }
+      if (run.status !== "waiting_approval" || selected.status !== "awaiting_approval") {
+        return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
+      }
+      try {
+        const { alreadyDecided } = await input.tools.recordApprovalDecision(toolCallId, body.decision)
+        if (alreadyDecided) {
           const latest = await input.repository.getRun(request.actor.userId, runId)
-          if (!latest || latest.status !== "waiting_approval")
-            return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-          throw error
+          return reply.code(202).send({ runId, state: latest?.status ?? run.status })
         }
-      }
-      // 批准后的平台调用必须在权威 Run 处于 running 时执行，Go 执行身份
-      // 中间件会据此拒绝过期、并发或跨 Run 的 ToolCall。running 不会被
-      // queued claim 领取，因此同步执行期间不存在第二个 Executor 竞争。
-      try {
-        await input.repository.updateRun(runId, "waiting_approval", "running")
-      }
-      catch (error) {
-        if (error instanceof RunStateConflictError)
-          return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-        throw error
-      }
-      try {
-        const resolved = await input.tools.resolveApproval(toolCallId, body.decision)
-        if (resolved.status === "awaiting_approval") {
-          await input.repository.updateRun(runId, "running", "waiting_approval")
-          const waiting = await input.repository.getRun(request.actor.userId, runId)
-          return waiting ? presentRun(waiting) : reply.code(404).send(errorBody("ai.run_not_found", request.id))
-        }
-        await input.repository.updateRun(runId, "running", "queued")
+        await input.repository.updateRun(runId, "waiting_approval", "queued")
+        input.notifyRunQueued?.()
         return reply.code(202).send({ runId, state: "queued" })
       }
       catch (error) {
-        const latest = await input.repository.getRun(request.actor.userId, runId)
-        if (!latest || latest.status !== "running")
+        if (
+          error instanceof RunStateConflictError
+          || (error instanceof Error && (error.message === "ai.approval_not_pending" || error.message === "ai.tool_call_state_conflict"))
+        ) {
+          const latest = await input.repository.getRun(request.actor.userId, runId)
+          const latestCall = await input.tools.inspect(toolCallId).catch(() => undefined)
+          if (
+            latest
+            && latestCall
+            && (
+              (body.decision === "approve" && latestCall.approvalDecision === "approve" && latestCall.status !== "canceled")
+              || (body.decision === "reject" && latestCall.status === "rejected")
+            )
+          ) {
+            return reply.code(202).send({ runId, state: latest.status })
+          }
           return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-        try {
-          await input.repository.updateRun(runId, "running", "queued")
-        }
-        catch {
-          const afterConflict = await input.repository.getRun(request.actor.userId, runId)
-          if (!afterConflict || afterConflict.status !== "running")
-            return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-          throw error
         }
         throw error
       }
-	})
+    })
     secured.post("/internal/v1/runs/:runId/input", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
       const body = z.object({ text: inputText, expectedVersion: z.number().int() }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run || run.status !== "waiting_input" || run.rowVersion !== body.expectedVersion) return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-      await input.repository.appendRunInput(runId, body.text)
-      await input.repository.appendEvent(runId, "run.input_received", { length: body.text.length })
+      const item = await input.repository.appendRunInput(runId, body.text)
+      await input.repository.appendEvent(runId, "run.input_received", { length: body.text.length, item })
       await input.repository.updateRun(runId, "waiting_input", "queued")
+      input.notifyRunQueued?.()
       return reply.code(202).send({ runId, state: "queued" })
     })
     secured.get("/internal/v1/runs/:runId/events", async (request, reply) => {
@@ -413,16 +418,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       const after = Math.max(query.after ?? 0, Number.isSafeInteger(headerCursor) && headerCursor >= 0 ? headerCursor : 0)
       const acceptsEventStream = request.headers.accept?.split(",").some(value => value.trim().split(";")[0] === "text/event-stream") ?? false
       const streamRequested = acceptsEventStream || query.stream === "true"
-      const subscription = streamRequested
-        ? await streamHubs.subscribe(runId, request.actor.userId, after)
-        : undefined
-      try {
-      let durableEvents: RunEvent[]
-      try { durableEvents = await input.repository.getEvents(request.actor.userId, runId, after) }
-      catch (error) {
-        subscription?.close()
-        throw error
-      }
+      const durableEvents = await input.repository.getEvents(request.actor.userId, runId, after)
       let liveEvents: typeof durableEvents = []
       let liveReplayFailed = false
       try { liveEvents = await input.streamBus.read(runId, after) }
@@ -433,76 +429,99 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
           ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
         })
       }
-      const events = mergeEvents(durableEvents, liveEvents)
+      let events = mergeEvents(durableEvents, liveEvents)
       const presentedEvents = events.filter(isPublicStreamEvent).map(event => presentEventForRun(run!, event))
       if (!streamRequested) return { items: presentedEvents, cursor: events.at(-1)?.sequence ?? after }
       if (liveReplayFailed && !isTerminalRun(run)) {
-        subscription?.close()
         return reply.code(503).send(errorBody("ai.stream_transport_unavailable", request.id))
       }
-      reply.raw.setHeader("content-type", "text/event-stream")
-      reply.raw.setHeader("cache-control", "no-cache, no-store")
-      reply.raw.setHeader("x-accel-buffering", "no")
-      reply.hijack()
-      let cursor = after
-      let closed = false
-      const streamAbort = new AbortController()
-      request.raw.once("close", () => { closed = true; streamAbort.abort() })
-      const push = async (batch: typeof events) => {
-        for (const event of batch) {
-          if (isPublicStreamEvent(event)) {
-            const presented = presentEventForRun(run!, event)
-            if (!await writeSSE(reply.raw, sse(event.type, event.sequence, presented), streamAbort.signal)) return
-          }
-          cursor = event.sequence
-        }
-      }
-      await push(events)
-      subscription?.advance(cursor)
-      let heartbeatAt = Date.now()
+      const replayCursor = events.at(-1)?.sequence ?? after
+      const subscription = await streamHubs.subscribe(runId, request.actor.userId, replayCursor)
       try {
-        while (!closed) {
-          if (!subscription) break
-          const update = await subscription.next(streamAbort.signal)
-          if (update.error) {
-            telemetryLog("agent.stream.read_failed", "warn", {
-              operation: "agent.stream.read", outcome: "failed",
-              ...errorDiagnostic(update.error, "ai.stream_transport_unavailable"),
-            })
-            if (!isTerminalRun(run)) {
-              reply.raw.destroy(new Error("ai.stream_transport_unavailable"))
-            }
-            break
-          }
-          if (update.run) run = update.run
-          await push(update.events)
-          subscription.advance(cursor)
-          if (update.terminal && update.events.length === 0) break
-          if (Date.now() - heartbeatAt >= 15_000) {
-            if (!await writeSSE(reply.raw, sseHeartbeat(runId, run.conversationId), streamAbort.signal)) break
-            heartbeatAt = Date.now()
+        const catchupDurable = await input.repository.getEvents(request.actor.userId, runId, replayCursor)
+        let catchupLive: typeof durableEvents = []
+        try { catchupLive = await input.streamBus.read(runId, replayCursor) }
+        catch (error) {
+          telemetryLog("agent.stream.replay_failed", "warn", {
+            operation: "agent.stream.replay", outcome: "failed",
+            ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
+          })
+          if (!isTerminalRun(run)) {
+            subscription.close()
+            return reply.code(503).send(errorBody("ai.stream_transport_unavailable", request.id))
           }
         }
+        events = mergeEvents(events, catchupDurable, catchupLive)
+        reply.raw.setHeader("content-type", "text/event-stream")
+        reply.raw.setHeader("cache-control", "no-cache, no-store")
+        reply.raw.setHeader("x-accel-buffering", "no")
+        reply.hijack()
+        const flushHeaders = (reply.raw as NodeJS.WritableStream & { flushHeaders?: () => void }).flushHeaders
+        if (typeof flushHeaders === "function") flushHeaders.call(reply.raw)
+        let cursor = after
+        let closed = false
+        let emittedPublicFrame = false
+        const streamAbort = new AbortController()
+        request.raw.once("close", () => { closed = true; streamAbort.abort() })
+        const push = async (batch: typeof events) => {
+          for (const event of batch) {
+            if (isPublicStreamEvent(event)) {
+              const presented = presentEventForRun(run!, event)
+              if (!await writeSSE(reply.raw, sse(event.type, event.sequence, presented), streamAbort.signal)) return
+              emittedPublicFrame = true
+            }
+            cursor = event.sequence
+          }
+        }
+        await push(events)
+        subscription.advance(cursor)
+        let heartbeatAt = Date.now()
+        if (!closed && !emittedPublicFrame && !isTerminalRun(run)) {
+          await writeSSE(reply.raw, sseHeartbeat(runId, run.conversationId), streamAbort.signal)
+          heartbeatAt = Date.now()
+        }
+        try {
+          while (!closed) {
+            const update = await subscription.next(streamAbort.signal)
+            if (update.error) {
+              telemetryLog("agent.stream.read_failed", "warn", {
+                operation: "agent.stream.read", outcome: "failed",
+                ...errorDiagnostic(update.error, "ai.stream_transport_unavailable"),
+              })
+              if (!isTerminalRun(run)) {
+                reply.raw.destroy(new Error("ai.stream_transport_unavailable"))
+              }
+              break
+            }
+            if (update.run) run = update.run
+            await push(update.events)
+            subscription.advance(cursor)
+            if (update.terminal && update.events.length === 0) break
+            if (Date.now() - heartbeatAt >= 15_000) {
+              if (!await writeSSE(reply.raw, sseHeartbeat(runId, run.conversationId), streamAbort.signal)) break
+              heartbeatAt = Date.now()
+            }
+          }
+        }
+        finally { subscription.close() }
+        if (!closed) {
+          const completedSequence = Math.max(1, cursor)
+          await writeSSE(reply.raw, sse("run.stream.completed", completedSequence, {
+            version: 2,
+            eventId: createId("aievt"),
+            eventSequence: completedSequence,
+            type: "run.stream.completed",
+            conversationId: run.conversationId,
+            turnId: run.turnId,
+            runId: run.id,
+            occurredAt: new Date().toISOString(),
+            payload: {},
+          }), streamAbort.signal)
+          reply.raw.end()
+        }
+        return reply
       }
-      finally { subscription?.close() }
-      if (!closed) {
-        const completedSequence = Math.max(1, cursor)
-        await writeSSE(reply.raw, sse("run.stream.completed", completedSequence, {
-          version: 2,
-          eventId: createId("aievt"),
-          eventSequence: completedSequence,
-          type: "run.stream.completed",
-          conversationId: run.conversationId,
-          turnId: run.turnId,
-          runId: run.id,
-          occurredAt: new Date().toISOString(),
-          payload: {},
-        }), streamAbort.signal)
-        reply.raw.end()
-      }
-      return reply
-      }
-      finally { subscription?.close() }
+      finally { subscription.close() }
     })
   })
 
@@ -513,15 +532,21 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       ? 401
       : code.endsWith("_not_found")
         ? 404
-        : code === "ai.stream_subscriber_limit"
-          ? 429
-          : code === "ai.stream_transport_unavailable"
-            ? 503
-            : code === "idempotency_conflict"
-              ? 409
-              : code === "ai.internal_error"
-                ? 500
-                : 400
+        : code === "ai.wallet_balance_insufficient"
+          ? 422
+          : code === "ai.provider_usage_unavailable"
+            ? 502
+            : code === "ai.stream_subscriber_limit" || code === "ai.provider_rate_limited"
+              ? 429
+              : code === "ai.stream_transport_unavailable" || code === "ai.provider_unavailable" || code === "ai.provider_config_unavailable" || code === "ai.persistence_unavailable"
+                ? 503
+                : code === "ai.provider_timeout"
+                  ? 504
+                  : code === "idempotency_conflict" || code === "ai.run_state_conflict" || code === "ai.not_configured" || code === "ai.model_not_available"
+                    ? 409
+                    : code === "ai.internal_error"
+                      ? 500
+                      : 400
     telemetryLog("agent.http.request_failed", status >= 500 ? "error" : "warn", {
       "operation": "agent.http.request",
       "outcome": status >= 500 ? "failed" : "rejected",
@@ -555,7 +580,9 @@ function mergeEvents(...groups: RunEvent[][]) {
   for (const event of groups.flat()) unique.set(event.id, event)
   return [...unique.values()].sort((left, right) => left.sequence - right.sequence)
 }
-function isPublicStreamEvent(event: RunEvent) { return event.type !== "run.cancel_requested" }
+function isPublicStreamEvent(event: RunEvent) {
+  return event.type !== "run.cancel_requested" && event.type !== "run.postprocess.completed"
+}
 function isTerminalRun(run: Run | undefined) {
   return Boolean(run && ["completed", "failed", "canceled", "expired", "interrupted"].includes(run.status))
 }

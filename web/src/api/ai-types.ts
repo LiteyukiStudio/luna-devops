@@ -50,8 +50,6 @@ export type AIUIAction
     | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'request_tool', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { operationId: string, arguments?: Record<string, unknown>, message: string } }
 
 export type AITimelineItem = Omit<AITimelineItemTransport, 'toolCall'> & {
-  display?: 'summary' | 'progress'
-  notice?: string
   toolCall?: {
     id: string
     operationId: string

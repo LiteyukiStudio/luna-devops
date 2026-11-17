@@ -18,9 +18,12 @@ export function isRetryableHTTPStatus(status: number, includeConflict = false): 
 }
 
 export function parseRetryAfter(headers: Headers, now = Date.now()): number | undefined {
-  const milliseconds = Number(headers.get("retry-after-ms"))
-  if (Number.isFinite(milliseconds) && milliseconds >= 0)
-    return milliseconds
+  const rawMilliseconds = headers.get("retry-after-ms")?.trim()
+  if (rawMilliseconds) {
+    const milliseconds = Number(rawMilliseconds)
+    if (Number.isFinite(milliseconds) && milliseconds >= 0)
+      return milliseconds
+  }
 
   const raw = headers.get("retry-after")?.trim()
   if (!raw) return undefined

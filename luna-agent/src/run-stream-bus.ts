@@ -64,6 +64,13 @@ export class InMemoryRunStreamBus implements RunStreamBus, RunStreamTransport {
     void expectedRunVersion
     const startedAt = performance.now()
     const size = Buffer.byteLength(JSON.stringify(event))
+    if (this.totalBytes + size > maximumProcessBytes && this.cleanupTimers.size > 0) {
+      for (const graceRunId of [...this.cleanupTimers.keys()]) {
+        if (graceRunId === runId) continue
+        this.evictNow(graceRunId)
+        if (this.totalBytes + size <= maximumProcessBytes) break
+      }
+    }
     const total = this.emittedBytes.get(runId) ?? 0
     const count = this.eventCounts.get(runId) ?? 0
     if (size > maximumEventBytes || total + size > maximumRunBytes || this.totalBytes + size > maximumProcessBytes || count + 1 > maximumEventsPerRun) {
@@ -92,10 +99,11 @@ export class InMemoryRunStreamBus implements RunStreamBus, RunStreamTransport {
     return value
   }
 
-  async read(runId: string, after: number, count = 256): Promise<RunEvent[]> {
-    return withSpan("agent.stream.replay", internalSpanOptions(), async () => (
-      this.events.get(runId) ?? []
-    ).filter(event => event.sequence > after).slice(0, count))
+  async read(runId: string, after: number, count?: number): Promise<RunEvent[]> {
+    return withSpan("agent.stream.replay", internalSpanOptions(), async () => {
+      const matching = (this.events.get(runId) ?? []).filter(event => event.sequence > after)
+      return count === undefined ? matching : matching.slice(0, count)
+    })
   }
 
   async openReader(runId: string): Promise<RunStreamReader> {
@@ -104,7 +112,7 @@ export class InMemoryRunStreamBus implements RunStreamBus, RunStreamTransport {
     agentMetrics.activeStreamReaders.add(1)
     return {
       wait: async (after, signal) => {
-        const available = await this.read(runId, after)
+        const available = await this.read(runId, after, 128)
         if (available.length || closed || signal.aborted) return available
         await new Promise<void>((resolve) => {
           const waiters = this.waiters.get(runId) ?? new Set<() => void>()
@@ -121,7 +129,7 @@ export class InMemoryRunStreamBus implements RunStreamBus, RunStreamTransport {
           this.waiters.set(runId, waiters)
           waiting = finish
         })
-        return this.read(runId, after)
+        return this.read(runId, after, 128)
       },
       close: async () => {
         if (closed) return
@@ -136,17 +144,23 @@ export class InMemoryRunStreamBus implements RunStreamBus, RunStreamTransport {
     const previous = this.cleanupTimers.get(runId)
     if (previous) clearTimeout(previous)
     const timer = setTimeout(() => {
-      this.events.delete(runId)
-      this.sequences.delete(runId)
-      this.totalBytes = Math.max(0, this.totalBytes - (this.emittedBytes.get(runId) ?? 0))
-      this.emittedBytes.delete(runId)
-      this.eventCounts.delete(runId)
-      this.waiters.delete(runId)
-      this.cleanupTimers.delete(runId)
+      this.evictNow(runId)
     }, terminalGraceMs)
     timer.unref()
     this.cleanupTimers.set(runId, timer)
     agentMetrics.streamCleanups.add(1, { outcome: "succeeded" })
+  }
+
+  private evictNow(runId: string): void {
+    const timer = this.cleanupTimers.get(runId)
+    if (timer) clearTimeout(timer)
+    this.events.delete(runId)
+    this.sequences.delete(runId)
+    this.totalBytes = Math.max(0, this.totalBytes - (this.emittedBytes.get(runId) ?? 0))
+    this.emittedBytes.delete(runId)
+    this.eventCounts.delete(runId)
+    this.waiters.delete(runId)
+    this.cleanupTimers.delete(runId)
   }
 }
 
@@ -154,6 +168,7 @@ export class RunStreamSession {
   private readonly items = new Map<string, TimelineItem>()
   private readonly durableEvents: RunEvent[] = []
   private committed = false
+  private terminalCommitted = false
   private lastSequence: number
   private terminalIntent: NonNullable<RunStreamBatch["terminal"]> | undefined
 
@@ -287,9 +302,25 @@ export class RunStreamSession {
     fallbackStatus: Exclude<TimelineItem["status"], "streaming">,
     terminal?: NonNullable<RunStreamBatch["terminal"]>,
   ): Promise<void> {
-    if (this.committed) return
+    if (this.committed) {
+      if (terminal && !this.terminalCommitted) {
+        await this.repository.finalizeStreamingItems(this.runId, fallbackStatus)
+        await this.repository.updateRun(this.runId, terminal.from, terminal.to, {
+          completedAt: terminal.completedAt,
+          ...(terminal.errorCode ? { errorCode: terminal.errorCode } : {}),
+        })
+        this.terminalCommitted = true
+      }
+      return
+    }
     for (const [id, item] of this.items) {
-      if (item.status === "streaming") this.items.set(id, { ...item, status: fallbackStatus, revision: item.revision + 1 })
+      if (item.status === "streaming") {
+        const nextStatus = item.type === "tool_call" ? "failed" : fallbackStatus
+        const nextContent = item.type === "tool_call" && item.content.status === "running"
+          ? { ...item.content, status: "failed" }
+          : item.content
+        this.items.set(id, { ...item, status: nextStatus, content: nextContent, revision: item.revision + 1 })
+      }
     }
     await this.repository.persistRunStreamBatch({
       runId: this.runId,
@@ -301,6 +332,7 @@ export class RunStreamSession {
       ...(terminal ? { terminal } : {}),
     })
     this.committed = true
+    if (terminal) this.terminalCommitted = true
   }
 
   private assertOpen(): void {

@@ -92,6 +92,98 @@ describe('live progress block', () => {
 
     expect(container.querySelector('[data-ai-live-progress="running"]')).not.toBeNull()
   })
+
+  it('localizes real failure codes, hides internal fallback code, localizes prompt task type, and locks diagnose after one trigger', async () => {
+    const onAction = vi.fn(async () => true)
+    const { container } = render(
+      <LiveProgressBlock
+        block={{
+          id: 'build-failed-progress',
+          type: 'live_progress',
+          binding: { operationType: 'build_run', projectId: 'prj_demo', operationId: 'bldrun_42' },
+        }}
+        onAction={onAction}
+      />,
+    )
+    const source = EventSourceMock.instances[0]!
+
+    await act(async () => {
+      source.dispatchEvent(new MessageEvent('progress.snapshot', {
+        data: JSON.stringify({
+          operationId: 'bldrun_42',
+          operationType: 'build_run',
+          revision: '19700101T000010.000000000Z',
+          state: 'failed',
+          stageCode: 'ai.progress.build.failed',
+          progress: { mode: 'indeterminate' },
+          steps: [
+            { id: 'queued', labelCode: 'ai.progress.build.queued', status: 'success' },
+            { id: 'running', labelCode: 'ai.progress.build.running', status: 'error' },
+          ],
+          updatedAt: new Date(10_000).toISOString(),
+          finishedAt: new Date(10_000).toISOString(),
+          error: { code: 'job_failed' },
+        }),
+      }))
+    })
+
+    expect(container.querySelector('[data-ai-live-progress="failed"]')).not.toBeNull()
+    expect(screen.getByText('构建执行失败')).toBeInTheDocument()
+    expect(screen.queryByText('job_failed')).not.toBeInTheDocument()
+    const diagnoseButton = screen.getByRole('button', { name: '排查失败原因' })
+    expect(diagnoseButton).toBeEnabled()
+
+    await act(async () => {
+      diagnoseButton.click()
+    })
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      version: 1,
+      type: 'send_message',
+      payload: expect.objectContaining({
+        message: expect.stringContaining('构建任务（bldrun_42）'),
+      }),
+    }))
+    // 防止连点重发：成功触发一次后按钮置为 disabled
+    expect(diagnoseButton).toBeDisabled()
+    await act(async () => {
+      diagnoseButton.click()
+    })
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('never renders internal fallback ai.progress.operation_failed raw and respects actionDisabled', async () => {
+    render(
+      <LiveProgressBlock
+        actionDisabled
+        block={{
+          id: 'release-fallback-failed',
+          type: 'live_progress',
+          binding: { operationType: 'release', projectId: 'prj_demo', operationId: 'rel_77' },
+        }}
+        onAction={vi.fn(async () => true)}
+      />,
+    )
+    const source = EventSourceMock.instances[0]!
+    await act(async () => {
+      source.dispatchEvent(new MessageEvent('progress.snapshot', {
+        data: JSON.stringify({
+          operationId: 'rel_77',
+          operationType: 'release',
+          revision: '19700101T000011.000000000Z',
+          state: 'failed',
+          stageCode: 'ai.progress.release.failed',
+          progress: { mode: 'indeterminate' },
+          steps: [],
+          updatedAt: new Date(11_000).toISOString(),
+          finishedAt: new Date(11_000).toISOString(),
+          error: { code: 'ai.progress.operation_failed' },
+        }),
+      }))
+    })
+    expect(screen.queryByText('ai.progress.operation_failed')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '排查失败原因' })).toBeDisabled()
+  })
 })
 
 function snapshot(sequence: number, state: 'queued' | 'running' | 'succeeded') {

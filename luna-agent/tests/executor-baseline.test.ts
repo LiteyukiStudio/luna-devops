@@ -235,7 +235,7 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     expect(assistantTexts(items)).toEqual(["查询完成。"])
   })
 
-  it("缺必填参数先等待输入，重新排队后完成同一 Run", async () => {
+  it("缺必填参数返回可恢复参数错误，由下一模型步补齐后完成同一 Run", async () => {
     const owner = "usr_input_resume"
     const { repository, runId } = await queuedRun(owner, "input-resume")
     const catalog = ToolCatalog.load([testToolOperation("getProject", {
@@ -249,26 +249,35 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     ])
     const runtime = new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) }))
     await testExecutor(repository, runtime, { catalog, tools }).runOnce()
-    expect((await repository.getRun(owner, runId))?.status).toBe("waiting_input")
-    expect(client.calls).toHaveLength(0)
-    expect((await repository.getEvents(owner, runId, 0)).some(event => event.type === "run.input_required")).toBe(true)
-    await repository.appendRunInput(runId, "项目为 prj_1")
-    await repository.updateRun(runId, "waiting_input", "queued")
-    await testExecutor(repository, runtime, { catalog, tools }).runOnce()
     expect((await repository.getRun(owner, runId))?.status).toBe("completed")
     expect(modelCalls()).toBe(3)
     expect(client.calls).toHaveLength(1)
   })
 
-  it("用户并发配额超限在模型调用前失败", async () => {
+  it("用户达到并发运行上限时跳过已满额用户的队列，保持 queued 等待槽位释放而不误杀任务", async () => {
     const owner = "usr_quota"
     const { repository, conversation, runId } = await queuedRun(owner, "quota")
-    await repository.createTurn(owner, { conversationId: conversation.id, input: "第二个任务", pageContext: {}, idempotencyKey: "quota-2" })
-    const { provider, modelCalls } = scriptedProvider([{ text: "不应调用。" }])
+    await repository.claimNextQueuedRun(undefined, 1)
+    const second = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "第二个任务",
+      pageContext: {},
+      idempotencyKey: "quota-2",
+    })
+    const { provider, modelCalls } = scriptedProvider([{ text: "前序完成后正常执行。" }])
     const remote = testRemoteConfigSource(testRemoteProviderConfig({ runtime: { userConcurrentRuns: 1 } }))
-    await testExecutor(repository, new ModelRuntime(provider, testRegistry()), { runtimeConfig: remote.source }).runOnce()
-    expect(await repository.getRun(owner, runId)).toMatchObject({ status: "failed", errorCode: "ai.quota.user_concurrent_runs_exceeded" })
+    const executor = testExecutor(repository, new ModelRuntime(provider, testRegistry()), {
+      runtimeConfig: remote.source,
+      initialRuntimeSettings: { ...defaultRuntimeSettings, userConcurrentRuns: 1 },
+    })
+    expect(await executor.runOnce()).toBe(false)
+    expect(await repository.getRun(owner, second.run.id)).toMatchObject({ status: "queued" })
     expect(modelCalls()).toBe(0)
+
+    await repository.updateRun(runId, "running", "completed", { completedAt: new Date().toISOString() })
+    expect(await executor.runOnce()).toBe(true)
+    expect(await repository.getRun(owner, second.run.id)).toMatchObject({ status: "completed" })
+    expect(modelCalls()).toBe(1)
   })
   it("用例 2 当前行为：首步计划文字没有 tool call 时直接成为最终答复并完成 Run", async () => {
     const owner = "usr_baseline_plan_first"
@@ -333,19 +342,39 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     expect(modelCalls()).toBe(defaultRuntimeSettings.maxModelSteps)
   })
 
-  it("用例 5 当前行为：模型步数耗尽时报 ai.limit_exceeded", async () => {
+  it("用例 5：模型步数触顶时执行无工具（tools: []）优雅收尾总结步，若收尾步仍无有效答复则报 ai.final_response_missing", async () => {
     const owner = "usr_baseline_steps_exhausted"
     const { repository, runId } = await queuedRun(owner, "baseline-steps-exhausted")
-    const { provider, modelCalls } = scriptedProvider([
-      { toolCalls: [{ id: "search-1", operationId: "search_tools", arguments: { query: "project" } }] },
-    ])
+    const seenToolsLengths: number[] = []
+    let calls = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        calls += 1
+        seenToolsLengths.push(request.tools?.length ?? 0)
+        if ((request.tools?.length ?? 0) === 0) {
+          yield { type: "message_delta", delta: "已达探索步数上限：目前已完成目录检索，建议缩小查询范围后继续。" }
+          yield { type: "completed", usage: reportedUsage, finishReason: "stop" }
+          return
+        }
+        yield { type: "tool_call_delta" }
+        yield {
+          type: "completed",
+          usage: reportedUsage,
+          toolCalls: [{ id: `search-${calls}`, operationId: "search_tools", arguments: { query: `project-${calls}` } }],
+        }
+      },
+      async complete() { return { text: "", toolCalls: [], usage: reportedUsage } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
 
     await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
 
     const run = await repository.getRun(owner, runId)
-    expect(run?.status).toBe("failed")
-    expect(run?.errorCode).toBe("ai.limit_exceeded")
-    expect(modelCalls()).toBe(defaultRuntimeSettings.maxModelSteps)
+    expect(run?.status).toBe("completed")
+    expect(calls).toBe(defaultRuntimeSettings.maxModelSteps)
+    expect(seenToolsLengths.slice(0, -1).every(count => count > 0)).toBe(true)
+    expect(seenToolsLengths.at(-1)).toBe(0)
   })
 
   it("用例 8 当前行为：present_card 之后回到模型而不是结束 Run", async () => {

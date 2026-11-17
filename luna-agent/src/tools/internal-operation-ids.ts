@@ -8,6 +8,7 @@ export const cardToolOperationIds = new Set<string>([
 export const internalToolOperationIds = new Set<string>([
   "rename_conversation",
   "navigate_to_route",
+  "wait_for_task",
   "get_tool_details",
   "search_tools",
   "search_docs",

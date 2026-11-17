@@ -284,12 +284,20 @@ func openBillingTestDB(t *testing.T) *gorm.DB {
 		Migrate: func(db *gorm.DB) error {
 			return db.Exec(`
 CREATE SCHEMA ai;
-CREATE TABLE ai.model_credit_holds (
+CREATE TABLE ai.model_usages (
     id text PRIMARY KEY,
     owner_user_id text NOT NULL,
-    state text NOT NULL,
-    max_risk_credits numeric NOT NULL DEFAULT 0,
-    actual_credits numeric
+    status text NOT NULL DEFAULT 'reported',
+    settlement_status text NOT NULL DEFAULT 'pending',
+    prompt_tokens bigint NOT NULL DEFAULT 0,
+    completion_tokens bigint NOT NULL DEFAULT 0,
+    total_tokens bigint NOT NULL DEFAULT 0,
+    cached_prompt_tokens bigint,
+    cache_write_prompt_tokens bigint,
+    reasoning_completion_tokens bigint,
+    input_credits_per_million numeric(24,8) NOT NULL DEFAULT 0,
+    output_credits_per_million numeric(24,8) NOT NULL DEFAULT 0,
+    cached_input_credits_per_million numeric(24,8) NOT NULL DEFAULT 0
 )`).Error
 		},
 	})

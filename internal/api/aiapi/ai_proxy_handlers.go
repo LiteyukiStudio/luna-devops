@@ -9,13 +9,13 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,9 +24,13 @@ const (
 	aiAccessModeConfigKey       = "ai.access.mode"
 	aiTextInputLimitBytes       = 128 * 1024
 	aiRequestBodyLimitBytes     = 1024 * 1024
+	aiErrorBodyLimitBytes       = 64 * 1024
 )
 
-var aiToolActionOperationID = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$`)
+var (
+	aiToolActionOperationID   = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$`)
+	aiControlledUpstreamError = regexp.MustCompile(`^(ai\.[a-z0-9_.-]{1,90}|idempotency_[a-z0-9_]{1,90}|billing\.[a-z0-9_.-]{1,90}|request\.[a-z0-9_.-]{1,90}|resource\.[a-z0-9_.-]{1,90})$`)
+)
 
 type aiProxyRoute struct {
 	method   string
@@ -204,8 +208,9 @@ func prepareAITurn(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid turn input")
 		return nil, actor, false
 	}
-	now := time.Now()
-	input["pageContext"] = enrichAIPageContext(input["pageContext"], actor, now)
+	if ctx.FullPath() == "/api/v1/ai/conversations/:conversationId/turns" {
+		input["pageContext"] = enrichAIPageContext(input["pageContext"], actor)
+	}
 	runID := id.New("airun")
 	input["runId"] = runID
 	prepared, err := json.Marshal(input)
@@ -217,17 +222,21 @@ func prepareAITurn(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([
 	return prepared, actor, true
 }
 
-func enrichAIPageContext(raw any, actor aiagent.ActorContext, now time.Time) map[string]any {
+func enrichAIPageContext(raw any, actor aiagent.ActorContext) map[string]any {
 	pageContext, _ := raw.(map[string]any)
 	if pageContext == nil {
 		pageContext = map[string]any{}
 	}
-	pageContext["locale"] = normalizedAILocale(actor.Locale)
-	pageContext["server"] = map[string]any{
-		"requestTimestamp":      now.UTC().Format(time.RFC3339),
-		"locale":                normalizedAILocale(actor.Locale),
-		"projectContextPresent": actor.ProjectID != "",
+	delete(pageContext, "server")
+	if client, ok := pageContext["client"].(map[string]any); ok {
+		delete(client, "timestamp")
+		delete(client, "utcOffsetMinutes")
+		delete(client, "locale")
+		if len(client) == 0 {
+			delete(pageContext, "client")
+		}
 	}
+	pageContext["locale"] = normalizedAILocale(actor.Locale)
 	return pageContext
 }
 
@@ -253,12 +262,31 @@ func (h *Handler) copyAIResponse(ctx *gin.Context, response *aiagent.Response, f
 	if status == 0 {
 		status = fallbackStatus
 	}
-	if (status < http.StatusOK || status >= http.StatusMultipleChoices) && !isDevelopmentRequest(ctx) {
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		var rawBody []byte
+		if response.Body != nil {
+			rawBody, _ = io.ReadAll(io.LimitReader(response.Body, aiErrorBodyLimitBytes))
+		}
+		controlledCode := extractControlledAIErrorCode(rawBody)
+		if isDevelopmentRequest(ctx) && controlledCode == "" {
+			for _, header := range []string{"Content-Type", "Cache-Control", "ETag", "Retry-After"} {
+				if value := response.Header.Get(header); value != "" {
+					ctx.Header(header, value)
+				}
+			}
+			ctx.Status(status)
+			_, _ = ctx.Writer.Write(rawBody)
+			return
+		}
 		ctx.Header("Cache-Control", "no-store")
 		if retryAfter := response.Header.Get("Retry-After"); retryAfter != "" {
 			ctx.Header("Retry-After", retryAfter)
 		}
-		writeErrorCode(ctx, status, errorCode, "AI upstream request failed")
+		resolvedCode := errorCode
+		if controlledCode != "" {
+			resolvedCode = controlledCode
+		}
+		writeAIProxyError(ctx, status, resolvedCode, "AI upstream request failed")
 		return
 	}
 	for _, header := range []string{"Content-Type", "Cache-Control", "ETag", "Retry-After"} {
@@ -286,6 +314,54 @@ func (h *Handler) copyAIResponse(ctx *gin.Context, response *aiagent.Response, f
 	}
 	ctx.Status(status)
 	_, _ = io.Copy(ctx.Writer, response.Body)
+}
+
+func extractControlledAIErrorCode(rawBody []byte) string {
+	if len(bytes.TrimSpace(rawBody)) == 0 {
+		return ""
+	}
+	var payload struct {
+		Code      string `json:"code"`
+		ErrorCode string `json:"errorCode"`
+		Error     any    `json:"error"`
+	}
+	if json.Unmarshal(rawBody, &payload) != nil {
+		return ""
+	}
+	candidate := strings.TrimSpace(payload.Code)
+	if candidate == "" {
+		candidate = strings.TrimSpace(payload.ErrorCode)
+	}
+	if candidate == "" {
+		if nested, ok := payload.Error.(map[string]any); ok {
+			if nestedCode, ok := nested["code"].(string); ok {
+				candidate = strings.TrimSpace(nestedCode)
+			}
+		}
+	}
+	if candidate == "invalid_request" {
+		return "request.invalid"
+	}
+	if candidate == "" || candidate == "ai.internal_error" {
+		return ""
+	}
+	if !aiControlledUpstreamError.MatchString(candidate) {
+		return ""
+	}
+	return candidate
+}
+
+func writeAIProxyError(ctx *gin.Context, status int, code, detail string) {
+	detail = telemetry.RedactText(detail)
+	telemetry.SetHTTPError(ctx, code, detail)
+	response := errorEnvelope(ctx, status, code)
+	if message, ok := response["message"].(string); ok && message != "" {
+		response["error"] = message
+	}
+	if isDevelopmentRequest(ctx) {
+		response["developerDetail"] = detail
+	}
+	ctx.JSON(status, response)
 }
 
 func (h *Handler) readAIBody(ctx *gin.Context) ([]byte, bool) {

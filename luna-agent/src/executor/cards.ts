@@ -14,6 +14,8 @@ export type CardGeneration = {
   operationId: BusinessCardToolOperationId
   itemId: string
   toolCallId: string
+  modelCallId?: string
+  batchId?: string
   timelineIndex: number
   generationId: string
   placeholderArguments: {
@@ -32,7 +34,10 @@ export type CardGeneration = {
 // 交互卡片生成器直接用模型调用的业务卡片工具标识写入 Timeline，
 // 并管理占位、schema 校验、修复重试与终态。
 export class CardGenerationService {
-  constructor(private readonly repository: Repository) {}
+  constructor(
+    private readonly repository: Repository,
+    private readonly canCallToolOperation?: (runId: string, operationId: string) => boolean | Promise<boolean>,
+  ) {}
 
   async start(
     runId: string,
@@ -40,6 +45,8 @@ export class CardGenerationService {
     raw: unknown,
     maxAttempts: number,
     operationId: BusinessCardToolOperationId,
+    modelCallId?: string,
+    batchId?: string,
   ): Promise<CardGeneration> {
     const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
     const title = typeof rawObject.title === "string" && rawObject.title.trim()
@@ -67,6 +74,8 @@ export class CardGenerationService {
       status: "streaming",
       content: {
         toolCallId,
+        ...(modelCallId ? { modelCallId } : {}),
+        ...(batchId ? { batchId } : {}),
         operationId,
         titleKey: "aiAssistant.cards.preparingToolTitle",
         status: "running",
@@ -89,6 +98,8 @@ export class CardGenerationService {
       operationId,
       itemId,
       toolCallId,
+      ...(modelCallId ? { modelCallId } : {}),
+      ...(batchId ? { batchId } : {}),
       timelineIndex: item.timelineIndex,
       generationId,
       placeholderArguments,
@@ -128,6 +139,52 @@ export class CardGenerationService {
       })
       return { accepted: false as const, failure }
     }
+    if (this.canCallToolOperation) {
+      const catalogIssues: InteractionCardValidationIssue[] = []
+      for (let cardIndex = 0; cardIndex < parsed.data.cards.length; cardIndex += 1) {
+        const card = parsed.data.cards[cardIndex]!
+        const actions = card.actions ?? []
+        for (let actionIndex = 0; actionIndex < actions.length; actionIndex += 1) {
+          const action = actions[actionIndex]!
+          if (action.type !== "tool") continue
+          if (!await this.canCallToolOperation(runId, action.operationId)) {
+            catalogIssues.push({
+              code: "unknown_tool_operation",
+              path: `cards.${cardIndex}.actions.${actionIndex}.operationId`,
+              message: `卡片动作引用的平台工具 "${action.operationId}" 不存在或当前不可调用；请改用 ToolCatalog 中真实存在的 operationId 或改用 send_message 动作。`,
+            })
+          }
+        }
+      }
+      const groupActions = parsed.data.groupActions ?? []
+      for (let actionIndex = 0; actionIndex < groupActions.length; actionIndex += 1) {
+        const action = groupActions[actionIndex]!
+        if (action.type !== "tool") continue
+        if (!await this.canCallToolOperation(runId, action.operationId)) {
+          catalogIssues.push({
+            code: "unknown_tool_operation",
+            path: `groupActions.${actionIndex}.operationId`,
+            message: `组级动作引用的平台工具 "${action.operationId}" 不存在或当前不可调用；请改用 ToolCatalog 中真实存在的 operationId 或改用 send_message 动作。`,
+          })
+        }
+      }
+      if (catalogIssues.length > 0) {
+        const attempt = await this.recordRepairFailure(runId, generation, catalogIssues, "ai.interaction_card_schema_invalid")
+        const failure = cardValidationFailure("create", catalogIssues, attempt, generation.maxAttempts, generation.generationId, "ai.interaction_card_schema_invalid", generation.operationId)
+        agentMetrics.cards.add(1, { phase: "rejected", mode: parsed.data.mode })
+        telemetryLog("agent.card.schema_rejected", "warn", {
+          "luna.run.id": runId,
+          "tool.name": generation.operationId,
+          "operation": "agent.card.validate_tool_actions",
+          "outcome": "rejected",
+          "error.code": "ai.interaction_card_schema_invalid",
+          "error.type": "AgentCardValidationError",
+          "error.message": "ai.interaction_card_schema_invalid",
+          "card.issue_count": catalogIssues.length,
+        })
+        return { accepted: false as const, failure }
+      }
+    }
     const input = {
       ...parsed.data,
       generationId: generation.generationId,
@@ -140,6 +197,8 @@ export class CardGenerationService {
     }
     await this.repository.updateItemWithEvent(itemId, "completed", {
       toolCallId,
+      ...(generation.modelCallId ? { modelCallId: generation.modelCallId } : {}),
+      ...(generation.batchId ? { batchId: generation.batchId } : {}),
       operationId: generation.operationId,
       titleKey: "aiAssistant.cards.toolTitle",
       status: "succeeded",
@@ -180,6 +239,8 @@ export class CardGenerationService {
     }
     await this.repository.updateItemWithEvent(generation.itemId, "streaming", {
       toolCallId: generation.toolCallId,
+      ...(generation.modelCallId ? { modelCallId: generation.modelCallId } : {}),
+      ...(generation.batchId ? { batchId: generation.batchId } : {}),
       operationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "running",
@@ -229,6 +290,8 @@ export class CardGenerationService {
     }
     await this.repository.updateItemWithEvent(generation.itemId, "failed", {
       toolCallId: generation.toolCallId,
+      ...(generation.modelCallId ? { modelCallId: generation.modelCallId } : {}),
+      ...(generation.batchId ? { batchId: generation.batchId } : {}),
       operationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "failed",

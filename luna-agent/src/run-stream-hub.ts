@@ -172,10 +172,16 @@ class RunStreamHub {
       if (durable.some(event => event.type === "run.postprocess.completed")) this.postProcessed = true
       const visible = durable.filter(event => event.type !== "run.postprocess.completed")
       if (terminal && run.status === "completed" && !this.postProcessed && isRecentCompletion(run)) {
-        this.postProcessDeadline ??= Date.now() + postProcessWaitMs
-        if (Date.now() < this.postProcessDeadline) {
-          this.broadcast(visible, run, undefined, false)
-          continue
+        if (this.durableCursor > 0 && this.postProcessDeadline === undefined) {
+          const allDurable = await this.repository.getEvents(this.ownerUserId, this.runId, 0)
+          if (allDurable.some(event => event.type === "run.postprocess.completed")) this.postProcessed = true
+        }
+        if (!this.postProcessed) {
+          this.postProcessDeadline ??= Date.now() + postProcessWaitMs
+          if (Date.now() < this.postProcessDeadline) {
+            this.broadcast(visible, run, undefined, false)
+            continue
+          }
         }
       }
       this.broadcast(visible, run, undefined, terminal)

@@ -10948,7 +10948,7 @@ paths:
       security: [{ SessionCookie: [] }]
       parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIRunInput" } } } }
-      responses: { "202": { description: Supplemental input accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+      responses: { "202": { description: Supplemental input accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "413": { description: Supplemental input exceeds maximum allowed size, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } } }
   /api/v1/ai/runs/{runId}/approvals/{toolCallId}/decision:
     post:
       operationId: decideAIToolApproval
@@ -11006,6 +11006,31 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AIProviderInternalConfig" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /internal/v1/ai/runs/{runId}/tasks/{projectId}/{taskType}/{taskId}:
+    get:
+      operationId: getInternalAITaskStatus
+      tags: [AI Assistant Internal]
+      summary: Read authoritative build or release task status on behalf of an active or waiting_external Agent Run
+      security: [{ AIAgentServiceToken: [] }]
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: string } }
+        - { name: projectId, in: path, required: true, schema: { type: string } }
+        - { name: taskType, in: path, required: true, schema: { type: string, enum: [build_run, release] } }
+        - { name: taskId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Non-cacheable authoritative task status summary without writing AuditLog entries.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AITaskStatusInternal" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /api/v1/configs/ai/provider/test:
     post:
       operationId: testAIProviderConnection
@@ -11657,6 +11682,7 @@ components:
         status: { type: string }
         relatedItemId: { type: string }
         display: { type: string, enum: [summary, progress] }
+        notice: { type: string }
         parts: { type: array, items: { $ref: "#/components/schemas/AIMessagePart" } }
         toolCall: { $ref: "#/components/schemas/AIObject" }
     AITimelineTurn:
@@ -11666,7 +11692,7 @@ components:
       properties:
         id: { type: string }
         turnIndex: { type: integer, minimum: 0 }
-        status: { type: string }
+        status: { type: string, enum: [queued, running, waiting_approval, waiting_input, waiting_external, completed, failed, canceled, expired, interrupted] }
         input:
           type: object
           additionalProperties: false
@@ -11683,7 +11709,7 @@ components:
           properties:
             id: { type: string }
             runIndex: { type: integer, minimum: 0 }
-            status: { type: string, enum: [queued, running, waiting_approval, waiting_input, completed, failed, canceled, interrupted] }
+            status: { type: string, enum: [queued, running, waiting_approval, waiting_input, waiting_external, completed, failed, canceled, interrupted] }
             expectedVersion: { type: integer, format: int64, minimum: 0 }
             errorCode: { type: string }
             latestPromptTokens: { type: integer, format: int64, minimum: 0, description: Official prompt_tokens from the latest reported assistant model usage in this Run. }
@@ -11699,22 +11725,16 @@ components:
             status: { type: string, enum: [reported] }
             inputTokens: { type: integer, format: int64, minimum: 0 }
             outputTokens: { type: integer, format: int64, minimum: 0 }
-            totalTokens: { type: integer, format: int64, minimum: 0, description: Must equal inputTokens plus outputTokens. }
+            totalTokens: { type: integer, format: int64, minimum: 0, description: Normalized total context tokens (>= inputTokens + outputTokens). }
             cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
             cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
-            reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Informational subset of outputTokens and never billed twice. }
+            reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Informational reasoning token count reported by the gateway. }
         - type: object
           additionalProperties: false
           required: [status, reason]
           properties:
             status: { type: string, enum: [unavailable] }
             reason: { type: string, enum: [missing_usage, invalid_usage, stream_ended_without_usage] }
-        - type: object
-          additionalProperties: false
-          required: [status, reason]
-          properties:
-            status: { type: string, enum: [reconciliation_required] }
-            reason: { type: string, enum: [missing_usage, invalid_usage, stream_ended_without_usage, request_outcome_unknown, hold_deficit] }
       discriminator: { propertyName: status }
     AIContextUsage:
       type: object
@@ -11736,7 +11756,6 @@ components:
         usage: { $ref: "#/components/schemas/AIProviderUsage" }
         modelId: { type: string }
         maxContextTokensSnapshot: { type: integer, format: int64, minimum: 1 }
-        creditHoldId: { type: string }
         providerRequestId: { type: string }
         responseId: { type: string }
         responseModel: { type: string }
@@ -11859,6 +11878,31 @@ components:
             code: { type: string }
             requestId: { type: string }
             traceId: { type: string }
+    AITaskStatusInternal:
+      type: object
+      additionalProperties: false
+      required: [taskType, taskId, projectId, rawStatus, taskStatus, terminal, updatedAt]
+      properties:
+        taskType: { type: string, enum: [build_run, release] }
+        taskId: { type: string }
+        projectId: { type: string }
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        rawStatus: { type: string }
+        taskStatus: { type: string, enum: [pending, running, succeeded, failed, canceled] }
+        terminal: { type: boolean }
+        failureCode: { type: string }
+        imageRef: { type: string }
+        imageDigest: { type: string }
+        sourceBranch: { type: string }
+        sourceTag: { type: string }
+        sourceCommit: { type: string }
+        buildRunId: { type: string }
+        revision: { type: integer }
+        releaseType: { type: string }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     AIProviderCompatibility:
       type: string
       enum: [auto, openai, deepseek]

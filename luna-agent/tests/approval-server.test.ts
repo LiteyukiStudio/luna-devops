@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
+import { ModelRuntime } from "../src/model-runtime.js"
+import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { TestRepository } from "./support/test-repository.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient, type ToolExecutionResult } from "../src/tools/luna-api-client.js"
 import { ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
+import { testRegistry } from "./support/model-tool-registry.js"
+import { testExecutor } from "./support/run-executor.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 import { buildTestServer } from "./support/server.js"
 
@@ -50,17 +54,23 @@ async function approvalFixture(
     client,
     new ProjectingToolCallStore(store, repository),
   )
+  const executor = testExecutor(
+    repository,
+    new ModelRuntime(new DeterministicProvider(), testRegistry()),
+    { catalog: approvalCatalog, tools },
+  )
   const app = buildTestServer({
     config: loadConfig({ NODE_ENV: "test" }),
     repository,
     requestVerifier: new DevelopmentRequestVerifier(),
     tools,
+    cancelExecutingRun: runId => executor.cancelExecuting(runId),
     cancelRun: async (runId) => {
       await observeCancel?.(runId, repository)
-      return tools.cancelRun(runId)
+      return executor.cancel(runId)
     },
   })
-  return { app, repository, store, client, tools }
+  return { app, repository, store, client, tools, executor }
 }
 
 async function waitingRun(fixture: Awaited<ReturnType<typeof approvalFixture>>, userId: string, suffix: string) {
@@ -98,39 +108,65 @@ describe("approval decisions", () => {
     await fixture.app.close()
   })
 
-	it("authorizes only the selected parameter-bound call", async () => {
-	  const fixture = await approvalFixture()
-	  const runId = await waitingRun(fixture, "usr_owner", "approve-one")
-	  const first = await fixture.tools.propose({ runId, operationId: "updateThing", arguments: { value: "one" } })
-	  await fixture.repository.updateRun(runId, "running", "waiting_approval")
+  it("enqueues approval asynchronously with idempotent duplicate protection and executes only via RunExecutor", async () => {
+    const fixture = await approvalFixture()
+    const runId = await waitingRun(fixture, "usr_owner", "approve-one")
+    const first = await fixture.tools.propose({ runId, operationId: "updateThing", arguments: { value: "one" } })
+    await fixture.repository.saveRunCheckpoint(runId, {
+      expectedRevision: 0,
+      phase: "awaiting_approval",
+      modelStep: 1,
+      toolCallCount: 0,
+      state: { pendingToolCallId: first.id },
+    })
+    await fixture.repository.updateRun(runId, "running", "waiting_approval")
 
     const response = await fixture.app.inject({
       method: "POST",
       url: `/internal/v1/runs/${runId}/approvals/${first.id}/decision`,
       headers: { "x-luna-dev-user": "usr_owner" },
-	  payload: { decision: "approve" },
-	})
+      payload: { decision: "approve" },
+    })
 
-	expect(response.statusCode).toBe(202)
-	expect(fixture.store.records.get(first.id)?.status).toBe("succeeded")
-	expect(fixture.client.calls).toHaveLength(1)
-	expect(fixture.store.records.get(first.id)?.approvalDecision).toBe("approve")
-	expect((await fixture.repository.getRun("usr_owner", runId))?.status).toBe("queued")
+    expect(response.statusCode).toBe(202)
+    expect(response.json()).toEqual({ runId, state: "queued" })
+    // HTTP 层不执行平台工具 HTTP 调用。
+    expect(fixture.client.calls).toHaveLength(0)
+    expect(fixture.store.records.get(first.id)).toMatchObject({
+      status: "proposed",
+      approvalDecision: "approve",
+    })
+    expect((await fixture.repository.getRun("usr_owner", runId))?.status).toBe("queued")
 
-	const conversationId = (await fixture.repository.getRun("usr_owner", runId))!.conversationId
-	const later = await fixture.repository.createTurn("usr_owner", {
+    // 重复点击同一批准幂等返回 202，不抛 500 或 409。
+    const duplicate = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${runId}/approvals/${first.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve" },
+    })
+    expect(duplicate.statusCode).toBe(202)
+    expect(duplicate.json()).toEqual({ runId, state: "queued" })
+    expect(fixture.client.calls).toHaveLength(0)
+
+    await fixture.executor.runOnce()
+    expect(fixture.client.calls).toHaveLength(1)
+    expect(fixture.store.records.get(first.id)?.status).toBe("succeeded")
+
+    const conversationId = (await fixture.repository.getRun("usr_owner", runId))!.conversationId
+    const later = await fixture.repository.createTurn("usr_owner", {
       conversationId,
       input: "later",
       pageContext: {},
       idempotencyKey: "approval-later",
-	})
-	const laterCall = await fixture.tools.propose({ runId: later.run.id, operationId: "updateThing", arguments: { value: "later" } })
-	expect(laterCall.status).toBe("awaiting_approval")
-	expect(fixture.client.calls).toHaveLength(1)
-	await fixture.app.close()
+    })
+    const laterCall = await fixture.tools.propose({ runId: later.run.id, operationId: "updateThing", arguments: { value: "later" } })
+    expect(laterCall.status).toBe("awaiting_approval")
+    expect(fixture.client.calls).toHaveLength(1)
+    await fixture.app.close()
   })
 
-  it("rejects only the selected ToolCall and requeues the Run", async () => {
+  it("rejects only the selected ToolCall idempotently and requeues the Run", async () => {
     const fixture = await approvalFixture()
     const runId = await waitingRun(fixture, "usr_owner", "reject")
     const pending = await fixture.tools.propose({ runId, operationId: "updateThing", arguments: { value: "no" } })
@@ -146,6 +182,15 @@ describe("approval decisions", () => {
     expect(response.statusCode).toBe(202)
     expect(fixture.store.records.get(pending.id)?.status).toBe("rejected")
     expect((await fixture.repository.getRun("usr_owner", runId))?.status).toBe("queued")
+
+    const duplicate = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${runId}/approvals/${pending.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "reject" },
+    })
+    expect(duplicate.statusCode).toBe(202)
+    expect(duplicate.json()).toEqual({ runId, state: "queued" })
     await fixture.app.close()
   })
 
@@ -207,9 +252,8 @@ describe("approval decisions", () => {
     await fixture.app.close()
   })
 
-  it("keeps the Run canceled when cancellation races an approved tool execution", async () => {
+  it("keeps the Run canceled when cancellation races RunExecutor executing an approved tool", async () => {
     let receivedSignal: AbortSignal | undefined
-    let statusAtAbort: string | undefined
     let markStarted!: () => void
     const started = new Promise<void>((resolve) => { markStarted = resolve })
     const client = new DeterministicLunaApiClient(request => {
@@ -223,38 +267,44 @@ describe("approval decisions", () => {
         else signal.addEventListener("abort", onAbort, { once: true })
       })
     })
-    const fixture = await approvalFixture(client, async (runId, repository) => {
-      statusAtAbort = (await repository.getRun("usr_owner", runId))?.status
-    })
+    const fixture = await approvalFixture(client)
     const runId = await waitingRun(fixture, "usr_owner", "cancel-approved")
     const pending = await fixture.tools.propose({ runId, operationId: "updateThing", arguments: { value: "stop" } })
+    await fixture.repository.saveRunCheckpoint(runId, {
+      expectedRevision: 0,
+      phase: "awaiting_approval",
+      modelStep: 1,
+      toolCallCount: 0,
+      state: { pendingToolCallId: pending.id },
+    })
     await fixture.repository.updateRun(runId, "running", "waiting_approval")
 
-    const approvalResponse = fixture.app.inject({
+    const approvalResponse = await fixture.app.inject({
       method: "POST",
       url: `/internal/v1/runs/${runId}/approvals/${pending.id}/decision`,
       headers: { "x-luna-dev-user": "usr_owner" },
       payload: { decision: "approve" },
     })
+    expect(approvalResponse.statusCode).toBe(202)
+    expect(fixture.client.calls).toHaveLength(0)
+
+    const runningPromise = fixture.executor.runOnce()
     await started
     const cancelResponse = await fixture.app.inject({
       method: "POST",
       url: `/internal/v1/runs/${runId}/cancel`,
       headers: { "x-luna-dev-user": "usr_owner" },
     })
-    const approvalResult = await approvalResponse
+    await runningPromise
 
     expect(cancelResponse.statusCode).toBe(202)
     expect(cancelResponse.json()).toMatchObject({ id: runId, status: "canceled" })
-    expect(approvalResult.statusCode).toBe(409)
-    expect(statusAtAbort).toBe("canceled")
     expect(receivedSignal?.aborted).toBe(true)
-    expect(fixture.store.records.get(pending.id)).toMatchObject({ status: "canceled", errorCode: "ai.run_canceled" })
     expect((await fixture.repository.getRun("usr_owner", runId))?.status).toBe("canceled")
     await fixture.app.close()
   })
 
-  it("does not abort a tool after a concurrent completion becomes authoritative", async () => {
+  it("does not abort an approved tool in RunExecutor after a concurrent completion becomes authoritative", async () => {
     let receivedSignal: AbortSignal | undefined
     let markStarted!: () => void
     let completeTool!: () => void
@@ -269,18 +319,29 @@ describe("approval decisions", () => {
     const fixture = await approvalFixture(client)
     const runId = await waitingRun(fixture, "usr_owner", "complete-before-cancel")
     const pending = await fixture.tools.propose({ runId, operationId: "updateThing", arguments: { value: "finish" } })
+    await fixture.repository.saveRunCheckpoint(runId, {
+      expectedRevision: 0,
+      phase: "awaiting_approval",
+      modelStep: 1,
+      toolCallCount: 0,
+      state: { pendingToolCallId: pending.id },
+    })
     await fixture.repository.updateRun(runId, "running", "waiting_approval")
+    fixture.executor.cancelExecuting = async () => false
     fixture.repository.cancelRun = async (ownerUserId, id) => {
       await fixture.repository.updateRun(id, "running", "completed", { completedAt: new Date().toISOString() })
       return fixture.repository.getRun(ownerUserId, id)
     }
 
-    const approvalResponse = fixture.app.inject({
+    const approvalResponse = await fixture.app.inject({
       method: "POST",
       url: `/internal/v1/runs/${runId}/approvals/${pending.id}/decision`,
       headers: { "x-luna-dev-user": "usr_owner" },
       payload: { decision: "approve" },
     })
+    expect(approvalResponse.statusCode).toBe(202)
+
+    const runningPromise = fixture.executor.runOnce()
     await started
     const cancelResponse = await fixture.app.inject({
       method: "POST",
@@ -292,8 +353,7 @@ describe("approval decisions", () => {
     expect(cancelResponse.json()).toMatchObject({ id: runId, status: "completed" })
     expect(receivedSignal?.aborted).toBe(false)
     completeTool()
-    const approvalResult = await approvalResponse
-    expect(approvalResult.statusCode).toBe(409)
+    await runningPromise
     expect((await fixture.repository.getRun("usr_owner", runId))?.status).toBe("completed")
     await fixture.app.close()
   })

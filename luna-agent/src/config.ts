@@ -85,6 +85,8 @@ const schema = z.object({
   OTEL_SERVICE_VERSION: optionalValue(z.string()),
   AI_OBSERVABILITY_CAPTURE_CONTENT: z.stringbool().default(false),
   AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS: z.stringbool().default(false),
+  AI_RUN_MAX_MODEL_STEPS: optionalValue(z.coerce.number().int().min(2).max(512)),
+  AI_RUN_MAX_TOOL_CALLS: optionalValue(z.coerce.number().int().min(32).max(2048)),
 })
 
 const telemetryConfigSchema = schema.pick({

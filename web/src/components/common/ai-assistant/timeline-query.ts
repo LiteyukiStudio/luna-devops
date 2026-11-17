@@ -161,6 +161,10 @@ function combinedSnapshot(pages: AITimelineQueryData[]): AITimeline | undefined 
   }
 }
 
+function isTerminalCombinedStatus(status: string | undefined) {
+  return status === 'completed' || status === 'failed' || status === 'canceled' || status === 'interrupted'
+}
+
 function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAssistantState {
   const authoritative = stateFromTimeline(snapshot)
   const blocks = new Map(authoritative.blocks.map(block => [block.id, block]))
@@ -168,8 +172,10 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
   const selectedBlockRevisions = { ...authoritative.itemRevisions }
   const desyncedRunIds = new Set<string>()
   const lastEventSequences = { ...authoritative.lastEventSequences }
+  const statusSequences = { ...authoritative.lastEventSequences }
   const runStatuses = { ...authoritative.runStatuses }
   const runExpectedVersions = { ...authoritative.runExpectedVersions }
+  const waitingExternalCandidates = { ...authoritative.waitingExternalByRun }
   const runUsage = { ...authoritative.runUsage }
   let contextUsage = authoritative.contextUsage
   const turnIndexes = { ...authoritative.turnIndexes }
@@ -177,8 +183,22 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
 
   for (const page of pages) {
     page.state.desyncedRunIds.forEach(runId => desyncedRunIds.add(runId))
-    Object.assign(runStatuses, page.state.runStatuses)
-    Object.assign(runExpectedVersions, page.state.runExpectedVersions)
+    for (const [runId, status] of Object.entries(page.state.runStatuses)) {
+      const currentStatus = runStatuses[runId]
+      const pageSeq = page.state.lastEventSequences[runId] ?? 0
+      const currentSeq = statusSequences[runId] ?? 0
+      if (isTerminalCombinedStatus(status)) {
+        runStatuses[runId] = status
+        statusSequences[runId] = Math.max(currentSeq, pageSeq)
+      }
+      else if (!isTerminalCombinedStatus(currentStatus) && (!currentStatus || pageSeq > currentSeq)) {
+        runStatuses[runId] = status
+        statusSequences[runId] = pageSeq
+      }
+    }
+    for (const [runId, version] of Object.entries(page.state.runExpectedVersions))
+      runExpectedVersions[runId] = Math.max(runExpectedVersions[runId] ?? 0, version)
+    Object.assign(waitingExternalCandidates, page.state.waitingExternalByRun)
     Object.assign(runUsage, page.state.runUsage)
     contextUsage = latestContextUsage(contextUsage, page.state.contextUsage)
     Object.assign(turnIndexes, page.state.turnIndexes)
@@ -197,10 +217,14 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
       }
     }
   }
+  const waitingExternalByRun = Object.fromEntries(
+    Object.entries(waitingExternalCandidates).filter(([runId]) => runStatuses[runId] === 'waiting_external'),
+  )
   return {
     blocks: [...blocks.values()].sort((left, right) => left.index - right.index),
     runStatuses,
     runExpectedVersions,
+    waitingExternalByRun,
     runUsage,
     contextUsage,
     lastEventSequences,

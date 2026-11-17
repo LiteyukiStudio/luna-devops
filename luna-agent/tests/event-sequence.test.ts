@@ -44,28 +44,20 @@ describe("PostgreSQL bigint event sequence normalization", () => {
         inputCreditsPerMillion: "1", outputCreditsPerMillion: "2", cachedInputCreditsPerMillion: "0.5",
       },
     })
-    await repository.createModelCreditHold({
-      id: "aihold_assistant_1",
+    await repository.recordReportedModelUsage({
       runId: created.run.id,
       ownerUserId: "usr_usage",
       operation: "assistant",
-      requestedOutputTokens: 4_000,
-      leaseSeconds: 60,
+      usage: { inputTokens: 18_000, outputTokens: 2_000, totalTokens: 20_000 },
+      callType: "stream",
     })
-    await repository.recordReportedModelUsage("aihold_assistant_1", {
-      inputTokens: 18_000, outputTokens: 2_000, totalTokens: 20_000,
-    }, { callType: "stream" })
-    await repository.createModelCreditHold({
-      id: "aihold_title_1",
+    await repository.recordReportedModelUsage({
       runId: created.run.id,
       ownerUserId: "usr_usage",
       operation: "title",
-      requestedOutputTokens: 200,
-      leaseSeconds: 60,
+      usage: { inputTokens: 700, outputTokens: 100, totalTokens: 800 },
+      callType: "complete",
     })
-    await repository.recordReportedModelUsage("aihold_title_1", {
-      inputTokens: 700, outputTokens: 100, totalTokens: 800,
-    }, { callType: "complete" })
 
     const timeline = await presentTimeline(repository, "usr_usage", conversation.id)
     expect(timeline?.turns[0]?.selectedRun).toMatchObject({

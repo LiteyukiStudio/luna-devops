@@ -1,12 +1,17 @@
 import type { TFunction } from 'i18next'
 import type { InteractionContentBlock } from './interaction-card-schema'
-import { useEffect, useRef, useState } from 'react'
+import type { AIUIAction } from '@/api'
+import { LoaderCircle, Stethoscope } from 'lucide-react'
+import { use, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { z } from 'zod'
 import { aiProgressStreamUrl } from '@/api'
 import { StatusBadge } from '@/components/common/status-badge'
+import { Button } from '@/components/ui/button'
 import { createTracedEventSource } from '@/lib/telemetry'
 import { cn } from '@/lib/utils'
+import { AIAssistantRuntimeContext } from './runtime-context'
 import { AIStepStatusGlyph } from './step-status'
 
 type LiveProgressBlockDefinition = Extract<InteractionContentBlock, { type: 'live_progress' }>
@@ -27,12 +32,24 @@ const progressSnapshotSchema = z.object({
 
 type ProgressSnapshot = z.infer<typeof progressSnapshotSchema>
 
-export function LiveProgressBlock({ block }: { block: LiveProgressBlockDefinition }) {
+export function LiveProgressBlock({ actionDisabled = false, block, onAction }: { actionDisabled?: boolean, block: LiveProgressBlockDefinition, onAction?: (action: AIUIAction) => Promise<boolean> }) {
   const { t } = useTranslation()
+  const runtime = use(AIAssistantRuntimeContext)
   const [snapshot, setSnapshot] = useState<ProgressSnapshot>()
+  const [diagnosing, setDiagnosing] = useState(false)
+  const [diagnosedKey, setDiagnosedKey] = useState<string>()
   const [connection, setConnection] = useState<'connecting' | 'live' | 'paused' | 'failed'>(() => typeof EventSource === 'undefined' ? 'failed' : 'connecting')
   const latestRevisionRef = useRef('')
+  const diagnosingRef = useRef(false)
   const { operationId, operationType, projectId } = block.binding
+  const bindingKey = `${projectId}:${operationType}:${operationId}`
+  const diagnosed = diagnosedKey === bindingKey
+  const conversationBusy = Boolean(
+    actionDisabled
+    || runtime?.timelineProps.resendDisabled
+    || runtime?.composerProps.activeRun
+    || runtime?.composerProps.sending,
+  )
 
   useEffect(() => {
     latestRevisionRef.current = ''
@@ -93,6 +110,40 @@ export function LiveProgressBlock({ block }: { block: LiveProgressBlockDefinitio
 
   const state = snapshot?.state
   const value = snapshot?.progress.value
+  const diagnoseLabel = t('aiAssistant.cards.liveProgress.diagnoseFailure')
+  const failureReason = translateFailureCode(t, snapshot?.error?.code)
+  const triggerDiagnose = async () => {
+    if (!onAction || diagnosingRef.current || diagnosed || conversationBusy)
+      return
+    try {
+      diagnosingRef.current = true
+      setDiagnosing(true)
+      const ok = await onAction({
+        version: 1,
+        type: 'send_message',
+        label: diagnoseLabel,
+        payload: {
+          message: t('aiAssistant.cards.liveProgress.diagnoseFailurePrompt', {
+            type: translateOperationType(t, operationType),
+            id: operationId,
+            projectId,
+          }),
+        },
+      })
+      if (ok) {
+        setDiagnosedKey(bindingKey)
+        return
+      }
+      toast.error(t('aiAssistant.cards.actionFailed'))
+    }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t('aiAssistant.cards.actionFailed'))
+    }
+    finally {
+      diagnosingRef.current = false
+      setDiagnosing(false)
+    }
+  }
   return (
     <div className="grid gap-2" data-ai-live-progress={state ?? connection}>
       <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
@@ -123,6 +174,31 @@ export function LiveProgressBlock({ block }: { block: LiveProgressBlockDefinitio
           </time>
         </div>
       )}
+      {state === 'failed' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger-border bg-danger-subtle px-2.5 py-2 text-xs text-danger" data-ai-live-progress-failed>
+          <div className="min-w-0 flex-1">
+            <p className="leading-5">{t('aiAssistant.cards.liveProgress.failedHint')}</p>
+            {failureReason && (
+              <p className="mt-0.5 truncate text-[11px] opacity-90">{failureReason}</p>
+            )}
+          </div>
+          {onAction && (
+            <Button
+              className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+              data-ai-live-progress-diagnose
+              disabled={diagnosing || diagnosed || conversationBusy}
+              size="sm"
+              variant="outline"
+              onClick={() => void triggerDiagnose()}
+            >
+              {diagnosing
+                ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
+                : <Stethoscope className="size-3.5" />}
+              {diagnoseLabel}
+            </Button>
+          )}
+        </div>
+      )}
       {(connection === 'paused' || connection === 'failed') && !isTerminal(state) && (
         <p className="text-[11px] text-warning" role="status">{t(connection === 'paused' ? 'aiAssistant.cards.liveProgress.paused' : 'aiAssistant.cards.liveProgress.unavailable')}</p>
       )}
@@ -139,6 +215,28 @@ function ProgressStateBadge({ state, connection }: { state?: ProgressSnapshot['s
 
 function translateCode(t: TFunction, code: string) {
   return t(`aiAssistant.cards.liveProgress.codes.${code.replaceAll('.', '_')}`, { defaultValue: code })
+}
+
+function translateOperationType(t: TFunction, operationType: string) {
+  switch (operationType) {
+    case 'build_run':
+      return t('aiAssistant.cards.liveProgress.operationTypes.build_run')
+    case 'release':
+      return t('aiAssistant.cards.liveProgress.operationTypes.release')
+    case 'hook_run':
+      return t('aiAssistant.cards.liveProgress.operationTypes.hook_run')
+    case 'app_template_installation':
+      return t('aiAssistant.cards.liveProgress.operationTypes.app_template_installation')
+    default:
+      return t('aiAssistant.cards.liveProgress.operationTypes.default')
+  }
+}
+
+function translateFailureCode(t: TFunction, code: string | undefined) {
+  if (!code || code === 'ai.progress.operation_failed')
+    return undefined
+  const translated = t(`aiAssistant.cards.liveProgress.failureCodes.${code.replaceAll('.', '_')}`, { defaultValue: '' })
+  return translated || undefined
 }
 
 function isTerminal(state?: ProgressSnapshot['state']) {

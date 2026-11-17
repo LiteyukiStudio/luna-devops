@@ -1,5 +1,5 @@
 import type { AssistantModelInput, ModelRuntime } from "../model-runtime.js"
-import type { ModelToolCall } from "../provider/provider.js"
+import type { ModelToolCall, OfficialModelUsage } from "../provider/provider.js"
 import { createId } from "../id.js"
 import { redact } from "../redaction.js"
 import { agentMetrics, errorDiagnostic, internalSpanOptions, isExpectedCancellation, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
@@ -14,8 +14,10 @@ export type TerminalCommit = (
 ) => Promise<void>
 
 export type StreamedModelResult = AssistantModelInput & {
+  lastTotalTokens: number
   finishReason?: string
   finalizeTerminal?: TerminalCommit
+  flushStream?: (fallbackStatus?: "completed" | "failed") => Promise<void>
 }
 
 export class StreamModelFinalizationError extends Error {
@@ -23,6 +25,7 @@ export class StreamModelFinalizationError extends Error {
   constructor(
     cause: unknown,
     readonly finalizeTerminal: TerminalCommit,
+    readonly flushStream?: (fallbackStatus?: "completed" | "failed") => Promise<void>,
   ) {
     super(stableErrorCode(cause), { cause })
   }
@@ -52,6 +55,7 @@ export async function streamModel(
     let answer = ""
     let toolCalls: ModelToolCall[] = []
     let finishReason: string | undefined
+    let completedUsage: OfficialModelUsage | undefined
     let firstOutputRecorded = false
     let reasoningTimelineIndex: number | undefined
     let messageTimelineIndex: number | undefined
@@ -139,21 +143,17 @@ export async function streamModel(
           }
         }
         if (event.type === "completed") {
+          if (event.usage.status !== "reported") throw new Error("ai.provider_usage_unavailable")
+          completedUsage = event.usage.value
           toolCalls = event.toolCalls ?? []
           finishReason = event.finishReason
           span.setAttribute("luna.tool_call.count", toolCalls.length)
-          const usage = event.reconciliationRequired
-            ? { status: "reconciliation_required" as const, reason: event.usage.status === "unavailable" ? event.usage.reason : "hold_deficit" }
-            : event.usage.status === "reported"
-              ? {
-                  status: "reported" as const,
-                  ...event.usage.value,
-                }
-              : event.usage
           await stream.appendEvent("model.completed", {
-            usage,
+            usage: {
+              status: "reported" as const,
+              ...event.usage.value,
+            },
             ...(input.model ? { modelId: input.model.id, maxContextTokensSnapshot: input.model.maxContextTokens } : {}),
-            ...(event.creditHoldId ? { creditHoldId: event.creditHoldId } : {}),
             ...(event.providerRequestId ? { providerRequestId: event.providerRequestId } : {}),
             ...(event.responseId ? { responseId: event.responseId } : {}),
             ...(event.responseModel ? { responseModel: event.responseModel } : {}),
@@ -161,6 +161,7 @@ export async function streamModel(
           })
         }
       }
+      if (!completedUsage) throw new Error("ai.provider_usage_unavailable")
       if (reasoning) {
         await stream.updateItemWithEvent(
           reasoningItemId,
@@ -175,7 +176,10 @@ export async function streamModel(
         await stream.updateItemWithEvent(
           messageItemId,
           "completed",
-          redact({ parts: [{ type: "text", text: answer }] }),
+          redact({
+            parts: [{ type: "text", text: answer }],
+            ...(decision.kind !== "tool_calls" ? { standalone: true } : {}),
+          }),
           "message.completed",
           { itemId: messageItemId, contentPartId: `${messageItemId}:0`, partIndex: 0, timelineIndex: messageTimelineIndex },
           decision.kind === "final" ? "assistant_message" : "progress",
@@ -188,10 +192,17 @@ export async function streamModel(
       const finalSession = decision.kind === "final" ? stream : undefined
       if (!finalSession) await stream.commit("completed")
       return {
-        ...input, reasoning, answer, toolCalls,
+        ...input,
+        reasoning,
+        answer,
+        toolCalls,
+        lastTotalTokens: completedUsage.totalTokens,
         ...(finishReason === undefined ? {} : { finishReason }),
         ...(finalSession
-          ? { finalizeTerminal: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => finalSession.commitTerminal(to, errorCode, conversationTitle) }
+          ? {
+              finalizeTerminal: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => finalSession.commitTerminal(to, errorCode, conversationTitle),
+              flushStream: (fallbackStatus: "completed" | "failed" = "failed") => finalSession.commit(fallbackStatus),
+            }
           : {}),
       }
     }
@@ -207,7 +218,11 @@ export async function streamModel(
             "progress",
           ).catch(() => undefined)
         }
-        throw new StreamModelFinalizationError(error, (to, errorCode, conversationTitle) => stream!.commitTerminal(to, errorCode, conversationTitle))
+        throw new StreamModelFinalizationError(
+          error,
+          (to, errorCode, conversationTitle) => stream!.commitTerminal(to, errorCode, conversationTitle),
+          (fallbackStatus = "failed") => stream!.commit(fallbackStatus),
+        )
       }
       recordAIContent(span, "luna.gen_ai.content.error", "luna.gen_ai.response.error_body", contentError(error))
       throw error

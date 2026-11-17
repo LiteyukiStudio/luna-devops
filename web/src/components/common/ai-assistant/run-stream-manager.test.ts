@@ -405,4 +405,46 @@ describe('run stream manager', () => {
       expect(sources).toHaveLength(2)
     })
   })
+
+  it('registers tool.rejected and run.requeued, preserves liveness via heartbeats during waiting_external, and converges after run.completed', () => {
+    vi.useFakeTimers()
+    let now = 10_000
+    const source = new MockEventSource()
+    const onEvent = vi.fn()
+    const manager = new AIRunStreamManager(
+      () => source as unknown as EventSource,
+      { onEvent },
+      true,
+      { now: () => now, outputIdleAfterMs: 2_000, stalledAfterMs: 35_000, completionConvergenceMs: 5_000 },
+    )
+    manager.connect({ conversationId: 'conversation-1', eventsUrl: '/events/run-1', runId: 'run-1', after: 0 })
+    source.open()
+
+    // 1. waiting_external keeps stream 'open' and heartbeats prevent false stalled transitions across minutes
+    now = 11_000
+    source.emit('run.waiting_external', { ...runEvent('run.waiting_external'), eventSequence: 1 })
+    expect(manager.streamStates()[0]).toMatchObject({ after: 1, status: 'open' })
+
+    for (let cycle = 1; cycle <= 4; cycle += 1) {
+      vi.advanceTimersByTime(15_000)
+      now += 15_000
+      source.heartbeat()
+      expect(manager.streamStates()[0]).toMatchObject({ status: 'open' })
+    }
+
+    // 2. tool.rejected and run.requeued are subscribed and forwarded cleanly
+    source.emit('tool.rejected', { ...runEvent('tool.rejected'), eventSequence: 2 })
+    source.emit('run.requeued', { ...runEvent('run.requeued'), eventSequence: 3 })
+    expect(onEvent).toHaveBeenCalledTimes(3)
+
+    // 3. run.completed closes cleanly after completionConvergenceMs if run.stream.completed was omitted
+    source.emit('run.completed', { ...runEvent('run.completed'), eventSequence: 4 })
+    expect(source.close).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(5_000)
+    expect(source.close).toHaveBeenCalledOnce()
+    expect(manager.streamStates()[0]).toMatchObject({ after: 4, status: 'terminal' })
+
+    manager.closeAll()
+    vi.useRealTimers()
+  })
 })

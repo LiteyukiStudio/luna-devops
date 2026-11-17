@@ -257,6 +257,98 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	}
 }
 
+func TestAITaskStatusInternalWaitingExternalAndZeroAuditPostgres(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REDIS_ADDR", "")
+	t.Setenv(aiagent.InternalSecretEnvironment, "ai-task-status-integration-secret-0001")
+	db := aiProjectScopeIntegrationDB(t)
+	keys := mustTestAIKeys(t)
+
+	now := time.Now().UTC()
+	owner := model.User{ID: "usr_ai_wait_owner", Email: "ai-wait-owner@example.test", Name: "Wait Owner", Role: authz.PlatformRoleUser}
+	session := model.UserSession{
+		ID: "ses_ai_wait_owner", UserID: owner.ID, TokenHash: "ai-wait-owner-session-token", ExpiresAt: now.Add(time.Hour),
+	}
+	allowedProject := model.Project{ID: "prj_ai_wait_allowed", Identifier: "ai-wait-allowed", Name: "Allowed", DeleteStatus: "active"}
+	forbiddenProject := model.Project{ID: "prj_ai_wait_forbidden", Identifier: "ai-wait-forbidden", Name: "Forbidden", DeleteStatus: "active"}
+	membership := model.ProjectMember{ID: "prjm_ai_wait_owner", ProjectID: allowedProject.ID, UserID: owner.ID, Role: authz.ProjectRoleDeveloper}
+	appRecord := model.Application{ID: "app_ai_wait", ProjectID: allowedProject.ID, Identifier: "web", Name: "Web", DeleteStatus: "active"}
+	buildRun := model.BuildRun{
+		ID:            "bldr_ai_wait_1",
+		ProjectID:     allowedProject.ID,
+		ApplicationID: appRecord.ID,
+		Status:        "failed",
+		FailureCode:   "build.dockerfile_step_failed",
+		FinishedAt:    &now,
+		UpdatedAt:     now,
+	}
+	otherBuild := model.BuildRun{
+		ID:        "bldr_ai_wait_other",
+		ProjectID: forbiddenProject.ID,
+		Status:    "running",
+		UpdatedAt: now,
+	}
+	for _, seed := range []any{&owner, &session, &allowedProject, &forbiddenProject, &membership, &appRecord, &buildRun, &otherBuild} {
+		if err := db.Create(seed).Error; err != nil {
+			t.Fatalf("seed %T: %v", seed, err)
+		}
+	}
+
+	wakeAt := now.Add(5 * time.Second)
+	if err := db.Exec(`INSERT INTO ai.conversations (id, owner_user_id, title, status, project_id) VALUES ('aicnv_wait_1', ?, 'wait test', 'active', ?)`, owner.ID, allowedProject.ID).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id) VALUES ('aitrn_wait_1', 'aicnv_wait_1', 1, 'waiting_external', 'build and deploy', 'airun_wait_1')`).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, wake_at, prompt_version, tool_catalog_digest, actor_session_id) VALUES ('airun_wait_1', ?, 'aicnv_wait_1', 'aitrn_wait_1', 1, 'waiting_external', ?, 'system-v4', 'test', ?)`, owner.ID, wakeAt, session.ID).Error; err != nil {
+		t.Fatalf("seed waiting_external run: %v", err)
+	}
+
+	var auditBefore int64
+	if err := db.Model(&model.AuditLog{}).Count(&auditBefore).Error; err != nil {
+		t.Fatalf("count audit logs before: %v", err)
+	}
+
+	router := NewRouter(db, mustTestConfig(t))
+
+	// 1) waiting_external Run 所属用户具有项目权限时正常返回状态快照，且严禁写 AuditLog
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/ai/runs/airun_wait_1/tasks/"+allowedProject.ID+"/build_run/"+buildRun.ID, nil)
+	req.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for waiting_external task status, got %d %s", rec.Code, rec.Body.String())
+	}
+	if gotCC := rec.Header().Get("Cache-Control"); gotCC != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", gotCC)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode task status response: %v", err)
+	}
+	if payload["taskStatus"] != "failed" || payload["terminal"] != true || payload["failureCode"] != "build.dockerfile_step_failed" {
+		t.Fatalf("unexpected task status payload: %#v", payload)
+	}
+
+	// 2) 越权访问其他项目空间立即 403
+	forbiddenReq := httptest.NewRequest(http.MethodGet, "/internal/v1/ai/runs/airun_wait_1/tasks/"+forbiddenProject.ID+"/build_run/"+otherBuild.ID, nil)
+	forbiddenReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	forbiddenRec := httptest.NewRecorder()
+	router.ServeHTTP(forbiddenRec, forbiddenReq)
+	if forbiddenRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cross-project task poll, got %d %s", forbiddenRec.Code, forbiddenRec.Body.String())
+	}
+
+	var auditAfter int64
+	if err := db.Model(&model.AuditLog{}).Count(&auditAfter).Error; err != nil {
+		t.Fatalf("count audit logs after: %v", err)
+	}
+	if auditAfter != auditBefore {
+		t.Fatalf("task status polling must not write AuditLog: before=%d after=%d", auditBefore, auditAfter)
+	}
+}
+
 func executeAIProjectList(t *testing.T, db *gorm.DB, router http.Handler, user model.User, session model.UserSession, arguments map[string]any, conversationProjectID string) []any {
 	t.Helper()
 	keys := mustTestAIKeys(t)

@@ -110,10 +110,12 @@ const operationsDashboardPage = {
     running: '執行中',
     waiting_approval: '等待審批',
     waiting_input: '等待輸入',
+    waiting_external: '等待背景任務',
     completed: '已完成',
     failed: '失敗',
     canceled: '已取消',
     expired: '已過期',
+    interrupted: '已中斷',
   },
   toolDetail: {
     titleFallback: '工具呼叫詳情',

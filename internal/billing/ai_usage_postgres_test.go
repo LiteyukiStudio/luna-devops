@@ -15,11 +15,10 @@ import (
 	"github.com/shopspring/decimal"
 	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // 此测试仅使用 testdb 创建并销毁的独立 PostgreSQL 数据库。
-func TestAICreditHoldAndAuthoritativeUsageSettlementPostgres(t *testing.T) {
+func TestAuthoritativeAIUsageSettlementPostgres(t *testing.T) {
 	if os.Getenv("OTEL_SMOKE") == "true" {
 		startupConfig, err := sharedconfig.LoadTelemetry()
 		if err != nil {
@@ -50,57 +49,61 @@ func TestAICreditHoldAndAuthoritativeUsageSettlementPostgres(t *testing.T) {
 	userID := "usr_ai_usage_pg"
 	seedAIUsageUserRun(t, db, userID, decimal.NewFromInt(100))
 
-	t.Run("active hold blocks racing debit", func(t *testing.T) {
-		locked := make(chan struct{})
-		continueHold := make(chan struct{})
-		holdDone := make(chan error, 1)
-		go func() {
-			holdDone <- db.Transaction(func(tx *gorm.DB) error {
-				var wallet model.UserWallet
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "user_id = ?", userID).Error; err != nil {
-					return err
-				}
-				close(locked)
-				<-continueHold
-				return insertAIHold(tx, "aihold_racing", userID, "held", decimal.NewFromInt(80), nil)
-			})
-		}()
-		<-locked
-		debitDone := make(chan error, 1)
-		go func() {
-			debitDone <- service.debitUserUsages([]model.BillingUsageRecord{ordinaryUsage("busg_racing", decimal.NewFromInt(30))}, "test", "test", "system", userID)
-		}()
-		close(continueHold)
-		if err := <-holdDone; err != nil {
-			t.Fatalf("insert racing hold: %v", err)
+	t.Run("unsettled AI usage is reflected in summary and guards manual negative adjustment without blocking postpaid debit", func(t *testing.T) {
+		if err := insertReportedUsage(db, "aiuse_pending_summary", userID, 10, 8, 18); err != nil {
+			t.Fatalf("insert pending reported usage: %v", err)
 		}
-		if err := <-debitDone; !errors.Is(err, ErrReservedBalance) {
-			t.Fatalf("racing debit error = %v, want ErrReservedBalance", err)
+		summary, err := service.Summary(SummaryInput{UserIDs: []string{userID}})
+		if err != nil {
+			t.Fatalf("read user billing summary: %v", err)
 		}
-		assertWalletBalance(t, db, userID, "100")
-		if err := db.Exec("DELETE FROM ai.model_credit_holds WHERE id = 'aihold_racing'").Error; err != nil {
-			t.Fatalf("delete test hold: %v", err)
+		if summary.PendingSpend.String() != "45" || summary.AvailableCredits.String() != "55" {
+			t.Fatalf("summary = %+v, want pending=45 available=55", summary)
 		}
+		projectSummary, err := service.Summary(SummaryInput{UserIDs: []string{userID}, ProjectIDs: []string{"prj_isolated"}})
+		if err != nil {
+			t.Fatalf("read project billing summary: %v", err)
+		}
+		if !projectSummary.PendingSpend.IsZero() {
+			t.Fatalf("project summary pending spend = %s, want 0 (AI costs never attach to projects)", projectSummary.PendingSpend)
+		}
+
+		if _, err := service.ApplyWalletTransaction(WalletTransactionInput{
+			UserID:        userID,
+			Type:          "adjustment",
+			AmountCredits: decimal.NewFromInt(-60),
+			ActorID:       "usr_admin",
+		}); !errors.Is(err, ErrReservedBalance) {
+			t.Fatalf("negative manual adjustment error = %v, want ErrReservedBalance", err)
+		}
+
+		if err := service.debitUserUsages([]model.BillingUsageRecord{ordinaryUsage("busg_postpaid", decimal.NewFromInt(30))}, "runtime.usage", "Runtime usage", "system", userID); err != nil {
+			t.Fatalf("postpaid debit should not be blocked by pending AI usage: %v", err)
+		}
+		assertWalletBalance(t, db, userID, "70")
 	})
 
-	t.Run("settles only complete reported usage without double charging reasoning", func(t *testing.T) {
-		actualCredits := decimal.NewFromInt(45)
-		if err := insertAIHold(db, "aihold_settle", userID, "usage_recorded", decimal.NewFromInt(80), &actualCredits); err != nil {
-			t.Fatalf("insert usage hold: %v", err)
+	t.Run("batch settles multiple usages per user in one wallet update and allows single-turn overdraft", func(t *testing.T) {
+		// Current wallet = 70; aiuse_pending_summary costs 45, aiuse_overdraft costs 45 => total 90 => balance becomes -20.
+		if err := insertReportedUsage(db, "aiuse_overdraft", userID, 10, 20, 40); err != nil {
+			t.Fatalf("insert second reported usage (total_tokens > prompt + completion): %v", err)
 		}
-		if err := insertReportedUsage(db, "aiuse_settle", "aihold_settle", userID); err != nil {
-			t.Fatalf("insert reported usage: %v", err)
+		// Delete conversation before Worker settles to prove FK decoupling preserves immutable ai.model_usages.
+		if err := db.Exec("DELETE FROM ai.conversations WHERE id = 'aicnv_ai_usage_pg'").Error; err != nil {
+			t.Fatalf("delete conversation with reported usage: %v", err)
 		}
+
 		settlementCtx, settlementSpan := otel.Tracer("luna-devops/tests").Start(t.Context(), "worker.ai_usage.settlement_request")
 		settled, err := service.SettlePendingAIModelUsage(settlementCtx, 10)
 		settlementSpan.End()
-		if err != nil || settled != 1 {
-			t.Fatalf("settle pending = (%d, %v), want (1, nil)", settled, err)
+		if err != nil || settled != 2 {
+			t.Fatalf("settle pending = (%d, %v), want (2, nil)", settled, err)
 		}
-		assertWalletBalance(t, db, userID, "55")
+		// aiuse_pending_summary = 45, aiuse_overdraft = (3*2 + 7*1 + 20*4) = 93 => 70 - 45 - 93 = -68
+		assertWalletBalance(t, db, userID, "-68")
 
 		var records []model.BillingUsageRecord
-		if err := db.Where("resource_id = ?", "aiuse_settle").Order("meter").Find(&records).Error; err != nil {
+		if err := db.Where("resource_id = ?", "aiuse_pending_summary").Order("meter").Find(&records).Error; err != nil {
 			t.Fatalf("list usage records: %v", err)
 		}
 		if len(records) != 4 {
@@ -123,73 +126,62 @@ func TestAICreditHoldAndAuthoritativeUsageSettlementPostgres(t *testing.T) {
 			}
 		}
 
+		summary, err := service.Summary(SummaryInput{UserIDs: []string{userID}})
+		if err != nil {
+			t.Fatalf("read post-overdraft summary: %v", err)
+		}
+		if !summary.PendingSpend.IsZero() || summary.AvailableCredits.String() != "-68" || summary.BalanceStatus != "insufficient" {
+			t.Fatalf("post-overdraft summary = %+v, want pending=0 available=-68 status=insufficient", summary)
+		}
+
 		settled, err = service.SettlePendingAIModelUsage(t.Context(), 10)
 		if err != nil || settled != 0 {
 			t.Fatalf("idempotent settle = (%d, %v), want (0, nil)", settled, err)
 		}
-		assertWalletBalance(t, db, userID, "55")
 	})
 
-	t.Run("reconciliation hold never enters settlement", func(t *testing.T) {
-		if err := insertAIHold(db, "aihold_unknown", userID, "reconciliation_required", decimal.NewFromInt(20), nil); err != nil {
-			t.Fatalf("insert reconciliation hold: %v", err)
+	t.Run("malformed usage row stays pending without blocking valid sibling usage", func(t *testing.T) {
+		if err := insertReportedUsageWithModel(db, "aiuse_invalid_model", userID, "", 10, 8, 18); err != nil {
+			t.Fatalf("insert malformed model usage: %v", err)
 		}
+		if err := insertReportedUsage(db, "aiuse_valid_sibling", userID, 10, 8, 18); err != nil {
+			t.Fatalf("insert valid sibling usage: %v", err)
+		}
+
 		settled, err := service.SettlePendingAIModelUsage(t.Context(), 10)
-		if err != nil || settled != 0 {
-			t.Fatalf("settle unavailable usage = (%d, %v), want (0, nil)", settled, err)
+		if settled != 1 || !errors.Is(err, ErrAIUsageSettlementFailed) {
+			t.Fatalf("partial settlement = (%d, %v), want (1, ErrAIUsageSettlementFailed)", settled, err)
 		}
-		assertWalletBalance(t, db, userID, "55")
-	})
-
-	t.Run("failed settlement keeps authoritative usage pending", func(t *testing.T) {
-		actualCredits := decimal.NewFromInt(45)
-		if err := insertAIHold(db, "aihold_failed", userID, "usage_recorded", decimal.NewFromInt(80), &actualCredits); err != nil {
-			t.Fatalf("insert failed-settlement hold: %v", err)
+		var invalidStatus, validStatus string
+		if err := db.Raw("SELECT settlement_status FROM ai.model_usages WHERE id = 'aiuse_invalid_model'").Scan(&invalidStatus).Error; err != nil {
+			t.Fatalf("read invalid usage status: %v", err)
 		}
-		if err := insertReportedUsage(db, "aiuse_failed", "aihold_failed", userID); err != nil {
-			t.Fatalf("insert failed-settlement usage: %v", err)
+		if err := db.Raw("SELECT settlement_status FROM ai.model_usages WHERE id = 'aiuse_valid_sibling'").Scan(&validStatus).Error; err != nil {
+			t.Fatalf("read valid usage status: %v", err)
 		}
-		blockedCredits := decimal.NewFromInt(50)
-		if err := insertAIHold(db, "aihold_blocking", userID, "reconciliation_required", blockedCredits, nil); err != nil {
-			t.Fatalf("insert blocking reconciliation hold: %v", err)
+		if invalidStatus != "pending" || validStatus != "settled" {
+			t.Fatalf("statuses = (%s, %s), want (pending, settled)", invalidStatus, validStatus)
 		}
-
-		settlementCtx, settlementSpan := otel.Tracer("luna-devops/tests").Start(t.Context(), "worker.ai_usage.failed_settlement_request")
-		settled, err := service.SettlePendingAIModelUsage(settlementCtx, 10)
-		settlementSpan.End()
-		if settled != 0 || !errors.Is(err, ErrAIUsageSettlementFailed) {
-			t.Fatalf("failed settlement = (%d, %v), want (0, ErrAIUsageSettlementFailed)", settled, err)
-		}
-		var status string
-		if err := db.Raw("SELECT settlement_status FROM ai.model_usages WHERE id = 'aiuse_failed'").Scan(&status).Error; err != nil {
-			t.Fatalf("read failed usage: %v", err)
-		}
-		if status != "pending" {
-			t.Fatalf("failed usage status = %s, want pending", status)
-		}
+		assertWalletBalance(t, db, userID, "-113")
 	})
 }
 
-func insertAIHold(db *gorm.DB, holdID, userID, state string, maxRisk decimal.Decimal, actual *decimal.Decimal) error {
-	return db.Exec(`INSERT INTO ai.model_credit_holds (
-id, run_id, owner_user_id, operation, attempt, state, model_id, model_name,
-max_context_tokens_snapshot, max_output_tokens_snapshot,
-input_credits_per_million, output_credits_per_million, cached_input_credits_per_million,
-max_risk_credits, actual_credits, expires_at
-) VALUES (?, 'airun_ai_usage_pg', ?, 'assistant',
-  (SELECT COALESCE(MAX(attempt), 0) + 1 FROM ai.model_credit_holds WHERE run_id = 'airun_ai_usage_pg' AND operation = 'assistant'),
-  ?, 'aimod_ai_usage_pg', 'usage', 4096, 512, 2000000, 4000000, 1000000, ?, ?, now() + interval '1 hour')`,
-		holdID, userID, state, maxRisk, actual).Error
+func insertReportedUsage(db *gorm.DB, usageID, userID string, promptTokens, completionTokens, totalTokens int64) error {
+	return insertReportedUsageWithModel(db, usageID, userID, "usage", promptTokens, completionTokens, totalTokens)
 }
 
-func insertReportedUsage(db *gorm.DB, usageID, holdID, userID string) error {
+func insertReportedUsageWithModel(db *gorm.DB, usageID, userID, modelName string, promptTokens, completionTokens, totalTokens int64) error {
 	return db.Exec(`INSERT INTO ai.model_usages (
-id, credit_hold_id, run_id, owner_user_id, operation, attempt, status, settlement_status,
-model_id, model_name, max_context_tokens_snapshot, prompt_tokens, completion_tokens, total_tokens,
+id, run_id, owner_user_id, operation, attempt, status, settlement_status,
+model_id, model_name, max_context_tokens_snapshot, max_output_tokens_snapshot,
+input_credits_per_million, output_credits_per_million, cached_input_credits_per_million,
+prompt_tokens, completion_tokens, total_tokens,
 cached_prompt_tokens, cache_write_prompt_tokens, reasoning_completion_tokens, call_type
-) SELECT ?, ?, run_id, ?, operation, attempt, 'reported', 'pending', model_id, model_name,
-max_context_tokens_snapshot, 10, 8, 18, 4, 3, 5, 'stream'
-FROM ai.model_credit_holds WHERE id = ?`, usageID, holdID, userID, holdID).Error
+) VALUES (?, 'airun_ai_usage_pg', ?, 'assistant',
+  (SELECT COALESCE(MAX(attempt), 0) + 1 FROM ai.model_usages WHERE run_id = 'airun_ai_usage_pg' AND operation = 'assistant'),
+  'reported', 'pending', 'aimod_ai_usage_pg', ?, 4096, 512, 2000000, 4000000, 1000000,
+  ?, ?, ?, 4, 3, 5, 'stream')`,
+		usageID, userID, modelName, promptTokens, completionTokens, totalTokens).Error
 }
 
 func seedAIUsageUserRun(t *testing.T, db *gorm.DB, userID string, balance decimal.Decimal) {

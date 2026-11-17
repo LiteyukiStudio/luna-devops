@@ -39,10 +39,10 @@ export class DeepSeekChatCompletionsProvider extends OpenAIChatCompletionsProvid
   }
 
   protected override adaptUsagePayload(raw: unknown): unknown {
-    if (!isRecord(raw) || raw.prompt_cache_hit_tokens === undefined) return raw
-    if (raw.prompt_tokens_details !== undefined && !isRecord(raw.prompt_tokens_details)) return raw
-    const details = raw.prompt_tokens_details ?? {}
-    if (details.cached_tokens !== undefined) return raw
+    if (!isRecord(raw) || raw.prompt_cache_hit_tokens === undefined || raw.prompt_cache_hit_tokens === null) return raw
+    if (raw.prompt_tokens_details !== undefined && raw.prompt_tokens_details !== null && !isRecord(raw.prompt_tokens_details)) return raw
+    const details = isRecord(raw.prompt_tokens_details) ? raw.prompt_tokens_details : {}
+    if (details.cached_tokens !== undefined && details.cached_tokens !== null) return raw
     return {
       ...raw,
       prompt_tokens_details: { ...details, cached_tokens: raw.prompt_cache_hit_tokens },

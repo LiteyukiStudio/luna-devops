@@ -277,8 +277,10 @@ suite("PostgresRepository (Drizzle) integration", () => {
     await repository.finalizeStreamingItems(created.run.id, "completed")
     const timeline = await repository.getTimeline(owner, conversation.id)
     const finalized = timeline?.turns[0]?.items.find(item => item.id === first.id)
+    const finalizedToolCall = timeline?.turns[0]?.items.find(item => item.id === second.id)
     expect(finalized?.status).toBe("completed")
     expect(finalized?.revision).toBe(2)
+    expect(finalizedToolCall?.status).toBe("failed")
     const events = await repository.getEvents(owner, created.run.id, 0)
     const sequences = events.map(event => event.sequence)
     expect([...sequences].sort((a, b) => a - b)).toEqual(sequences)
@@ -389,11 +391,17 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect((await repository.getConversationSummary(conversation.id))?.sourceTurnCount).toBe(2)
   })
 
-  it("appends additional input to a queued run turn", async () => {
+  it("appends supplemental user_message item without mutating initial turns.input", async () => {
     const conversation = await repository.createConversation(owner, "补充输入")
     const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "原始", pageContext: {}, idempotencyKey: key("append"), actorSessionId: key("session") })
     await repository.appendRunInput(created.run.id, "补充")
-    expect((await repository.getExecutionInput(created.run.id))?.input).toBe("原始\n补充")
+    const executionInput = await repository.getExecutionInput(created.run.id)
+    expect(executionInput?.input).toBe("原始")
+    expect(executionInput?.toolInteractions).toContainEqual(expect.objectContaining({
+      type: "user_message",
+      status: "completed",
+      content: { parts: [{ type: "text", text: "补充" }] },
+    }))
     await expect(repository.appendRunInput("airun_missing", "x")).rejects.toThrow("ai.run_not_found")
   })
 
@@ -495,6 +503,53 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect(client.calls).toHaveLength(2)
     await expect(repository.pool.query(`update ai.tool_calls set execution_count=-1 where id=$1`, [pending.id]))
       .rejects.toMatchObject({ code: "23514" })
+  })
+
+  it("retains supplemental waiting_input user messages in cross-turn getExecutionInput and listConversationHistory", async () => {
+    const conversation = await repository.createConversation(owner, "跨轮补充输入保留")
+    const firstTurn = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "帮我部署订单服务",
+      pageContext: { route: "/projects" },
+      idempotencyKey: key("supp-turn-0"),
+      actorSessionId: key("session"),
+    })
+    await repository.appendRunInput(firstTurn.run.id, "目标环境：prod")
+    await repository.appendRunInput(firstTurn.run.id, "镜像标签：v2.1.0")
+    await repository.appendItem({
+      runId: firstTurn.run.id,
+      turnId: firstTurn.turn.id,
+      type: "assistant_message",
+      status: "completed",
+      content: { parts: [{ type: "text", text: "已在 prod 完成 v2.1.0 部署。" }] },
+    })
+    await repository.updateRun(firstTurn.run.id, "queued", "completed", { completedAt: new Date().toISOString() })
+
+    const secondTurn = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "刚刚部署的是哪个环境与版本？",
+      pageContext: { route: "/projects" },
+      idempotencyKey: key("supp-turn-1"),
+      actorSessionId: key("session"),
+    })
+
+    const executionInput = await repository.getExecutionInput(secondTurn.run.id)
+    expect(executionInput?.history).toEqual([
+      expect.objectContaining({
+        turnIndex: 0,
+        user: "帮我部署订单服务\n\n目标环境：prod\n\n镜像标签：v2.1.0",
+        assistant: "已在 prod 完成 v2.1.0 部署。",
+      }),
+    ])
+
+    const listedHistory = await repository.listConversationHistory(conversation.id, -1, 1, 10)
+    expect(listedHistory).toEqual([
+      expect.objectContaining({
+        turnIndex: 0,
+        user: "帮我部署订单服务\n\n目标环境：prod\n\n镜像标签：v2.1.0",
+        assistant: "已在 prod 完成 v2.1.0 部署。",
+      }),
+    ])
   })
 })
 

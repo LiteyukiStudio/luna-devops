@@ -74,8 +74,24 @@ export class PostgresToolCallStore implements ToolCallStore {
     const turnId = input.rows[0]?.turn_id
     if (!turnId) return
     const itemId = `${call.id}:item`
+    const existingItem = event.type === "tool.started"
+      ? undefined
+      : (await this.pool.query<{ content: Record<string, unknown> }>(`select content from ai.items where id=$1`, [itemId])).rows[0]?.content
+    const modelCallId = typeof event.data.modelCallId === "string"
+      ? event.data.modelCallId
+      : typeof existingItem?.modelCallId === "string"
+        ? existingItem.modelCallId
+        : undefined
+    const batchId = typeof event.data.batchId === "string"
+      ? event.data.batchId
+      : typeof existingItem?.batchId === "string"
+        ? existingItem.batchId
+        : undefined
     const content = {
-        toolCallId: call.id, operationId: call.operationId, status: call.status, inputMode: call.inputMode ?? "model",
+        toolCallId: call.id,
+        ...(modelCallId ? { modelCallId } : {}),
+        ...(batchId ? { batchId } : {}),
+        operationId: call.operationId, status: call.status, inputMode: call.inputMode ?? "model",
         ...(call.verificationForToolCallId ? { verificationForToolCallId: call.verificationForToolCallId } : {}),
         arguments: redact(call.arguments), result: call.result, errorCode: call.errorCode,
 		approvalDecision: call.approvalDecision,

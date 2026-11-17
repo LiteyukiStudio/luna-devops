@@ -1,51 +1,50 @@
+import { createServer, type Server } from "node:http"
+import type { AddressInfo } from "node:net"
 import { readdir, readFile } from "node:fs/promises"
-import { createServer } from "node:http"
 import { resolve } from "node:path"
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { Pool } from "pg"
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import type { AIModelSnapshot } from "../src/domain.js"
+import { loadConfig } from "../src/config.js"
 import { PostgresRepository } from "../src/persistence/postgres.js"
 import type { ModelCallOperation } from "../src/persistence/repository.js"
-import { BudgetedModelProvider } from "../src/provider/budgeted.js"
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
-import { loadTelemetryConfig } from "../src/config.js"
-import { initializeTelemetry, internalSpanOptions, shutdownTelemetry, withSpan } from "../src/telemetry.js"
+import { UsageRecordingModelProvider } from "../src/provider/usage-recorder.js"
+import { configureAgentTelemetry, internalSpanOptions, shutdownTelemetry, withSpan } from "../src/telemetry.js"
 
-/** 真 PostgreSQL 测试仅操作独立的可销毁数据库。 */
-const adminDatabaseUrl = process.env.AGENT_TEST_DATABASE_URL
-const suite = adminDatabaseUrl ? describe : describe.skip
+const databaseUrl = process.env.AGENT_TEST_DATABASE_URL
+const suite = databaseUrl ? describe : describe.skip
 
-suite("Postgres authoritative model usage", () => {
-  const databaseName = `luna_agent_usage_test_${process.pid}_${Date.now()}`
-  const ownerUserId = `usr_usage_${Date.now()}`
+suite("PostgreSQL AI model usage ledger and positive-balance admission", () => {
   let adminPool: Pool
+  let databaseName: string
   let repository: PostgresRepository
-  let providerBaseUrl = ""
-  const providerServer = createServer((request, response) => {
-    request.resume()
-    request.once("end", () => {
+  let providerServer: Server
+  let providerBaseUrl: string
+  const ownerUserId = "usr_agent_usage_test"
+
+  beforeAll(async () => {
+    if (process.env.OTEL_SMOKE === "true") {
+      configureAgentTelemetry(loadConfig({
+        NODE_ENV: "test",
+        OTEL_SERVICE_NAME: "luna-agent-usage-smoke",
+      }))
+    }
+    providerServer = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "application/json", "x-request-id": "req_pg_chain" })
       response.end(JSON.stringify({
         id: "chatcmpl_pg_chain", model: "model-pg-chain",
-        choices: [{ message: { content: "done" }, finish_reason: "stop" }],
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
         usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 },
       }))
     })
-  })
+    await new Promise<void>(resolveListen => providerServer.listen(0, "127.0.0.1", () => resolveListen()))
+    providerBaseUrl = `http://127.0.0.1:${(providerServer.address() as AddressInfo).port}/v1`
 
-  beforeAll(async () => {
-    if (process.env.OTEL_SMOKE === "true") initializeTelemetry(loadTelemetryConfig())
-    await new Promise<void>((resolve, reject) => {
-      providerServer.once("error", reject)
-      providerServer.listen(0, "127.0.0.1", resolve)
-    })
-    const providerAddress = providerServer.address()
-    if (!providerAddress || typeof providerAddress === "string") throw new Error("test_provider_address_invalid")
-    providerBaseUrl = `http://127.0.0.1:${providerAddress.port}/v1`
-    if (!/^luna_agent_usage_test_[0-9_]+$/.test(databaseName)) throw new Error("unsafe test database name")
-    adminPool = new Pool({ connectionString: adminDatabaseUrl })
+    adminPool = new Pool({ connectionString: databaseUrl })
+    databaseName = `luna_agent_usage_test_${Date.now()}_${process.pid}`
     await adminPool.query(`CREATE DATABASE "${databaseName}"`)
-    const isolatedUrl = new URL(adminDatabaseUrl!)
+    const isolatedUrl = new URL(databaseUrl!)
     isolatedUrl.pathname = `/${databaseName}`
     isolatedUrl.searchParams.delete("search_path")
     const migrationPool = new Pool({ connectionString: isolatedUrl.toString() })
@@ -57,9 +56,9 @@ suite("Postgres authoritative model usage", () => {
                to_regclass('ai.model_usages')::text AS usage,
                to_regclass('ai.model_budget_reservations')::text AS legacy
       `)
-      expect(schema.rows[0]).toEqual({ hold: "ai.model_credit_holds", usage: "ai.model_usages", legacy: null })
+      expect(schema.rows[0]).toEqual({ hold: null, usage: "ai.model_usages", legacy: null })
       await migrationPool.query("INSERT INTO users(id, email, name) VALUES ($1, $2, 'Usage Test')", [ownerUserId, `${ownerUserId}@example.test`])
-      await migrationPool.query("INSERT INTO user_wallets(id, user_id, balance_credits) VALUES ($1, $2, 0)", [`wlt_${ownerUserId}`, ownerUserId])
+      await migrationPool.query("INSERT INTO user_wallets(id, user_id, balance_credits) VALUES ($1, $2, 10)", [`wlt_${ownerUserId}`, ownerUserId])
     }
     finally { await migrationPool.end() }
     repository = new PostgresRepository(isolatedUrl.toString())
@@ -67,14 +66,14 @@ suite("Postgres authoritative model usage", () => {
 
   beforeEach(async () => {
     await repository.pool.query(`
-      TRUNCATE ai.model_usages, ai.model_credit_holds, ai.tool_calls, ai.run_events,
+      TRUNCATE ai.model_usages, ai.tool_calls, ai.run_events,
                ai.items, ai.idempotency_keys, ai.conversation_summaries, ai.runs, ai.turns, ai.conversations CASCADE
     `)
-    await repository.pool.query("UPDATE user_wallets SET balance_credits = 0 WHERE user_id = $1", [ownerUserId])
+    await repository.pool.query("UPDATE user_wallets SET balance_credits = 10 WHERE user_id = $1", [ownerUserId])
   })
 
   afterAll(async () => {
-    await new Promise<void>((resolve, reject) => providerServer.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolveClose, reject) => providerServer.close(error => error ? reject(error) : resolveClose()))
     if (repository) await repository.close()
     if (adminPool) {
       if (!/^luna_agent_usage_test_[0-9_]+$/.test(databaseName)) throw new Error("unsafe test database cleanup")
@@ -84,95 +83,100 @@ suite("Postgres authoritative model usage", () => {
     if (process.env.OTEL_SMOKE === "true") await shutdownTelemetry()
   })
 
-  it("serializes concurrent holds so one wallet balance cannot be spent twice", async () => {
-    const model = paidModel()
-    const runId = await createRun(repository, ownerUserId, "race", model)
-    const risk = model.maxContextTokens + model.maxOutputTokens
-    await repository.pool.query("UPDATE user_wallets SET balance_credits = $1 WHERE user_id = $2", [risk, ownerUserId])
-
-    const results = await Promise.allSettled([
-      hold(repository, ownerUserId, runId, "race-a", "assistant"),
-      hold(repository, ownerUserId, runId, "race-b", "assistant"),
-    ])
-
-    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1)
-    expect(String((results.find(result => result.status === "rejected") as PromiseRejectedResult).reason)).toContain("ai.wallet_balance_insufficient")
-  })
-
-  it("does not create authoritative usage when Provider usage is unavailable", async () => {
-    const runId = await createRun(repository, ownerUserId, "missing", freeModel())
-    await hold(repository, ownerUserId, runId, "missing", "assistant")
-    await repository.markModelUsageUnavailable("aihold_missing", "missing_usage", { providerRequestId: "req_missing", failureStage: "response_body" })
-
-    const rows = await repository.pool.query<{ count: number }>("SELECT count(*)::int AS count FROM ai.model_usages")
-    const holdRow = await repository.pool.query<{ state: string, reconciliation_reason: string }>("SELECT state, reconciliation_reason FROM ai.model_credit_holds WHERE id = 'aihold_missing'")
-    expect(rows.rows[0]?.count).toBe(0)
-    expect(holdRow.rows[0]).toEqual({ state: "reconciliation_required", reconciliation_reason: "missing_usage" })
-  })
-
-  it("never copies an expired hold into a fake usage row", async () => {
-    const runId = await createRun(repository, ownerUserId, "expired", freeModel())
-    await hold(repository, ownerUserId, runId, "expired", "assistant")
-    await repository.pool.query("UPDATE ai.model_credit_holds SET expires_at = now() - interval '1 second' WHERE id = 'aihold_expired'")
-    await hold(repository, ownerUserId, runId, "next", "assistant")
-
-    const expired = await repository.pool.query<{ state: string, reconciliation_reason: string }>("SELECT state, reconciliation_reason FROM ai.model_credit_holds WHERE id = 'aihold_expired'")
-    const usages = await repository.pool.query<{ count: number }>("SELECT count(*)::int AS count FROM ai.model_usages")
-    expect(expired.rows[0]).toEqual({ state: "reconciliation_required", reconciliation_reason: "hold_expired" })
-    expect(usages.rows[0]?.count).toBe(0)
-  })
-
-  it("stores official usage above the hold assumption and requires reconciliation", async () => {
-    const runId = await createRun(repository, ownerUserId, "deficit", paidModel())
-    await repository.pool.query("UPDATE user_wallets SET balance_credits = 100000 WHERE user_id = $1", [ownerUserId])
-    await hold(repository, ownerUserId, runId, "deficit", "assistant")
-
-    await expect(repository.recordReportedModelUsage("aihold_deficit", {
-      inputTokens: 6_500, outputTokens: 1_000, totalTokens: 7_500,
-      cacheReadInputTokens: 1_000, cacheWriteInputTokens: 500, reasoningOutputTokens: 250,
-    }, { callType: "stream", providerRequestId: "req_deficit", responseId: "chatcmpl_deficit" }))
-      .resolves.toEqual({ reconciliationRequired: true })
-
-    const usage = await repository.pool.query<{
-      prompt_tokens: string
-      completion_tokens: string
-      cached_prompt_tokens: string
-      cache_write_prompt_tokens: string
-      reasoning_completion_tokens: string
-      settlement_status: string
-    }>("SELECT prompt_tokens, completion_tokens, cached_prompt_tokens, cache_write_prompt_tokens, reasoning_completion_tokens, settlement_status FROM ai.model_usages WHERE credit_hold_id = 'aihold_deficit'")
-    const held = await repository.pool.query<{ state: string }>("SELECT state FROM ai.model_credit_holds WHERE id = 'aihold_deficit'")
-    expect(usage.rows[0]).toEqual({
-      prompt_tokens: "6500",
-      completion_tokens: "1000",
-      cached_prompt_tokens: "1000",
-      cache_write_prompt_tokens: "500",
-      reasoning_completion_tokens: "250",
-      settlement_status: "reconciliation_required",
+  it("allows small-balance users on 1M-context / 64K-output models while blocking zero or negative available balance", async () => {
+    // Small balance ($0.50) would have failed full-window pre-reservation, but passes lock-free positive-balance gate.
+    await repository.pool.query("UPDATE user_wallets SET balance_credits = 0.5 WHERE user_id = $1", [ownerUserId])
+    const largeWindowModel: AIModelSnapshot = {
+      id: "aimod_1m",
+      name: "1m-model",
+      maxContextTokens: 1_000_000,
+      maxOutputTokens: 65_536,
+      inputCreditsPerMillion: "5000",
+      outputCreditsPerMillion: "20000",
+      cachedInputCreditsPerMillion: "1000",
+    }
+    const runId = await createRun(repository, ownerUserId, "large-window", largeWindowModel)
+    await repository.recordReportedModelUsage({
+      runId,
+      ownerUserId,
+      operation: "assistant",
+      usage: { inputTokens: 100_000, outputTokens: 20_000, totalTokens: 120_000 },
+      callType: "stream",
     })
-    expect(held.rows[0]?.state).toBe("hold_deficit")
+    // Pending AI usage (0.5 + 0.4 = 0.9) now exceeds 0.50 wallet balance => available <= 0 => next Turn is rejected!
+    await expect(createRun(repository, ownerUserId, "overdraft-next-turn", largeWindowModel))
+      .rejects.toThrow("ai.wallet_balance_insufficient")
   })
 
-  it("persists assistant, summary, title and retries as independent attempts", async () => {
-    const runId = await createRun(repository, ownerUserId, "attempts", freeModel())
+  it("persists assistant, summary, title and retries as independent attempts with normalized gateway tokens", async () => {
+    const model = paidModel()
+    const runId = await createRun(repository, ownerUserId, "attempts", model)
     for (const operation of ["assistant", "summary", "title"] as ModelCallOperation[]) {
-      const first = await hold(repository, ownerUserId, runId, `${operation}-1`, operation)
-      const second = await hold(repository, ownerUserId, runId, `${operation}-2`, operation)
+      const first = await repository.recordReportedModelUsage({
+        runId,
+        ownerUserId,
+        operation,
+        usage: {
+          inputTokens: 300,
+          outputTokens: 50,
+          totalTokens: 420,
+          cacheReadInputTokens: 200,
+          cacheWriteInputTokens: 20,
+          reasoningOutputTokens: 70,
+        },
+        callType: operation === "assistant" ? "stream" : "complete",
+      })
+      const second = await repository.recordReportedModelUsage({
+        runId,
+        ownerUserId,
+        operation,
+        usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 },
+        callType: "complete",
+      })
       expect([first.attempt, second.attempt]).toEqual([1, 2])
     }
-    const rows = await repository.pool.query("SELECT operation, attempt FROM ai.model_credit_holds ORDER BY operation, attempt")
+    const rows = await repository.pool.query("SELECT operation, attempt FROM ai.model_usages ORDER BY operation, attempt")
     expect(rows.rows).toHaveLength(6)
+  })
+
+  it("cancels active runs and preserves immutable ai.model_usages when deleting a conversation", async () => {
+    const model = paidModel()
+    const conversation = await repository.createConversation(ownerUserId, "delete-keep-ledger")
+    const created = await repository.createTurn(ownerUserId, {
+      conversationId: conversation.id,
+      input: "stream and delete",
+      pageContext: {},
+      idempotencyKey: "usage-delete-keep-ledger",
+      actorSessionId: "session-delete",
+      modelId: model.id,
+      modelSnapshot: model,
+    })
+    await repository.recordReportedModelUsage({
+      runId: created.run.id,
+      ownerUserId,
+      operation: "assistant",
+      usage: { inputTokens: 500, outputTokens: 100, totalTokens: 600 },
+      callType: "stream",
+    })
+
+    await expect(repository.deleteConversation(ownerUserId, conversation.id)).resolves.toBe(true)
+    const remainingUsages = await repository.pool.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM ai.model_usages WHERE run_id = $1",
+      [created.run.id],
+    )
+    expect(remainingUsages.rows[0]?.count).toBe(1)
   })
 
   it("keeps Agent request, Provider attempt and usage persistence in one trace", async () => {
     const model = freeModel()
     const runId = await createRun(repository, ownerUserId, "trace-chain", model)
-    const provider = new BudgetedModelProvider(new OpenAIChatCompletionsProvider({
+    const provider = new UsageRecordingModelProvider(new OpenAIChatCompletionsProvider({
       baseUrl: providerBaseUrl, apiKey: "test-key", channelAffinityEnabled: true, promptCacheKeyEnabled: false, model: "model-pg-chain", timeoutMs: 5_000,
     }), repository)
 
     const result = await withSpan("agent.request", internalSpanOptions(), () => provider.complete({
       messages: [{ role: "user", content: "trace chain" }], maxOutputTokens: 32,
+      modelPricing: model,
       budget: { runId, ownerUserId, operation: "assistant" },
     }))
 
@@ -207,10 +211,4 @@ async function createRun(repository: PostgresRepository, ownerUserId: string, su
     actorSessionId: `session-${suffix}`, modelId: model.id, modelSnapshot: model,
   })
   return created.run.id
-}
-
-function hold(repository: PostgresRepository, ownerUserId: string, runId: string, suffix: string, operation: ModelCallOperation) {
-  return repository.createModelCreditHold({
-    id: `aihold_${suffix}`, runId, ownerUserId, operation, requestedOutputTokens: 512, leaseSeconds: 60,
-  })
 }

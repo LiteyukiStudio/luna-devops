@@ -53,6 +53,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 	})
 	router.GET("/.well-known/oauth-authorization-server", domains.identity.GetOAuthAuthorizationServerMetadata)
 	router.GET("/internal/v1/ai/provider-config", domains.ai.GetAIProviderConfigInternal)
+	router.GET("/internal/v1/ai/runs/:runId/tasks/:projectId/:taskType/:taskId", domains.ai.GetAITaskStatusInternal)
 
 	v1 := router.Group("/api/v1", domains.ai.AIToolExecutionIdentityMiddleware())
 	{

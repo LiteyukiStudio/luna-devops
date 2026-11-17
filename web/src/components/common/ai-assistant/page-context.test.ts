@@ -2,46 +2,83 @@ import { describe, expect, it } from 'vitest'
 import { buildAIPageContext } from './page-context'
 
 describe('ai assistant page context', () => {
-  it('describes the current resource, view, navigation, locale, and client time', () => {
+  it('describes the current resource, active tab, locale, and time zone without volatile timestamps or static lists', () => {
     const context = buildAIPageContext(
       '/projects/prj_1/apps/app_1',
-      '?tab=builds&buildRunId=build_1&token=secret',
+      '?tab=builds&buildRunId=build_1&clusterId=clu_1&token=secret',
       'zh-CN',
-      { hash: '#releaseId=rel_1', now: new Date('2026-07-29T08:30:00.000Z'), timeZone: 'Asia/Shanghai' },
+      { hash: '#releaseId=rel_1', timeZone: 'Asia/Shanghai' },
     )
 
-    expect(context).toMatchObject({
+    expect(context).toEqual({
       schemaVersion: 1,
       routeName: 'application.detail',
       routeTemplate: '/projects/:projectId/apps/:applicationId',
+      pathname: '/projects/prj_1/apps/app_1',
       pageKind: 'application',
       projectId: 'prj_1',
       applicationId: 'app_1',
+      clusterId: 'clu_1',
       activeTab: 'builds',
       view: {
-        query: { tab: 'builds', buildRunId: 'build_1' },
+        query: { tab: 'builds', buildRunId: 'build_1', clusterId: 'clu_1' },
         hash: { releaseId: 'rel_1' },
         selectedResourceIds: ['build_1', 'rel_1'],
-        availableTabs: expect.arrayContaining(['builds', 'deployments', 'gateway']),
       },
-      client: {
-        locale: 'zh-CN',
-        timeZone: 'Asia/Shanghai',
-        timestamp: '2026-07-29T08:30:00.000Z',
-      },
+      locale: 'zh-CN',
+      timeZone: 'Asia/Shanghai',
     })
     expect(context.view.query).not.toHaveProperty('token')
+    expect(context).not.toHaveProperty('client')
+    expect(context).not.toHaveProperty('navigation')
+    expect(context.view).not.toHaveProperty('availableTabs')
+  })
+
+  it('recognizes /ai, /ai-assistant, deployment editor, and /settings/* routes', () => {
+    expect(buildAIPageContext('/ai', '', 'zh-CN', { timeZone: 'UTC' })).toMatchObject({
+      routeName: 'ai-assistant',
+      routeTemplate: '/ai',
+      pageKind: 'ai-assistant',
+    })
+    expect(buildAIPageContext('/ai-assistant', '', 'zh-CN', { timeZone: 'UTC' })).toMatchObject({
+      routeName: 'ai-assistant',
+      routeTemplate: '/ai-assistant',
+      pageKind: 'ai-assistant',
+    })
+    expect(buildAIPageContext('/settings/account', '', 'zh-CN', { timeZone: 'UTC' })).toMatchObject({
+      routeName: 'settings.account',
+      routeTemplate: '/settings/account',
+      pageKind: 'settings',
+    })
+    expect(buildAIPageContext('/settings/custom-section', '', 'zh-CN', { timeZone: 'UTC' })).toMatchObject({
+      routeName: 'settings',
+      routeTemplate: '/settings/:section',
+      pageKind: 'settings',
+    })
+    expect(buildAIPageContext('/projects/prj_1/apps/app_1/deployments/tgt_1/edit', '', 'zh-CN', { timeZone: 'UTC' })).toMatchObject({
+      routeName: 'application.detail',
+      projectId: 'prj_1',
+      applicationId: 'app_1',
+      targetId: 'tgt_1',
+    })
   })
 
   it('falls back to a bounded unknown-page context', () => {
     expect(buildAIPageContext('/not-registered', '?redirect=https://evil.example', 'en-US', {
-      now: new Date('2026-07-29T00:00:00.000Z'),
       timeZone: 'UTC',
-    })).toMatchObject({
+    })).toEqual({
+      schemaVersion: 1,
       routeName: 'unknown',
       routeTemplate: '',
-      navigation: { relatedRouteNames: ['dashboard', 'projects'] },
-      view: { query: {} },
+      pathname: '/not-registered',
+      pageKind: 'unknown',
+      view: {
+        query: {},
+        hash: {},
+        selectedResourceIds: [],
+      },
+      locale: 'en-US',
+      timeZone: 'UTC',
     })
   })
 })

@@ -59,10 +59,11 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
   })
 
   it.each([
-    ["missing-usage", { status: "unavailable", reason: "missing_usage" }],
-    ["invalid-usage", { status: "unavailable", reason: "invalid_usage" }],
-  ])("preserves %s as unavailable", async (content, usage) => {
-    await expect(provider(baseUrl).complete(modelRequest(content))).resolves.toMatchObject({ usage })
+    "missing-usage",
+    "invalid-usage",
+  ])("throws ai.provider_usage_unavailable on %s response", async (content) => {
+    await expect(provider(baseUrl).complete(modelRequest(content)))
+      .rejects.toMatchObject({ message: "ai.provider_usage_unavailable" })
   })
 
   it("marks an indeterminate connection outcome as unavailable instead of retrying", async () => {
@@ -108,7 +109,10 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
     await new Promise<void>(resolve => setImmediate(resolve))
     controller.abort(new Error("ai.run_canceled"))
 
-    await expect(pendingRead).rejects.toMatchObject({ message: "ai.run_canceled" })
+    await expect(pendingRead).rejects.toMatchObject({
+      message: "ai.run_canceled",
+      options: { stage: "stream", requestOutcome: "unknown" },
+    })
     expect(responseBody?.locked).toBe(false)
     await expect(settleWithin(iterator.next())).resolves.toEqual({ done: true, value: undefined })
     await expect(settleWithin(closed)).resolves.toBeUndefined()
@@ -116,6 +120,29 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
     const removedAbortListeners = removeEventListener.mock.calls.filter(([type]) => type === "abort").length
     expect(addedAbortListeners).toBe(2)
     expect(removedAbortListeners).toBe(addedAbortListeners)
+  })
+
+  it("preserves ai.run_timeout when a stream is aborted due to run timeout", async () => {
+    const controller = new AbortController()
+    const closed = new Promise<void>((resolve) => { hangingStreamClosed = resolve })
+    const iterator = provider(baseUrl, 30_000).stream({
+      ...modelRequest("hanging-stream"),
+      signal: controller.signal,
+    })[Symbol.asyncIterator]()
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "message_delta", delta: "partial" },
+    })
+    const pendingRead = settleWithin(iterator.next())
+    await new Promise<void>(resolve => setImmediate(resolve))
+    controller.abort(new Error("ai.run_timeout"))
+
+    await expect(pendingRead).rejects.toMatchObject({
+      message: "ai.run_timeout",
+      options: { stage: "stream", requestOutcome: "unknown" },
+    })
+    await expect(settleWithin(closed)).resolves.toBeUndefined()
   })
 
   it("lets ModelRuntime compress and retry once after a structured context rejection", async () => {
@@ -207,7 +234,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   const usage = content === "missing-usage"
     ? {}
     : content === "invalid-usage"
-      ? { usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 3 } }
+      ? { usage: { prompt_tokens: -1, completion_tokens: 1, total_tokens: 0 } }
       : { usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }
   response.writeHead(200, { "content-type": "application/json" })
   response.end(JSON.stringify({ id: "chatcmpl_http", model: "model-http", choices: [{ message: { content: "done" } }], ...usage }))

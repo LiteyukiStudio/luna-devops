@@ -50,6 +50,197 @@ type aiProgressSnapshot struct {
 	Error         *aiProgressError `json:"error,omitempty"`
 }
 
+type aiTaskStatusInternal struct {
+	TaskType           string     `json:"taskType"`
+	TaskID             string     `json:"taskId"`
+	ProjectID          string     `json:"projectId"`
+	ApplicationID      string     `json:"applicationId,omitempty"`
+	DeploymentTargetID string     `json:"deploymentTargetId,omitempty"`
+	RawStatus          string     `json:"rawStatus"`
+	TaskStatus         string     `json:"taskStatus"`
+	Terminal           bool       `json:"terminal"`
+	FailureCode        string     `json:"failureCode,omitempty"`
+	ImageRef           string     `json:"imageRef,omitempty"`
+	ImageDigest        string     `json:"imageDigest,omitempty"`
+	SourceBranch       string     `json:"sourceBranch,omitempty"`
+	SourceTag          string     `json:"sourceTag,omitempty"`
+	SourceCommit       string     `json:"sourceCommit,omitempty"`
+	BuildRunID         string     `json:"buildRunId,omitempty"`
+	Revision           int        `json:"revision,omitempty"`
+	ReleaseType        string     `json:"releaseType,omitempty"`
+	StartedAt          *time.Time `json:"startedAt,omitempty"`
+	FinishedAt         *time.Time `json:"finishedAt,omitempty"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
+}
+
+type aiRunTaskBinding struct {
+	OwnerUserID           string `gorm:"column:owner_user_id"`
+	ActorSessionID        string `gorm:"column:actor_session_id"`
+	RunStatus             string `gorm:"column:run_status"`
+	ConversationOwnerID   string `gorm:"column:conversation_owner_id"`
+	ConversationProjectID string `gorm:"column:conversation_project_id"`
+}
+
+// GetAITaskStatusInternal 为 Agent 的 wait_for_task 快检与后台到期唤醒提供无审计噪音的权威任务状态读取。
+// 每次调用按 Run 绑定的真实用户与会话重新校验项目空间只读权限，不写 AuditLog。
+func (h *Handler) GetAITaskStatusInternal(ctx *gin.Context) {
+	if !h.requireAIAgentService(ctx) {
+		return
+	}
+	runID := strings.TrimSpace(ctx.Param("runId"))
+	projectID := strings.TrimSpace(ctx.Param("projectId"))
+	taskType := strings.TrimSpace(ctx.Param("taskType"))
+	taskID := strings.TrimSpace(ctx.Param("taskId"))
+	if runID == "" || projectID == "" || taskID == "" || len(runID) > 128 || len(projectID) > 128 || len(taskID) > 128 {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "AI task status parameters are incomplete")
+		return
+	}
+	var requiredAction authz.Action
+	switch taskType {
+	case "build_run":
+		requiredAction = authz.ActionBuildRead
+	case "release":
+		requiredAction = authz.ActionDeploymentRead
+	default:
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.progress.type_invalid", "task type must be build_run or release")
+		return
+	}
+
+	var binding aiRunTaskBinding
+	result := h.dbFor(ctx).Raw(`
+		SELECT r.owner_user_id,
+		       COALESCE(r.actor_session_id, '') AS actor_session_id,
+		       r.status AS run_status,
+		       c.owner_user_id AS conversation_owner_id,
+		       COALESCE(c.project_id, '') AS conversation_project_id
+		FROM ai.runs AS r
+		JOIN ai.conversations AS c ON c.id = r.conversation_id
+		WHERE r.id = ?
+	`, runID).Scan(&binding)
+	if result.Error != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.progress.unavailable", "AI run task binding is unavailable")
+		return
+	}
+	if result.RowsAffected != 1 {
+		writeErrorCode(ctx, http.StatusNotFound, "ai.run_not_found", "AI Run was not found")
+		return
+	}
+	if binding.RunStatus != "running" && binding.RunStatus != "waiting_external" {
+		writeErrorCode(ctx, http.StatusConflict, "ai.run_not_resumable", "AI Run is not in an active task-observation state")
+		return
+	}
+	if binding.OwnerUserID == "" || binding.OwnerUserID != binding.ConversationOwnerID || binding.ActorSessionID == "" {
+		writeErrorCode(ctx, http.StatusForbidden, "ai.authorization_changed", "AI conversation ownership is no longer valid")
+		return
+	}
+	if binding.ConversationProjectID != "" && binding.ConversationProjectID != projectID {
+		writeErrorCode(ctx, http.StatusForbidden, "ai.project_scope_mismatch", "AI conversation project scope does not match the requested project")
+		return
+	}
+
+	requestCtx := h.host.WithAIPlatformActor(ctx.Request.Context(), PlatformActor{
+		UserID:    binding.OwnerUserID,
+		SessionID: binding.ActorSessionID,
+		ProjectID: binding.ConversationProjectID,
+	})
+	restore := replaceRequestContext(ctx, requestCtx)
+	defer restore()
+	if _, _, ok := h.host.AuthorizeProject(ctx, requiredAction); !ok {
+		return
+	}
+
+	snapshot, err := h.resolveAITaskStatusInternal(ctx, projectID, taskType, taskID)
+	if err != nil {
+		if errors.Is(err, errAIProgressNotFound) {
+			writeErrorCode(ctx, http.StatusNotFound, "resource.not_found", "target task was not found")
+			return
+		}
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.progress.unavailable", "task status observation is unavailable")
+		return
+	}
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, snapshot)
+}
+
+func (h *Handler) resolveAITaskStatusInternal(ctx *gin.Context, projectID, taskType, taskID string) (aiTaskStatusInternal, error) {
+	switch taskType {
+	case "build_run":
+		var run model.BuildRun
+		if err := h.dbFor(ctx).First(&run, "id = ? AND project_id = ?", taskID, projectID).Error; err != nil {
+			return aiTaskStatusInternal{}, normalizeAIProgressDBError(err)
+		}
+		return buildRunTaskStatusInternal(run), nil
+	case "release":
+		var release model.Release
+		if err := h.dbFor(ctx).First(&release, "id = ? AND project_id = ?", taskID, projectID).Error; err != nil {
+			return aiTaskStatusInternal{}, normalizeAIProgressDBError(err)
+		}
+		return releaseTaskStatusInternal(release), nil
+	default:
+		return aiTaskStatusInternal{}, errAIProgressTypeInvalid
+	}
+}
+
+func buildRunTaskStatusInternal(run model.BuildRun) aiTaskStatusInternal {
+	taskStatus, terminal := normalizeAITaskStatus(run.Status)
+	return aiTaskStatusInternal{
+		TaskType:           "build_run",
+		TaskID:             run.ID,
+		ProjectID:          run.ProjectID,
+		ApplicationID:      strings.TrimSpace(run.ApplicationID),
+		DeploymentTargetID: strings.TrimSpace(run.DeploymentTargetID),
+		RawStatus:          strings.TrimSpace(run.Status),
+		TaskStatus:         taskStatus,
+		Terminal:           terminal,
+		FailureCode:        strings.TrimSpace(run.FailureCode),
+		ImageRef:           strings.TrimSpace(run.ImageRef),
+		ImageDigest:        strings.TrimSpace(run.ImageDigest),
+		SourceBranch:       strings.TrimSpace(run.SourceBranch),
+		SourceTag:          strings.TrimSpace(run.SourceTag),
+		SourceCommit:       strings.TrimSpace(run.SourceCommit),
+		StartedAt:          run.StartedAt,
+		FinishedAt:         run.FinishedAt,
+		UpdatedAt:          run.UpdatedAt,
+	}
+}
+
+func releaseTaskStatusInternal(release model.Release) aiTaskStatusInternal {
+	taskStatus, terminal := normalizeAITaskStatus(release.Status)
+	return aiTaskStatusInternal{
+		TaskType:           "release",
+		TaskID:             release.ID,
+		ProjectID:          release.ProjectID,
+		ApplicationID:      strings.TrimSpace(release.ApplicationID),
+		DeploymentTargetID: strings.TrimSpace(release.DeploymentTargetID),
+		RawStatus:          strings.TrimSpace(release.Status),
+		TaskStatus:         taskStatus,
+		Terminal:           terminal,
+		FailureCode:        strings.TrimSpace(release.FailureCode),
+		ImageRef:           strings.TrimSpace(release.ImageRef),
+		BuildRunID:         strings.TrimSpace(release.BuildRunID),
+		Revision:           release.Revision,
+		ReleaseType:        strings.TrimSpace(release.Type),
+		StartedAt:          release.StartedAt,
+		FinishedAt:         release.FinishedAt,
+		UpdatedAt:          release.UpdatedAt,
+	}
+}
+
+func normalizeAITaskStatus(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "queued", "pending":
+		return "pending", false
+	case "running", "progressing", "deploying", "building":
+		return "running", false
+	case "succeeded", "success", "completed", "ready":
+		return "succeeded", true
+	case "canceled", "cancelled":
+		return "canceled", true
+	default:
+		return "failed", true
+	}
+}
+
 func (h *Handler) GetAIProgress(ctx *gin.Context) {
 	if _, _, ok := h.host.AuthorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
@@ -226,26 +417,26 @@ func aiProgressErrorCode(err error) string {
 func buildRunProgress(run model.BuildRun) aiProgressSnapshot {
 	state := normalizeAIProgressState(run.Status)
 	steps := threeStageProgress("build", state)
-	return progressSnapshot(run.ID, "build_run", state, "ai.progress.build."+state, run.StartedAt, run.FinishedAt, run.UpdatedAt, steps)
+	return progressSnapshot(run.ID, "build_run", state, "ai.progress.build."+state, run.FailureCode, run.StartedAt, run.FinishedAt, run.UpdatedAt, steps)
 }
 
 func releaseProgress(release model.Release) aiProgressSnapshot {
 	state := normalizeAIProgressState(release.Status)
 	steps := threeStageProgress("release", state)
-	return progressSnapshot(release.ID, "release", state, "ai.progress.release."+state, release.StartedAt, release.FinishedAt, release.UpdatedAt, steps)
+	return progressSnapshot(release.ID, "release", state, "ai.progress.release."+state, release.FailureCode, release.StartedAt, release.FinishedAt, release.UpdatedAt, steps)
 }
 
 func hookRunProgress(run model.HookRun) aiProgressSnapshot {
 	state := normalizeAIProgressState(run.Status)
 	steps := threeStageProgress("hook", state)
-	return progressSnapshot(run.ID, "hook_run", state, "ai.progress.hook."+state, run.StartedAt, run.FinishedAt, run.UpdatedAt, steps)
+	return progressSnapshot(run.ID, "hook_run", state, "ai.progress.hook."+state, "", run.StartedAt, run.FinishedAt, run.UpdatedAt, steps)
 }
 
 // appTemplateInstallationProgress 描述未创建 Release 的安装（installNow=false）：资源已在安装事务内落库即完成。
 func appTemplateInstallationProgress(installation model.AppTemplateInstallation) aiProgressSnapshot {
 	const state = "succeeded"
 	steps := threeStageProgress("installation", state)
-	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, nil, terminalTime(state, installation.UpdatedAt), installation.UpdatedAt, steps)
+	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, "", nil, terminalTime(state, installation.UpdatedAt), installation.UpdatedAt, steps)
 }
 
 // appTemplateInstallationReleaseIDs 返回一次模板安装创建的全部 Release；多组件安装按组件记录汇总。
@@ -269,12 +460,16 @@ func appTemplateInstallationReleaseIDs(installation model.AppTemplateInstallatio
 func appTemplateReleaseProgress(installation model.AppTemplateInstallation, releases []model.Release) aiProgressSnapshot {
 	statePriority := map[string]int{"failed": 6, "cancelled": 5, "waiting_approval": 4, "waiting_input": 3, "running": 2, "queued": 1, "succeeded": 0}
 	state := "succeeded"
+	failureCode := ""
 	var startedAt, finishedAt *time.Time
 	updatedAt := installation.UpdatedAt
 	for _, release := range releases {
 		releaseState := normalizeAIProgressState(release.Status)
 		if statePriority[releaseState] > statePriority[state] {
 			state = releaseState
+		}
+		if releaseState == "failed" && failureCode == "" && strings.TrimSpace(release.FailureCode) != "" {
+			failureCode = strings.TrimSpace(release.FailureCode)
 		}
 		if release.StartedAt != nil && (startedAt == nil || release.StartedAt.Before(*startedAt)) {
 			startedAt = release.StartedAt
@@ -290,10 +485,10 @@ func appTemplateReleaseProgress(installation model.AppTemplateInstallation, rele
 		finishedAt = nil
 	}
 	steps := threeStageProgress("installation", state)
-	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, startedAt, finishedAt, updatedAt, steps)
+	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, failureCode, startedAt, finishedAt, updatedAt, steps)
 }
 
-func progressSnapshot(operationID, operationType, state, stageCode string, startedAt, finishedAt *time.Time, updatedAt time.Time, steps []aiProgressStep) aiProgressSnapshot {
+func progressSnapshot(operationID, operationType, state, stageCode, failureCode string, startedAt, finishedAt *time.Time, updatedAt time.Time, steps []aiProgressStep) aiProgressSnapshot {
 	progress := aiProgressValue{Mode: "indeterminate"}
 	if state == "succeeded" {
 		value := float64(100)
@@ -305,7 +500,11 @@ func progressSnapshot(operationID, operationType, state, stageCode string, start
 		StartedAt: startedAt, UpdatedAt: updatedAt, FinishedAt: finishedAt,
 	}
 	if state == "failed" {
-		result.Error = &aiProgressError{Code: "ai.progress.operation_failed"}
+		code := strings.TrimSpace(failureCode)
+		if code == "" {
+			code = "ai.progress.operation_failed"
+		}
+		result.Error = &aiProgressError{Code: code}
 	}
 	return result
 }

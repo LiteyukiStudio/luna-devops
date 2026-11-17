@@ -410,8 +410,15 @@ function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBloc
     return <RunStatusBlock block={block} />
   if (block.type === 'context_compacted')
     return <AIContextCompactedBadge />
-  if (block.role === 'user')
-    return null
+  if (block.role === 'user') {
+    return (
+      <div className="flex min-w-0 max-w-full justify-end" data-ai-supplemental-user-message>
+        <div className={cn('min-w-0 max-w-[85%] whitespace-pre-wrap break-words rounded-container bg-primary-subtle px-3.5 py-2 text-[13px] leading-5.5 text-foreground', page && 'max-w-[88%] px-4 py-2.5 text-base leading-6')} data-ai-user-bubble>
+          {block.text}
+        </div>
+      </div>
+    )
+  }
   return (
     <AIMarkdown className={cn('min-w-0 max-w-full text-foreground', page && 'text-base leading-6')}>
       {block.text}

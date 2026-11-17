@@ -286,4 +286,35 @@ describe('ai assistant composer keyboard submission', () => {
     fireEvent.click(screen.getByRole('button', { name: i18next.t('aiAssistant.stop') }))
     expect(onCancel).toHaveBeenCalledOnce()
   })
+
+  it('shows transparent background task waiting status and keeps Stop enabled when waitingExternal is true', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const onCancel = vi.fn()
+    const { container } = render(
+      <AIAssistantComposer
+        activeRun
+        canceling={false}
+        canCancel
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingExternal
+        waitingInput={false}
+        onCancel={onCancel}
+        onDraftChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    const statusBar = container.querySelector('[data-ai-waiting-external]')
+    expect(statusBar).not.toBeNull()
+    expect(statusBar).toHaveTextContent('正在等待后台构建/发布任务完成，完成后将自动继续下一步…')
+    expect(container.querySelector('[data-ai-composer-state="waiting_external"]')).not.toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: i18next.t('aiAssistant.stop') }))
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
 })

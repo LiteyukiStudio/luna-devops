@@ -15,6 +15,10 @@ import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 import { testRemoteConfigSource, testRemoteProviderConfig } from "./support/remote-config.js"
+import { ModelRuntime } from "../src/model-runtime.js"
+import { DeterministicProvider } from "../src/provider/deterministic.js"
+import { testRegistry } from "./support/model-tool-registry.js"
+import { testExecutor } from "./support/run-executor.js"
 
 type AIEvent = ReturnType<typeof presentEventForRun>
 type AITimeline = NonNullable<Awaited<ReturnType<typeof presentTimeline>>>
@@ -108,7 +112,18 @@ describe("internal API", () => {
     })
 
     expect(response.statusCode).toBe(202)
-    expect(response.json()).toMatchObject({ runId, state: "failed" })
+    expect(response.json()).toMatchObject({ runId, state: "queued" })
+    // HTTP 接收阶段严禁同步调用外部平台工具；由 RunExecutor 异步接管执行。
+    expect(client.calls).toHaveLength(0)
+
+    const executor = testExecutor(
+      repository,
+      new ModelRuntime(new DeterministicProvider(), testRegistry()),
+      { catalog, tools, runtimeConfig: remote.source },
+    )
+    await executor.runOnce()
+
+    expect(client.calls).toHaveLength(1)
     expect(await repository.getRun("usr_direct_missing_id", runId)).toMatchObject({
       status: "failed",
       errorCode: "ai.verification_inconclusive",
@@ -342,7 +357,81 @@ describe("internal API", () => {
 
     expect((await request(`${withinLimit}猫`)).statusCode).toBe(400)
     expect((await request(withinLimit)).statusCode).toBe(202)
-    expect((await repository.getExecutionInput(created.run.id))?.input).toBe(`开始\n${withinLimit}`)
+    const executionInput = await repository.getExecutionInput(created.run.id)
+    expect(executionInput?.input).toBe("开始")
+    expect(executionInput?.toolInteractions).toContainEqual(expect.objectContaining({
+      type: "user_message",
+      status: "completed",
+      content: { parts: [{ type: "text", text: withinLimit }] },
+    }))
+    await app.close()
+  })
+
+  it("replays more than 256 live SSE deltas cleanly without truncation or subscriber overflow", async () => {
+    const repository = new TestRepository()
+    const streamBus = new InMemoryRunStreamBus(repository)
+    const ownerUserId = "usr_sse_large_replay"
+    const conversation = await repository.createConversation(ownerUserId, "large replay")
+    const created = await repository.createTurn(ownerUserId, {
+      conversationId: conversation.id,
+      input: "输出长日志",
+      pageContext: {},
+      idempotencyKey: "sse-large-replay",
+    })
+    const claimed = await repository.claimNextQueuedRun()
+    if (!claimed) throw new Error("missing claimed run")
+    const session = await streamBus.open(created.run.id, created.turn.id, claimed.rowVersion)
+    const itemId = "aiitm_large_delta"
+    await session.appendItemWithEvent({
+      id: itemId,
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "assistant_message",
+      status: "streaming",
+      content: { parts: [{ type: "text", text: "0" }] },
+    }, "content.delta", {
+      itemId,
+      contentPartId: `${itemId}:0`,
+      partIndex: 0,
+      delta: "0",
+    })
+    for (let index = 1; index < 320; index += 1) {
+      await session.updateItemWithEvent(
+        itemId,
+        "streaming",
+        { parts: [{ type: "text", text: `chunk-${index}` }] },
+        "content.delta",
+        {
+          itemId,
+          contentPartId: `${itemId}:0`,
+          partIndex: 0,
+          delta: "x",
+        },
+      )
+    }
+    await session.commitTerminal("completed")
+    await repository.appendEvent(created.run.id, "run.postprocess.completed", {})
+
+    const app = buildTestServer({
+      config: loadConfig({ NODE_ENV: "test" }),
+      repository,
+      requestVerifier: new DevelopmentRequestVerifier(),
+      streamBus,
+    })
+    const sseResponse = await app.inject({
+      method: "GET",
+      url: `/internal/v1/runs/${created.run.id}/events?after=0&stream=true`,
+      headers: {
+        "x-luna-dev-user": ownerUserId,
+        "accept": "text/event-stream",
+      },
+    })
+    expect(sseResponse.statusCode).toBe(200)
+    const deltaMatches = sseResponse.body.match(/event: content\.delta/g) ?? []
+    expect(deltaMatches.length).toBe(320)
+    expect(sseResponse.body).toContain("event: run.completed")
+    expect(sseResponse.body).toContain("event: run.stream.completed")
+    expect(sseResponse.body).not.toContain("ai.stream_subscriber_slow")
     await app.close()
   })
   it("rejects an invalid immutable model snapshot", async () => {
@@ -649,6 +738,118 @@ describe("internal API", () => {
     expect(response.body).toContain("event: run.queued")
     expect(response.body).toContain("\"version\":2")
     expect(response.body).not.toContain("\"items\"")
+    await app.close()
+  })
+
+  it("cancels active runs before deleting a conversation and preserves recorded model usages", async () => {
+    const cancelExecutingRun = vi.fn(async () => false)
+    const cancelRun = vi.fn(async () => true)
+    const repository = new TestRepository()
+    const app = buildTestServer({
+      config: loadConfig({ NODE_ENV: "test" }),
+      repository,
+      requestVerifier: new DevelopmentRequestVerifier(),
+      cancelExecutingRun,
+      cancelRun,
+    })
+    const headers = { "x-luna-dev-user": "usr_delete_active" }
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/internal/v1/conversations",
+      headers,
+      payload: { title: "Delete active", modelId: "aimod_test" },
+    })
+    const conversationId = conversation.json<{ id: string }>().id
+    const created = await app.inject({
+      method: "POST",
+      url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "delete-active-turn-1" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "stream" }] }, pageContext: {} },
+    })
+    const runId = created.json<AITurnCreated>().runId
+    await repository.recordReportedModelUsage({
+      runId,
+      ownerUserId: "usr_delete_active",
+      operation: "assistant",
+      usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 },
+      callType: "stream",
+    })
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/internal/v1/conversations/${conversationId}`,
+      headers,
+    })
+    expect(deleted.statusCode).toBe(204)
+    expect(cancelExecutingRun).toHaveBeenCalledWith(runId)
+    expect(cancelRun).toHaveBeenCalledWith(runId)
+    expect(repository.recordedModelUsages()).toHaveLength(1)
+    await app.close()
+  })
+
+  it("rejects new turns with 422 ai.wallet_balance_insufficient when available credits are non-positive", async () => {
+    const { app, repository } = fixture()
+    const headers = { "x-luna-dev-user": "usr_broke" }
+    repository.setWalletBalance("usr_broke", 0)
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/internal/v1/conversations",
+      headers,
+      payload: { title: "No credits", modelId: "aimod_test" },
+    })
+    const conversationId = conversation.json<{ id: string }>().id
+    const turn = await app.inject({
+      method: "POST",
+      url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "broke-turn-1" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "hello" }] }, pageContext: {} },
+    })
+    expect(turn.statusCode).toBe(422)
+    expect(turn.json()).toMatchObject({ error: { code: "ai.wallet_balance_insufficient" } })
+    await app.close()
+  })
+
+  it("[P1-4] falls back to repository.cancelRun when cancelExecutingRun races with transition into waiting_external", async () => {
+    const repository = new TestRepository()
+    const headers = { "x-luna-dev-user": "usr_cancel_race" }
+    let targetRunId = ""
+    const cancelExecutingRun = vi.fn(async () => {
+      // 模拟 RunLoop 刚落入 waiting_external 释放控制器，未写 canceled 终态
+      await repository.updateRun(targetRunId, "queued", "waiting_external", {
+        wakeAt: new Date(Date.now() + 5_000).toISOString(),
+      })
+      return true
+    })
+    const app = buildTestServer({
+      config: loadConfig({ NODE_ENV: "test" }),
+      repository,
+      requestVerifier: new DevelopmentRequestVerifier(),
+      cancelExecutingRun,
+      cancelRun: async () => true,
+    })
+    const conversation = await app.inject({
+      method: "POST",
+      url: "/internal/v1/conversations",
+      headers,
+      payload: { title: "Cancel race", modelId: "aimod_test" },
+    })
+    const conversationId = conversation.json<{ id: string }>().id
+    const created = await app.inject({
+      method: "POST",
+      url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "cancel-race-1" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "wait" }] }, pageContext: {} },
+    })
+    targetRunId = created.json<AITurnCreated>().runId
+
+    const canceled = await app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${targetRunId}/cancel`,
+      headers,
+    })
+    expect(canceled.statusCode).toBe(202)
+    expect(canceled.json()).toMatchObject({ status: "canceled" })
+    expect(await repository.getRun("usr_cancel_race", targetRunId)).toMatchObject({ status: "canceled" })
     await app.close()
   })
 })

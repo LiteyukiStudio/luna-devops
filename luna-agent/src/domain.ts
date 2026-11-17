@@ -2,7 +2,7 @@ import type { RemoteProviderConfig } from "./provider/config-client.js"
 import type { RuntimeSettings } from "./runtime-settings.js"
 
 export const runStatuses = [
-	"queued", "running", "waiting_approval", "waiting_input",
+	"queued", "running", "waiting_approval", "waiting_input", "waiting_external",
   "completed", "failed", "canceled", "expired", "interrupted",
 ] as const
 export type RunStatus = typeof runStatuses[number]
@@ -66,7 +66,7 @@ export type ConversationHistoryEntry = {
 
 export type ConversationToolInteraction = {
   itemId: string
-  type: "tool_call" | "tool_result" | "reasoning_summary"
+  type: "tool_call" | "tool_result" | "reasoning_summary" | "progress" | "user_message"
   status: TimelineItem["status"]
   content: Record<string, unknown>
 }
@@ -113,6 +113,7 @@ export type Run = {
   createdAt: string
   startedAt?: string
   completedAt?: string
+  wakeAt?: string
   errorCode?: string
   model?: AIModelSnapshot
   /** 当前 Run 最近一次主回答模型调用的官方 prompt_tokens 快照。 */
@@ -155,6 +156,54 @@ export type RunCheckpoint = {
   updatedAt: string
 }
 
+export type RunPendingToolCall = {
+  id: string
+  operationId: string
+  arguments: Record<string, unknown>
+  argumentError?: {
+    code: "invalid_json"
+    message: string
+  }
+}
+
+export type RunWaitingTaskState = {
+  itemId: string
+  toolCallId: string
+  projectId: string
+  taskType: "build_run" | "release"
+  taskId: string
+  timeoutSeconds: number
+  startedAt: string
+  deadlineAt: string
+  pollCount: number
+}
+
+export type RunCardGenerationState = {
+  operationId: "present_card" | "request_input" | "request_choice"
+  itemId: string
+  toolCallId: string
+  modelCallId?: string
+  batchId?: string
+  timelineIndex: number
+  generationId: string
+  placeholderArguments: {
+    schemaVersion: 1
+    generationId: string
+    title?: string
+    description?: string
+    placement: "inline" | "turn_end"
+  }
+  attempt: number
+  maxAttempts: number
+  status: "streaming" | "completed" | "failed"
+  issues?: Array<{
+    code: string
+    path: string
+    message: string
+    expected?: string
+  }>
+}
+
 export type RunCheckpointState = {
   /** 循环保护计数；executed 由 RunCheckpoint.toolCallCount 承载，避免两处事实。 */
   loopGuard?: {
@@ -166,14 +215,19 @@ export type RunCheckpointState = {
   protocolRepairCount?: number
   /** 平台工具参数修复次数，按 operationId 计数。 */
   argumentRepairAttempts?: Record<string, number>
+  /** 当前活跃的交互卡片占位与修复进度。 */
+  cardGeneration?: RunCardGenerationState
+  /** 当前回合是否已耗尽交互卡片修复次数（仅阻断继续调用卡片工具，不杀死非卡片工具）。 */
+  cardRepairExhausted?: boolean
   /** phase=awaiting_approval 时等待审批的持久化 tool call id。 */
   pendingToolCallId?: string
+  /** phase=waiting_external 时持久化挂起的后台任务等待状态。 */
+  waitingTask?: RunWaitingTaskState
+  /** 同批次工具调用在暂停点之后的剩余未执行队列与批次标识。 */
+  pendingBatchId?: string
+  pendingBatchCalls?: RunPendingToolCall[]
   /** phase=finalizing 时已决定但尚未提交的最终答复；终态批次只存在于流式会话内存中。 */
   finalOutput?: string
-  /** phase=verification/waiting_external 时尚未完成的权威回读。 */
-  pendingVerifications?: RunToolVerification[]
-  /** 已发生但尚未被成功权威回读解决的副作用或工具失败。 */
-  completionBlockers?: RunCompletionBlocker[]
 }
 
 export type RunToolVerification = {
@@ -198,14 +252,6 @@ export type RunToolVerification = {
     successStatuses?: string[]
     failureStatuses?: string[]
   }
-}
-
-export type RunCompletionBlocker = {
-  toolCallId: string
-  idempotencyKey: string
-  operationId: string
-  reason: "verification_required" | "tool_failed"
-  errorCode?: string
 }
 
 /** Executor 对 checkpoint 的一次推进；expectedRevision=0 表示首次创建。 */
@@ -277,6 +323,10 @@ export type CreateTurn = {
   conversationId: string
   input: string
   pageContext: Record<string, unknown>
+  directToolAction?: {
+    operationId: string
+    arguments: Record<string, unknown>
+  }
   traceContext?: Record<string, string>
   idempotencyKey: string
   preallocatedRunId?: string

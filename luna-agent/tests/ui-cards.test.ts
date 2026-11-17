@@ -333,7 +333,7 @@ describe("interaction card tool", () => {
     }).success).toBe(true)
   })
 
-  it("enforces change-review as interactive and result as presentation", () => {
+  it("allows change-review in presentation mode for present_card and enforces result as presentation", () => {
     expect(createInteractionCardsInput.safeParse({
       schemaVersion: 1,
       title: "Change review",
@@ -343,7 +343,7 @@ describe("interaction card tool", () => {
         id: "change-review",
         presentation: { variant: "plan", title: "Review change" },
       }],
-    }).success).toBe(false)
+    }).success).toBe(true)
 
     expect(createInteractionCardsInput.safeParse({
       schemaVersion: 1,

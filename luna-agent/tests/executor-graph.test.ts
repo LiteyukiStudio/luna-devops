@@ -37,41 +37,42 @@ describe("Run 状态图", () => {
     }
   })
 
-  it("卡片修复耗尽后只允许最终答复或空答复", () => {
+  it("卡片修复耗尽后不误杀非卡片工具，继续交由工具步按操作名精准拦截卡片调用", () => {
     expect(decisionAction({ kind: "final", text: "卡片未能生成" }, { protocolRepairCount: 0, cardRepairExhausted: true }))
       .toEqual({ type: "finalize", text: "卡片未能生成" })
     expect(decisionAction(toolCalls, { protocolRepairCount: 0, cardRepairExhausted: true }))
-      .toEqual({ type: "fail", errorCode: "ai.interaction_card_schema_invalid" })
+      .toEqual({ type: "execute_tools", calls: toolCalls.calls })
     expect(decisionAction({ kind: "protocol_error", code: "missing_tool_calls" }, { protocolRepairCount: 0, cardRepairExhausted: true }))
       .toEqual({ type: "fail", errorCode: "ai.model_protocol_violation" })
   })
 
-  it("工具批次只返回继续、等待审批或完成三种控制流", () => {
+  it("工具批次只返回继续、等待审批、等待外部任务或完成四种控制流", () => {
     expect(toolBatchAction({ kind: "continue" })).toEqual({ type: "continue_model" })
     expect(toolBatchAction({ kind: "waiting_approval", toolCallId: "aitool_1" }))
       .toEqual({ type: "waiting_approval", toolCallId: "aitool_1" })
     expect(toolBatchAction({
-      kind: "verification",
-      verifications: [{
-        runId: "airun_1",
-        sourceToolCallId: "aitool_1",
-        sourceOperationId: "triggerBuildRun",
-        operationId: "getBuildRun",
-        family: "build_run",
-        expectation: "present",
-        arguments: { projectId: "prj_1", runId: "bldr_1" },
-        externalOperationId: "bldr_1",
-        attempts: 0,
-      }],
-    })).toEqual({ type: "verify" })
+      kind: "waiting_external",
+      wakeAt: "2026-01-01T00:00:02.000Z",
+      waitingTask: {
+        itemId: "aiitm_1",
+        toolCallId: "call_1",
+        projectId: "prj_1",
+        taskType: "build_run",
+        taskId: "bldr_1",
+        timeoutSeconds: 60,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        deadlineAt: "2026-01-01T00:01:00.000Z",
+        pollCount: 0,
+      },
+    })).toEqual({ type: "waiting_external" })
     expect(toolBatchAction({ kind: "complete" })).toEqual({ type: "complete" })
   })
 
   it("checkpoint 恢复计划映射为续跑动作", () => {
     expect(resumeAction({ kind: "model" }, "model")).toEqual({ type: "call_model" })
     expect(resumeAction({ kind: "settle_tool_batch" }, "tool_execution")).toEqual({ type: "settle_tools" })
-    expect(resumeAction({ kind: "verify" }, "verification")).toEqual({ type: "verify" })
-    expect(resumeAction({ kind: "verify" }, "waiting_external")).toEqual({ type: "verify" })
+    expect(resumeAction({ kind: "model" }, "verification")).toEqual({ type: "call_model" })
+    expect(resumeAction({ kind: "model" }, "waiting_external")).toEqual({ type: "call_model" })
     expect(resumeAction({ kind: "await_approval", toolCallId: "aitool_1" }, "awaiting_approval"))
       .toEqual({ type: "waiting_approval", toolCallId: "aitool_1" })
     expect(resumeAction({ kind: "finalize", finalOutput: "已决定" }, "finalizing"))
@@ -83,8 +84,10 @@ describe("Run 状态图", () => {
     expect(() => assertGraphTransition("model", { type: "execute_tools", calls: [] })).not.toThrow()
     expect(() => assertGraphTransition("tool_execution", { type: "continue_model" })).not.toThrow()
     expect(() => assertGraphTransition("tool_execution", { type: "settle_tools" })).not.toThrow()
-    expect(() => assertGraphTransition("verification", { type: "verify" })).not.toThrow()
-    expect(() => assertGraphTransition("waiting_external", { type: "verify" })).not.toThrow()
+    expect(() => assertGraphTransition("tool_execution", { type: "waiting_external" })).not.toThrow()
+    expect(() => assertGraphTransition("verification", { type: "call_model" })).not.toThrow()
+    expect(() => assertGraphTransition("waiting_external", { type: "call_model" })).not.toThrow()
+    expect(() => assertGraphTransition("waiting_external", { type: "waiting_external" })).not.toThrow()
     expect(() => assertGraphTransition("awaiting_input", { type: "call_model" })).not.toThrow()
     expect(() => assertGraphTransition("awaiting_approval", { type: "waiting_approval", toolCallId: "aitool_1" })).not.toThrow()
     expect(() => assertGraphTransition("finalizing", { type: "finalize", text: "完成" })).not.toThrow()

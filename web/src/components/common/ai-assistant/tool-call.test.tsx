@@ -235,4 +235,60 @@ describe('ai assistant tool status icon', () => {
 
     expect(container.querySelector('[data-ai-tool-intervention]')).not.toBeInTheDocument()
   })
+
+  it('renders wait_for_task visibly with target task label, live progress while running, and terminal taskStatus badge', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container, rerender } = render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('running'),
+          operationId: 'wait_for_task',
+          visibility: 'normal',
+          arguments: { projectId: 'prj_1', taskType: 'build_run', taskId: 'bldr_99' },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+
+    expect(container.querySelector('[data-ai-tool-summary]')).toHaveTextContent('等待后台任务完成 · 构建 bldr_99')
+    expect(container.querySelector('[data-ai-wait-for-task-progress]')).not.toBeNull()
+
+    rerender(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('succeeded'),
+          operationId: 'wait_for_task',
+          visibility: 'normal',
+          arguments: { projectId: 'prj_1', taskType: 'build_run', taskId: 'bldr_99' },
+          result: {
+            summaryKey: 'aiAssistant.resultAvailable',
+            data: { taskStatus: 'failed', timedOut: false },
+          },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+
+    expect(container.querySelector('[data-ai-wait-for-task-progress]')).toBeNull()
+    expect(container.querySelector('[data-ai-tool-summary]')).toHaveTextContent('失败')
+  })
+
+  it('[P2-3] rejects invalid path-segment projectId or taskId in wait_for_task live progress binding', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container } = render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('running'),
+          operationId: 'wait_for_task',
+          visibility: 'normal',
+          arguments: { projectId: '../etc', taskType: 'build_run', taskId: 'bldr_99' },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+    expect(container.querySelector('[data-ai-wait-for-task-progress]')).toBeNull()
+  })
 })

@@ -85,16 +85,34 @@ describe('aI assistant state', () => {
     expect(second.blocks[0]).toMatchObject({ text: 'hello world' })
   })
 
-  it('keeps the run active while an external operation is being verified', () => {
-    const state = reduceAIEvent(emptyAIAssistantState, event({
+  it('preserves waiting_external status, target task metadata, and rowVersion updates across lifecycle events', () => {
+    const waiting = reduceAIEvent(emptyAIAssistantState, event({
       type: 'run.waiting_external',
       payload: {
-        operationId: 'getBuildRun',
-        externalOperationId: 'build-1',
+        projectId: 'prj_1',
+        taskType: 'build_run',
+        taskId: 'bldr_1',
+        rowVersion: 4,
       },
     }))
 
-    expect(state.runStatuses['run-1']).toBe('running')
+    expect(waiting.runStatuses['run-1']).toBe('waiting_external')
+    expect(waiting.waitingExternalByRun['run-1']).toEqual({
+      projectId: 'prj_1',
+      taskType: 'build_run',
+      taskId: 'bldr_1',
+    })
+    expect(waiting.runExpectedVersions['run-1']).toBe(4)
+
+    const requeued = reduceAIEvent(waiting, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      type: 'run.requeued',
+      payload: { rowVersion: 5 },
+    }))
+    expect(requeued.runStatuses['run-1']).toBe('queued')
+    expect(requeued.waitingExternalByRun['run-1']).toBeUndefined()
+    expect(requeued.runExpectedVersions['run-1']).toBe(5)
   })
 
   it('projects real message and thinking delta frames before authoritative completion overwrites them', () => {
@@ -633,5 +651,71 @@ describe('aI assistant state', () => {
     expect(nextRun.runUsage['run-1']).toEqual({ status: 'reported', promptTokens: 1000, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 })
     expect(nextRun.runUsage['run-2']).toEqual({ status: 'unavailable' })
     expect(nextRun.contextUsage).toEqual(first.contextUsage)
+  })
+
+  it('[P1-2] mergeTimelineSnapshot keeps Math.max expectedVersion, respects newer event sequences, and prunes stale waitingExternalByRun', () => {
+    const liveWaiting = reduceAIEvent(
+      {
+        ...emptyAIAssistantState,
+        runStatuses: { 'run-1': 'running' },
+        runExpectedVersions: { 'run-1': 3 },
+        lastEventSequences: { 'run-1': 4 },
+      },
+      event({
+        eventId: 'event-5',
+        eventSequence: 5,
+        runId: 'run-1',
+        turnId: 'turn-1',
+        type: 'run.waiting_external',
+        item: undefined,
+        payload: { projectId: 'prj_1', taskType: 'build_run', taskId: 'bldr_1', timeoutSeconds: 60 },
+      }),
+    )
+    expect(liveWaiting.waitingExternalByRun['run-1']).toMatchObject({ taskId: 'bldr_1' })
+
+    // 1) 快照已推进到 waiting_input (expectedVersion=8, after=9)，绝不能被内存中旧 expectedVersion=3 或旧 waitingExternal 覆盖
+    const newerWaitingInputSnapshot: AITimeline = {
+      pageInfo: { hasOlder: false },
+      conversation: { id: 'conversation-1', title: 't', titleSource: 'default', status: 'active' },
+      eventCursors: [{ runId: 'run-1', after: 9 }],
+      turns: [{
+        id: 'turn-1',
+        turnIndex: 0,
+        status: 'waiting_input',
+        input: { id: 'turn-1:input', type: 'user_message', createdAt: '2026-11-17T00:00:00Z', parts: [{ id: 'p0', partIndex: 0, type: 'text', text: 'deploy' }] },
+        selectedRun: {
+          id: 'run-1',
+          runIndex: 0,
+          status: 'waiting_input',
+          expectedVersion: 8,
+          items: [],
+        },
+      }],
+    }
+    const mergedNewer = mergeTimelineSnapshot(liveWaiting, newerWaitingInputSnapshot)
+    expect(mergedNewer.runExpectedVersions['run-1']).toBe(8)
+    expect(mergedNewer.runStatuses['run-1']).toBe('waiting_input')
+    expect(mergedNewer.waitingExternalByRun['run-1']).toBeUndefined()
+
+    // 2) 晚到的旧快照（after=2, status=queued, expectedVersion=2）绝不能将已推进到 seq=5 的 live 状态倒退回去
+    const staleQueuedSnapshot: AITimeline = {
+      ...newerWaitingInputSnapshot,
+      eventCursors: [{ runId: 'run-1', after: 2 }],
+      turns: [{
+        ...newerWaitingInputSnapshot.turns[0]!,
+        status: 'queued',
+        selectedRun: {
+          id: 'run-1',
+          runIndex: 0,
+          status: 'queued',
+          expectedVersion: 2,
+          items: [],
+        },
+      }],
+    }
+    const mergedStale = mergeTimelineSnapshot(liveWaiting, staleQueuedSnapshot)
+    expect(mergedStale.runExpectedVersions['run-1']).toBe(3)
+    expect(mergedStale.runStatuses['run-1']).toBe('waiting_external')
+    expect(mergedStale.waitingExternalByRun['run-1']).toMatchObject({ taskId: 'bldr_1' })
   })
 })

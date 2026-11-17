@@ -5,21 +5,15 @@ export interface RuntimeSettings {
   runTimeoutMs: number
   agentConcurrentRuns: number
   userConcurrentRuns: number
-  // Agent 固定不变量：模型循环与执行预算。
+  // Agent 模型循环与执行预算（支持环境变量显式覆盖）。
   assistantMaxOutputTokens: number
   maxModelSteps: number
   runMaxToolCalls: number
-  // Agent 固定不变量：工具结果与卡片预算。
-  toolResultPayloadBudget: number
+  // Agent 固定不变量：卡片修复与结构化摘要参数。
   maxCardRepairAttempts: number
-  // Agent 固定不变量：上下文与压缩预算。
   contextRecentTurnCount: number
-  contextMaxUncompressedTurnCount: number
   contextMaxCompressionTurnsPerCompile: number
   contextSummaryMaxOutputTokens: number
-  contextMaxHistoryPayloadBytes: number
-  contextMaxSummaryPayloadBytes: number
-  contextMaxContinuationPayloadBytes: number
 }
 
 export type RemoteRuntimeSettings = Pick<RuntimeSettings,
@@ -30,6 +24,8 @@ export type RemoteRuntimeSettings = Pick<RuntimeSettings,
   | "userConcurrentRuns"
 >
 
+export type LocalBudgetOverrides = Partial<Pick<RuntimeSettings, "maxModelSteps" | "runMaxToolCalls">>
+
 export const defaultRuntimeSettings: RuntimeSettings = Object.freeze({
   providerTimeoutMs: 300_000,
   maxRequestRetries: 5,
@@ -37,17 +33,12 @@ export const defaultRuntimeSettings: RuntimeSettings = Object.freeze({
   agentConcurrentRuns: 10,
   userConcurrentRuns: 10,
   assistantMaxOutputTokens: 64 * 1024,
-  maxModelSteps: 256,
-  runMaxToolCalls: 256,
-  toolResultPayloadBudget: 512 * 1024,
+  maxModelSteps: 32,
+  runMaxToolCalls: 64,
   maxCardRepairAttempts: 2,
   contextRecentTurnCount: 16,
-  contextMaxUncompressedTurnCount: 32,
   contextMaxCompressionTurnsPerCompile: 32,
   contextSummaryMaxOutputTokens: 16 * 1024,
-  contextMaxHistoryPayloadBytes: 4 * 1024 * 1024,
-  contextMaxSummaryPayloadBytes: 512 * 1024,
-  contextMaxContinuationPayloadBytes: 1024 * 1024,
 })
 
 export function runtimeSettingsSnapshot(settings: RuntimeSettings): RuntimeSettings {
@@ -58,11 +49,26 @@ export function runtimeSettingsSnapshot(settings: RuntimeSettings): RuntimeSetti
     runTimeoutMs: settings.runTimeoutMs,
     agentConcurrentRuns: settings.agentConcurrentRuns,
     userConcurrentRuns: settings.userConcurrentRuns,
+    assistantMaxOutputTokens: settings.assistantMaxOutputTokens,
+    maxModelSteps: settings.maxModelSteps,
+    runMaxToolCalls: settings.runMaxToolCalls,
+    maxCardRepairAttempts: settings.maxCardRepairAttempts,
+    contextRecentTurnCount: settings.contextRecentTurnCount,
+    contextMaxCompressionTurnsPerCompile: settings.contextMaxCompressionTurnsPerCompile,
+    contextSummaryMaxOutputTokens: settings.contextSummaryMaxOutputTokens,
   })
 }
 
-export function runtimeSettingsFromRemote(settings: RemoteRuntimeSettings): RuntimeSettings {
-  return runtimeSettingsSnapshot({ ...defaultRuntimeSettings, ...settings })
+export function runtimeSettingsFromRemote(
+  settings: RemoteRuntimeSettings,
+  overrides: LocalBudgetOverrides = {},
+): RuntimeSettings {
+  return runtimeSettingsSnapshot({
+    ...defaultRuntimeSettings,
+    ...settings,
+    ...(overrides.maxModelSteps !== undefined ? { maxModelSteps: overrides.maxModelSteps } : {}),
+    ...(overrides.runMaxToolCalls !== undefined ? { runMaxToolCalls: overrides.runMaxToolCalls } : {}),
+  })
 }
 
 // 平台内部时序参数：保持与平台配置无关，无需暴露为可配置项。

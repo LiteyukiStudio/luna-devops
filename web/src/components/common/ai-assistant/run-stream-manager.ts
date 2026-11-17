@@ -7,6 +7,7 @@ export const AI_EVENT_TYPES = [
   'run.started',
   'run.running',
   'run.queued',
+  'run.requeued',
   'run.waiting_approval',
   'run.waiting_input',
   'run.waiting_external',
@@ -24,6 +25,7 @@ export const AI_EVENT_TYPES = [
   'tool.progress',
   'tool.completed',
   'tool.failed',
+  'tool.rejected',
   'approval.required',
   'approval.resolved',
   'model.completed',
@@ -79,17 +81,20 @@ interface ActiveStream {
   state: AIRunStreamState
   outputIdleTimer?: ReturnType<typeof setTimeout>
   stalledTimer?: ReturnType<typeof setTimeout>
+  completionTimer?: ReturnType<typeof setTimeout>
 }
 
 interface AIRunStreamManagerOptions {
   now?: () => number
   outputIdleAfterMs?: number
   stalledAfterMs?: number
+  completionConvergenceMs?: number
 }
 
 const defaultOutputIdleAfterMs = 2_000
 // Agent 默认每 15 秒发送一次心跳；预留超过两个心跳周期的恢复窗口。
 const defaultStalledAfterMs = 35_000
+const defaultCompletionConvergenceMs = 6_000
 
 function parseAIEvent(data: string): AIEvent {
   const value = JSON.parse(data) as unknown
@@ -124,6 +129,7 @@ export class AIRunStreamManager {
   private readonly now: () => number
   private readonly outputIdleAfterMs: number
   private readonly stalledAfterMs: number
+  private readonly completionConvergenceMs: number
   private enabled: boolean
 
   constructor(
@@ -138,6 +144,7 @@ export class AIRunStreamManager {
     this.now = options.now ?? Date.now
     this.outputIdleAfterMs = options.outputIdleAfterMs ?? defaultOutputIdleAfterMs
     this.stalledAfterMs = options.stalledAfterMs ?? defaultStalledAfterMs
+    this.completionConvergenceMs = options.completionConvergenceMs ?? defaultCompletionConvergenceMs
   }
 
   setEnabled(enabled: boolean) {
@@ -207,10 +214,15 @@ export class AIRunStreamManager {
         const receivedAt = this.now()
         const result = this.callbacks.onEvent(event)
         const accepted = result?.accepted ?? true
+        const nextStatus = terminalRunEvents.has(event.type) && accepted && event.type !== 'run.completed'
+          ? 'terminal'
+          : event.type === 'run.waiting_external'
+            ? 'open'
+            : 'streaming'
         this.updateState(stream, {
           after: accepted ? Math.max(stream.state.after, event.eventSequence) : stream.state.after,
           lastEventAt: receivedAt,
-          status: terminalRunEvents.has(event.type) && accepted && event.type !== 'run.completed' ? 'terminal' : 'streaming',
+          status: nextStatus,
         })
         if (result?.desynced) {
           this.recoverSequenceGap(stream, event)
@@ -219,12 +231,18 @@ export class AIRunStreamManager {
         if (terminalRunEvents.has(event.type) && accepted) {
           if (event.type === 'run.completed') {
             this.clearTimers(stream)
+            stream.completionTimer = setTimeout(() => {
+              if (!this.isCurrent(subscription.runId, source) || stream.state.status === 'terminal')
+                return
+              this.finish(subscription.runId)
+            }, this.completionConvergenceMs)
             return
           }
           this.finish(event.runId)
           return
         }
-        this.scheduleOutputIdle(stream)
+        if (event.type !== 'run.waiting_external')
+          this.scheduleOutputIdle(stream)
         this.scheduleStalled(stream)
       }
       catch {
@@ -397,6 +415,8 @@ export class AIRunStreamManager {
       clearTimeout(stream.outputIdleTimer)
     if (stream.stalledTimer)
       clearTimeout(stream.stalledTimer)
+    if (stream.completionTimer)
+      clearTimeout(stream.completionTimer)
   }
 
   private notify() {

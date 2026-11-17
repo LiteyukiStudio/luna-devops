@@ -1,4 +1,4 @@
-import type { ContextCompiler, ContextCompilerOptions } from "./context/compiler.js"
+import type { CompressionTrigger, ContextCompiler, ContextCompilerOptions } from "./context/compiler.js"
 import type { AIModelSnapshot, ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "./domain.js"
 import type {
   ModelEvent,
@@ -14,6 +14,8 @@ import { systemPromptFor } from "./prompt/system.js"
 import { renameConversationTool } from "./tools/conversation-title.js"
 import { isProviderContextLengthError } from "./provider/provider-error.js"
 import type { RemoteProviderConfig } from "./provider/config-client.js"
+import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "./runtime-settings.js"
+import { historyMessagesFromEntries, turnPromptMessages } from "./context/model-messages.js"
 
 /** ModelRuntime 在 provider 事件之上额外透出的事件。
  *  当前用于让上层在压缩实际发生时向时间线写入一条用户可见的系统提示。 */
@@ -22,10 +24,8 @@ export type ModelRuntimeEvent = ModelEvent
       type: "context.compacted"
       summarizedThroughTurnIndex: number
       sourceTurnCount: number
-      trigger: "fixed_threshold" | "context_error"
+      trigger: CompressionTrigger
     }
-import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "./runtime-settings.js"
-import { boundContinuationMessages, boundHistoryMessages, turnPromptMessages } from "./context/model-messages.js"
 
 export type ConversationPromptContext = {
   title: string
@@ -49,6 +49,9 @@ export type AssistantModelInput = {
   continuationMessages: ModelMessage[]
   loadedOperationIds: string[]
   toolCatalogDigest: string
+  /** 步数触顶时的优雅收尾总结步：不挂载任何工具（tools: []），强制模型基于已有事实收口。 */
+  disableTools?: boolean
+  lastTotalTokens?: number
   model?: AIModelSnapshot
   runtimeSettings?: RuntimeSettings
   providerConfig?: RemoteProviderConfig
@@ -75,7 +78,15 @@ export class ModelRuntime {
         throw new Error("ai.model_context_insufficient", { cause: contextErrorCause })
       if (compaction) yield { type: "context.compacted", ...compaction }
       try {
-        yield* this.provider.stream(request)
+        let completedWithReportedUsage = false
+        for await (const event of this.provider.stream(request)) {
+          if (event.type === "completed") {
+            if (event.usage.status !== "reported") throw new Error("ai.provider_usage_unavailable")
+            completedWithReportedUsage = true
+          }
+          yield event
+        }
+        if (!completedWithReportedUsage) throw new Error("ai.provider_usage_unavailable")
         return
       }
       catch (error) {
@@ -90,7 +101,9 @@ export class ModelRuntime {
 
   async complete(input: AssistantModelInput, signal?: AbortSignal): Promise<ModelResponse> {
     const { request } = await this.modelRequest(modelInputSnapshot(input), signal)
-    return this.provider.complete(request)
+    const response = await this.provider.complete(request)
+    if (response.usage.status !== "reported") throw new Error("ai.provider_usage_unavailable")
+    return response
   }
 
   async searchAvailableTools(
@@ -125,6 +138,7 @@ export class ModelRuntime {
       ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),
       ...(providerConfig ? { providerConfig } : {}),
     })
+    if (response.usage.status !== "reported") throw new Error("ai.provider_usage_unavailable")
     const title = response.text.trim().split(/\r?\n/, 1)[0]?.replace(/^["'“”‘’]+|["'“”‘’。.！!？?]+$/g, "").trim()
     return title ? [...title].slice(0, 60).join("") : undefined
   }
@@ -135,14 +149,16 @@ export class ModelRuntime {
       runtimeSettings.assistantMaxOutputTokens,
       input.model?.maxOutputTokens ?? runtimeSettings.assistantMaxOutputTokens,
     )
-    const tools = await this.modelTools(
-      input.pageContext,
-      input.conversation,
-      input.input,
-      input.loadedOperationIds,
-      signal,
-      input.toolCatalogDigest,
-    )
+    const tools = input.disableTools
+      ? []
+      : await this.modelTools(
+          input.pageContext,
+          input.conversation,
+          input.input,
+          input.loadedOperationIds,
+          signal,
+          input.toolCatalogDigest,
+        )
     const base = modelMessageParts(
       input.promptVersion,
       input.input,
@@ -162,6 +178,7 @@ export class ModelRuntime {
           budget: { runId: input.runId, ownerUserId: input.ownerUserId },
           maxOutputTokens,
           options: contextCompilerOptions(runtimeSettings),
+          ...(input.lastTotalTokens !== undefined ? { lastTotalTokens: input.lastTotalTokens } : {}),
           ...(input.providerConfig ? { providerConfig: input.providerConfig } : {}),
           ...(input.model ? { model: input.model } : {}),
           ...(signal ? { signal } : {}),
@@ -170,7 +187,7 @@ export class ModelRuntime {
       : undefined
     const messages = compiled
       ? compiled.messages
-      : modelMessages(base.systemMessages, base.currentMessages, history.slice(-4), input.continuationMessages, runtimeSettings)
+      : modelMessages(base.systemMessages, base.currentMessages, history.slice(-runtimeSettings.contextRecentTurnCount), input.continuationMessages)
     const conversationCompacted = compiled
       ? compiled.compressionOutcome === "compressed"
         || compiled.compressionOutcome === "reused"
@@ -196,7 +213,7 @@ export class ModelRuntime {
 
   private async modelTools(
     pageContext: Record<string, unknown>,
-    conversation: ConversationPromptContext,
+    _conversation: ConversationPromptContext,
     userInput: string,
     loadedOperationIds: string[] = [],
     signal?: AbortSignal,
@@ -204,7 +221,7 @@ export class ModelRuntime {
   ) {
     return [
       ...await this.tools.resolve(pageContext, userInput, loadedOperationIds, signal, toolCatalogDigest),
-      ...(conversation.titleSource === "user" ? [] : [renameConversationTool]),
+      renameConversationTool,
     ].sort((left, right) => left.operationId < right.operationId ? -1 : left.operationId > right.operationId ? 1 : 0)
   }
 }
@@ -229,13 +246,12 @@ function modelMessages(
   currentMessages: ModelMessage[],
   history: ConversationHistoryEntry[],
   continuationMessages: ModelMessage[],
-  runtimeSettings: RuntimeSettings,
 ) {
   return [
     ...systemMessages,
-    ...boundHistoryMessages(history, runtimeSettings.contextMaxHistoryPayloadBytes),
+    ...historyMessagesFromEntries(history),
     ...currentMessages,
-    ...boundContinuationMessages(continuationMessages, runtimeSettings.contextMaxContinuationPayloadBytes),
+    ...continuationMessages,
   ]
 }
 
@@ -249,11 +265,7 @@ function modelInputSnapshot(input: AssistantModelInput): AssistantModelInput {
 function contextCompilerOptions(runtimeSettings: RuntimeSettings): ContextCompilerOptions {
   return Object.freeze({
     recentTurnCount: runtimeSettings.contextRecentTurnCount,
-    maxUncompressedTurnCount: runtimeSettings.contextMaxUncompressedTurnCount,
     maxCompressionTurnsPerCompile: runtimeSettings.contextMaxCompressionTurnsPerCompile,
     summaryMaxOutputTokens: runtimeSettings.contextSummaryMaxOutputTokens,
-    maxHistoryPayloadBytes: runtimeSettings.contextMaxHistoryPayloadBytes,
-    maxSummaryPayloadBytes: runtimeSettings.contextMaxSummaryPayloadBytes,
-    maxContinuationPayloadBytes: runtimeSettings.contextMaxContinuationPayloadBytes,
   })
 }

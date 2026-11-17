@@ -1,4 +1,9 @@
-import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse } from "./provider.js"
+import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse, ModelUsage } from "./provider.js"
+
+const deterministicReportedUsage: ModelUsage = Object.freeze({
+  status: "reported",
+  value: Object.freeze({ inputTokens: 64, outputTokens: 16, totalTokens: 80 }),
+})
 
 export class DeterministicProvider implements ModelProvider {
   capabilities(): ModelCapabilities {
@@ -14,17 +19,21 @@ export class DeterministicProvider implements ModelProvider {
     const directive = input.split("\n").findLast(line => line.startsWith("tool:"))
     const match = /^tool:([A-Za-z][A-Za-z0-9._-]+)\s+(\{.*\})$/s.exec(directive ?? "")
     if (!input.includes("Tool results") && match?.[1] && match[2]) {
-      return { text: "", toolCalls: [{ operationId: match[1], arguments: JSON.parse(match[2]) as Record<string, unknown> }], usage: { status: "unavailable", reason: "missing_usage" } }
+      return {
+        text: "",
+        toolCalls: [{ operationId: match[1], arguments: JSON.parse(match[2]) as Record<string, unknown> }],
+        usage: deterministicReportedUsage,
+      }
     }
     const text = `已收到你的问题：“${input}”。当前为确定性本地 Provider；服务已完成上下文校验和持久化，可安全替换为 OpenAI-compatible Provider。`
-    return { text, reasoningSummary: "正在检查会话上下文与可用的只读能力。", usage: { status: "unavailable", reason: "missing_usage" } }
+    return { text, reasoningSummary: "正在检查会话上下文与可用的只读能力。", usage: deterministicReportedUsage }
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const response = await this.complete(request)
     yield { type: "reasoning_summary_delta", delta: response.reasoningSummary ?? "" }
     for (const chunk of response.text.match(/.{1,24}/gu) ?? []) {
-      if (request.signal?.aborted) throw request.signal.reason
+      if (request.signal?.aborted) throw request.signal.reason ?? new Error("ai.run_canceled")
       yield { type: "message_delta", delta: chunk }
     }
     if (response.toolCalls?.length) yield { type: "tool_call_delta" }

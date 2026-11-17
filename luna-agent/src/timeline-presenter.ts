@@ -59,7 +59,7 @@ export async function presentTimeline(
             latestUsageModelId: turn.run.latestUsageModelId,
             latestUsageMaxContextTokensSnapshot: turn.run.latestUsageMaxContextTokensSnapshot,
           } : {}),
-          items: turn.items.filter(item => item.type !== "user_message").map(presentItem),
+          items: turn.items.filter(item => item.id !== `${turn.id}:input`).map(presentItem),
         },
       } : {}),
     })),

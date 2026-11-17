@@ -74,10 +74,11 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 		t.Fatalf("legacy Run Actor Grant leaked into Agent request: %#v", forwarded)
 	}
 	pageContext, _ := forwarded["pageContext"].(map[string]any)
-	serverContext, _ := pageContext["server"].(map[string]any)
-	if pageContext["locale"] != "zh-CN" || serverContext["locale"] != "zh-CN" ||
-		serverContext["projectContextPresent"] != true || serverContext["requestTimestamp"] == "" {
+	if pageContext["locale"] != "zh-CN" || pageContext["projectId"] != "prj_visible" {
 		t.Fatalf("enriched page context = %#v", pageContext)
+	}
+	if _, hasServer := pageContext["server"]; hasServer {
+		t.Fatalf("cache-busting server timestamp leaked into pageContext: %#v", pageContext)
 	}
 }
 
@@ -529,6 +530,74 @@ func TestAIProviderConnectionResponseSanitizesExternalErrorInProduction(t *testi
 	}
 	if strings.Contains(recorder.Body.String(), "token=secret") {
 		t.Fatalf("production provider test leaked upstream body: %s", recorder.Body.String())
+	}
+}
+
+func TestAIProxyForwardsControlledUpstreamBusinessErrorCodesAsFlatEnvelope(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name         string
+		status       int
+		upstreamBody string
+		fallbackCode string
+		wantCode     string
+	}{
+		{
+			name:         "provider usage unavailable nested agent error",
+			status:       http.StatusBadGateway,
+			upstreamBody: `{"error":{"code":"ai.provider_usage_unavailable","requestId":"req_agent_1"}}`,
+			fallbackCode: "ai.provider_unavailable",
+			wantCode:     "ai.provider_usage_unavailable",
+		},
+		{
+			name:         "wallet balance insufficient turn rejection",
+			status:       http.StatusUnprocessableEntity,
+			upstreamBody: `{"error":{"code":"ai.wallet_balance_insufficient","requestId":"req_agent_2"}}`,
+			fallbackCode: "ai.agent_unavailable",
+			wantCode:     "ai.wallet_balance_insufficient",
+		},
+		{
+			name:         "idempotency conflict",
+			status:       http.StatusConflict,
+			upstreamBody: `{"error":{"code":"idempotency_conflict","requestId":"req_agent_3"}}`,
+			fallbackCode: "ai.agent_unavailable",
+			wantCode:     "idempotency_conflict",
+		},
+		{
+			name:         "agent internal error stays masked behind fallback",
+			status:       http.StatusInternalServerError,
+			upstreamBody: `{"error":{"code":"ai.internal_error","requestId":"req_agent_4"}}`,
+			fallbackCode: "ai.agent_unavailable",
+			wantCode:     "ai.agent_unavailable",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := &aiagent.Response{
+				StatusCode: tc.status,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(tc.upstreamBody)),
+			}
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations/aicnv_1/turns", nil)
+
+			handlers := &Handlers{}
+			handlers.domains = newDomainHandlers(handlers)
+			handlers.domains.ai.CopyAIResponse(ctx, response, http.StatusAccepted, tc.fallbackCode)
+
+			if recorder.Code != tc.status {
+				t.Fatalf("status = %d, want %d; body = %s", recorder.Code, tc.status, recorder.Body.String())
+			}
+			var body map[string]string
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode flat error envelope: %v", err)
+			}
+			if body["code"] != tc.wantCode || body["error"] == "" || !strings.HasPrefix(body["requestId"], "req_") {
+				t.Fatalf("envelope = %#v, want code=%q with flat error and requestId", body, tc.wantCode)
+			}
+		})
 	}
 }
 

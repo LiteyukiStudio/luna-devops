@@ -15,12 +15,13 @@ export type RunResumePlan =
   | { kind: "settle_tool_batch" }
   /** finalOutput 存在表示终态批次里还有未提交的最终答复，需要重建助手消息。 */
   | { kind: "finalize"; finalOutput?: string }
-  | { kind: "verify" }
 
 export function resumePlan(checkpoint: RunCheckpoint): RunResumePlan {
   switch (checkpoint.phase) {
     case "model":
     case "awaiting_input":
+    case "verification":
+    case "waiting_external":
       return { kind: "model" }
     case "awaiting_approval":
       return checkpoint.state.pendingToolCallId
@@ -32,9 +33,6 @@ export function resumePlan(checkpoint: RunCheckpoint): RunResumePlan {
         : { kind: "finalize", finalOutput: checkpoint.state.finalOutput }
     case "tool_execution":
       return { kind: "settle_tool_batch" }
-    case "verification":
-    case "waiting_external":
-      return { kind: "verify" }
   }
 }
 
@@ -42,10 +40,13 @@ export type CheckpointStateInput = {
   loopGuard?: LoopGuardState | undefined
   protocolRepairCount: number
   argumentRepairAttempts: ReadonlyMap<string, number>
+  cardGeneration?: RunCheckpoint["state"]["cardGeneration"]
+  cardRepairExhausted?: boolean
   pendingToolCallId?: string
+  waitingTask?: RunCheckpoint["state"]["waitingTask"]
+  pendingBatchId?: string
+  pendingBatchCalls?: RunCheckpoint["state"]["pendingBatchCalls"]
   finalOutput?: string
-  pendingVerifications?: RunCheckpoint["state"]["pendingVerifications"]
-  completionBlockers?: RunCheckpoint["state"]["completionBlockers"]
 }
 
 /** 组装一次 checkpoint 推进的状态字段；省略空值，避免写入无消费者的字段。 */
@@ -56,10 +57,13 @@ export function checkpointState(input: CheckpointStateInput): RunCheckpointState
     ...(input.argumentRepairAttempts.size
       ? { argumentRepairAttempts: Object.fromEntries(input.argumentRepairAttempts) }
       : {}),
+    ...(input.cardGeneration && input.cardGeneration.status === "streaming" ? { cardGeneration: input.cardGeneration } : {}),
+    ...(input.cardRepairExhausted ? { cardRepairExhausted: true } : {}),
     ...(input.pendingToolCallId ? { pendingToolCallId: input.pendingToolCallId } : {}),
+    ...(input.waitingTask ? { waitingTask: input.waitingTask } : {}),
+    ...(input.pendingBatchId && input.pendingBatchCalls?.length ? { pendingBatchId: input.pendingBatchId } : {}),
+    ...(input.pendingBatchCalls?.length ? { pendingBatchCalls: input.pendingBatchCalls } : {}),
     ...(input.finalOutput === undefined ? {} : { finalOutput: input.finalOutput }),
-    ...(input.pendingVerifications?.length ? { pendingVerifications: input.pendingVerifications } : {}),
-    ...(input.completionBlockers?.length ? { completionBlockers: input.completionBlockers } : {}),
   }
 }
 

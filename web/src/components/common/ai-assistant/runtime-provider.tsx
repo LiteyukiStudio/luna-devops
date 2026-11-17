@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import { useSession } from '@/app/session-context'
 import { isPlatformAdmin } from '@/lib/roles'
 import { executeAIUIAction } from './actions'
@@ -347,7 +347,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.deleteConversation')),
   })
   const activeRunId = useMemo(() => {
-    const activeFromTimeline = Object.entries(streamState.runStatuses).find(([, status]) => ['queued', 'running', 'waiting_approval', 'waiting_input'].includes(status))?.[0]
+    const activeFromTimeline = Object.entries(streamState.runStatuses).find(([, status]) => ['queued', 'running', 'waiting_approval', 'waiting_input', 'waiting_external'].includes(status))?.[0]
     if (activeFromTimeline)
       return activeFromTimeline
     const liveSubscription = runSubscriptions.find(subscription => subscription.conversationId === selectedConversationId)
@@ -413,11 +413,18 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   })
   const submitRunInput = useMutation({
     mutationFn: ({ runId, text, expectedVersion }: { runId: string, conversationId: string, text: string, expectedVersion: number }) => api.submitAIRunInput(runId, {
-      input: { parts: [{ type: 'text', text }] },
+      text,
       expectedVersion,
     }),
-    onSuccess: (_, { conversationId }) => setDrafts(current => ({ ...current, [conversationId]: '' })),
-    onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.input')),
+    onSuccess: (_, { conversationId }) => {
+      setDrafts(current => ({ ...current, [conversationId]: '' }))
+      void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(conversationId) })
+    },
+    onError: (error, { conversationId }) => {
+      if (error instanceof ApiError && error.status === 409)
+        void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(conversationId) })
+      toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.input'))
+    },
   })
   const activeRunStatus = activeRunId ? streamState.runStatuses[activeRunId] ?? 'queued' : undefined
   const activeRunStreamState = activeRunId ? runStreamStates.find(state => state.runId === activeRunId) : undefined
@@ -425,21 +432,62 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   const activeTurnId = activeRunId ? timelineActiveTurnId ?? streamState.blocks.at(-1)?.turnId : undefined
   const generating = activeRunStatus === 'queued' || activeRunStatus === 'running'
   const waitingInput = activeRunStatus === 'waiting_input'
+  const waitingExternal = activeRunStatus === 'waiting_external'
   const sendingSelected = Boolean(pendingSends[draftKey])
   const cancelingSelected = cancelRun.isPending && cancelRun.variables?.runId === activeRunId
   const submittingSelected = submitRunInput.isPending && submitRunInput.variables?.conversationId === selectedConversationId
   const modelChangingSelected = updateConversationModel.isPending && updateConversationModel.variables?.conversationId === selectedConversationId
   const runningConversationIds = useMemo(() => {
     const ids = new Set(runSubscriptions.map(subscription => subscription.conversationId))
-    if (generating && selectedConversationId)
+    if ((generating || waitingExternal) && selectedConversationId)
       ids.add(selectedConversationId)
     return ids
-  }, [generating, runSubscriptions, selectedConversationId])
+  }, [generating, runSubscriptions, selectedConversationId, waitingExternal])
+
+  const stalledAttemptsRef = useRef<Record<string, number>>({})
+  useEffect(() => {
+    if (!activeRunId)
+      return
+    if (activeRunStreamState?.status === 'open' || activeRunStreamState?.status === 'streaming') {
+      delete stalledAttemptsRef.current[activeRunId]
+    }
+  }, [activeRunId, activeRunStreamState?.status])
 
   useEffect(() => {
     if (!selectedConversationId || !activeRunId || activeRunStreamState?.status !== 'stalled')
       return
-    void recoverTimeline(selectedConversationId).finally(() => reconnectRunStream(activeRunId))
+    const attempt = stalledAttemptsRef.current[activeRunId] ?? 0
+    const baseDelayMs = Math.min(30_000, 1_000 * 2 ** Math.min(attempt, 5))
+    const jitteredDelayMs = Math.round(baseDelayMs * (0.75 + Math.random() * 0.5))
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      stalledAttemptsRef.current[activeRunId] = attempt + 1
+      recoverTimeline(selectedConversationId)
+        .then((recovered) => {
+          if (cancelled)
+            return
+          const recovery = runStreamRecoveryFromTimeline(recovered, {
+            conversationId: selectedConversationId,
+            eventsUrl: `/api/v1/ai/runs/${encodeURIComponent(activeRunId)}/events`,
+            runId: activeRunId,
+            after: 0,
+          })
+          const recoveredStatus = recovered?.state.runStatuses[activeRunId]
+          if (!recovery.terminal && recoveredStatus !== 'completed')
+            reconnectRunStream(activeRunId)
+        })
+        .catch((error: unknown) => {
+          if (cancelled)
+            return
+          if (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 404))
+            return
+          reconnectRunStream(activeRunId)
+        })
+    }, jitteredDelayMs)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [activeRunId, activeRunStreamState?.status, reconnectRunStream, recoverTimeline, selectedConversationId])
   const allowPresetSuggestions = !conversations.isLoading
     && (!selectedConversationId || timelineData?.snapshot?.turns.length === 0)
@@ -512,7 +560,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
       })
       return
     }
-    if (generating)
+    if (activeRunId)
       return
     sendTurn.mutate({
       actionGeneration: actionSessionGenerationRef.current,
@@ -623,6 +671,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
           maxInputBytes: capabilities?.maxInputBytes,
           sending: sendingSelected,
           submitting: submittingSelected,
+          waitingExternal,
           waitingInput,
           onCancel: () => {
             if (activeRunId && selectedConversationId)
@@ -663,9 +712,31 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
           outputStreaming: activeRunStreamState?.status === 'streaming',
           onAction: executeAction,
           onApproval: async (block, decision) => {
-            await api.decideAIToolApproval(block.runId, block.toolCallId, {
-              decision,
-            })
+            try {
+              await api.decideAIToolApproval(block.runId, block.toolCallId, {
+                decision,
+              })
+              if (selectedConversationId) {
+                delete stalledAttemptsRef.current[block.runId]
+                reconnectRunStream(block.runId)
+                connectRunStream({
+                  conversationId: selectedConversationId,
+                  eventsUrl: `/api/v1/ai/runs/${encodeURIComponent(block.runId)}/events`,
+                  runId: block.runId,
+                  after: streamState.lastEventSequences[block.runId] ?? 0,
+                })
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(selectedConversationId) }),
+                  queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] }),
+                ])
+              }
+            }
+            catch (error) {
+              if (error instanceof ApiError && error.status === 409 && selectedConversationId) {
+                void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(selectedConversationId) })
+              }
+              throw error
+            }
           },
           onResend: message => sendTurn.mutate({
             actionGeneration: actionSessionGenerationRef.current,

@@ -192,6 +192,7 @@ const exactNames: Record<string, string> = {
   request_choice: 'requestChoice',
   navigate_to_route: 'navigateToRoute',
   rename_conversation: 'renameConversation',
+  wait_for_task: 'waitForTask',
 }
 
 export function toolDisplayName(t: TFunction, operationId: string): string {

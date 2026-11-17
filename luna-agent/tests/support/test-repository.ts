@@ -2,6 +2,7 @@ import type {
   Conversation,
   ConversationHistoryEntry,
   ConversationSummary,
+  ConversationToolInteraction,
   ConversationTitleSource,
   ClaimedRun,
   CreatedTurn,
@@ -18,14 +19,17 @@ import { createId } from "../../src/id.js"
 import {
   RunCheckpointConflictError,
   RunStateConflictError,
+  selectOperationsWithExecutedProtection,
   type ConversationListOptions,
-  type ModelAttemptMetadata,
+  type RecordReportedModelUsageInput,
+  type ResolveWaitingExternalRunInput,
   type Repository,
   type TimelinePageOptions,
   type ModelCallOperation,
   type RunStreamBatch,
+  type UpdateRunOptions,
 } from "../../src/persistence/repository.js"
-import type { OfficialModelUsage, UsageUnavailableReason } from "../../src/provider/provider.js"
+import type { OfficialModelUsage } from "../../src/provider/provider.js"
 import { createTurnRequestHash } from "../../src/persistence/create-turn-hash.js"
 import { immutableRemoteProviderConfig } from "../../src/provider/config-client.js"
 import { runtimeSettingsSnapshot } from "../../src/runtime-settings.js"
@@ -43,17 +47,27 @@ export class TestRepository implements Repository {
   private readonly events: RunEvent[] = []
   private readonly summaries = new Map<string, ConversationSummary>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
-  private readonly modelHolds = new Map<string, {
+  private readonly idempotencyLocks = new Map<string, Promise<unknown>>()
+  private readonly walletBalances = new Map<string, number>()
+  private readonly modelUsages: Array<{
+    id: string
     runId: string
+    ownerUserId: string
     operation: ModelCallOperation
     attempt: number
-    state: "held" | "reported" | "released" | "reconciliation_required"
-    maxOutputTokens: number
-  }>()
-  private readonly modelUsages: Array<{ runId: string, operation: ModelCallOperation, usage: OfficialModelUsage }> = []
+    usage: OfficialModelUsage
+  }> = []
   private readonly contextUsageByConversation = new Map<string, NonNullable<Awaited<ReturnType<Repository["getTimeline"]>>>["contextUsage"]>()
   private readonly streamHighWatermarks = new Map<string, number>()
   private readonly checkpoints = new Map<string, RunCheckpoint>()
+
+  setWalletBalance(ownerUserId: string, balanceCredits: number) {
+    this.walletBalances.set(ownerUserId, balanceCredits)
+  }
+
+  recordedModelUsages() {
+    return [...this.modelUsages]
+  }
 
   async health(): Promise<boolean> { return true }
   async readiness() { return { database: true, schema: true } }
@@ -139,10 +153,21 @@ export class TestRepository implements Repository {
     return next
   }
 
+  async listActiveConversationRuns(ownerUserId: string, conversationId: string): Promise<Run[]> {
+    return [...this.runs.values()]
+      .filter(run => run.ownerUserId === ownerUserId
+        && run.conversationId === conversationId
+        && ["queued", "running", "waiting_approval", "waiting_input", "waiting_external"].includes(run.status))
+  }
+
   async deleteConversation(ownerUserId: string, id: string) {
     if (!await this.getConversation(ownerUserId, id)) return false
+    for (const run of await this.listActiveConversationRuns(ownerUserId, id)) {
+      await this.cancelRun(ownerUserId, run.id)
+    }
     this.conversations.delete(id)
     this.summaries.delete(id)
+    this.contextUsageByConversation.delete(id)
     const turnIds = [...this.turns.values()].filter(t => t.conversationId === id).map(t => t.id)
     for (const turnId of turnIds) this.turns.delete(turnId)
     for (const [runId, run] of this.runs) {
@@ -153,50 +178,79 @@ export class TestRepository implements Repository {
     return true
   }
 
+  async assertPositiveAvailableBalance(ownerUserId: string): Promise<void> {
+    const balance = this.walletBalances.get(ownerUserId) ?? 1_000_000
+    if (!(balance > 0)) throw new Error("ai.wallet_balance_insufficient")
+  }
+
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {
-    if (!await this.getConversation(ownerUserId, input.conversationId)) throw new Error("ai.conversation_not_found")
-    const hash = createTurnRequestHash(input)
     const key = `${ownerUserId}:${input.idempotencyKey}`
-    const previous = this.idempotency.get(key)
-    if (previous) {
-      if (previous.hash !== hash) throw new Error("idempotency_conflict")
-      return previous.created
+    const previousLock = this.idempotencyLocks.get(key) ?? Promise.resolve()
+    let releaseLock!: () => void
+    const currentLock = new Promise<void>((resolve) => { releaseLock = resolve })
+    this.idempotencyLocks.set(key, previousLock.then(() => currentLock, () => currentLock))
+    await previousLock.catch(() => undefined)
+    try {
+      if (!await this.getConversation(ownerUserId, input.conversationId)) throw new Error("ai.conversation_not_found")
+      const hash = createTurnRequestHash(input)
+      const previous = this.idempotency.get(key)
+      if (previous) {
+        if (previous.hash !== hash) throw new Error("idempotency_conflict")
+        return previous.created
+      }
+      if (input.pageContext.__lunaDirectToolAction !== true) {
+        await this.assertPositiveAvailableBalance(ownerUserId)
+      }
+      const now = new Date().toISOString()
+      if (input.modelId) {
+        const conversation = this.conversations.get(input.conversationId)!
+        this.conversations.set(input.conversationId, { ...conversation, modelId: input.modelId, updatedAt: now })
+      }
+      const previousTurns = [...this.turns.values()]
+        .filter(t => t.conversationId === input.conversationId)
+        .sort((left, right) => right.turnIndex - left.turnIndex)
+      const turnIndex = previousTurns.length
+      const previousConversationRun = input.pageContext.__lunaDirectToolAction === true
+        ? undefined
+        : previousTurns
+            .map(t => this.runs.get(t.selectedRunId))
+            .find((candidate): candidate is StoredRun => Boolean(candidate && candidate.pageContext.__lunaDirectToolAction !== true))
+      const inheritedOperationIds = (previousConversationRun?.selectedOperationIds ?? [])
+        .filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
+        .slice(-16)
+      const runId = input.preallocatedRunId ?? createId("airun")
+      const turn: Turn = {
+        id: createId("aitrn"), conversationId: input.conversationId, turnIndex, status: "queued",
+        input: input.input, selectedRunId: runId, createdAt: now,
+        ...(input.modelId ? { modelId: input.modelId } : {}),
+      }
+      const run: StoredRun = {
+        id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
+        status: "queued", rowVersion: 1, promptVersion: "system-v4",
+        toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext,
+        selectedOperationIds: inheritedOperationIds,
+        actorSessionId: input.actorSessionId ?? `test:${ownerUserId}`,
+        ...(input.traceContext ? { traceContext: input.traceContext } : {}),
+        createdAt: now, ownerUserId,
+        ...(input.modelSnapshot ? { model: input.modelSnapshot } : {}),
+      }
+      this.turns.set(turn.id, turn)
+      this.runs.set(run.id, run)
+      const created = { turn, run }
+      this.idempotency.set(key, { hash, created })
+      const userItem = await this.appendItem({ id: `${turn.id}:input`, runId, turnId: turn.id, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
+      await this.appendEvent(runId, "run.input_received", {
+        initial: true,
+        item: structuredClone(userItem),
+        conversationTitle: this.conversations.get(input.conversationId)?.title,
+        conversationTitleSource: this.conversations.get(input.conversationId)?.titleSource,
+      })
+      await this.appendEvent(runId, "run.queued", { state: "queued" })
+      return created
     }
-    const now = new Date().toISOString()
-    if (input.modelId) {
-      const conversation = this.conversations.get(input.conversationId)!
-      this.conversations.set(input.conversationId, { ...conversation, modelId: input.modelId, updatedAt: now })
+    finally {
+      releaseLock()
     }
-    const turnIndex = [...this.turns.values()].filter(t => t.conversationId === input.conversationId).length
-    const runId = input.preallocatedRunId ?? createId("airun")
-    const turn: Turn = {
-      id: createId("aitrn"), conversationId: input.conversationId, turnIndex, status: "queued",
-      input: input.input, selectedRunId: runId, createdAt: now,
-      ...(input.modelId ? { modelId: input.modelId } : {}),
-    }
-    const run: StoredRun = {
-      id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
-      status: "queued", rowVersion: 1, promptVersion: "system-v4",
-      toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext,
-      selectedOperationIds: [],
-      actorSessionId: input.actorSessionId ?? `test:${ownerUserId}`,
-      ...(input.traceContext ? { traceContext: input.traceContext } : {}),
-      createdAt: now, ownerUserId,
-      ...(input.modelSnapshot ? { model: input.modelSnapshot } : {}),
-    }
-    this.turns.set(turn.id, turn)
-    this.runs.set(run.id, run)
-    const created = { turn, run }
-    this.idempotency.set(key, { hash, created })
-    const userItem = await this.appendItem({ id: `${turn.id}:input`, runId, turnId: turn.id, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
-    await this.appendEvent(runId, "run.input_received", {
-      initial: true,
-      item: structuredClone(userItem),
-      conversationTitle: this.conversations.get(input.conversationId)?.title,
-      conversationTitleSource: this.conversations.get(input.conversationId)?.titleSource,
-    })
-    await this.appendEvent(runId, "run.queued", { state: "queued" })
-    return created
   }
 
   async getRun(ownerUserId: string, id: string) {
@@ -240,6 +294,8 @@ export class TestRepository implements Repository {
     this.events.push(...batch.events.map(event => structuredClone(event)))
     this.streamHighWatermarks.set(batch.runId, batch.eventHighWatermark)
     if (batch.terminal) {
+      const finalizedStatus = batch.terminal.to === "completed" ? "completed" : "failed"
+      await this.finalizeStreamingItems(batch.runId, finalizedStatus)
       if (batch.terminal.conversationTitle) {
         const conversation = this.conversations.get(run.conversationId)
         if (conversation && conversation.titleSource !== "user") {
@@ -250,6 +306,7 @@ export class TestRepository implements Repository {
           })
         }
       }
+      delete run.wakeAt
       Object.assign(run, {
         status: batch.terminal.to,
         completedAt: batch.terminal.completedAt,
@@ -265,20 +322,28 @@ export class TestRepository implements Repository {
       })
     }
   }
-  async touchRunSelectedOperations(runId: string, operationIds: string[], limit: number) {
+  async touchRunSelectedOperations(
+    runId: string,
+    operationIds: string[],
+    limit: number,
+    protectedOperationIds?: ReadonlySet<string>,
+  ) {
     const run = this.runs.get(runId)
     if (!run) throw new Error("ai.run_not_found")
-    const requested = [...new Set(operationIds)]
-    const alreadySelectedOperationIds = requested.filter(operationId => run.selectedOperationIds.includes(operationId))
-    const touched = new Set(requested)
-    const reordered = [...run.selectedOperationIds.filter(operationId => !touched.has(operationId)), ...requested]
-    const evictedOperationIds = reordered.slice(0, Math.max(0, reordered.length - limit))
-    run.selectedOperationIds = reordered.slice(-limit)
-    return { selectedOperationIds: [...run.selectedOperationIds], alreadySelectedOperationIds, evictedOperationIds }
+    const requested = [...new Set(operationIds)].filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
+    const executedInRun = new Set<string>([
+      ...[...this.toolCallStore.records.values()]
+        .filter(call => call.runId === runId && call.inputMode !== "verification" && !(call.status === "skipped" && call.executionCount === 0))
+        .map(call => call.operationId),
+      ...(protectedOperationIds ?? []),
+    ])
+    const selection = selectOperationsWithExecutedProtection(run.selectedOperationIds, requested, executedInRun, limit)
+    run.selectedOperationIds = [...selection.selectedOperationIds]
+    return selection
   }
   async listActiveToolCatalogDigests() {
     return [...new Set([...this.runs.values()]
-      .filter(run => ["queued", "running", "waiting_approval", "waiting_input"].includes(run.status))
+      .filter(run => ["queued", "running", "waiting_approval", "waiting_input", "waiting_external"].includes(run.status))
       .map(run => run.toolCatalogDigest))]
   }
 
@@ -287,6 +352,7 @@ export class TestRepository implements Repository {
     if (run?.ownerUserId !== ownerUserId) return undefined
     if (!run || ["completed", "failed", "canceled", "expired", "interrupted"].includes(run.status)) return run
     run.status = "canceled"
+    delete run.wakeAt
     run.completedAt = new Date().toISOString()
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
@@ -303,24 +369,42 @@ export class TestRepository implements Repository {
       })
     }
     for (const item of this.items) {
-      const contentStatus = typeof item.content.status === "string" ? item.content.status : undefined
-      const active = activeToolStatuses.has(contentStatus ?? "") || contentStatus === undefined && item.status === "streaming"
-      if (item.runId !== id || item.type !== "tool_call" || !active) continue
-      item.status = "completed"
-      item.content = { ...item.content, status: "canceled", result: canceledResult, errorCode: "ai.run_canceled" }
-      item.revision += 1
-      await this.appendEvent(id, "item.finalized", {
-        itemId: item.id,
-        ...(typeof item.content.toolCallId === "string" ? { toolCallId: item.content.toolCallId } : {}),
-        item: structuredClone(item),
-      })
+      if (item.runId !== id) continue
+      if (item.type === "tool_call") {
+        const contentStatus = typeof item.content.status === "string" ? item.content.status : undefined
+        const active = activeToolStatuses.has(contentStatus ?? "") || item.status === "streaming"
+        if (!active) continue
+        item.status = "completed"
+        item.content = { ...item.content, status: "canceled", result: canceledResult, errorCode: "ai.run_canceled" }
+        item.revision += 1
+        await this.appendEvent(id, "item.finalized", {
+          itemId: item.id,
+          ...(typeof item.content.toolCallId === "string" ? { toolCallId: item.content.toolCallId } : {}),
+          item: structuredClone(item),
+        })
+      }
+      else if (item.status === "streaming") {
+        item.status = "failed"
+        item.revision += 1
+        await this.appendEvent(id, "item.finalized", { itemId: item.id, item: structuredClone(item) })
+      }
     }
     await this.appendEvent(id, "run.canceled", { state: "canceled", rowVersion: run.rowVersion })
     return run
   }
 
-  async claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot): Promise<ClaimedRun | undefined> {
-    const run = [...this.runs.values()].find(item => item.status === "queued")
+  async claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot, userConcurrentRuns?: number): Promise<ClaimedRun | undefined> {
+    const maxPerUser = userConcurrentRuns ?? executionSnapshot?.runtimeSettings.userConcurrentRuns
+    const run = [...this.runs.values()].find((item) => {
+      if (item.status !== "queued") return false
+      if (maxPerUser === undefined) return true
+      let runningCount = 0
+      for (const candidate of this.runs.values()) {
+        if (candidate.ownerUserId === item.ownerUserId && candidate.status === "running")
+          runningCount += 1
+      }
+      return runningCount < Math.max(1, Math.floor(maxPerUser))
+    })
     if (!run) return undefined
     if (!this.executionSnapshots.has(run.id) && executionSnapshot) {
       const snapshot = cloneExecutionSnapshot(executionSnapshot)
@@ -328,6 +412,7 @@ export class TestRepository implements Repository {
       if (snapshot.toolCatalogDigest) run.toolCatalogDigest = snapshot.toolCatalogDigest
     }
     run.status = "running"
+    delete run.wakeAt
     run.startedAt ??= new Date().toISOString()
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
@@ -338,6 +423,69 @@ export class TestRepository implements Repository {
       ...run,
       ...(restoredSnapshot ? { executionSnapshot: cloneExecutionSnapshot(restoredSnapshot) } : {}),
     }
+  }
+
+  async claimDueWaitingExternalRuns(limit: number, leaseMs: number, now?: Date): Promise<Run[]> {
+    const boundedLimit = Math.max(1, Math.min(64, Math.floor(limit)))
+    const boundedLeaseMs = Math.max(1_000, Math.floor(leaseMs))
+    const referenceMs = (now ?? new Date()).getTime()
+    const nextLeaseIso = new Date(referenceMs + boundedLeaseMs).toISOString()
+    const due = [...this.runs.values()]
+      .filter(run => run.status === "waiting_external" && run.wakeAt !== undefined && Date.parse(run.wakeAt) <= referenceMs)
+      .sort((a, b) => (a.wakeAt ?? "").localeCompare(b.wakeAt ?? "") || a.id.localeCompare(b.id))
+      .slice(0, boundedLimit)
+    for (const run of due) {
+      run.wakeAt = nextLeaseIso
+    }
+    return due.map(run => structuredClone(run))
+  }
+
+  async rescheduleWaitingExternalRun(
+    runId: string,
+    expectedCheckpointRevision: number,
+    pollCount: number,
+    wakeAt: string,
+  ): Promise<boolean> {
+    const run = this.runs.get(runId)
+    const checkpoint = this.checkpoints.get(runId)
+    if (!run || run.status !== "waiting_external" || !checkpoint || checkpoint.revision !== expectedCheckpointRevision || !checkpoint.state.waitingTask)
+      return false
+    checkpoint.revision = expectedCheckpointRevision + 1
+    checkpoint.state = {
+      ...structuredClone(checkpoint.state),
+      waitingTask: {
+        ...structuredClone(checkpoint.state.waitingTask),
+        pollCount,
+      },
+    }
+    checkpoint.updatedAt = new Date().toISOString()
+    run.wakeAt = wakeAt
+    return true
+  }
+
+  async resolveWaitingExternalRun(input: ResolveWaitingExternalRunInput): Promise<boolean> {
+    const run = this.runs.get(input.runId)
+    const checkpoint = this.checkpoints.get(input.runId)
+    if (!run || run.status !== "waiting_external" || !checkpoint || checkpoint.revision !== input.expectedCheckpointRevision)
+      return false
+    const item = await this.updateItem(input.itemId, input.itemStatus, input.itemContent)
+    await this.appendEvent(input.runId, input.eventType, {
+      ...input.eventData,
+      itemId: item.id,
+      toolCallId: input.toolCallId,
+      item: structuredClone(item),
+    })
+    checkpoint.revision = input.expectedCheckpointRevision + 1
+    checkpoint.phase = input.nextPhase
+    checkpoint.state = structuredClone(input.nextCheckpointState)
+    checkpoint.updatedAt = new Date().toISOString()
+    run.status = "queued"
+    delete run.wakeAt
+    run.rowVersion += 1
+    const turn = this.turns.get(run.turnId)
+    if (turn) turn.status = "queued"
+    await this.appendEvent(input.runId, "run.queued", { state: "queued", rowVersion: run.rowVersion })
+    return true
   }
   async listRunningRuns() {
     return [...this.runs.values()].filter(run => run.status === "running")
@@ -399,74 +547,46 @@ export class TestRepository implements Repository {
   async countActiveUserRuns(userId: string) {
     let count = 0
     for (const run of this.runs.values()) {
-      if (run.ownerUserId === userId && (run.status === "queued" || run.status === "running")) {
+      if (run.ownerUserId === userId && run.status === "running") {
         count += 1
       }
     }
     return count
   }
 
-  async createModelCreditHold(input: {
-    id: string
-    runId: string
-    ownerUserId: string
-    operation: ModelCallOperation
-    requestedOutputTokens: number
-    leaseSeconds: number
-  }) {
+  async recordReportedModelUsage(input: RecordReportedModelUsageInput): Promise<{ id: string, attempt: number }> {
     const run = this.runs.get(input.runId)
-    if (!run || run.ownerUserId !== input.ownerUserId) throw new Error("ai.run_not_found")
-    const maxOutputTokens = Math.min(input.requestedOutputTokens, run.model?.maxOutputTokens ?? 65_536)
-    const attempt = [...this.modelHolds.values()].filter(item => item.runId === input.runId && item.operation === input.operation).length + 1
-    this.modelHolds.set(input.id, {
+    if (!run && !input.model) throw new Error("ai.run_not_found")
+    if (run && run.ownerUserId !== input.ownerUserId) throw new Error("ai.run_not_found")
+    const attempt = this.modelUsages.filter(item => item.runId === input.runId && item.operation === input.operation).length + 1
+    const id = createId("aiuse")
+    this.modelUsages.push({
+      id,
       runId: input.runId,
+      ownerUserId: input.ownerUserId,
       operation: input.operation,
       attempt,
-      state: "held",
-      maxOutputTokens,
+      usage: input.usage,
     })
-    return { id: input.id, attempt, maxOutputTokens }
-  }
-
-  async recordReportedModelUsage(
-    creditHoldId: string,
-    usage: OfficialModelUsage,
-    _metadata: ModelAttemptMetadata & { callType: "stream" | "complete" },
-  ): Promise<{ reconciliationRequired: boolean }> {
-    void _metadata
-    const item = this.modelHolds.get(creditHoldId)
-    if (!item || item.state !== "held") throw new Error("ai.credit_hold_not_active")
-    item.state = "reported"
-    this.modelUsages.push({ runId: item.runId, operation: item.operation, usage })
-    const run = this.runs.get(item.runId)
-    if (item.operation === "assistant" && run?.model) {
+    const model = input.model ?? run?.model
+    if (input.operation === "assistant" && run && model) {
       this.contextUsageByConversation.set(run.conversationId, {
         status: "reported",
         runId: run.id,
-        modelId: run.model.id,
-        usedTokens: usage.totalTokens,
-        maxContextTokensSnapshot: run.model.maxContextTokens,
+        modelId: model.id,
+        usedTokens: input.usage.totalTokens,
+        maxContextTokensSnapshot: model.maxContextTokens,
         recordedAt: new Date().toISOString(),
       })
     }
-    return { reconciliationRequired: false }
-  }
-
-  async markModelUsageUnavailable(creditHoldId: string, _reason: UsageUnavailableReason | "request_outcome_unknown"): Promise<void> {
-    void _reason
-    const item = this.modelHolds.get(creditHoldId)
-    if (item?.state === "held") item.state = "reconciliation_required"
-  }
-
-  async releaseModelCreditHold(creditHoldId: string): Promise<void> {
-    const item = this.modelHolds.get(creditHoldId)
-    if (item?.state === "held") item.state = "released"
+    return { id, attempt }
   }
 
   async getExecutionInput(runId: string) {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined
     const conversation = run ? this.conversations.get(run.conversationId) : undefined
+    const contextUsage = run ? this.contextUsageByConversation.get(run.conversationId) : undefined
     const history = run && turn
       ? this.conversationHistory(run.conversationId, -1, turn.turnIndex, 8, true)
       : []
@@ -479,11 +599,12 @@ export class TestRepository implements Repository {
           pageContext: run.pageContext,
           toolCatalogDigest: run.toolCatalogDigest,
           selectedOperationIds: [...run.selectedOperationIds],
+          ...(contextUsage ? { lastTotalTokens: contextUsage.usedTokens } : {}),
           ...(run.model ? { model: run.model } : {}),
           toolInteractions: this.items
-            .filter(item => item.runId === runId && (item.type === "reasoning_summary" || item.type === "tool_call" || item.type === "tool_result"))
+            .filter(item => item.runId === runId && item.id !== `${turn.id}:input` && ["reasoning_summary", "progress", "tool_call", "tool_result", "user_message"].includes(item.type))
             .sort((a, b) => a.timelineIndex - b.timelineIndex)
-            .map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result" | "reasoning_summary", status: item.status, content: item.content })),
+            .map(item => ({ itemId: item.id, type: item.type as ConversationToolInteraction["type"], status: item.status, content: item.content })),
           history,
           conversation: { title: conversation.title, titleSource: conversation.titleSource },
         }
@@ -506,6 +627,12 @@ export class TestRepository implements Repository {
     return bounded
       .map((item) => {
         const selectedRun = this.runs.get(item.selectedRunId)
+        const supplementalInputs = this.items
+          .filter(candidate => candidate.runId === item.selectedRunId && candidate.type === "user_message" && candidate.id !== `${item.id}:input`)
+          .sort((a, b) => a.timelineIndex - b.timelineIndex)
+          .map(candidate => timelineText(candidate.content))
+          .filter(Boolean)
+        const user = supplementalInputs.length > 0 ? `${item.input}\n\n${supplementalInputs.join("\n\n")}` : item.input
         const assistant = this.items
           .filter(candidate => candidate.runId === item.selectedRunId && candidate.type === "assistant_message")
           .sort((a, b) => a.timelineIndex - b.timelineIndex)
@@ -524,7 +651,7 @@ export class TestRepository implements Repository {
           .map(candidate => ({ type: candidate.type, status: candidate.status, content: structuredClone(candidate.content) }))
         return {
           turnIndex: item.turnIndex,
-          user: item.input,
+          user,
           assistant,
           ...(reasoning ? { reasoning } : {}),
           pageContext: structuredClone(selectedRun?.pageContext ?? {}),
@@ -549,20 +676,29 @@ export class TestRepository implements Repository {
   async appendRunInput(runId: string, text: string) {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined
-    if (!turn) throw new Error("ai.run_not_found")
-    turn.input = `${turn.input}\n${text}`
+    if (!run || !turn) throw new Error("ai.run_not_found")
+    return this.appendItem({
+      runId,
+      turnId: turn.id,
+      type: "user_message",
+      status: "completed",
+      content: { parts: [{ type: "text", text }] },
+    })
   }
 
-  async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: Partial<Run> = {}) {
+  async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: UpdateRunOptions = {}) {
     const run = this.runs.get(runId)
     if (!run || run.status !== from) throw new RunStateConflictError(runId, from, to, run?.status)
-    Object.assign(run, fields, { status: to, rowVersion: run.rowVersion + 1 })
+    const { clearWakeAt, eventData, ...restFields } = fields
+    Object.assign(run, restFields, { status: to, rowVersion: run.rowVersion + 1 })
+    if (clearWakeAt || to !== "waiting_external") delete run.wakeAt
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = to
     await this.appendEvent(runId, `run.${to}`, {
       state: to,
       rowVersion: run.rowVersion,
-      ...(fields.errorCode ? { errorCode: fields.errorCode } : {}),
+      ...(restFields.errorCode ? { errorCode: restFields.errorCode } : {}),
+      ...(eventData ?? {}),
     })
     return run
   }
@@ -634,7 +770,10 @@ export class TestRepository implements Repository {
   async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
     const items = this.items.filter(item => item.runId === runId && item.status === "streaming")
     for (const item of items) {
-      item.status = status
+      item.status = item.type === "tool_call" ? "failed" : status
+      if (item.type === "tool_call" && item.content.status === "running") {
+        item.content = { ...item.content, status: "failed" }
+      }
       item.revision += 1
       await this.appendEvent(runId, "item.finalized", { item: structuredClone(item) })
     }

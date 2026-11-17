@@ -28,11 +28,8 @@ export function decisionAction(
   }
   if (decision.kind === "truncated") return validate({ type: "fail", errorCode: "ai.model_output_truncated" })
   if (decision.kind === "filtered") return validate({ type: "fail", errorCode: "ai.model_output_filtered" })
-  if (context.cardRepairExhausted) {
-    if (decision.kind === "protocol_error")
-      return validate({ type: "fail", errorCode: "ai.model_protocol_violation" })
-    if (decision.kind === "tool_calls")
-      return validate({ type: "fail", errorCode: "ai.interaction_card_schema_invalid" })
+  if (context.cardRepairExhausted && decision.kind === "protocol_error") {
+    return validate({ type: "fail", errorCode: "ai.model_protocol_violation" })
   }
   let action: DecisionAction
   switch (decision.kind) {
@@ -62,7 +59,7 @@ export function decisionAction(
 export type ToolBatchAction =
   | { type: "continue_model" }
   | { type: "waiting_approval"; toolCallId: string }
-  | { type: "verify" }
+  | { type: "waiting_external" }
   | { type: "complete" }
 
 export function toolBatchAction(result: ToolBatchResult, phase: RunCheckpointPhase = "tool_execution"): ToolBatchAction {
@@ -74,8 +71,8 @@ export function toolBatchAction(result: ToolBatchResult, phase: RunCheckpointPha
     case "waiting_approval":
       action = { type: "waiting_approval", toolCallId: result.toolCallId }
       break
-    case "verification":
-      action = { type: "verify" }
+    case "waiting_external":
+      action = { type: "waiting_external" }
       break
     case "complete":
       action = { type: "complete" }
@@ -89,18 +86,17 @@ export type ResumeAction =
   | { type: "call_model" }
   | { type: "settle_tools" }
   | { type: "waiting_approval"; toolCallId: string }
-  | { type: "verify" }
   | { type: "finalize"; finalOutput?: string }
 
 export type GraphAction = DecisionAction | ToolBatchAction | ResumeAction
 
 const actionsByPhase: Record<RunCheckpointPhase, ReadonlySet<GraphAction["type"]>> = {
   model: new Set(["call_model", "execute_tools", "finalize", "repair", "retry", "fail"]),
-  tool_execution: new Set(["settle_tools", "continue_model", "waiting_approval", "verify", "complete"]),
-  verification: new Set(["verify"]),
+  tool_execution: new Set(["settle_tools", "continue_model", "waiting_approval", "waiting_external", "complete"]),
+  verification: new Set(["call_model"]),
   awaiting_input: new Set(["call_model"]),
   awaiting_approval: new Set(["settle_tools", "waiting_approval"]),
-  waiting_external: new Set(["verify"]),
+  waiting_external: new Set(["call_model", "waiting_external"]),
   finalizing: new Set(["finalize"]),
 }
 
@@ -122,10 +118,10 @@ export function assertGraphTransition(phase: RunCheckpointPhase, action: GraphAc
 const resumeActionsByPhase: Record<RunCheckpointPhase, ReadonlySet<ResumeAction["type"]>> = {
   model: new Set(["call_model"]),
   tool_execution: new Set(["settle_tools"]),
-  verification: new Set(["verify"]),
+  verification: new Set(["call_model"]),
   awaiting_input: new Set(["call_model"]),
   awaiting_approval: new Set(["settle_tools", "waiting_approval"]),
-  waiting_external: new Set(["verify"]),
+  waiting_external: new Set(["call_model"]),
   finalizing: new Set(["finalize"]),
 }
 
@@ -140,9 +136,6 @@ export function resumeAction(plan: RunResumePlan, phase: RunCheckpointPhase): Re
       break
     case "await_approval":
       action = { type: "waiting_approval", toolCallId: plan.toolCallId }
-      break
-    case "verify":
-      action = { type: "verify" }
       break
     case "finalize":
       action = plan.finalOutput === undefined

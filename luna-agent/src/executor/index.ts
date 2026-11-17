@@ -1,5 +1,5 @@
 import type { DocsKnowledge } from "../knowledge/docs-knowledge.js"
-import type { RunExecutionSnapshot } from "../domain.js"
+import type { ClaimedRun, RunExecutionSnapshot } from "../domain.js"
 import type { ModelRuntime } from "../model-runtime.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
 import type { RemoteConfigSource, RemoteProviderConfig } from "../provider/config-client.js"
@@ -8,7 +8,13 @@ import { agentRuntimeInternals, runtimeSettingsFromRemote, runtimeSettingsSnapsh
 import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
 import type { ToolCatalog } from "../tools/catalog.js"
 import type { ToolOrchestrator } from "../tools/orchestrator.js"
+import {
+  computeWakeBackoffMs,
+  formatWaitForTaskResult,
+  type TaskStatusClient,
+} from "../tools/wait-for-task.js"
 import { genAIAgentName, genAIAgentSpanAttributes } from "../genai-semconv.js"
+import { redact } from "../redaction.js"
 import {
   agentMetrics,
   errorDiagnostic,
@@ -29,16 +35,22 @@ export type RunExecutorDependencies = {
   initialRuntimeSettings: RuntimeSettings
   catalogRegistry: ToolCatalogRegistry
   streamBus: RunStreamBus
-  verificationPollIntervalMs?: number
   docsKnowledge?: DocsKnowledge
+  taskStatusClient?: TaskStatusClient
 }
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
+  private started = false
+  private reconciled = false
   private stopping = false
+  private pumpRequested = false
+  private pumpPromise: Promise<void> | undefined
+  private readonly stopController = new AbortController()
   private readonly active = new Set<Promise<boolean>>()
   private readonly controllers = new Map<string, AbortController>()
   private readonly settlements = new Map<string, Promise<void>>()
+  private readonly baseRuntimeSettings: RuntimeSettings
   private runtimeSettings: RuntimeSettings
   private providerConfig!: RemoteProviderConfig
   private unsubscribeRemoteConfig: (() => void) | undefined
@@ -48,6 +60,7 @@ export class RunExecutor {
   private readonly runtimeConfig: RemoteConfigSource
   private readonly catalogRegistry: ToolCatalogRegistry
   private readonly streamBus: RunStreamBus
+  private readonly taskStatusClient: TaskStatusClient | undefined
   private readonly runLoop: RunLoop
 
   constructor(input: RunExecutorDependencies) {
@@ -57,8 +70,17 @@ export class RunExecutor {
     this.runtimeConfig = input.runtimeConfig
     this.catalogRegistry = input.catalogRegistry
     this.streamBus = input.streamBus
-    this.runtimeSettings = runtimeSettingsSnapshot(input.initialRuntimeSettings)
-    this.runLoop = new RunLoop(input.repository, input.modelRuntime, input.tools, input.streamBus, input.verificationPollIntervalMs, input.docsKnowledge)
+    this.taskStatusClient = input.taskStatusClient
+    this.baseRuntimeSettings = runtimeSettingsSnapshot(input.initialRuntimeSettings)
+    this.runtimeSettings = this.baseRuntimeSettings
+    this.runLoop = new RunLoop(
+      input.repository,
+      input.modelRuntime,
+      input.tools,
+      input.streamBus,
+      input.docsKnowledge,
+      input.taskStatusClient,
+    )
     const currentConfig = this.runtimeConfig.current()
     const currentCatalog = this.runtimeConfig.currentCatalog()
     if (!currentConfig || !currentCatalog) throw new Error("ai.provider_config_unavailable")
@@ -67,17 +89,10 @@ export class RunExecutor {
   }
 
   start(): void {
+    this.started = true
     const tick = () => {
       if (this.stopping) return
-      if (this.active.size < this.runtimeSettings.agentConcurrentRuns) {
-        const task = this.claimAndExecute().catch((error) => {
-          telemetryLog("agent.run.dispatch_failed", "error", {
-            operation: "agent.run.dispatch", outcome: "failed", ...errorDiagnostic(error, stableErrorCode(error)),
-          })
-          return false
-        }).finally(() => this.active.delete(task))
-        this.active.add(task)
-      }
+      void this.pump()
       this.timer = setTimeout(tick, agentRuntimeInternals.runPollMs)
       this.timer.unref()
     }
@@ -86,6 +101,7 @@ export class RunExecutor {
       void this.recoverOrphanedRuns().then((complete) => {
         if (this.stopping) return
         if (complete) {
+          this.reconciled = true
           tick()
           return
         }
@@ -96,14 +112,22 @@ export class RunExecutor {
     reconcile()
   }
 
+  /** 本地新入队、唤醒或槽位释放时即时触发一轮扫描，无需干等固定轮询周期。 */
+  notifyWorkAvailable(): void {
+    if (!this.started || !this.reconciled || this.stopping) return
+    void this.pump()
+  }
+
   async stop(): Promise<void> {
     this.stopping = true
     if (this.timer) clearTimeout(this.timer)
     this.unsubscribeRemoteConfig?.()
     this.unsubscribeRemoteConfig = undefined
     const reason = new Error("ai.agent_stopping")
+    this.stopController.abort(reason)
     this.controllers.forEach(controller => controller.abort(reason))
     this.tools.cancelAll(reason)
+    if (this.pumpPromise) await Promise.allSettled([this.pumpPromise])
     await Promise.allSettled([...this.active])
   }
 
@@ -134,17 +158,263 @@ export class RunExecutor {
   }
 
   async runOnce(): Promise<boolean> {
+    await this.pollDueWaitingExternalRuns()
     return this.claimAndExecute()
   }
 
-  private async claimAndExecute(): Promise<boolean> {
+  /** 扫描到期的 waiting_external Run，推进 wake_at 或在终态/超时时回填结果唤醒回 queued。 */
+  async pollDueWaitingExternalRuns(): Promise<number> {
+    let dueRuns: ClaimedRun[]
+    try {
+      dueRuns = await this.repository.claimDueWaitingExternalRuns(16, 15_000)
+    }
+    catch (error) {
+      telemetryLog("agent.run.poll_external_failed", "warn", {
+        operation: "agent.run.poll_external",
+        outcome: "failed",
+        ...errorDiagnostic(error, stableErrorCode(error)),
+      })
+      return 0
+    }
+    let resolvedCount = 0
+    for (const run of dueRuns) {
+      if (this.stopping) break
+      try {
+        const woke = await this.pollSingleWaitingRun(run)
+        if (woke) resolvedCount += 1
+      }
+      catch (error) {
+        telemetryLog("agent.run.poll_external_failed", "warn", {
+          "operation": "agent.run.poll_external",
+          "outcome": "failed",
+          "luna.run.id": run.id,
+          ...errorDiagnostic(error, stableErrorCode(error)),
+        })
+      }
+    }
+    return resolvedCount
+  }
+
+  private async pollSingleWaitingRun(run: ClaimedRun): Promise<boolean> {
+    const checkpoint = await this.repository.loadRunCheckpoint(run.id)
+    const waitingTask = checkpoint?.state.waitingTask
+    if (!checkpoint || !waitingTask) {
+      await this.repository.updateRun(run.id, "waiting_external", "queued").catch(() => undefined)
+      return true
+    }
+    const nextPhase = checkpoint.state.pendingBatchCalls?.length ? "tool_execution" : "model"
+    const restCheckpointState = { ...checkpoint.state }
+    delete restCheckpointState.waitingTask
+    const completeWaitingTask = async (
+      status: "succeeded" | "failed",
+      result: Record<string, unknown>,
+      durationMs: number,
+      errorCode?: string,
+    ): Promise<boolean> => {
+      const redactedResult = redact(result)
+      return this.repository.resolveWaitingExternalRun({
+        runId: run.id,
+        expectedCheckpointRevision: checkpoint.revision,
+        nextPhase,
+        nextCheckpointState: restCheckpointState,
+        itemId: waitingTask.itemId,
+        toolCallId: waitingTask.toolCallId,
+        itemStatus: status === "succeeded" ? "completed" : "failed",
+        itemContent: {
+          toolCallId: waitingTask.toolCallId,
+          modelCallId: waitingTask.toolCallId,
+          ...(checkpoint.state.pendingBatchId ? { batchId: checkpoint.state.pendingBatchId } : {}),
+          operationId: "wait_for_task",
+          status,
+          arguments: {
+            projectId: waitingTask.projectId,
+            taskType: waitingTask.taskType,
+            taskId: waitingTask.taskId,
+            timeoutSeconds: waitingTask.timeoutSeconds,
+          },
+          result: redactedResult,
+          ...(errorCode ? { errorCode } : {}),
+          durationMs: Math.max(0, Math.round(durationMs)),
+        },
+        eventType: status === "succeeded" ? "tool.completed" : "tool.failed",
+        eventData: {
+          itemId: waitingTask.itemId,
+          toolCallId: waitingTask.toolCallId,
+          operationId: "wait_for_task",
+          status,
+          result: redactedResult,
+          ...(errorCode ? { errorCode } : {}),
+        },
+      })
+    }
+
+    return withSpan("agent.run.poll_external_task", internalSpanOptions({
+      "luna.run.id": run.id,
+      "luna.turn.id": run.turnId,
+      "luna.task.type": waitingTask.taskType,
+    }), async (span) => {
+      const nowMs = Date.now()
+      const startedMs = Date.parse(waitingTask.startedAt)
+      const deadlineMs = Date.parse(waitingTask.deadlineAt)
+      const durationMs = Math.max(0, nowMs - (Number.isFinite(startedMs) ? startedMs : nowMs))
+      if (!this.taskStatusClient) {
+        const errorCode = "ai.tool_not_available"
+        const resolved = await completeWaitingTask(
+          "failed",
+          { status: "failed", errorCode, retryable: false },
+          durationMs,
+          errorCode,
+        )
+        span.setAttribute("luna.task.poll_outcome", "client_unavailable")
+        return resolved
+      }
+
+      const check = await this.taskStatusClient.checkTaskStatus({
+        runId: run.id,
+        projectId: waitingTask.projectId,
+        taskType: waitingTask.taskType,
+        taskId: waitingTask.taskId,
+        signal: this.stopController.signal,
+      })
+
+      if (check.kind === "terminal_error") {
+        const resolved = await completeWaitingTask(
+          "failed",
+          {
+            status: "failed",
+            errorCode: check.errorCode,
+            httpStatus: check.status,
+            retryable: false,
+            guidance: "无法读取目标后台任务状态（任务不存在或当前用户无访问权限），请向用户如实说明。",
+          },
+          durationMs,
+          check.errorCode,
+        )
+        span.setAttribute("luna.task.poll_outcome", "terminal_error")
+        return resolved
+      }
+
+      if (check.kind === "ok" && check.snapshot.terminal) {
+        const formatted = formatWaitForTaskResult(check.snapshot, { timedOut: false, durationMs })
+        const resolved = await completeWaitingTask("succeeded", formatted, durationMs)
+        span.setAttribute("luna.task.poll_outcome", check.snapshot.taskStatus)
+        return resolved
+      }
+
+      const effectiveDeadlineMs = Number.isFinite(deadlineMs) ? deadlineMs : nowMs
+      if (nowMs >= effectiveDeadlineMs) {
+        if (check.kind === "transient_error") {
+          const resolved = await completeWaitingTask(
+            "failed",
+            {
+              status: "failed",
+              projectId: waitingTask.projectId,
+              taskType: waitingTask.taskType,
+              taskId: waitingTask.taskId,
+              errorCode: check.errorCode,
+              observationCode: check.errorCode,
+              timedOut: true,
+              durationMs: Math.max(0, Math.round(durationMs)),
+              retryable: false,
+              guidance: "等待达到超时上限且后台任务状态接口当前不可达（unavailable），无法确认任务当前状态，请如实告知用户稍后查看或重试，切勿臆测任务仍在运行或已完成。",
+            },
+            durationMs,
+            check.errorCode,
+          )
+          span.setAttribute("luna.task.poll_outcome", "timed_out_unavailable")
+          return resolved
+        }
+        const formatted = formatWaitForTaskResult(check.snapshot, { timedOut: true, durationMs })
+        const resolved = await completeWaitingTask("succeeded", formatted, durationMs)
+        span.setAttribute("luna.task.poll_outcome", "timed_out")
+        return resolved
+      }
+
+      const nextPollCount = waitingTask.pollCount + 1
+      const backoffMs = computeWakeBackoffMs(waitingTask.pollCount)
+      const nextWakeAt = new Date(Math.min(effectiveDeadlineMs, nowMs + backoffMs)).toISOString()
+      await this.repository.rescheduleWaitingExternalRun(run.id, checkpoint.revision, nextPollCount, nextWakeAt)
+      span.setAttribute("luna.task.poll_outcome", "rescheduled")
+      return false
+    }, extractTraceContext(run.traceContext))
+  }
+
+  private pump(): Promise<void> {
+    if (this.stopping) return Promise.resolve()
+    if (this.pumpPromise) {
+      this.pumpRequested = true
+      return this.pumpPromise
+    }
+    const currentPump = (async () => {
+      try {
+        do {
+          this.pumpRequested = false
+          if (this.stopping) break
+          await this.pollDueWaitingExternalRuns()
+          while (!this.stopping && this.active.size < this.runtimeSettings.agentConcurrentRuns) {
+            let claimed: { run: ClaimedRun, candidateExecutionSnapshot: RunExecutionSnapshot } | undefined
+            try {
+              claimed = await this.claimNextRun()
+            }
+            catch (error) {
+              telemetryLog("agent.run.dispatch_failed", "error", {
+                operation: "agent.run.dispatch",
+                outcome: "failed",
+                ...errorDiagnostic(error, stableErrorCode(error)),
+              })
+              break
+            }
+            if (!claimed) break
+            const { run, candidateExecutionSnapshot } = claimed
+            const task = this.executeClaimedRun(run, candidateExecutionSnapshot)
+              .catch((error) => {
+                telemetryLog("agent.run.dispatch_failed", "error", {
+                  operation: "agent.run.dispatch",
+                  outcome: "failed",
+                  ...errorDiagnostic(error, stableErrorCode(error)),
+                })
+                return false
+              })
+              .finally(() => {
+                this.active.delete(task)
+                this.notifyWorkAvailable()
+              })
+            this.active.add(task)
+          }
+        } while (this.pumpRequested && !this.stopping)
+      }
+      finally {
+        this.pumpPromise = undefined
+      }
+    })()
+    this.pumpPromise = currentPump
+    return currentPump
+  }
+
+  private async claimNextRun(): Promise<{ run: ClaimedRun, candidateExecutionSnapshot: RunExecutionSnapshot } | undefined> {
     const candidateExecutionSnapshot: RunExecutionSnapshot = Object.freeze({
       runtimeSettings: this.runtimeSettings,
       providerConfig: this.providerConfig,
       toolCatalogDigest: this.catalogRegistry.digest(),
     })
-    const run = await this.repository.claimNextQueuedRun(candidateExecutionSnapshot)
-    if (!run) return false
+    const run = await this.repository.claimNextQueuedRun(
+      candidateExecutionSnapshot,
+      this.runtimeSettings.userConcurrentRuns,
+    )
+    if (!run) return undefined
+    return { run, candidateExecutionSnapshot }
+  }
+
+  private async claimAndExecute(): Promise<boolean> {
+    const claimed = await this.claimNextRun()
+    if (!claimed) return false
+    return this.executeClaimedRun(claimed.run, claimed.candidateExecutionSnapshot)
+  }
+
+  private async executeClaimedRun(
+    run: ClaimedRun,
+    candidateExecutionSnapshot: RunExecutionSnapshot,
+  ): Promise<boolean> {
     let outcome = "failed"
     let settleRun!: () => void
     const settlement = new Promise<void>((resolve) => { settleRun = resolve })
@@ -170,25 +440,6 @@ export class RunExecutor {
             throw new Error("ai.tool_catalog_snapshot_invalid")
           this.catalogRegistry.restore(providerConfig.toolCatalog, toolCatalogDigest)
 
-          const activeCount = await this.repository.countActiveUserRuns(run.ownerUserId)
-          if (activeCount > runtimeSettings.userConcurrentRuns) {
-            telemetryLog("agent.run.quota_rejected", "warn", {
-              "luna.run.id": run.id,
-              "luna.user.id": run.ownerUserId,
-              "luna.quota.user_concurrent_runs": runtimeSettings.userConcurrentRuns,
-              "luna.quota.active_count": activeCount,
-              "operation": "agent.run.claim",
-              "outcome": "rejected",
-              "error.code": "ai.quota.user_concurrent_runs_exceeded",
-              "error.type": "AgentQuotaError",
-              "error.message": "ai.quota.user_concurrent_runs_exceeded",
-            })
-            await this.repository.updateRun(run.id, "running", "failed", {
-              completedAt: new Date().toISOString(),
-              errorCode: "ai.quota.user_concurrent_runs_exceeded",
-            })
-            return "failed"
-          }
           this.tools.setRunMaxToolCallsForRun(run.id, runtimeSettings.runMaxToolCalls)
           return await this.runLoop.execute({
             run,
@@ -202,8 +453,8 @@ export class RunExecutor {
         catch (error) {
           outcome = error instanceof RunStateConflictError ? "canceled" : stableErrorCode(error)
           telemetryLog("agent.run.dispatch_failed", "error", {
-            operation: "agent.run.execute",
-            outcome: "failed",
+            "operation": "agent.run.execute",
+            "outcome": "failed",
             "luna.run.id": run.id,
             ...errorDiagnostic(error, outcome),
           })
@@ -214,8 +465,8 @@ export class RunExecutor {
     catch (error) {
       outcome = error instanceof RunStateConflictError ? "canceled" : stableErrorCode(error)
       telemetryLog("agent.run.dispatch_failed", "error", {
-        operation: "agent.run.execute",
-        outcome: "failed",
+        "operation": "agent.run.execute",
+        "outcome": "failed",
         "luna.run.id": run.id,
         ...errorDiagnostic(error, outcome),
       })
@@ -259,14 +510,14 @@ export class RunExecutor {
         const recovery = await this.repository.recoverOrphanedRun(run.id, run.rowVersion, maxRunRecoveries)
         if (recovery === "requeued") {
           telemetryLog("agent.run.recovered", "warn", {
-            operation: "agent.run.startup_reconcile",
-            outcome: "requeued",
+            "operation": "agent.run.startup_reconcile",
+            "outcome": "requeued",
             "luna.run.id": run.id,
           })
         }
         else if (recovery === "interrupted") {
           telemetryLog("agent.run.orphan_interrupted", "warn", {
-            operation: "agent.run.startup_reconcile", outcome: "interrupted", "error.code": "ai.agent_restarted",
+            "operation": "agent.run.startup_reconcile", "outcome": "interrupted", "error.code": "ai.agent_restarted",
           })
           await this.cleanupTerminalStream(run.id)
         }
@@ -310,9 +561,20 @@ export class RunExecutor {
         operation: "agent.tool_catalog.retain", outcome: "failed",
         ...errorDiagnostic(error, "ai.persistence_unavailable"),
       }))
-    const runtimeSettings = runtimeSettingsFromRemote(candidate.runtime)
+    const runtimeSettings = runtimeSettingsSnapshot({
+      ...this.baseRuntimeSettings,
+      ...runtimeSettingsFromRemote(candidate.runtime, {
+        maxModelSteps: this.baseRuntimeSettings.maxModelSteps,
+        runMaxToolCalls: this.baseRuntimeSettings.runMaxToolCalls,
+      }),
+      assistantMaxOutputTokens: this.baseRuntimeSettings.assistantMaxOutputTokens,
+      maxCardRepairAttempts: this.baseRuntimeSettings.maxCardRepairAttempts,
+      contextRecentTurnCount: this.baseRuntimeSettings.contextRecentTurnCount,
+      contextMaxCompressionTurnsPerCompile: this.baseRuntimeSettings.contextMaxCompressionTurnsPerCompile,
+      contextSummaryMaxOutputTokens: this.baseRuntimeSettings.contextSummaryMaxOutputTokens,
+    })
     this.tools.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
-    this.runtimeSettings = runtimeSettingsSnapshot(runtimeSettings)
+    this.runtimeSettings = runtimeSettings
     this.providerConfig = candidate
   }
 }
