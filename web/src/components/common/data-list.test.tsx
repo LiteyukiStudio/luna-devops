@@ -269,8 +269,8 @@ describe('data list behavior', () => {
     const scrollArea = container.querySelector('[data-slot="scroll-area"]')
 
     expect(root).not.toBeNull()
-    expect(root?.className).not.toMatch(/md:max-h-\[calc\(100vh-/)
-    expect(root?.className).not.toMatch(/md:h-\[calc\(100vh-/)
+    expect(root?.className).not.toMatch(/md:max-h-\[calc\(100d?vh-/)
+    expect(root?.className).not.toMatch(/md:h-\[calc\(100d?vh-/)
     expect(tableFrame).not.toHaveClass('flex-1')
     expect(scrollArea).not.toHaveClass('h-full')
     expect(scrollArea).toHaveAttribute('data-scrollbars', 'horizontal')
@@ -292,8 +292,8 @@ describe('data list behavior', () => {
     const tableFrame = container.querySelector('[data-slot="table-frame"]')
     const scrollArea = container.querySelector('[data-slot="scroll-area"]')
 
-    expect(root).toHaveClass('md:h-[calc(100vh-24rem)]')
-    expect(root?.className).not.toMatch(/md:max-h-\[calc\(100vh-/)
+    expect(root).toHaveClass('md:h-[calc(100dvh-24rem)]')
+    expect(root?.className).not.toMatch(/md:max-h-\[calc\(100d?vh-/)
     expect(tableFrame).toHaveClass('min-h-0', 'flex-1')
     expect(scrollArea).toHaveClass('h-full')
     expect(scrollArea).toHaveAttribute('data-scrollbars', 'both')

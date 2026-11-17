@@ -608,7 +608,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
             )}
           </div>
         </div>
-        <CommandList className="max-h-[min(28rem,66vh)]">
+        <CommandList className="max-h-[min(28rem,66dvh)]">
           {serverSearchEnabled && serverSearch.isError && (
             <div className="mx-3 my-2 flex items-center justify-between gap-3 rounded-control border border-danger-border bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
               <span className="inline-flex min-w-0 items-center gap-2">

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 function Sidebar({ className, ...props }: ComponentProps<'aside'>) {
   return (
     <aside
-      className={cn('sticky top-0 hidden h-screen w-64 min-w-64 max-w-64 shrink-0 flex-col overflow-x-hidden bg-surface lg:flex', className)}
+      className={cn('sticky top-0 hidden h-dvh w-64 min-w-64 max-w-64 shrink-0 flex-col overflow-x-hidden bg-surface lg:flex', className)}
       data-slot="sidebar"
       {...props}
     />

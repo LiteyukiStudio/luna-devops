@@ -115,7 +115,7 @@ describe('events page resources', () => {
 
     await user.click(await screen.findByText('LiteyukiStudio/neo-blog'))
 
-    expect(document.querySelector('[data-slot="data-list"]')).toHaveClass('md:h-[calc(100vh-24rem)]')
+    expect(document.querySelector('[data-slot="data-list"]')).toHaveClass('md:h-[calc(100dvh-24rem)]')
     expect(document.querySelector('[data-slot="scroll-area"]')).toHaveAttribute('data-scrollbars', 'both')
 
     const sheet = await screen.findByRole('dialog')

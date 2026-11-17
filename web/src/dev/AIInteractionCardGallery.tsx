@@ -11,7 +11,7 @@ export function AIInteractionCardGallery() {
     ? allFixtures.filter(fixture => fixture.generationId === requestedFixture)
     : allFixtures
   return (
-    <main className="min-h-screen bg-background p-4">
+    <main className="min-h-dvh min-w-0 bg-background p-4">
       <div className="grid items-start gap-4 xl:grid-cols-3">
         {fixtures.map(fixture => (
           <section key={fixture.generationId} className="mx-auto w-full min-w-0 max-w-[420px] overflow-x-hidden rounded-container border border-border bg-surface p-4 text-[13px] shadow-sm" data-ai-gallery-template={fixture.template}>
@@ -25,7 +25,7 @@ export function AIInteractionCardGallery() {
 
 function MessageActionsFixture() {
   return (
-    <main className="grid min-h-screen place-items-center bg-background p-4">
+    <main className="grid min-h-dvh min-w-0 place-items-center bg-background p-4">
       <section className="flex h-[520px] w-full max-w-[420px] overflow-hidden rounded-container border border-border bg-surface text-[13px] shadow-overlay">
         <AIAssistantTimeline
           blocks={[

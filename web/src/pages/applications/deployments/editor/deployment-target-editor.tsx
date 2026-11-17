@@ -325,7 +325,7 @@ export function DeploymentTargetEditor({
             />
           </div>
         </div>
-        <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-container border border-border bg-surface-raised px-4 py-3 shadow-raised @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-between">
+        <div className="flex flex-col gap-3 rounded-container border border-border bg-surface-raised px-4 py-3 shadow-raised @lg/workspace:sticky @lg/workspace:bottom-0 @lg/workspace:z-10 @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-between" data-slot="editor-action-bar">
           <div aria-live="polite" className="min-w-0 text-sm empty:hidden">
             {redeployFailure && showRedeployRetry
               ? (

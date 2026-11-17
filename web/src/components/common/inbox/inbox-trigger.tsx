@@ -57,7 +57,7 @@ export function InboxTrigger() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{button}</PopoverTrigger>
-      <PopoverContent align="end" className="flex h-[min(70vh,38rem)] w-[25rem] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0">
+      <PopoverContent align="end" className="flex h-[min(70dvh,38rem)] w-[25rem] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0">
         <InboxPanel onClose={() => setOpen(false)} />
       </PopoverContent>
     </Popover>

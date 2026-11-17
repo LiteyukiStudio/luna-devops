@@ -375,7 +375,7 @@ export function AppLayout() {
     <AIAssistantRuntimeProvider capabilities={enabledAICapabilities}>
       {assistantRoute
         ? (
-            <div className="h-dvh min-h-0 overflow-hidden bg-surface text-foreground">
+            <div className="h-dvh min-h-0 overflow-hidden overscroll-none bg-surface text-foreground">
               <main className="size-full min-h-0 overflow-hidden">
                 {aiCapabilities.isPending
                   ? <AppLoadingState logoUrl={configs['site.logoUrl'] || '/luna-devops-logo.svg'} title={t('aiAssistant.title')} />
@@ -388,7 +388,7 @@ export function AppLayout() {
             </div>
           )
         : (
-            <div className="workspace-canvas flex h-dvh overflow-hidden text-foreground">
+            <div className="workspace-canvas flex h-dvh overflow-hidden overscroll-none text-foreground" data-slot="workspace-shell">
               {!desktopSidebarCollapsed && (
                 <Sidebar className="h-full w-72 min-w-72 max-w-72 bg-transparent">
                   {renderSidebarContent()}
@@ -442,7 +442,7 @@ export function AppLayout() {
                     <HelpMenu />
                   </header>
                   {/* 工作区是页面布局的尺寸容器：AI 助手停靠面板挤压正文时，页面网格按正文实际宽度（@…/workspace:）而非视口响应 */}
-                  <main className="@container/workspace min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-page-inline py-page-block">
+                  <main className="@container/workspace min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-page-inline py-page-block" data-slot="workspace-main">
                     <div className="flex min-h-full min-w-0 flex-col gap-group">
                       {/* 左侧依次是 Tabs 与页面描述，右侧是页面级操作；三者都为空时整行隐藏 */}
                       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 has-[[data-slot=workspace-page-tabs]:empty]:has-[[data-slot=workspace-page-description]:empty]:has-[[data-slot=workspace-page-tools]:empty]:hidden" data-slot="workspace-page-header">

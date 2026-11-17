@@ -75,7 +75,7 @@ export function RuntimeWebConsoleDialog({
           'flex flex-col gap-0 overflow-hidden p-0',
           fullscreen
             ? 'h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none'
-            : 'max-h-[calc(100vh-2rem)] w-[min(94vw,80rem)] max-w-none',
+            : 'max-h-[calc(100dvh-2rem)] w-[min(94vw,80rem)] max-w-none',
         )}
         showCloseButton={false}
       >

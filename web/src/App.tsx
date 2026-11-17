@@ -94,5 +94,5 @@ function lazyTranslated<T extends Record<string, ComponentType<object>>, K exten
 }
 
 function RouteFallback() {
-  return <div className="min-h-screen bg-primary-subtle" />
+  return <div className="min-h-dvh bg-primary-subtle" />
 }

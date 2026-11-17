@@ -9,7 +9,7 @@ export function OAuthConsentShell({ children, title }: { children: ReactNode, ti
   const configs = usePublicConfig()
 
   return (
-    <div className="grid min-h-screen place-items-center bg-primary-subtle p-4 text-foreground">
+    <div className="grid min-h-dvh min-w-0 place-items-center bg-primary-subtle p-4 text-foreground">
       <PageMotion className="w-full max-w-xl">
         <Card className="grid gap-5 p-6 sm:p-8">
           <div className="flex items-center gap-3 border-b border-border pb-5">

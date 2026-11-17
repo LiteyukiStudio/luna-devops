@@ -49,7 +49,7 @@ export function RuntimeConfigSetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[88vh] max-w-3xl flex-col overflow-hidden p-0">
+      <DialogContent className="flex max-h-[88dvh] max-w-3xl flex-col overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-6 py-5">
           <DialogTitle>{editingSet ? t('runtimeConfigSets.editTitle') : t('runtimeConfigSets.createTitle')}</DialogTitle>
           <DialogDescription>{t('runtimeConfigSets.dialogDescription')}</DialogDescription>

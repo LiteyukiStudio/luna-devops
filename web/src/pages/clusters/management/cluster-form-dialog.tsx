@@ -205,7 +205,7 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(88vh,52rem)] w-[min(92vw,48rem)] max-w-[92vw] min-w-0 flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex max-h-[min(88dvh,52rem)] w-[min(92vw,48rem)] max-w-[92vw] min-w-0 flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b border-border p-5 pb-4">
           <DialogTitle>{editingCluster ? t('deploymentsPage.editCluster') : t('deploymentsPage.createCluster')}</DialogTitle>
           <DialogDescription>{t('clustersPage.dialogDescription')}</DialogDescription>

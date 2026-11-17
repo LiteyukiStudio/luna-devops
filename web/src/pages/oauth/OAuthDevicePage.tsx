@@ -49,7 +49,7 @@ export function OAuthDevicePage() {
   }, [location.pathname, location.search, navigate, session.initialized, session.user])
 
   if (!session.initialized || !session.user)
-    return <div className="min-h-screen bg-primary-subtle" />
+    return <div className="min-h-dvh bg-primary-subtle" />
 
   const submitCode = () => {
     const normalized = normalizeDeviceCode(code)

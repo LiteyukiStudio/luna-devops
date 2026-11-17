@@ -16,7 +16,7 @@ function LoadingRegion({ children, className }: { children: ReactNode, className
 /** Initial application bootstrap state shown before the authenticated shell is ready. */
 export function AppLoadingState({ logoUrl, title }: { logoUrl: string, title: string }) {
   return (
-    <LoadingRegion className="grid min-h-screen place-items-center bg-surface-base p-4">
+    <LoadingRegion className="grid min-h-dvh min-w-0 place-items-center bg-surface-base p-4">
       <div className="grid justify-items-center gap-4">
         <img alt="" className="size-12 rounded-feature object-contain" src={logoUrl} />
         <div className="grid justify-items-center gap-2">

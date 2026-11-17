@@ -48,7 +48,7 @@ export function OAuthAuthorizePage() {
   }, [location.pathname, location.search, navigate, session.initialized, session.user])
 
   if (!session.initialized || !session.user || request.isLoading)
-    return <div className="min-h-screen bg-primary-subtle" />
+    return <div className="min-h-dvh bg-primary-subtle" />
 
   return (
     <OAuthConsentShell title={t('oauthApps.authorizeTitle')}>

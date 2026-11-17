@@ -55,6 +55,9 @@
 - 能从 props、Query 或 state 计算的值在 render 派生。禁止用 `useEffect + setState` 复制数据、
   回填默认值、修剪选项或重置筛选/页码。
 - Effect 依赖完整、cleanup 对称，并能安全经历开发模式重复挂载；列表使用稳定领域 ID 作为 key。
+- 禁止在 `useEffect`、`useLayoutEffect`、`IntersectionObserver` 或被动滚动同步逻辑中调用
+  `Element.scrollIntoView()`（它会级联滚动所有可滚动祖先容器并引发移动端回弹死循环）；横向 Tab/导航居中同步
+  只能操作该横向容器自身的 `scrollLeft` / `scrollTo({ left })`。
 - `memo`、`useMemo`、`useCallback` 只服务于已测量成本或稳定引用契约，正确性不依赖 memoization。
 - 新增或修改表单使用 React Hook Form、`zodResolver` 与 Zod；从 schema 推导表单类型。
 - `defaultValues` 完整稳定；打开编辑器或切换资源时一次 `reset` 建立基线，不逐字段 Effect 同步。
@@ -93,6 +96,11 @@
   更重的阴影只用于 Dialog、Popover 与悬浮层。
 - 同页或 Tab 默认最多一个实心主操作。同级动作使用 outline、ghost 或菜单。
 - 主题只由明暗模式和单色品牌主色决定，页面不得读取主题偏好或建立局部主题分支；“Project”在 UI 统一称“项目空间”。
+- 禁止在 `html, body, #root` 全局锁死 `height: 100%; overflow: hidden`；独立路由页（登录、注册、OAuth、403 等）
+  由文档流自然滚动，工作区固定视口壳（`AppLayout`）自行维护 `h-dvh overflow-hidden overscroll-none`，主内容滚动区
+  `<main>` 必须携带 `overscroll-contain` / `overscroll-y-contain`。
+- 禁止新增静态 `vh` / `h-screen` / `min-h-screen` / `max-h-screen` 视口高度单位，统一使用动态视口单位 `dvh`
+  （`h-dvh` / `min-h-dvh` / `max-h-dvh` / `max-h-[*dvh]`）。
 
 ## 7. i18n、可访问性与安全
 

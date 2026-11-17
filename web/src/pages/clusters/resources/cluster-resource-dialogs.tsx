@@ -88,7 +88,7 @@ export function ClusterResourceDialogs({
         onOpenChange={open => !open && onResourcesToDeleteChange([])}
       />
       <Dialog open={Boolean(eventResource)} onOpenChange={open => !open && onCloseEvents()}>
-        <DialogContent className="flex max-h-[min(88vh,42rem)] w-[min(92vw,56rem)] max-w-[92vw] min-w-0 flex-col overflow-hidden p-0">
+        <DialogContent className="flex max-h-[min(88dvh,42rem)] w-[min(92vw,56rem)] max-w-[92vw] min-w-0 flex-col overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b border-border p-5 pb-4">
             <DialogTitle>{t('clustersPage.resourceEventsTitle')}</DialogTitle>
             <DialogDescription>
@@ -106,7 +106,7 @@ export function ClusterResourceDialogs({
         onOpenChange={open => !open && onCloseConsole()}
       />
       <Dialog open={Boolean(yamlResource)} onOpenChange={open => !open && onCloseYAML()}>
-        <DialogContent className="flex max-h-[min(88vh,46rem)] w-[min(92vw,64rem)] max-w-[92vw] min-w-0 flex-col overflow-hidden p-0">
+        <DialogContent className="flex max-h-[min(88dvh,46rem)] w-[min(92vw,64rem)] max-w-[92vw] min-w-0 flex-col overflow-hidden p-0">
           <div className="flex shrink-0 items-start gap-3 border-b border-border p-5 pb-4 pr-16">
             <DialogHeader className="min-w-0 flex-1 pr-0">
               <DialogTitle>{t('clustersPage.resourceYamlTitle')}</DialogTitle>

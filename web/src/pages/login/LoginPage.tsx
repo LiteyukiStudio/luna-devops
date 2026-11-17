@@ -74,7 +74,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-primary-subtle px-3 py-4 text-foreground sm:px-6 sm:py-6 lg:px-4 lg:py-8">
+    <div className="grid min-h-dvh min-w-0 place-items-center bg-primary-subtle px-3 py-4 text-foreground sm:px-6 sm:py-6 lg:px-4 lg:py-8">
       <PageMotion className="w-full max-w-5xl">
         <Card
           className="relative overflow-visible bg-surface p-4 shadow-overlay sm:p-6 lg:bg-[image:var(--auth-card-background)] lg:p-0"

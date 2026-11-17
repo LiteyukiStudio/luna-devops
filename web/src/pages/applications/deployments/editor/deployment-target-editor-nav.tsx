@@ -6,7 +6,13 @@ import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/common/status-badge'
 import { cn } from '@/lib/utils'
 import { advancedItemConfiguredCount, visibleAdvancedItems } from './advanced/advanced-items'
-import { deploymentTargetSectionAnchor, preferredScrollBehavior, scrollToDeploymentTargetSection, sectionErrorCount } from './deployment-target-editor-utils'
+import {
+  deploymentTargetSectionAnchor,
+  preferredScrollBehavior,
+  scrollChildIntoHorizontalContainer,
+  scrollToDeploymentTargetSection,
+  sectionErrorCount,
+} from './deployment-target-editor-utils'
 import { deploymentTargetSectionOrder } from './deployment-target-form'
 
 /** 分区导航：显示当前摘要和错误数；桌面端固定在左侧，窄屏为横向滚动条。 */
@@ -20,9 +26,10 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
   const { control } = useFormContext<DeploymentTargetFormValues>()
   const { errors } = useFormState({ control })
   const activeSection = useActiveSection()
+  const listRef = useRef<HTMLOListElement | null>(null)
   const activeLinkRef = useRef<HTMLAnchorElement | null>(null)
   useEffect(() => {
-    activeLinkRef.current?.scrollIntoView?.({ behavior: preferredScrollBehavior(), block: 'nearest', inline: 'nearest' })
+    scrollChildIntoHorizontalContainer(listRef.current, activeLinkRef.current, preferredScrollBehavior())
   }, [activeSection])
   const values = useWatch({ control })
   const isImageSource = values.sourceType === 'image'
@@ -61,7 +68,7 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
 
   return (
     <nav aria-label={t('deploymentTargetEditor.navLabel')} className="min-w-0 rounded-container border border-border bg-surface p-2 shadow-surface-sm">
-      <ol className="flex gap-1 overflow-x-auto @2xl/workspace:grid @2xl/workspace:overflow-visible">
+      <ol ref={listRef} className="flex gap-1 overflow-x-auto @2xl/workspace:grid @2xl/workspace:overflow-visible">
         {deploymentTargetSectionOrder.map((section) => {
           const errorCount = sectionErrorCount(errors, section, values.sourceType)
           const active = activeSection === section

@@ -54,7 +54,7 @@ interface DataListProps<T> {
   loading?: boolean
   /**
    * 是否启用视口内固定高度滚动模式。
-   * 启用后桌面端应用 `md:h-[calc(100vh-...)]`，由内部 ScrollArea 承担纵向与横向滚动、吸顶表头与固定底部分页；
+   * 启用后桌面端应用 `md:h-[calc(100dvh-...)]`，由内部 ScrollArea 承担纵向与横向滚动、吸顶表头与固定底部分页；
    * 默认 false 时不限制列表最大高度，内容自然展开并由外层页面或抽屉容器统一纵向滚动，仅保留横向滚动。
    */
   constrainedHeight?: boolean
@@ -95,10 +95,10 @@ interface DataListProps<T> {
 
 // Tailwind v4 只扫描源码中的字面量类名，预定义 constrainedHeight 模式可选的视口固定高度，避免动态拼接失效。
 const viewportOffsetFixedClass: Record<number, string> = {
-  15: 'md:h-[calc(100vh-15rem)]',
-  20: 'md:h-[calc(100vh-20rem)]',
-  24: 'md:h-[calc(100vh-24rem)]',
-  28: 'md:h-[calc(100vh-28rem)]',
+  15: 'md:h-[calc(100dvh-15rem)]',
+  20: 'md:h-[calc(100dvh-20rem)]',
+  24: 'md:h-[calc(100dvh-24rem)]',
+  28: 'md:h-[calc(100dvh-28rem)]',
 }
 
 function stickyColumnClass(sticky: DataListColumn<unknown>['sticky'], surface: 'header' | 'cell') {

@@ -25,6 +25,39 @@ export function scrollToDeploymentTargetSection(section: DeploymentTargetEditorS
   document.getElementById(deploymentTargetSectionAnchor(section))?.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'start' })
 }
 
+/**
+ * 仅在横向滚动容器内部水平对齐目标子项，严禁调用 Element.scrollIntoView()，
+ * 避免窄屏下顶部导航滚出主视口后被级联拉回导致 `<main>` 纵向回弹死循环。
+ */
+export function scrollChildIntoHorizontalContainer(
+  container: HTMLElement | null,
+  child: HTMLElement | null,
+  behavior: ScrollBehavior = preferredScrollBehavior(),
+) {
+  if (!container || !child)
+    return
+  const containerRect = container.getBoundingClientRect()
+  const childRect = child.getBoundingClientRect()
+  const containerWidth = container.clientWidth || containerRect.width
+  const childWidth = child.offsetWidth || childRect.width
+  if (containerWidth <= 0 || container.scrollWidth <= containerWidth)
+    return
+
+  const childLeft = containerRect.width > 0 || childRect.left !== containerRect.left
+    ? container.scrollLeft + (childRect.left - containerRect.left)
+    : child.offsetLeft - container.offsetLeft
+  const maxScrollLeft = Math.max(0, container.scrollWidth - containerWidth)
+  const centeredLeft = childLeft - (containerWidth - childWidth) / 2
+  const nextLeft = Math.min(maxScrollLeft, Math.max(0, Math.round(centeredLeft)))
+  if (Math.abs(nextLeft - container.scrollLeft) < 1)
+    return
+
+  if (typeof container.scrollTo === 'function')
+    container.scrollTo({ behavior, left: nextLeft })
+  else
+    container.scrollLeft = nextLeft
+}
+
 /** 递归统计叶子字段/动态行的真实错误数量，避免多行出错只计作 1 条。 */
 export function countLeafErrors(value: unknown): number {
   if (!value || typeof value !== 'object')

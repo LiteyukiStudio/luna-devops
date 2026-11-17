@@ -1,7 +1,7 @@
 import type { DeploymentTargetFormValues } from './deployment-target-form'
 import type { BuildTemplate, DeploymentTarget, Release } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,7 @@ import { api, ApiError } from '@/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { DeploymentTargetEditor } from './deployment-target-editor'
+import { deploymentTargetSectionAnchor, scrollChildIntoHorizontalContainer } from './deployment-target-editor-utils'
 import { deploymentTargetToFormValues, emptyDeploymentTargetFormValues } from './deployment-target-form'
 
 vi.mock('@/api', async (importOriginal) => {
@@ -531,5 +532,150 @@ describe('deployment target editor', () => {
         failureThreshold: 3,
       }),
     }))
+  })
+
+  it('syncs horizontal nav scrollLeft on activeSection changes without calling scrollIntoView or snapping mobile main scroll back', () => {
+    const originalIntersectionObserver = globalThis.IntersectionObserver
+    let intersectionCallback: IntersectionObserverCallback | null = null
+
+    class MockIntersectionObserver implements IntersectionObserver {
+      readonly root = null
+      readonly rootMargin = '0px 0px -65% 0px'
+      readonly scrollMargin = '0px'
+      readonly thresholds = [0]
+
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback
+      }
+
+      disconnect = vi.fn()
+      observe = vi.fn()
+      takeRecords = () => []
+      unobserve = vi.fn()
+    }
+
+    globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver
+
+    try {
+      const scrollIntoViewMock = vi.mocked(Element.prototype.scrollIntoView)
+      scrollIntoViewMock.mockClear()
+
+      renderEditor({ values: { name: 'dev' } })
+
+      // Simulate narrow mobile viewport where the action bar is non-sticky by default (< @lg/workspace).
+      const actionBar = document.querySelector('[data-slot="editor-action-bar"]')
+      expect(actionBar).not.toBeNull()
+      expect(actionBar).not.toHaveClass('sticky', 'bottom-0')
+      expect(actionBar).toHaveClass('@lg/workspace:sticky', '@lg/workspace:bottom-0')
+
+      const navigation = screen.getByRole('navigation', { name: 'Deploy config sections' })
+      const navList = navigation.querySelector('ol') as HTMLOListElement
+      const runtimeLink = within(navigation).getByRole('link', { name: /Runtime and scaling/ })
+
+      // Mock horizontal overflow on the narrow mobile nav strip.
+      Object.defineProperty(navList, 'clientWidth', { configurable: true, value: 320 })
+      Object.defineProperty(navList, 'scrollWidth', { configurable: true, value: 680 })
+      navList.scrollLeft = 0
+      const scrollToSpy = vi.fn(({ left }: ScrollToOptions) => {
+        if (typeof left === 'number')
+          navList.scrollLeft = left
+      })
+      navList.scrollTo = scrollToSpy as unknown as typeof navList.scrollTo
+      vi.spyOn(navList, 'getBoundingClientRect').mockReturnValue({
+        bottom: 48,
+        height: 48,
+        left: 0,
+        right: 320,
+        toJSON: () => ({}),
+        top: 0,
+        width: 320,
+        x: 0,
+        y: 0,
+      })
+      vi.spyOn(runtimeLink, 'getBoundingClientRect').mockReturnValue({
+        bottom: 44,
+        height: 40,
+        left: 360,
+        right: 504,
+        toJSON: () => ({}),
+        top: 4,
+        width: 144,
+        x: 360,
+        y: 4,
+      })
+
+      const runtimeSection = document.getElementById(deploymentTargetSectionAnchor('runtime')) as HTMLElement
+      expect(runtimeSection).not.toBeNull()
+      expect(intersectionCallback).not.toBeNull()
+
+      act(() => {
+        intersectionCallback?.([
+          {
+            boundingClientRect: runtimeSection.getBoundingClientRect(),
+            intersectionRatio: 1,
+            intersectionRect: runtimeSection.getBoundingClientRect(),
+            isIntersecting: true,
+            rootBounds: null,
+            target: runtimeSection,
+            time: 100,
+          },
+        ], {} as IntersectionObserver)
+      })
+
+      expect(runtimeLink).toHaveAttribute('aria-current', 'location')
+      // Only the horizontal <ol> container scrolls; Element.scrollIntoView is NEVER invoked on passive section changes.
+      expect(scrollIntoViewMock).not.toHaveBeenCalled()
+      expect(scrollToSpy).toHaveBeenCalledWith({
+        behavior: expect.stringMatching(/^(?:auto|smooth)$/),
+        left: 272,
+      })
+      expect(navList.scrollLeft).toBe(272)
+    }
+    finally {
+      globalThis.IntersectionObserver = originalIntersectionObserver
+    }
+  })
+
+  it('clamps horizontal scroll offsets safely and skips non-overflowing containers', () => {
+    const container = document.createElement('ol')
+    const child = document.createElement('a')
+    container.appendChild(child)
+    const scrollToSpy = vi.fn()
+    container.scrollTo = scrollToSpy
+
+    // Desktop grid: scrollWidth === clientWidth -> no-op.
+    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 240 })
+    Object.defineProperty(container, 'scrollWidth', { configurable: true, value: 240 })
+    scrollChildIntoHorizontalContainer(container, child, 'auto')
+    expect(scrollToSpy).not.toHaveBeenCalled()
+
+    // Mobile strip: clamps to maxScrollLeft when targeting the trailing item.
+    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 300 })
+    Object.defineProperty(container, 'scrollWidth', { configurable: true, value: 600 })
+    container.scrollLeft = 100
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({
+      bottom: 40,
+      height: 40,
+      left: 16,
+      right: 316,
+      toJSON: () => ({}),
+      top: 0,
+      width: 300,
+      x: 16,
+      y: 0,
+    })
+    vi.spyOn(child, 'getBoundingClientRect').mockReturnValue({
+      bottom: 36,
+      height: 36,
+      left: 450,
+      right: 590,
+      toJSON: () => ({}),
+      top: 2,
+      width: 140,
+      x: 450,
+      y: 2,
+    })
+    scrollChildIntoHorizontalContainer(container, child, 'smooth')
+    expect(scrollToSpy).toHaveBeenCalledWith({ behavior: 'smooth', left: 300 })
   })
 })
