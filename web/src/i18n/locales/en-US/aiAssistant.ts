@@ -287,6 +287,20 @@ const aiAssistant = {
       key: 'Key',
       value: 'Value',
       addEntry: 'Add entry',
+      validation: {
+        required: 'This field is required',
+        invalid: 'Invalid value',
+        numberInvalid: 'Enter a valid number',
+        integer: 'Enter a whole number',
+        min: 'Must be at least {{min}}',
+        max: 'Must be at most {{max}}',
+        minLength: 'Enter at least {{count}} characters',
+        maxLength: 'Enter at most {{count}} characters',
+        minItems: 'Select or add at least {{count}} items',
+        maxItems: 'Select or add at most {{count}} items',
+        keyRequired: 'Enter a key name',
+        keyValueIncomplete: 'Enter both key and value for every entry',
+      },
       renderError: {
         group: 'This interaction card group cannot be displayed right now. Other conversation content is unaffected.',
         card: 'This card cannot be displayed right now. Other cards remain available.',
@@ -598,6 +612,7 @@ const aiAssistant = {
       stop: 'Could not stop the current run',
       input: 'Could not submit the additional input',
       approval: 'Could not submit the approval decision',
+      conversationMissing: 'Create or select a conversation before running this action',
     },
     approval: {
       title: 'Approval required',

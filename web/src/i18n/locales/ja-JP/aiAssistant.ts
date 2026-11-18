@@ -287,6 +287,20 @@ const aiAssistant = {
       key: 'キー',
       value: '値',
       addEntry: '項目を追加',
+      validation: {
+        required: 'この項目は必須です',
+        invalid: '入力形式が正しくありません',
+        numberInvalid: '有効な数値を入力してください',
+        integer: '整数を入力してください',
+        min: '{{min}} 以上の値を入力してください',
+        max: '{{max}} 以下の値を入力してください',
+        minLength: '{{count}} 文字以上で入力してください',
+        maxLength: '{{count}} 文字以内で入力してください',
+        minItems: '少なくとも {{count}} 件選択または追加してください',
+        maxItems: '最大 {{count}} 件まで選択または追加できます',
+        keyRequired: 'キー名を入力してください',
+        keyValueIncomplete: 'すべての項目のキーと値を入力してください',
+      },
       renderError: {
         group: 'この対話カードセットは一時的に表示できません。他のチャット内容は影響を受けません。',
         card: 'このカードは一時的に表示できません。他のカードは引き続き使用できます。',
@@ -598,6 +612,7 @@ const aiAssistant = {
       stop: '現在のタスクを停止できません',
       input: '補足情報を送信できません',
       approval: '承認決定を送信できません',
+      conversationMissing: 'この操作を実行する前にセッションを作成または選択してください',
     },
     approval: {
       title: '操作承認が必要です',

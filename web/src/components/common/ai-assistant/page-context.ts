@@ -38,9 +38,9 @@ export function buildAIPageContext(pathname: string, search: string, locale: str
     routeTemplate: route.routeTemplate,
     pathname,
     pageKind: route.pageKind,
-    ...(route.projectId ? { projectId: route.projectId } : {}),
-    ...(route.applicationId ? { applicationId: route.applicationId } : {}),
-    ...(route.targetId ? { targetId: route.targetId } : {}),
+    ...(route.projectId && identifierPattern.test(route.projectId) ? { projectId: route.projectId } : {}),
+    ...(route.applicationId && identifierPattern.test(route.applicationId) ? { applicationId: route.applicationId } : {}),
+    ...(route.targetId && identifierPattern.test(route.targetId) ? { targetId: route.targetId } : {}),
     ...(clusterId && identifierPattern.test(clusterId) ? { clusterId } : {}),
     ...(envId && identifierPattern.test(envId) ? { envId } : {}),
     ...(activeTab ? { activeTab } : {}),
@@ -90,7 +90,11 @@ function resolveRouteContext(pathname: string): RouteContext {
     }
   }
   const deploymentEditMatch = normalized.match(/^\/projects\/([^/]+)\/apps\/([^/]+)\/deployments\/([^/]+)\/edit$/)
-  if (deploymentEditMatch?.[1] && deploymentEditMatch[2] && deploymentEditMatch[3]) {
+  if (
+    deploymentEditMatch?.[1] && identifierPattern.test(deploymentEditMatch[1])
+    && deploymentEditMatch[2] && identifierPattern.test(deploymentEditMatch[2])
+    && deploymentEditMatch[3] && identifierPattern.test(deploymentEditMatch[3])
+  ) {
     return {
       routeName: 'application.detail',
       routeTemplate: '/projects/:projectId/apps/:applicationId/deployments/:targetId/edit',
@@ -102,7 +106,10 @@ function resolveRouteContext(pathname: string): RouteContext {
   }
   // 部署配置新建页属于应用详情的子页面，沿用应用上下文。
   const applicationMatch = normalized.match(/^\/projects\/([^/]+)\/apps\/([^/]+)(?:\/deployments\/new)?$/)
-  if (applicationMatch?.[1] && applicationMatch[2]) {
+  if (
+    applicationMatch?.[1] && identifierPattern.test(applicationMatch[1])
+    && applicationMatch[2] && identifierPattern.test(applicationMatch[2])
+  ) {
     return {
       routeName: 'application.detail',
       routeTemplate: '/projects/:projectId/apps/:applicationId',
@@ -112,7 +119,7 @@ function resolveRouteContext(pathname: string): RouteContext {
     }
   }
   const projectMatch = normalized.match(/^\/projects\/([^/]+)$/)
-  if (projectMatch?.[1]) {
+  if (projectMatch?.[1] && identifierPattern.test(projectMatch[1])) {
     return {
       routeName: 'project.workspace',
       routeTemplate: '/projects/:projectId',

@@ -287,6 +287,20 @@ const aiAssistant = {
       key: '键',
       value: '值',
       addEntry: '添加一项',
+      validation: {
+        required: '此项为必填项',
+        invalid: '输入格式不正确',
+        numberInvalid: '请输入有效数字',
+        integer: '请输入整数',
+        min: '不能小于 {{min}}',
+        max: '不能大于 {{max}}',
+        minLength: '至少输入 {{count}} 个字符',
+        maxLength: '最多输入 {{count}} 个字符',
+        minItems: '至少选择或添加 {{count}} 项',
+        maxItems: '最多选择或添加 {{count}} 项',
+        keyRequired: '请填写键名',
+        keyValueIncomplete: '请完整填写每一项的键和值',
+      },
       renderError: {
         group: '这组交互卡片暂时无法显示，其他聊天内容不受影响。',
         card: '这张卡片暂时无法显示，其他卡片仍可继续使用。',
@@ -598,6 +612,7 @@ const aiAssistant = {
       stop: '无法停止当前任务',
       input: '无法提交补充信息',
       approval: '无法提交审批决定',
+      conversationMissing: '请先创建或选择一个会话后再执行此操作',
     },
     approval: {
       title: '需要操作批准',

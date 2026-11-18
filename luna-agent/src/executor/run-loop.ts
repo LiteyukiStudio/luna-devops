@@ -76,11 +76,12 @@ export class RunLoop {
       modelStep = checkpoint?.modelStep ?? 0
       protocolRepairCount = checkpoint?.state.protocolRepairCount ?? 0
       toolState = await this.toolStep.initialState(run, executionInput, checkpoint)
-      const currentState = (extra: Omit<Parameters<typeof checkpointState>[0], "loopGuard" | "protocolRepairCount" | "argumentRepairAttempts" | "cardGeneration" | "cardRepairExhausted"> = {}) => checkpointState({
+      const currentState = (extra: Omit<Parameters<typeof checkpointState>[0], "loopGuard" | "protocolRepairCount" | "argumentRepairAttempts" | "cardGeneration" | "cardRepairAttempts" | "cardRepairExhausted"> = {}) => checkpointState({
         loopGuard: this.tools.runLoopState(run.id),
         protocolRepairCount,
         argumentRepairAttempts: toolState?.providerArgumentRepairAttempts ?? new Map(),
         ...(toolState?.cardGeneration ? { cardGeneration: toolState.cardGeneration } : {}),
+        ...(toolState?.cardRepairAttempts ? { cardRepairAttempts: toolState.cardRepairAttempts } : {}),
         ...(toolState?.cardRepairExhausted ? { cardRepairExhausted: true } : {}),
         ...extra,
       })
@@ -284,9 +285,7 @@ export class RunLoop {
         }
       }
 
-      let finalSummaryAttempted = false
       const runGracefulFinalSummaryStep = async (stepIndex: number): Promise<void> => {
-        finalSummaryAttempted = true
         modelStep = stepIndex
         if (executionInput.model) {
           await this.repository.assertPositiveAvailableBalance(run.ownerUserId)
@@ -309,8 +308,8 @@ export class RunLoop {
           answer: "",
           toolCalls: [],
           continuationMessages: toolState!.continuationMessages,
-          loadedOperationIds: [],
-          disableTools: true,
+          loadedOperationIds: [...toolState!.selectedOperationIds],
+          toolChoice: "none",
           toolCatalogDigest: input.toolCatalogDigest,
           runtimeSettings,
           providerConfig,
@@ -322,7 +321,11 @@ export class RunLoop {
         pendingFlushStream = summaryResult.flushStream
         finalAnswer = summaryResult.answer
         finalResponseMissing = false
-        const summaryAction = decisionAction(modelDecision(summaryResult), {
+        const summaryAction = decisionAction(modelDecision({
+          answer: summaryResult.answer,
+          toolCalls: [],
+          ...(summaryResult.finishReason === undefined ? {} : { finishReason: summaryResult.finishReason }),
+        }), {
           protocolRepairCount,
           cardRepairExhausted: toolState!.cardRepairExhausted,
         }, "model")
@@ -429,9 +432,6 @@ export class RunLoop {
           break
         }
       }
-      if (!completed && !finalSummaryAttempted && !finalResponseMissing && toolState.continuationMessages.some(message => message.role === "tool")) {
-        await runGracefulFinalSummaryStep(modelStep)
-      }
       if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
       const finalOutputForCheckpoint = pendingTerminal ? redact(finalAnswer) : recoveredFinalOutput
       await writeCheckpoint("finalizing", modelStep, currentState(
@@ -531,6 +531,7 @@ export class RunLoop {
             protocolRepairCount,
             argumentRepairAttempts: toolState?.providerArgumentRepairAttempts ?? new Map(),
             ...(toolState?.cardGeneration ? { cardGeneration: toolState.cardGeneration } : {}),
+            ...(toolState?.cardRepairAttempts ? { cardRepairAttempts: toolState.cardRepairAttempts } : {}),
             ...(toolState?.cardRepairExhausted ? { cardRepairExhausted: true } : {}),
           }))
           await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })

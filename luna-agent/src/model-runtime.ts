@@ -6,6 +6,7 @@ import type {
   ModelProvider,
   ModelResponse,
   ModelToolCall,
+  ModelToolChoice,
   ModelToolDetailsResult,
   ModelToolRegistry,
   ModelToolSearchResult,
@@ -49,8 +50,8 @@ export type AssistantModelInput = {
   continuationMessages: ModelMessage[]
   loadedOperationIds: string[]
   toolCatalogDigest: string
-  /** 步数触顶时的优雅收尾总结步：不挂载任何工具（tools: []），强制模型基于已有事实收口。 */
-  disableTools?: boolean
+  /** 显式工具调用策略；步数触顶收尾总结步使用 "none" 以保住已排序 tools 前缀 KV Cache 并禁止继续调工具。 */
+  toolChoice?: ModelToolChoice
   lastTotalTokens?: number
   model?: AIModelSnapshot
   runtimeSettings?: RuntimeSettings
@@ -149,16 +150,14 @@ export class ModelRuntime {
       runtimeSettings.assistantMaxOutputTokens,
       input.model?.maxOutputTokens ?? runtimeSettings.assistantMaxOutputTokens,
     )
-    const tools = input.disableTools
-      ? []
-      : await this.modelTools(
-          input.pageContext,
-          input.conversation,
-          input.input,
-          input.loadedOperationIds,
-          signal,
-          input.toolCatalogDigest,
-        )
+    const tools = await this.modelTools(
+      input.pageContext,
+      input.conversation,
+      input.input,
+      input.loadedOperationIds,
+      signal,
+      input.toolCatalogDigest,
+    )
     const base = modelMessageParts(
       input.promptVersion,
       input.input,
@@ -201,6 +200,7 @@ export class ModelRuntime {
         maxOutputTokens,
         budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "assistant" as const },
         tools,
+        ...(input.toolChoice !== undefined && tools.length > 0 ? { toolChoice: input.toolChoice } : {}),
         conversationId: input.conversationId,
         ...(conversationCompacted !== undefined ? { conversationCompacted } : {}),
         ...(signal ? { signal } : {}),

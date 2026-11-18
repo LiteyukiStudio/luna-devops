@@ -10886,7 +10886,16 @@ paths:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AICreateTurnInput" } } } }
-      responses: { "202": { description: Turn and initial run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+      responses:
+        "202": { description: Turn and initial run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { description: Turn input or request body exceeds maximum allowed size, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "422": { description: Personal wallet has insufficient available credits (ai.wallet_balance_insufficient), content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /api/v1/ai/conversations/{conversationId}/tool-actions:
     post:
       operationId: executeAIInteractionCardToolAction
@@ -10897,7 +10906,15 @@ paths:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIInteractionCardToolActionInput" } } } }
-      responses: { "202": { description: Tool action accepted; sensitive arguments are encrypted in the Agent tool-call store and omitted from timeline projections, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+      responses:
+        "202": { description: Tool action accepted; sensitive arguments are encrypted in the Agent tool-call store and omitted from timeline projections, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { description: Tool action message or request body exceeds maximum allowed size, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /api/v1/ai/turns/{turnId}/runs:
     parameters: [{ name: turnId, in: path, required: true, schema: { type: string } }]
     get:
@@ -10958,7 +10975,15 @@ paths:
         - { name: runId, in: path, required: true, schema: { type: string } }
         - { name: toolCallId, in: path, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIToolApprovalDecisionInput" } } } }
-      responses: { "202": { description: Approval decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+      responses:
+        "202": { description: Approval decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { description: Request body exceeds maximum allowed size, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /api/v1/ai/progress/projects/{projectId}/{operationType}/{operationId}:
     get:
       operationId: getAIProgress

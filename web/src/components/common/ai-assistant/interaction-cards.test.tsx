@@ -888,4 +888,231 @@ describe('ai interaction cards', () => {
       toastErrorSpy.mockRestore()
     }
   })
+
+  it('keeps optional number and optional minLength text fields valid on mount and renders localized validation errors', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const optionalFieldsCard = {
+      schemaVersion: 1,
+      generationId: 'optional-number-and-minlength',
+      title: '可选字段校验',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'config',
+        presentation: { variant: 'form', title: '运行参数' },
+        form: {
+          sections: [{
+            id: 'main',
+            fields: [
+              { id: 'name', type: 'text', label: '应用名称', required: true, defaultValue: 'demo-app' },
+              { id: 'replicas', type: 'number', label: '副本数', integer: true, min: 1, max: 10 },
+              { id: 'note', type: 'text', label: '备注说明', minLength: 4, maxLength: 20 },
+            ],
+          }],
+        },
+        actions: [{
+          id: 'save',
+          type: 'tool',
+          label: '保存参数',
+          emphasis: 'primary',
+          repeatable: true,
+          operationId: 'saveRuntimeParams',
+          bindings: [
+            { target: '/name', value: { type: 'field', fieldId: 'name' } },
+            { target: '/replicas', value: { type: 'field', fieldId: 'replicas' } },
+            { target: '/note', value: { type: 'field', fieldId: 'note' } },
+          ],
+        }],
+      }],
+    }
+
+    render(<AIInteractionCards arguments={optionalFieldsCard} onAction={onAction} />)
+
+    const saveButton = screen.getByRole('button', { name: '保存参数' })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+
+    // 未填写可选 number 与可选 minLength 文本时直接提交，空可选值不混入 arguments
+    fireEvent.click(saveButton)
+    await waitFor(() => expect(onAction).toHaveBeenCalledTimes(1))
+    expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({
+      payload: {
+        operationId: 'saveRuntimeParams',
+        arguments: { name: 'demo-app' },
+        message: '保存参数',
+      },
+    }))
+
+    // 填入不满足约束的值：按钮禁用，且展示本地化错误而非 Zod 默认英文报错
+    const replicasInput = screen.getByLabelText('副本数')
+    const noteInput = screen.getByLabelText('备注说明')
+    fireEvent.change(replicasInput, { target: { value: '0' } })
+    fireEvent.change(noteInput, { target: { value: 'ab' } })
+
+    await waitFor(() => expect(saveButton).toBeDisabled())
+    const alerts = screen.getAllByRole('alert').map(element => element.textContent ?? '')
+    expect(alerts.some(text => text.includes('1'))).toBe(true)
+    expect(alerts.some(text => text.includes('4'))).toBe(true)
+    expect(alerts.every(text => !/Too small|Invalid input|Expected number/i.test(text))).toBe(true)
+
+    // 清空回未填状态：恢复合法可提交
+    fireEvent.change(replicasInput, { target: { value: '' } })
+    fireEvent.change(noteInput, { target: { value: '' } })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+  })
+
+  it('keeps a consumed single-shot button locked across later failed turns and pagination, while unlocking when its own run is interrupted', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const singleShotCard = {
+      schemaVersion: 1,
+      generationId: 'single-shot-isolation',
+      title: '触发发布',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'release',
+        presentation: { variant: 'form', title: '发布配置' },
+        form: {
+          sections: [{
+            id: 'main',
+            fields: [{ id: 'tag', type: 'text', label: '版本标签', required: true, defaultValue: 'v2.0.0' }],
+          }],
+        },
+        actions: [{
+          id: 'deploy',
+          type: 'tool',
+          label: '确认发布',
+          emphasis: 'primary',
+          repeatable: false,
+          operationId: 'createRelease',
+          bindings: [{ target: '/tag', value: { type: 'field', fieldId: 'tag' } }],
+        }],
+      }],
+    }
+
+    const turn1Blocks: AIAssistantRuntimeValue['timelineProps']['blocks'] = [{
+      id: 'turn1-msg',
+      turnId: 'turn-1',
+      runId: 'run-1',
+      index: 1_000_000,
+      type: 'message',
+      role: 'assistant',
+      status: 'completed',
+      text: '请确认发布参数',
+      createdAt: '2026-11-17T10:00:00Z',
+    }]
+
+    const makeRuntime = (blocks: AIAssistantRuntimeValue['timelineProps']['blocks']): AIAssistantRuntimeValue => ({
+      timelineProps: { blocks },
+    } as unknown as AIAssistantRuntimeValue)
+
+    const { rerender, unmount } = render(
+      <AIAssistantRuntimeContext value={makeRuntime(turn1Blocks)}>
+        <AIInteractionCards arguments={singleShotCard} onAction={onAction} />
+      </AIAssistantRuntimeContext>,
+    )
+
+    const deployButton = screen.getByRole('button', { name: '确认发布' })
+    await waitFor(() => expect(deployButton).toBeEnabled())
+
+    fireEvent.click(deployButton)
+    await waitFor(() => expect(onAction).toHaveBeenCalledOnce())
+    await waitFor(() => expect(deployButton).toBeDisabled())
+
+    // Turn 2（自身关联的 run-2）成功完成
+    const turn2SucceededBlocks: AIAssistantRuntimeValue['timelineProps']['blocks'] = [
+      ...turn1Blocks,
+      {
+        id: 'turn2-tool',
+        turnId: 'turn-2',
+        runId: 'run-2',
+        index: 2_000_000,
+        type: 'tool_call',
+        toolCallId: 'aitool_2',
+        operationId: 'createRelease',
+        visibility: 'normal',
+        status: 'succeeded',
+        arguments: { tag: 'v2.0.0' },
+        uiActions: [],
+      },
+    ]
+    rerender(
+      <AIAssistantRuntimeContext value={makeRuntime(turn2SucceededBlocks)}>
+        <AIInteractionCards arguments={singleShotCard} onAction={onAction} />
+      </AIAssistantRuntimeContext>,
+    )
+    expect(deployButton).toBeDisabled()
+
+    // 向上翻页前置插入 Turn 0 + 后续 Turn 3 发生 failed 与 canceled：绝不能把已成功的 Turn 2 单次按钮误解锁！
+    const withOlderAndFailedTurn3: AIAssistantRuntimeValue['timelineProps']['blocks'] = [
+      {
+        id: 'turn0-status',
+        turnId: 'turn-0',
+        runId: 'run-0',
+        index: 1,
+        type: 'run_status',
+        status: 'failed',
+        errorCode: 'ai.run_failed',
+      },
+      ...turn2SucceededBlocks,
+      {
+        id: 'turn3-tool-failed',
+        turnId: 'turn-3',
+        runId: 'run-3',
+        index: 3_000_000,
+        type: 'tool_call',
+        toolCallId: 'aitool_3',
+        operationId: 'createRelease',
+        visibility: 'normal',
+        status: 'failed',
+        arguments: { tag: 'v3.0.0' },
+        uiActions: [],
+      },
+      {
+        id: 'turn3-status',
+        turnId: 'turn-3',
+        runId: 'run-3',
+        index: 3_000_001,
+        type: 'run_status',
+        status: 'canceled',
+      },
+    ]
+    rerender(
+      <AIAssistantRuntimeContext value={makeRuntime(withOlderAndFailedTurn3)}>
+        <AIInteractionCards arguments={singleShotCard} onAction={onAction} />
+      </AIAssistantRuntimeContext>,
+    )
+    expect(deployButton).toBeDisabled()
+    unmount()
+
+    // 单独验证：若自身关联的 Run 终态为 interrupted，按钮正常解锁可重试
+    const onInterruptedAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const secondRender = render(
+      <AIAssistantRuntimeContext value={makeRuntime(turn1Blocks)}>
+        <AIInteractionCards arguments={singleShotCard} onAction={onInterruptedAction} />
+      </AIAssistantRuntimeContext>,
+    )
+    const retryableButton = screen.getByRole('button', { name: '确认发布' })
+    await waitFor(() => expect(retryableButton).toBeEnabled())
+    fireEvent.click(retryableButton)
+    await waitFor(() => expect(retryableButton).toBeDisabled())
+
+    secondRender.rerender(
+      <AIAssistantRuntimeContext
+        value={makeRuntime([
+          ...turn1Blocks,
+          {
+            id: 'turn2-interrupted',
+            turnId: 'turn-2',
+            runId: 'run-2',
+            index: 2_000_000,
+            type: 'run_status',
+            status: 'interrupted',
+          },
+        ])}
+      >
+        <AIInteractionCards arguments={singleShotCard} onAction={onInterruptedAction} />
+      </AIAssistantRuntimeContext>,
+    )
+    await waitFor(() => expect(retryableButton).toBeEnabled())
+  })
 })

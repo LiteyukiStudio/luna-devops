@@ -64,10 +64,32 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
     requestIdHeader: "x-request-id",
   })
   const streamHubs = new RunStreamHubManager(input.repository, input.streamBus, input.streamHubLimits)
+  const toolActionLocks = new Map<string, Promise<void>>()
+  const withToolActionLock = async <T>(lockKey: string, work: () => Promise<T>): Promise<T> => {
+    const previous = toolActionLocks.get(lockKey) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>((resolve) => { release = resolve })
+    const chained = previous.then(() => current, () => current)
+    toolActionLocks.set(lockKey, chained)
+    await previous.catch(() => undefined)
+    try {
+      return await work()
+    }
+    finally {
+      release()
+      if (toolActionLocks.get(lockKey) === chained) {
+        toolActionLocks.delete(lockKey)
+      }
+    }
+  }
   app.addHook("onClose", async () => streamHubs.close())
 
-  app.get("/internal/health/live", { logLevel: "silent" }, async () => ({ status: "ok" }))
+  app.get("/internal/health/live", { logLevel: "silent" }, async (_request, reply) => {
+    reply.header("cache-control", "no-store")
+    return { status: "ok" }
+  })
   app.get("/internal/health/ready", { logLevel: "silent" }, async (_request, reply) => {
+    reply.header("cache-control", "no-store")
     const persistence = await input.repository.readiness()
     const remoteConfig = input.remoteConfig.current()
     const providerConfigAvailable = remoteConfig !== undefined
@@ -94,7 +116,8 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
     return { status: "ready", checks: { ...persistence, providerConfigAvailable, providerConfigured } }
   })
   app.register(async secured => {
-    secured.addHook("preHandler", async request => {
+    secured.addHook("preHandler", async (request, reply) => {
+      reply.header("cache-control", "no-store")
       request.actor = await input.requestVerifier.verify(request.headers)
     })
 
@@ -244,76 +267,110 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
       const catalogDigest = input.toolCatalogDigest()
-      const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
-        "luna.operation.name": "create_tool_action",
-        "gen_ai.conversation.id": conversationId,
-      }), async span => {
-        const value = await input.repository.createTurn(request.actor.userId, {
-          conversationId,
-          input: body.message,
-          pageContext: { __lunaDirectToolAction: true },
-          directToolAction: {
-            operationId: body.operationId,
-            arguments: body.arguments,
-          },
-          traceContext: captureTraceContext(request.headers),
-          actorSessionId: request.actor.sessionId,
-          idempotencyKey: key,
-          preallocatedRunId: body.runId,
-          toolCatalogDigest: catalogDigest,
+      const responsePayload = await withToolActionLock(`${request.actor.userId}:${key}`, async () => {
+        const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
+          "luna.operation.name": "create_tool_action",
+          "gen_ai.conversation.id": conversationId,
+        }), async span => {
+          const value = await input.repository.createTurn(request.actor.userId, {
+            conversationId,
+            input: body.message,
+            pageContext: { __lunaDirectToolAction: true },
+            directToolAction: {
+              operationId: body.operationId,
+              arguments: body.arguments,
+            },
+            traceContext: captureTraceContext(request.headers),
+            actorSessionId: request.actor.sessionId,
+            idempotencyKey: key,
+            preallocatedRunId: body.runId,
+            toolCatalogDigest: catalogDigest,
+          })
+          span.setAttribute("luna.turn.id", value.turn.id)
+          span.setAttribute("luna.run.id", value.run.id)
+          return value
         })
-        span.setAttribute("luna.turn.id", value.turn.id)
-        span.setAttribute("luna.run.id", value.run.id)
-        return value
-      })
-      try {
-        await input.repository.touchRunSelectedOperations(created.run.id, [body.operationId], 16)
-        const call = await input.tools.prepareDirectAction({
-          runId: created.run.id,
-          operationId: body.operationId,
-          arguments: body.arguments,
-        })
-        if (created.run.status === "queued") {
-          if (call.status === "awaiting_approval") {
-            await input.repository.saveRunCheckpoint(created.run.id, {
-              expectedRevision: 0,
-              phase: "awaiting_approval",
-              modelStep: 0,
-              toolCallCount: 0,
-              state: { pendingToolCallId: call.id },
-            })
-            await input.repository.updateRun(created.run.id, "queued", "waiting_approval")
-          }
-          else if (call.status === "failed") {
-            await input.repository.updateRun(created.run.id, "queued", "failed", {
-              completedAt: new Date().toISOString(),
-              errorCode: call.errorCode ?? "ai.tool_arguments_invalid",
-            })
-          }
-          else {
+        const existingDirect = created.replayed
+          ? (await input.tools.listByRun(created.run.id)).find(candidate => candidate.inputMode === "direct")
+          : undefined
+        if (created.replayed && existingDirect && (created.run.status !== "queued" || existingDirect.status === "proposed")) {
+          const latestRun = await input.repository.getRun(request.actor.userId, created.run.id)
+          if (latestRun?.status === "queued" && existingDirect.status === "proposed") {
             input.notifyRunQueued?.()
           }
+          return {
+            turnId: created.turn.id,
+            turnIndex: created.turn.turnIndex,
+            runId: created.run.id,
+            state: latestRun?.status ?? created.run.status,
+            toolCallId: existingDirect.id,
+            eventsUrl: `/api/v1/ai/runs/${created.run.id}/events`,
+          }
         }
-        const run = await input.repository.getRun(request.actor.userId, created.run.id)
-        return reply.code(202).send({
-          turnId: created.turn.id,
-          turnIndex: created.turn.turnIndex,
-          runId: created.run.id,
-          state: run?.status ?? created.run.status,
-          toolCallId: call.id,
-          eventsUrl: `/api/v1/ai/runs/${created.run.id}/events`,
-        })
-      }
-      catch (error) {
         try {
-          await input.repository.updateRun(created.run.id, "queued", "failed", {
-            completedAt: new Date().toISOString(),
-            errorCode: telemetryErrorCode(error),
+          if (!existingDirect) {
+            await input.repository.touchRunSelectedOperations(created.run.id, [body.operationId], 16)
+          }
+          const call = existingDirect ?? await input.tools.prepareDirectAction({
+            runId: created.run.id,
+            operationId: body.operationId,
+            arguments: body.arguments,
           })
+          if (created.run.status === "queued") {
+            if (call.status === "awaiting_approval") {
+              const existingCheckpoint = await input.repository.loadRunCheckpoint(created.run.id)
+              if (!existingCheckpoint) {
+                await input.repository.saveRunCheckpoint(created.run.id, {
+                  expectedRevision: 0,
+                  phase: "awaiting_approval",
+                  modelStep: 0,
+                  toolCallCount: 0,
+                  state: { pendingToolCallId: call.id },
+                })
+              }
+              await input.repository.updateRun(created.run.id, "queued", "waiting_approval").catch((updateError) => {
+                if (!(updateError instanceof RunStateConflictError)) throw updateError
+              })
+            }
+            else if (call.status === "failed") {
+              await input.repository.updateRun(created.run.id, "queued", "failed", {
+                completedAt: new Date().toISOString(),
+                errorCode: call.errorCode ?? "ai.tool_arguments_invalid",
+              }).catch((updateError) => {
+                if (!(updateError instanceof RunStateConflictError)) throw updateError
+              })
+            }
+            else {
+              input.notifyRunQueued?.()
+            }
+          }
+          const run = await input.repository.getRun(request.actor.userId, created.run.id)
+          return {
+            turnId: created.turn.id,
+            turnIndex: created.turn.turnIndex,
+            runId: created.run.id,
+            state: run?.status ?? created.run.status,
+            toolCallId: call.id,
+            eventsUrl: `/api/v1/ai/runs/${created.run.id}/events`,
+          }
         }
-        catch { /* Run 状态可能已流转，保留原始业务错误供上层错误处理转换。 */ }
-        throw error
-      }
+        catch (error) {
+          if (!created.replayed) {
+            const directCall = (await input.tools.listByRun(created.run.id).catch(() => [])).find(candidate => candidate.inputMode === "direct")
+            if (!directCall || directCall.status === "failed") {
+              try {
+                await input.repository.updateRun(created.run.id, "queued", "failed", {
+                  completedAt: new Date().toISOString(),
+                  errorCode: telemetryErrorCode(error),
+                })
+              }
+              catch { /* Run 状态可能已流转，保留原始业务错误供上层错误处理转换。 */ }
+            }
+          }
+          throw error
+        }
+      })
+      return reply.code(202).send(responsePayload)
     })
     secured.get("/internal/v1/runs/:runId", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
@@ -357,11 +414,29 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
       }
       if (selected.runId !== runId) return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
-      if (
-        (body.decision === "approve" && selected.approvalDecision === "approve" && selected.status !== "canceled")
-        || (body.decision === "reject" && selected.status === "rejected")
-      ) {
-        return reply.code(202).send({ runId, state: run.status })
+      const isMatchingDecisionRecorded = (call: Awaited<ReturnType<typeof input.tools.inspect>>) =>
+        (body.decision === "approve" && call.approvalDecision === "approve" && call.status !== "canceled")
+        || (body.decision === "reject" && call.status === "rejected")
+      const ensureQueuedAfterDecision = async (fallbackStatus: Run["status"]): Promise<Run["status"]> => {
+        const current = await input.repository.getRun(request.actor.userId, runId)
+        const currentStatus = current?.status ?? fallbackStatus
+        if (currentStatus !== "waiting_approval") return currentStatus
+        try {
+          await input.repository.updateRun(runId, "waiting_approval", "queued")
+          input.notifyRunQueued?.()
+          return "queued"
+        }
+        catch (updateError) {
+          if (updateError instanceof RunStateConflictError) {
+            const afterConflict = await input.repository.getRun(request.actor.userId, runId)
+            return afterConflict?.status ?? updateError.actualStatus ?? currentStatus
+          }
+          throw updateError
+        }
+      }
+      if (isMatchingDecisionRecorded(selected)) {
+        const nextState = await ensureQueuedAfterDecision(run.status)
+        return reply.code(202).send({ runId, state: nextState })
       }
       if (run.status !== "waiting_approval" || selected.status !== "awaiting_approval") {
         return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
@@ -369,12 +444,11 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       try {
         const { alreadyDecided } = await input.tools.recordApprovalDecision(toolCallId, body.decision)
         if (alreadyDecided) {
-          const latest = await input.repository.getRun(request.actor.userId, runId)
-          return reply.code(202).send({ runId, state: latest?.status ?? run.status })
+          const nextState = await ensureQueuedAfterDecision(run.status)
+          return reply.code(202).send({ runId, state: nextState })
         }
-        await input.repository.updateRun(runId, "waiting_approval", "queued")
-        input.notifyRunQueued?.()
-        return reply.code(202).send({ runId, state: "queued" })
+        const nextState = await ensureQueuedAfterDecision("waiting_approval")
+        return reply.code(202).send({ runId, state: nextState })
       }
       catch (error) {
         if (
@@ -383,15 +457,9 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         ) {
           const latest = await input.repository.getRun(request.actor.userId, runId)
           const latestCall = await input.tools.inspect(toolCallId).catch(() => undefined)
-          if (
-            latest
-            && latestCall
-            && (
-              (body.decision === "approve" && latestCall.approvalDecision === "approve" && latestCall.status !== "canceled")
-              || (body.decision === "reject" && latestCall.status === "rejected")
-            )
-          ) {
-            return reply.code(202).send({ runId, state: latest.status })
+          if (latest && latestCall && isMatchingDecisionRecorded(latestCall)) {
+            const nextState = await ensureQueuedAfterDecision(latest.status)
+            return reply.code(202).send({ runId, state: nextState })
           }
           return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
         }
@@ -453,7 +521,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         }
         events = mergeEvents(events, catchupDurable, catchupLive)
         reply.raw.setHeader("content-type", "text/event-stream")
-        reply.raw.setHeader("cache-control", "no-cache, no-store")
+        reply.raw.setHeader("cache-control", "no-cache, no-store, no-transform")
         reply.raw.setHeader("x-accel-buffering", "no")
         reply.hijack()
         const flushHeaders = (reply.raw as NodeJS.WritableStream & { flushHeaders?: () => void }).flushHeaders
@@ -558,7 +626,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         ? errorDiagnostic(new Error("request schema validation failed"), code)
         : errorDiagnostic(normalized, telemetryErrorCode(normalized))),
     })
-    void reply.code(status).send(errorBody(code, request.id))
+    void reply.header("cache-control", "no-store").code(status).send(errorBody(code, request.id))
   })
   return app
 }

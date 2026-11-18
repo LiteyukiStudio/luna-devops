@@ -429,6 +429,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
       internalReadCallCounts: new Map(),
       conversation: { title: "recover", titleSource: "default", turnIndex: 0 },
       assistantRenamed: false,
+      cardRepairAttempts: 0,
       cardRepairExhausted: false,
       providerArgumentRepairAttempts: new Map(),
       searchedToolQueries: new Map(),

@@ -364,7 +364,7 @@ export class PostgresRepository implements Repository {
         .where(and(eq(idempotencyKeys.ownerUserId, ownerUserId), eq(idempotencyKeys.idempotencyKey, input.idempotencyKey))))[0]
       if (existing) {
         if (existing.requestHash !== hash) throw new Error("idempotency_conflict")
-        return this.loadCreated(tx, existing.turnId, existing.runId)
+        return { ...(await this.loadCreated(tx, existing.turnId, existing.runId)), replayed: true }
       }
       const owned = (await tx.select({
         id: conversations.id,
@@ -444,7 +444,7 @@ export class PostgresRepository implements Repository {
         const raceWinner = (await tx.select().from(idempotencyKeys)
           .where(and(eq(idempotencyKeys.ownerUserId, ownerUserId), eq(idempotencyKeys.idempotencyKey, input.idempotencyKey))))[0]
         if (!raceWinner || raceWinner.requestHash !== hash) throw new Error("idempotency_conflict")
-        return this.loadCreated(tx, raceWinner.turnId, raceWinner.runId)
+        return { ...(await this.loadCreated(tx, raceWinner.turnId, raceWinner.runId)), replayed: true }
       }
       const userItem = await this.appendItemWith(tx, { id: `${turnId}:input`, runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
       await this.appendEventWith(tx, runId, "run.input_received", {
@@ -454,7 +454,7 @@ export class PostgresRepository implements Repository {
         conversationTitleSource: owned.titleSource,
       })
       await this.appendEventWith(tx, runId, "run.queued", { state: "queued" })
-      return this.loadCreated(tx, turnId, runId)
+      return { ...(await this.loadCreated(tx, turnId, runId)), replayed: false }
     }))
   }
 
@@ -558,10 +558,11 @@ export class PostgresRepository implements Repository {
             .where(and(eq(items.runId, batch.runId), eq(items.status, "streaming")))
             .orderBy(asc(items.timelineIndex))
             .for("update")
+          const terminalToolStatuses = new Set(["succeeded", "failed", "rejected", "canceled", "skipped"])
           const finalizedStatus = batch.terminal.to === "completed" ? "completed" : "failed"
           for (const current of lingeringStreaming) {
             const itemStatus = current.type === "tool_call" ? "failed" : finalizedStatus
-            const itemContent = current.type === "tool_call" && current.content.status === "running"
+            const itemContent = current.type === "tool_call" && (typeof current.content.status !== "string" || !terminalToolStatuses.has(current.content.status))
               ? { ...current.content, status: "failed" }
               : current.content
             const finalized = await this.updateItemWith(tx, current.id, itemStatus, itemContent)
@@ -718,17 +719,47 @@ export class PostgresRepository implements Repository {
     return withSpan("agent.repository.run.claim", internalSpanOptions(), async () => this.db.transaction(async (tx) => {
       const candidate = (maxPerUser === undefined
         ? await tx.execute<Record<string, unknown>>(sql`
-            select id, execution_snapshot_ciphertext
-            from ai.runs
-            where status = 'queued'
-            order by created_at, id
-            for update skip locked
+            select q.id, q.execution_snapshot_ciphertext
+            from ai.runs q
+            where q.status = 'queued'
+              and (
+                coalesce((q.page_context ->> '__lunaDirectToolAction')::boolean, false) = false
+                or exists (
+                  select 1
+                  from ai.tool_calls tc
+                  inner join ai.items it on it.id = (tc.id || ':item') and it.run_id = q.id
+                  where tc.run_id = q.id
+                    and tc.input_mode = 'direct'
+                    and (
+                      (tc.status = 'proposed' and tc.error_code is null)
+                      or tc.status = 'rejected'
+                      or tc.execution_count > 0
+                    )
+                )
+              )
+            order by q.created_at, q.id
+            for update of q skip locked
             limit 1
           `)
         : await tx.execute<Record<string, unknown>>(sql`
             select q.id, q.execution_snapshot_ciphertext
             from ai.runs q
             where q.status = 'queued'
+              and (
+                coalesce((q.page_context ->> '__lunaDirectToolAction')::boolean, false) = false
+                or exists (
+                  select 1
+                  from ai.tool_calls tc
+                  inner join ai.items it on it.id = (tc.id || ':item') and it.run_id = q.id
+                  where tc.run_id = q.id
+                    and tc.input_mode = 'direct'
+                    and (
+                      (tc.status = 'proposed' and tc.error_code is null)
+                      or tc.status = 'rejected'
+                      or tc.execution_count > 0
+                    )
+                )
+              )
               and pg_try_advisory_xact_lock(hashtext('ai.run_claim_owner'), hashtext(q.owner_user_id))
               and (
                 select count(*)::int
@@ -1337,9 +1368,10 @@ export class PostgresRepository implements Repository {
         .where(and(eq(items.runId, runId), eq(items.status, "streaming")))
         .orderBy(asc(items.timelineIndex))
         .for("update")
+      const terminalToolStatuses = new Set(["succeeded", "failed", "rejected", "canceled", "skipped"])
       for (const current of streaming) {
         const itemStatus = current.type === "tool_call" ? "failed" : status
-        const itemContent = current.type === "tool_call" && current.content.status === "running"
+        const itemContent = current.type === "tool_call" && (typeof current.content.status !== "string" || !terminalToolStatuses.has(current.content.status))
           ? { ...current.content, status: "failed" }
           : current.content
         const item = await this.updateItemWith(tx, current.id, itemStatus, itemContent)

@@ -56,6 +56,7 @@ type ToolCatalogResolver = ToolCatalog | ((runId: string) => ToolCatalog | Promi
 export class ToolOrchestrator {
   private readonly loopGuard: LoopGuard
   private readonly executionControllers = new Map<string, Set<AbortController>>()
+  private readonly directActionLocks = new Map<string, Promise<void>>()
 
   constructor(
     private readonly catalogResolver: ToolCatalogResolver,
@@ -194,62 +195,82 @@ export class ToolOrchestrator {
     operationId: string
     arguments: unknown
   }): Promise<ToolCallRecord> {
-    const existingDirect = (await this.store.listByRun(input.runId)).find(call => call.inputMode === "direct")
-    if (existingDirect) return existingDirect
-    const catalog = await this.catalogForRun(input.runId)
-    const operation = catalog.get(input.operationId)
-    const effect = toolEffect(operation)
-    if ((effect === "write" || effect === "async") && !operation.verification?.length) {
-      throw new Error("ai.tool_not_available")
-    }
-    const argumentsHash = safeArgumentsHash(input.arguments)
-    const idempotencyKey = logicalIdempotencyKey(input.runId, input.operationId, argumentsHash, 1)
-    let args: Record<string, unknown>
+    const previousLock = this.directActionLocks.get(input.runId) ?? Promise.resolve()
+    let releaseLock!: () => void
+    const currentLock = new Promise<void>((resolve) => { releaseLock = resolve })
+    const chained = previousLock.then(() => currentLock, () => currentLock)
+    this.directActionLocks.set(input.runId, chained)
+    await previousLock.catch(() => undefined)
     try {
-      args = validateToolArguments(operation.inputSchema, input.arguments)
-    }
-    catch (error) {
-      if (!(error instanceof ToolArgumentsInvalidError)) throw error
-      return this.rejectInvalidArguments(
-        { runId: input.runId, operationId: input.operationId, inputMode: "direct" },
-        argumentsHash,
+      const existingDirect = (await this.store.listByRun(input.runId)).find(call => call.inputMode === "direct")
+      if (existingDirect) return existingDirect
+      const catalog = await this.catalogForRun(input.runId)
+      const operation = catalog.get(input.operationId)
+      const effect = toolEffect(operation)
+      if ((effect === "write" || effect === "async") && !operation.verification?.length) {
+        throw new Error("ai.tool_not_available")
+      }
+      const argumentsHash = safeArgumentsHash(input.arguments)
+      const idempotencyKey = logicalIdempotencyKey(input.runId, input.operationId, argumentsHash, 1)
+      let args: Record<string, unknown>
+      try {
+        args = validateToolArguments(operation.inputSchema, input.arguments)
+      }
+      catch (error) {
+        if (!(error instanceof ToolArgumentsInvalidError)) throw error
+        return this.rejectInvalidArguments(
+          { runId: input.runId, operationId: input.operationId, inputMode: "direct" },
+          argumentsHash,
+          idempotencyKey,
+          1,
+          error,
+        )
+      }
+      const decision = this.policy.evaluate(operation, false)
+      const requiresApproval = decision.action === "wait_approval"
+      const id = createId("aitool")
+      const record: ToolCallRecord = {
+        id,
         idempotencyKey,
-        1,
-        error,
-      )
-    }
-    const id = createId("aitool")
-    const record: ToolCallRecord = {
-      id,
-      idempotencyKey,
-      runId: input.runId,
-      operationId: input.operationId,
-      status: "proposed",
-      arguments: args,
-      argumentsHash,
-      attempt: 1,
-      rowVersion: 1,
-      executionCount: 0,
-      inputMode: "direct",
-    }
-    await this.store.insert(record)
-    telemetryLog("agent.tool.proposed", "info", { "luna.run.id": input.runId, "tool.name": input.operationId })
-    await this.store.emit({
-      type: "tool.started",
-      toolCallId: record.id,
-      data: {
-        operationId: record.operationId,
-        parameterSummary: redact(record.arguments),
-      },
-    })
-    const decision = this.policy.evaluate(operation, false)
-    if (decision.action === "wait_approval") {
-      return this.transition(record, "awaiting_approval", {}, "approval.required", {
-        operationId: record.operationId,
-        parameterSummary: redact(record.arguments),
+        runId: input.runId,
+        operationId: input.operationId,
+        status: requiresApproval ? "awaiting_approval" : "proposed",
+        arguments: args,
+        argumentsHash,
+        attempt: 1,
+        rowVersion: 1,
+        executionCount: 0,
+        inputMode: "direct",
+      }
+      await this.store.insert(record)
+      telemetryLog("agent.tool.proposed", "info", { "luna.run.id": input.runId, "tool.name": input.operationId })
+      await this.store.emit({
+        type: "tool.started",
+        toolCallId: record.id,
+        data: {
+          operationId: record.operationId,
+          parameterSummary: redact(record.arguments),
+        },
       })
+      if (requiresApproval) {
+        await this.store.emit({
+          type: "approval.required",
+          toolCallId: record.id,
+          data: redact({
+            status: "awaiting_approval",
+            operationId: record.operationId,
+            parameterSummary: redact(record.arguments),
+          }),
+        })
+      }
+      return record
     }
-    return record
+    finally {
+      releaseLock()
+      if (this.directActionLocks.get(input.runId) === chained) {
+        this.directActionLocks.delete(input.runId)
+      }
+    }
   }
 
   /**
@@ -645,7 +666,7 @@ export class ToolOrchestrator {
       ...(input.batchId ? { batchId: input.batchId } : {}),
       runId: input.runId,
       operationId: input.operationId,
-      status: "proposed",
+      status: "failed",
       arguments: {},
       argumentsHash,
       attempt,
@@ -675,9 +696,19 @@ export class ToolOrchestrator {
         ...(record.batchId ? { batchId: record.batchId } : {}),
       },
     })
-    const failed = await this.transition(record, "failed", { errorCode: error.code, result }, "tool_call.failed")
+    await this.store.emit({
+      type: "tool_call.failed",
+      toolCallId: record.id,
+      data: redact({
+        status: "failed",
+        result,
+        errorCode: error.code,
+        ...(record.modelCallId ? { modelCallId: record.modelCallId } : {}),
+        ...(record.batchId ? { batchId: record.batchId } : {}),
+      }),
+    })
     agentMetrics.toolCalls.add(1, { tool: input.operationId, outcome: error.code })
-    return failed
+    return record
   }
 
   private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string, eventData: Record<string, unknown> = {}) {

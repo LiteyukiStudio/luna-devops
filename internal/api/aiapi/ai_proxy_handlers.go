@@ -295,7 +295,7 @@ func (h *Handler) copyAIResponse(ctx *gin.Context, response *aiagent.Response, f
 		}
 	}
 	if strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
-		ctx.Header("Cache-Control", "no-cache, no-transform")
+		ctx.Header("Cache-Control", "no-cache, no-store, no-transform")
 		ctx.Header("X-Accel-Buffering", "no")
 		ctx.Status(status)
 		buffer := make([]byte, 4096)
@@ -311,6 +311,9 @@ func (h *Handler) copyAIResponse(ctx *gin.Context, response *aiagent.Response, f
 				return
 			}
 		}
+	}
+	if strings.TrimSpace(response.Header.Get("Cache-Control")) == "" {
+		ctx.Header("Cache-Control", "no-store")
 	}
 	ctx.Status(status)
 	_, _ = io.Copy(ctx.Writer, response.Body)

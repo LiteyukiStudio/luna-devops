@@ -23,7 +23,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import { use, useId, useMemo, useRef, useState } from 'react'
+import { use, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -121,13 +121,26 @@ function InteractionCardView({ card, density, group, onAction }: {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(() => shouldExpandInteractionCard(group, Boolean(card.form), Boolean(card.blocks?.some(block => block.defaultExpanded))))
   const fields = useMemo(() => card.form?.sections.flatMap(section => section.fields) ?? [], [card.form])
-  const formSchema = useMemo(() => buildFormSchema(fields), [fields])
+  const formSchema = useMemo(() => buildFormSchema(fields, t), [fields, t])
   const form = useForm<FormValues>({
     defaultValues: defaultValues(fields),
     resolver: zodResolver(formSchema),
     mode: 'onChange',
   })
   const watchedValues = form.watch()
+  const visibilitySignature = fields.map(field => `${field.id}:${isFieldVisible(field, watchedValues) ? '1' : '0'}`).join('|')
+  const previousVisibilityRef = useRef(visibilitySignature)
+  useEffect(() => {
+    if (previousVisibilityRef.current === visibilitySignature)
+      return
+    previousVisibilityRef.current = visibilitySignature
+    const latestValues = form.getValues()
+    for (const field of fields) {
+      if (!isFieldVisible(field, latestValues))
+        form.clearErrors(field.id)
+    }
+    void form.trigger()
+  }, [fields, form, visibilitySignature])
   const toolFormValues = getToolFormValues(fields, watchedValues)
   const publicFormValues = getPublicFormValues(fields, watchedValues)
   const messageValues = messageFormValues(fields, publicFormValues)
@@ -401,7 +414,26 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
           {field.type === 'textarea'
             ? <Textarea {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} rows={field.rows ?? 3} value={String(input.value ?? '')} />
             : field.type === 'number'
-              ? <Input ref={input.ref} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} max={field.max} min={field.min} name={input.name} step={field.step} type="number" value={input.value === undefined ? '' : String(input.value)} onBlur={input.onBlur} onChange={event => input.onChange(event.target.value === '' ? undefined : Number(event.target.value))} />
+              ? (
+                  <Input
+                    ref={input.ref}
+                    id={controlId}
+                    aria-describedby={describedBy}
+                    aria-invalid={Boolean(error)}
+                    aria-required={field.required}
+                    max={field.max}
+                    min={field.min}
+                    name={input.name}
+                    step={field.step}
+                    type="number"
+                    value={input.value === undefined || input.value === '' ? '' : String(input.value)}
+                    onBlur={input.onBlur}
+                    onChange={(event) => {
+                      const raw = event.target.value.trim()
+                      input.onChange(raw === '' ? undefined : Number(raw))
+                    }}
+                  />
+                )
               : field.type === 'boolean'
                 ? (
                     <div className="flex items-center gap-2">
@@ -564,47 +596,82 @@ function KeyValueInput({ controlId, describedBy, labelId, value, secret, onChang
   )
 }
 
+type ConsumedActionBinding
+  = | { kind: 'exact', runId: string, turnId?: string }
+    | { kind: 'next_after', maxOrderAtClick: number, knownRunIds: ReadonlySet<string>, knownTurnIds: ReadonlySet<string> }
+
 function CardActionButton({ action, cardId, values, messageValues = values, disabled = false, onAction }: { action: InteractionCardAction, cardId: string, values: FormValues, messageValues?: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
   const { t } = useTranslation()
   const runtime = use(AIAssistantRuntimeContext)
   const executingRef = useRef(false)
   const [pending, setPending] = useState(false)
-  const [consumedAtBlockCount, setConsumedAtBlockCount] = useState<number | null>(null)
+  const [consumedBinding, setConsumedBinding] = useState<ConsumedActionBinding | null>(null)
   const repeatable = action.repeatable ?? action.type === 'navigate'
   const downstreamFailed = useMemo(() => {
-    if (consumedAtBlockCount === null || !runtime)
+    if (!consumedBinding || !runtime)
       return false
-    const subsequentBlocks = runtime.timelineProps.blocks.slice(consumedAtBlockCount)
-    for (let index = subsequentBlocks.length - 1; index >= 0; index -= 1) {
-      const block = subsequentBlocks[index]!
-      if (action.type === 'tool' && block.type === 'tool_call' && block.operationId === action.operationId) {
-        return block.status === 'rejected' || block.status === 'failed' || block.status === 'canceled'
-      }
-      if (block.type === 'run_status' && (block.status === 'failed' || block.status === 'canceled')) {
-        return true
+    let targetRunId: string | undefined
+    if (consumedBinding.kind === 'exact') {
+      targetRunId = consumedBinding.runId
+    }
+    else {
+      let earliestOrder = Number.POSITIVE_INFINITY
+      for (const block of runtime.timelineProps.blocks) {
+        if (!block.runId)
+          continue
+        if (block.index <= consumedBinding.maxOrderAtClick || consumedBinding.knownRunIds.has(block.runId))
+          continue
+        if (block.index < earliestOrder) {
+          earliestOrder = block.index
+          targetRunId = block.runId
+        }
       }
     }
+    if (!targetRunId)
+      return false
+    const runStatus = runtime.runStatuses?.[targetRunId]
+    if (runStatus === 'failed' || runStatus === 'canceled' || runStatus === 'interrupted')
+      return true
+    for (const block of runtime.timelineProps.blocks) {
+      if (block.runId !== targetRunId)
+        continue
+      if (action.type === 'tool' && block.type === 'tool_call' && block.operationId === action.operationId) {
+        if (block.status === 'rejected' || block.status === 'failed' || block.status === 'canceled')
+          return true
+      }
+      if (block.type === 'run_status' && (block.status === 'failed' || block.status === 'canceled' || block.status === 'interrupted'))
+        return true
+    }
     return false
-  }, [action, consumedAtBlockCount, runtime])
-  const done = consumedAtBlockCount !== null && !downstreamFailed
+  }, [action, consumedBinding, runtime])
+  const done = consumedBinding !== null && !downstreamFailed
   const run = async () => {
     if (executingRef.current || pending || (done && !repeatable))
       return
     executingRef.current = true
     setPending(true)
-    const baselineBlockCount = runtime?.timelineProps.blocks.length ?? 0
+    const beforeDispatchSequence = runtime?.readLastDispatchedActionRun?.()?.sequence ?? 0
+    const existingBlocks = runtime?.timelineProps.blocks ?? []
+    const maxOrderAtClick = existingBlocks.reduce((maxOrder, block) => Math.max(maxOrder, block.index), -1)
+    const knownRunIds = new Set(existingBlocks.flatMap(block => block.runId ? [block.runId] : []))
+    const knownTurnIds = new Set(existingBlocks.map(block => block.turnId))
     try {
       const success = await executeCardAction(action, cardId, values, messageValues, onAction)
       if (!success) {
-        setConsumedAtBlockCount(null)
+        setConsumedBinding(null)
         toast.error(t('aiAssistant.cards.actionFailed'))
         return
       }
-      if (!repeatable)
-        setConsumedAtBlockCount(baselineBlockCount)
+      if (!repeatable) {
+        const dispatched = runtime?.readLastDispatchedActionRun?.()
+        if (dispatched && dispatched.sequence > beforeDispatchSequence)
+          setConsumedBinding({ kind: 'exact', runId: dispatched.runId, turnId: dispatched.turnId })
+        else
+          setConsumedBinding({ kind: 'next_after', maxOrderAtClick, knownRunIds, knownTurnIds })
+      }
     }
     catch (error) {
-      setConsumedAtBlockCount(null)
+      setConsumedBinding(null)
       toast.error(formatCardActionError(error, t('aiAssistant.cards.actionFailed')))
     }
     finally {
@@ -745,78 +812,103 @@ function isUnsafeJsonPointerPart(part: string) {
   return part === '__proto__' || part === 'prototype' || part === 'constructor'
 }
 
-function buildFormSchema(fields: InteractionFormField[]) {
+type TranslateFn = ReturnType<typeof useTranslation>['t']
+
+function buildFormSchema(fields: InteractionFormField[], t: TranslateFn) {
   return z.object(Object.fromEntries(fields.map(field => [field.id, z.unknown()])))
     .superRefine((values, context) => {
       for (const field of fields) {
         if (!isFieldVisible(field, values))
           continue
-        const parsed = fieldSchema(field).safeParse(values[field.id])
-        if (!parsed.success) {
-          for (const issue of parsed.error.issues) {
-            context.addIssue({
-              code: 'custom',
-              message: issue.message,
-              path: [field.id, ...issue.path],
-            })
-          }
+        const errorMessage = validateFieldValue(field, values[field.id], t)
+        if (errorMessage) {
+          context.addIssue({
+            code: 'custom',
+            message: errorMessage,
+            path: [field.id],
+          })
         }
       }
     })
 }
 
-function fieldSchema(field: InteractionFormField): z.ZodType {
-  let schema: z.ZodType
+function validateFieldValue(field: InteractionFormField, value: unknown, t: TranslateFn): string | undefined {
   if (field.type === 'number') {
-    let numberSchema = z.number()
-    if (field.integer)
-      numberSchema = numberSchema.int()
-    if (field.min !== undefined)
-      numberSchema = numberSchema.min(field.min)
-    if (field.max !== undefined)
-      numberSchema = numberSchema.max(field.max)
-    schema = numberSchema
+    if (value === undefined || value === '') {
+      return field.required ? t('aiAssistant.cards.validation.required') : undefined
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value))
+      return t('aiAssistant.cards.validation.numberInvalid')
+    if (field.integer && !Number.isInteger(value))
+      return t('aiAssistant.cards.validation.integer')
+    if (field.min !== undefined && value < field.min)
+      return t('aiAssistant.cards.validation.min', { min: field.min })
+    if (field.max !== undefined && value > field.max)
+      return t('aiAssistant.cards.validation.max', { max: field.max })
+    return undefined
   }
-  else if (field.type === 'boolean') {
-    schema = z.boolean()
+  if (field.type === 'boolean') {
+    if (value === undefined)
+      return field.required ? t('aiAssistant.cards.validation.required') : undefined
+    return typeof value === 'boolean' ? undefined : t('aiAssistant.cards.validation.invalid')
   }
-  else if (field.type === 'multi_select') {
-    let arraySchema = z.array(z.string())
-    if (field.minItems !== undefined || field.required)
-      arraySchema = arraySchema.min(field.minItems ?? 1)
-    if (field.maxItems !== undefined)
-      arraySchema = arraySchema.max(field.maxItems)
-    schema = arraySchema
+  if (field.type === 'multi_select') {
+    if (!Array.isArray(value))
+      return field.required ? t('aiAssistant.cards.validation.required') : undefined
+    if (value.length === 0)
+      return field.required ? t('aiAssistant.cards.validation.required') : undefined
+    if (field.minItems !== undefined && value.length < field.minItems)
+      return t('aiAssistant.cards.validation.minItems', { count: field.minItems })
+    if (field.maxItems !== undefined && value.length > field.maxItems)
+      return t('aiAssistant.cards.validation.maxItems', { count: field.maxItems })
+    return undefined
   }
-  else if (field.type === 'key_value') {
-    let entriesSchema = field.valueMode === 'secret'
-      ? z.array(z.object({ key: z.string().trim().min(1), value: z.string().min(1) }))
-      : z.array(z.object({ key: z.string().min(1), value: z.string() }))
-    if (field.required)
-      entriesSchema = entriesSchema.min(field.minItems ?? 1)
-    else if (field.minItems !== undefined)
-      entriesSchema = entriesSchema.min(field.minItems)
-    if (field.maxItems !== undefined)
-      entriesSchema = entriesSchema.max(field.maxItems)
-    schema = entriesSchema
+  if (field.type === 'key_value') {
+    const entries = Array.isArray(value) ? value : []
+    for (const rawEntry of entries) {
+      if (!rawEntry || typeof rawEntry !== 'object')
+        return t('aiAssistant.cards.validation.invalid')
+      const entry = rawEntry as { key?: unknown, value?: unknown }
+      const entryKey = typeof entry.key === 'string' ? entry.key : ''
+      const entryValue = typeof entry.value === 'string' ? entry.value : ''
+      if (field.valueMode === 'secret') {
+        if (entryKey.trim().length === 0 || entryValue.length === 0)
+          return t('aiAssistant.cards.validation.keyValueIncomplete')
+      }
+      else if (entryKey.length === 0) {
+        return t('aiAssistant.cards.validation.keyRequired')
+      }
+    }
+    if (entries.length === 0)
+      return field.required ? t('aiAssistant.cards.validation.required') : undefined
+    if (field.minItems !== undefined && entries.length < field.minItems)
+      return t('aiAssistant.cards.validation.minItems', { count: field.minItems })
+    if (field.maxItems !== undefined && entries.length > field.maxItems)
+      return t('aiAssistant.cards.validation.maxItems', { count: field.maxItems })
+    return undefined
   }
-  else if (field.type === 'secret') {
-    let secretSchema = z.string()
-    if (field.required && field.generation === 'disabled')
-      secretSchema = secretSchema.min(1)
-    schema = secretSchema
+  if (field.type === 'secret') {
+    const text = typeof value === 'string' ? value : ''
+    if (field.required && field.generation === 'disabled' && text.length === 0)
+      return t('aiAssistant.cards.validation.required')
+    return undefined
   }
-  else {
-    let stringSchema = z.string()
-    if (field.required)
-      stringSchema = stringSchema.min(1)
-    if ('minLength' in field && field.minLength !== undefined)
-      stringSchema = stringSchema.min(field.minLength)
-    if ('maxLength' in field && field.maxLength !== undefined)
-      stringSchema = stringSchema.max(field.maxLength)
-    schema = stringSchema
+  if (field.type === 'select') {
+    const selected = typeof value === 'string' ? value : ''
+    if (field.required && selected.length === 0)
+      return t('aiAssistant.cards.validation.required')
+    return undefined
   }
-  return field.required && !(field.type === 'secret' && field.generation !== 'disabled') ? schema : schema.optional()
+  if (value === undefined || value === '') {
+    return field.required ? t('aiAssistant.cards.validation.required') : undefined
+  }
+  if (typeof value !== 'string')
+    return t('aiAssistant.cards.validation.invalid')
+  if (field.minLength !== undefined && value.length < field.minLength)
+    return t('aiAssistant.cards.validation.minLength', { count: field.minLength })
+  if (field.maxLength !== undefined && value.length > field.maxLength)
+    return t('aiAssistant.cards.validation.maxLength', { count: field.maxLength })
+  return undefined
 }
 
 function defaultValues(fields: InteractionFormField[]): FormValues {
@@ -828,6 +920,8 @@ function defaultValues(fields: InteractionFormField[]): FormValues {
       return [field.id, []]
     if ('defaultValue' in field && field.defaultValue !== undefined)
       return [field.id, field.defaultValue]
+    if (field.type === 'number')
+      return [field.id, undefined]
     if (field.type === 'boolean')
       return [field.id, false]
     if (field.type === 'multi_select' || field.type === 'key_value')

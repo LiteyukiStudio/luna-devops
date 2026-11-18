@@ -80,5 +80,11 @@ describe('ai assistant page context', () => {
       locale: 'en-US',
       timeZone: 'UTC',
     })
+    // 非法路径参数不得被提取进结构化资源标识
+    const malformed = buildAIPageContext('/projects/prj%20bad/apps/app_1/deployments/tgt_1/edit', '', 'zh-CN', { timeZone: 'UTC' })
+    expect(malformed.routeName).toBe('unknown')
+    expect(malformed).not.toHaveProperty('projectId')
+    expect(malformed).not.toHaveProperty('applicationId')
+    expect(malformed).not.toHaveProperty('targetId')
   })
 })

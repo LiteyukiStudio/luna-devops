@@ -287,6 +287,20 @@ const aiAssistant = {
       key: '鍵',
       value: '值',
       addEntry: '新增一項',
+      validation: {
+        required: '此項為必填項',
+        invalid: '輸入格式不正確',
+        numberInvalid: '請輸入有效數字',
+        integer: '請輸入整數',
+        min: '不能小於 {{min}}',
+        max: '不能大於 {{max}}',
+        minLength: '至少輸入 {{count}} 個字元',
+        maxLength: '最多輸入 {{count}} 個字元',
+        minItems: '至少選擇或新增 {{count}} 項',
+        maxItems: '最多選擇或新增 {{count}} 項',
+        keyRequired: '請填寫鍵名',
+        keyValueIncomplete: '請完整填寫每一項的鍵和值',
+      },
       renderError: {
         group: '這組互動卡片暫時無法顯示，其他聊天內容不受影響。',
         card: '這張卡片暫時無法顯示，其他卡片仍可繼續使用。',
@@ -598,6 +612,7 @@ const aiAssistant = {
       stop: '無法停止當前任務',
       input: '無法提交補充資訊',
       approval: '無法提交審批決定',
+      conversationMissing: '請先建立或選擇一個會話後再執行此操作',
     },
     approval: {
       title: '需要操作批准',

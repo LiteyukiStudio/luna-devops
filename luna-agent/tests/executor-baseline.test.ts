@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { TimelineItem } from "../src/domain.js"
 import { ModelRuntime } from "../src/model-runtime.js"
-import type { ModelProvider, ModelToolCall } from "../src/provider/provider.js"
+import type { ModelProvider, ModelRequest, ModelToolCall } from "../src/provider/provider.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
@@ -188,12 +188,15 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
       idempotencyKey: "direct-tool-failed",
       actorSessionId: "ses_direct_tool_failed",
     })
-    await repository.appendItem({
+    const catalog = ToolCatalog.load([testToolOperation("getProject")])
+    const { tools } = platformTool(repository, catalog, () => ({
+      status: 500,
+      body: { code: "ai.tool_execution_failed", retryable: false },
+    }))
+    await tools.prepareDirectAction({
       runId: created.run.id,
-      turnId: created.turn.id,
-      type: "tool_call",
-      status: "completed",
-      content: { operationId: "getProject", status: "failed" },
+      operationId: "getProject",
+      arguments: {},
     })
     let modelCalls = 0
     const provider: ModelProvider = {
@@ -210,7 +213,7 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
       health: async () => ({ ok: true }),
     }
 
-    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry()), { catalog, tools }).runOnce()
 
     expect(modelCalls).toBe(0)
     expect(await repository.getRun(owner, created.run.id)).toMatchObject({ status: "failed" })
@@ -342,16 +345,16 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     expect(modelCalls()).toBe(defaultRuntimeSettings.maxModelSteps)
   })
 
-  it("用例 5：模型步数触顶时执行无工具（tools: []）优雅收尾总结步，若收尾步仍无有效答复则报 ai.final_response_missing", async () => {
+  it("用例 5：模型步数触顶时执行保留 tools 的 toolChoice=none 优雅收尾总结步", async () => {
     const owner = "usr_baseline_steps_exhausted"
     const { repository, runId } = await queuedRun(owner, "baseline-steps-exhausted")
-    const seenToolsLengths: number[] = []
+    const seenRequests: Array<{ toolsCount: number, toolChoice: ModelRequest["toolChoice"] }> = []
     let calls = 0
     const provider: ModelProvider = {
       async *stream(request) {
         calls += 1
-        seenToolsLengths.push(request.tools?.length ?? 0)
-        if ((request.tools?.length ?? 0) === 0) {
+        seenRequests.push({ toolsCount: request.tools?.length ?? 0, toolChoice: request.toolChoice })
+        if (request.toolChoice === "none") {
           yield { type: "message_delta", delta: "已达探索步数上限：目前已完成目录检索，建议缩小查询范围后继续。" }
           yield { type: "completed", usage: reportedUsage, finishReason: "stop" }
           return
@@ -373,8 +376,9 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     const run = await repository.getRun(owner, runId)
     expect(run?.status).toBe("completed")
     expect(calls).toBe(defaultRuntimeSettings.maxModelSteps)
-    expect(seenToolsLengths.slice(0, -1).every(count => count > 0)).toBe(true)
-    expect(seenToolsLengths.at(-1)).toBe(0)
+    expect(seenRequests.every(entry => entry.toolsCount > 0)).toBe(true)
+    expect(seenRequests.slice(0, -1).every(entry => entry.toolChoice === undefined)).toBe(true)
+    expect(seenRequests.at(-1)?.toolChoice).toBe("none")
   })
 
   it("用例 8 当前行为：present_card 之后回到模型而不是结束 Run", async () => {

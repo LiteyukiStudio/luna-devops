@@ -105,6 +105,9 @@ func TestAIProxyForwardsInteractionCardToolActionWithoutConvertingArgumentsToCha
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", response.Header().Get("Cache-Control"))
+	}
 	if fake.request.Path != "/internal/v1/conversations/aicnv_owned/tool-actions" || fake.request.IdempotencyKey != "tool-action-1" {
 		t.Fatalf("agent request = %#v", fake.request)
 	}
@@ -112,8 +115,9 @@ func TestAIProxyForwardsInteractionCardToolActionWithoutConvertingArgumentsToCha
 	if err := json.Unmarshal(fake.request.Body, &forwarded); err != nil {
 		t.Fatal(err)
 	}
-	if forwarded["runId"] == "" || forwarded["runActorGrant"] == "" {
-		t.Fatalf("secure action was not bound to a run grant: %#v", forwarded)
+	runID, _ := forwarded["runId"].(string)
+	if strings.TrimSpace(runID) == "" || fake.actor.RunID != runID {
+		t.Fatalf("secure action was not bound to actor runId: actor=%#v forwarded=%#v", fake.actor, forwarded)
 	}
 	arguments, _ := forwarded["arguments"].(map[string]any)
 	environment, _ := arguments["environment"].([]any)
@@ -146,6 +150,9 @@ func TestAIProxyForwardsTimelineCursorPagination(t *testing.T) {
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", response.Header().Get("Cache-Control"))
 	}
 	if fake.request.Path != "/internal/v1/conversations/aicnv_owned/timeline" {
 		t.Fatalf("agent request path = %q", fake.request.Path)
@@ -182,6 +189,9 @@ func TestAIProxyForwardsConversationDirectorySearchAndSort(t *testing.T) {
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", response.Header().Get("Cache-Control"))
 	}
 	if fake.request.Path != "/internal/v1/conversations" || fake.request.Query.Get("page") != "2" ||
 		fake.request.Query.Get("pageSize") != "20" || fake.request.Query.Get("search") != "deploy" ||
@@ -619,8 +629,38 @@ func TestAIProxyDropsJSONContentTypeForBodylessCancel(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", response.Header().Get("Cache-Control"))
+	}
 	if fake.request.ContentType != "" || len(fake.request.Body) != 0 {
 		t.Fatalf("agent cancel request = %#v", fake.request)
+	}
+}
+
+func TestAIProxySetsNoStoreCacheHeadersOnLiveAndSSEResponses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sseFake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream; charset=utf-8"}},
+		Body:       io.NopCloser(strings.NewReader("id: 1\nevent: run.running\ndata: {}\n\n")),
+	}}
+	handler := aiTestHandlers(sseFake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/runs/:runId/events", handler.domains.ai.ProxyAIRequest)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/runs/airun_sse/events", nil)
+	request.Header.Set("Accept", "text/event-stream")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-cache, no-store, no-transform" {
+		t.Fatalf("SSE Cache-Control = %q, want %q", got, "no-cache, no-store, no-transform")
+	}
+	if got := response.Header().Get("X-Accel-Buffering"); got != "no" {
+		t.Fatalf("SSE X-Accel-Buffering = %q, want no", got)
 	}
 }
 

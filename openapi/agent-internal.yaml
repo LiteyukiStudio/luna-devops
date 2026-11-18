@@ -89,7 +89,15 @@ paths:
         - { $ref: "#/components/parameters/ConversationId" }
         - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentCreateTurnInput" } } } }
-      responses: { "202": { description: Turn and run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+      responses:
+        "202": { description: Turn and run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+        "400": { $ref: "#/components/responses/AgentError" }
+        "401": { $ref: "#/components/responses/AgentError" }
+        "404": { $ref: "#/components/responses/AgentError" }
+        "409": { $ref: "#/components/responses/AgentError" }
+        "413": { $ref: "#/components/responses/AgentError" }
+        "422": { $ref: "#/components/responses/AgentError" }
+        "503": { $ref: "#/components/responses/AgentError" }
   /internal/v1/conversations/{conversationId}/tool-actions:
     post:
       operationId: executeInternalInteractionCardToolAction
@@ -99,7 +107,14 @@ paths:
         - { $ref: "#/components/parameters/ConversationId" }
         - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentToolActionInput" } } } }
-      responses: { "202": { description: Tool action accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+      responses:
+        "202": { description: Tool action accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+        "400": { $ref: "#/components/responses/AgentError" }
+        "401": { $ref: "#/components/responses/AgentError" }
+        "404": { $ref: "#/components/responses/AgentError" }
+        "409": { $ref: "#/components/responses/AgentError" }
+        "413": { $ref: "#/components/responses/AgentError" }
+        "503": { $ref: "#/components/responses/AgentError" }
   /internal/v1/turns/{turnId}/runs:
     parameters:
       - { $ref: "#/components/parameters/ActorContext" }
@@ -144,7 +159,14 @@ paths:
       operationId: decideInternalAIToolApproval
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/ToolCallId" }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
-      responses: { "202": { description: Decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+      responses:
+        "202": { description: Decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+        "400": { $ref: "#/components/responses/AgentError" }
+        "401": { $ref: "#/components/responses/AgentError" }
+        "404": { $ref: "#/components/responses/AgentError" }
+        "409": { $ref: "#/components/responses/AgentError" }
+        "413": { $ref: "#/components/responses/AgentError" }
+        "503": { $ref: "#/components/responses/AgentError" }
 components:
   securitySchemes:
     APIServiceToken: { type: http, scheme: bearer, bearerFormat: derived internal service token }
@@ -152,10 +174,10 @@ components:
     ActorContext: { name: X-Luna-Actor-Context, in: header, required: true, schema: { type: string }, description: Base64url-encoded JSON actor envelope issued by the Luna API for at most 60 seconds; its identity and Run binding are untrusted until the signature is verified. }
     ActorSignature: { name: X-Luna-Actor-Signature, in: header, required: true, schema: { type: string, pattern: "^sha256=[0-9a-f]{64}$" }, description: HMAC-SHA256 over the exact ActorContext value using the independently derived actor-signing key. }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
-    ConversationId: { name: conversationId, in: path, required: true, schema: { type: string } }
-    TurnId: { name: turnId, in: path, required: true, schema: { type: string } }
-    RunId: { name: runId, in: path, required: true, schema: { type: string } }
-    ToolCallId: { name: toolCallId, in: path, required: true, schema: { type: string } }
+    ConversationId: { name: conversationId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
+    TurnId: { name: turnId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
+    RunId: { name: runId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
+    ToolCallId: { name: toolCallId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
   schemas:
     AgentObject: { type: object, additionalProperties: true }
     AgentConversation:
@@ -204,8 +226,8 @@ components:
       additionalProperties: false
       required: [runId, modelId, input, pageContext]
       properties:
-        runId: { type: string, minLength: 1, maxLength: 128, description: Stable Run ID preallocated by the authenticated Luna API BFF. }
-        modelId: { type: string, minLength: 1 }
+        runId: { type: string, minLength: 5, maxLength: 64, description: Stable Run ID preallocated by the authenticated Luna API BFF. }
+        modelId: { type: string, minLength: 5, maxLength: 64 }
         modelSnapshot:
           type: object
           additionalProperties: false
@@ -328,13 +350,16 @@ components:
         recordedAt: { type: string, format: date-time }
     AgentError:
       type: object
+      additionalProperties: false
+      required: [error]
       properties:
-        code: { type: string }
-        message: { type: string }
-        requestId: { type: string }
-        details: { type: object, additionalProperties: true }
-        retryable: { type: boolean }
-      required: [code, retryable]
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, requestId]
+          properties:
+            code: { type: string }
+            requestId: { type: string }
   responses:
     AgentError:
       description: Stable internal Agent error envelope.

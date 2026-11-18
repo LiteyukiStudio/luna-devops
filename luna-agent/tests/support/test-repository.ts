@@ -196,7 +196,9 @@ export class TestRepository implements Repository {
       const previous = this.idempotency.get(key)
       if (previous) {
         if (previous.hash !== hash) throw new Error("idempotency_conflict")
-        return previous.created
+        const latestTurn = this.turns.get(previous.created.turn.id) ?? previous.created.turn
+        const latestRun = this.runs.get(previous.created.run.id) ?? previous.created.run
+        return { turn: latestTurn, run: latestRun, replayed: true }
       }
       if (input.pageContext.__lunaDirectToolAction !== true) {
         await this.assertPositiveAvailableBalance(ownerUserId)
@@ -246,7 +248,7 @@ export class TestRepository implements Repository {
         conversationTitleSource: this.conversations.get(input.conversationId)?.titleSource,
       })
       await this.appendEvent(runId, "run.queued", { state: "queued" })
-      return created
+      return { ...created, replayed: false }
     }
     finally {
       releaseLock()
@@ -397,6 +399,15 @@ export class TestRepository implements Repository {
     const maxPerUser = userConcurrentRuns ?? executionSnapshot?.runtimeSettings.userConcurrentRuns
     const run = [...this.runs.values()].find((item) => {
       if (item.status !== "queued") return false
+      if (item.pageContext.__lunaDirectToolAction === true) {
+        const readyDirect = [...this.toolCallStore.records.values()].some(call =>
+          call.runId === item.id
+          && call.inputMode === "direct"
+          && ((call.status === "proposed" && !call.errorCode) || call.status === "rejected" || call.executionCount > 0)
+          && this.items.some(timelineItem => timelineItem.runId === item.id && timelineItem.id === `${call.id}:item`),
+        )
+        if (!readyDirect) return false
+      }
       if (maxPerUser === undefined) return true
       let runningCount = 0
       for (const candidate of this.runs.values()) {
@@ -768,10 +779,11 @@ export class TestRepository implements Repository {
   }
 
   async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
+    const terminalToolStatuses = new Set(["succeeded", "failed", "rejected", "canceled", "skipped"])
     const items = this.items.filter(item => item.runId === runId && item.status === "streaming")
     for (const item of items) {
       item.status = item.type === "tool_call" ? "failed" : status
-      if (item.type === "tool_call" && item.content.status === "running") {
+      if (item.type === "tool_call" && (typeof item.content.status !== "string" || !terminalToolStatuses.has(item.content.status))) {
         item.content = { ...item.content, status: "failed" }
       }
       item.revision += 1

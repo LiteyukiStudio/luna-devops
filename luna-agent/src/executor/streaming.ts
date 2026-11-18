@@ -62,7 +62,9 @@ export async function streamModel(
     try {
       stream = await streamBus.open(runId, turnId, expectedRunVersion)
       await stream.appendEvent("model.started", {})
+      const disallowToolCalls = input.toolChoice === "none"
       for await (const event of modelRuntime.stream(input, signal)) {
+        if (disallowToolCalls && event.type === "tool_call_delta") continue
         if (!firstOutputRecorded && ["reasoning_summary_delta", "message_delta", "tool_call_delta"].includes(event.type)) {
           firstOutputRecorded = true
           const outputType = event.type === "reasoning_summary_delta"
@@ -145,8 +147,10 @@ export async function streamModel(
         if (event.type === "completed") {
           if (event.usage.status !== "reported") throw new Error("ai.provider_usage_unavailable")
           completedUsage = event.usage.value
-          toolCalls = event.toolCalls ?? []
-          finishReason = event.finishReason
+          toolCalls = disallowToolCalls ? [] : (event.toolCalls ?? [])
+          finishReason = disallowToolCalls && event.finishReason !== undefined && ["tool_calls", "function_call", "tool_use"].includes(event.finishReason)
+            ? (answer.trim() ? "stop" : undefined)
+            : event.finishReason
           span.setAttribute("luna.tool_call.count", toolCalls.length)
           await stream.appendEvent("model.completed", {
             usage: {

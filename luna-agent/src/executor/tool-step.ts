@@ -65,6 +65,7 @@ export type ToolStepState = {
   conversation: ConversationPromptContext
   assistantRenamed: boolean
   cardGeneration?: CardGeneration | undefined
+  cardRepairAttempts: number
   cardRepairExhausted: boolean
   providerArgumentRepairAttempts: Map<string, number>
   searchedToolQueries: Map<string, ModelToolSearchResult>
@@ -136,6 +137,7 @@ export class ToolStepRunner {
       },
       assistantRenamed: false,
       ...(restoredCardGen ? { cardGeneration: restoredCardGen } : {}),
+      cardRepairAttempts: Math.max(checkpoint?.state.cardRepairAttempts ?? 0, restoredCardGen?.attempt ?? 0),
       cardRepairExhausted: checkpoint?.state.cardRepairExhausted === true,
       providerArgumentRepairAttempts: restoredArgumentRepairAttempts(checkpoint),
       searchedToolQueries: restoredInternalToolResults(executionInput.toolInteractions, "search_tools"),
@@ -189,13 +191,33 @@ export class ToolStepRunner {
         })
         continue
       }
+      if (isBusinessCardToolOperationId(toolCall.operationId) && hasPlatformTool) {
+        if (state.cardGeneration) {
+          await this.cards.fail(run.id, state.cardGeneration, "ai.interaction_card_schema_invalid")
+          state.cardGeneration = undefined
+        }
+        commitCallResult(toolCall, {
+          status: "deferred_until_platform_results",
+          guidance: "当前批次包含待执行或待审批的平台工具，交互卡片已延后；请等待平台工具返回真实结果后再调用卡片工具展示或请求输入。",
+        })
+        continue
+      }
       if (toolCall.argumentError) {
-        if (isBusinessCardToolOperationId(toolCall.operationId) && !hasPlatformTool) {
+        if (isBusinessCardToolOperationId(toolCall.operationId)) {
           if (state.cardGeneration && state.cardGeneration.operationId !== toolCall.operationId) {
             await this.cards.fail(run.id, state.cardGeneration, "ai.interaction_card_schema_invalid")
             state.cardGeneration = undefined
           }
-          state.cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, runtimeSettings.maxCardRepairAttempts, toolCall.operationId, toolCall.id, batchId)
+          state.cardGeneration ??= await this.cards.start(
+            run.id,
+            run.turnId,
+            toolCall.arguments,
+            runtimeSettings.maxCardRepairAttempts,
+            toolCall.operationId,
+            toolCall.id,
+            batchId,
+            state.cardRepairAttempts,
+          )
         }
         const key = toolCall.operationId
         let attempt = (state.providerArgumentRepairAttempts.get(key) ?? 0) + 1
@@ -207,7 +229,8 @@ export class ToolStepRunner {
           expected: "完整 JSON 对象",
         }]
         if (isBusinessCardToolOperationId(toolCall.operationId) && state.cardGeneration?.operationId === toolCall.operationId) {
-          attempt = await this.cards.recordRepairFailure(run.id, state.cardGeneration, issues, "ai.tool_arguments_json_invalid")
+          state.cardRepairAttempts += 1
+          attempt = await this.cards.recordRepairFailure(run.id, state.cardGeneration, issues, "ai.tool_arguments_json_invalid", state.cardRepairAttempts)
         }
         const failure = providerArgumentFailure(toolCall.argumentError, attempt, runtimeSettings.maxCardRepairAttempts, state.cardGeneration?.generationId, toolCall.operationId)
         recoverableToolError ||= failure.retryable
@@ -220,22 +243,25 @@ export class ToolStepRunner {
         continue
       }
       if (isBusinessCardToolOperationId(toolCall.operationId)) {
-        if (hasPlatformTool) {
-          commitCallResult(toolCall, {
-            status: "deferred_until_platform_results",
-            guidance: "当前批次包含待执行或待审批的平台工具，交互卡片已延后；请等待平台工具返回真实结果后再调用卡片工具展示或请求输入。",
-          })
-          continue
-        }
         if (state.cardGeneration && state.cardGeneration.operationId !== toolCall.operationId) {
           await this.cards.fail(run.id, state.cardGeneration, "ai.interaction_card_schema_invalid")
           state.cardGeneration = undefined
         }
         const parsed = businessCardToolInputs[toolCall.operationId].safeParse(toolCall.arguments)
         if (!parsed.success) {
-          state.cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, runtimeSettings.maxCardRepairAttempts, toolCall.operationId, toolCall.id, batchId)
+          state.cardGeneration ??= await this.cards.start(
+            run.id,
+            run.turnId,
+            toolCall.arguments,
+            runtimeSettings.maxCardRepairAttempts,
+            toolCall.operationId,
+            toolCall.id,
+            batchId,
+            state.cardRepairAttempts,
+          )
+          state.cardRepairAttempts += 1
           const issues = validationIssues(parsed.error.issues)
-          const attempt = await this.cards.recordRepairFailure(run.id, state.cardGeneration, issues, "ai.interaction_card_schema_invalid")
+          const attempt = await this.cards.recordRepairFailure(run.id, state.cardGeneration, issues, "ai.interaction_card_schema_invalid", state.cardRepairAttempts)
           const failure = cardValidationFailure(
             "create",
             issues,
@@ -255,9 +281,20 @@ export class ToolStepRunner {
           continue
         }
         const cardInput = compileBusinessCardToolInput(toolCall.operationId, parsed.data)
-        state.cardGeneration ??= await this.cards.start(run.id, run.turnId, cardInput, runtimeSettings.maxCardRepairAttempts, toolCall.operationId, toolCall.id, batchId)
+        state.cardGeneration ??= await this.cards.start(
+          run.id,
+          run.turnId,
+          cardInput,
+          runtimeSettings.maxCardRepairAttempts,
+          toolCall.operationId,
+          toolCall.id,
+          batchId,
+          state.cardRepairAttempts,
+        )
+        state.cardGeneration.attempt = state.cardRepairAttempts
         const creation = await this.traceInternalTool(toolCall.operationId, run.id, toolCall.arguments, () => this.cards.create(run.id, cardInput, state.cardGeneration!), toolCall.id)
         if (!creation.accepted) {
+          state.cardRepairAttempts = creation.failure.attempt
           recoverableToolError ||= creation.failure.retryable
           if (!creation.failure.retryable) {
             state.cardRepairExhausted = true
@@ -752,7 +789,7 @@ export class ToolStepRunner {
         ...(spinWarning ? { guidance: spinWarning } : {}),
       })
     }
-    if (!platformToolCalled && businessCardCalled && hasInteractiveCard && !recoverableToolError && !toolDetailsCalled && !searchToolsCalled)
+    if (!platformToolCalled && businessCardCalled && hasInteractiveCard && !recoverableToolError && !cardRepairExhaustedInBatch && !toolDetailsCalled && !searchToolsCalled)
       return { kind: "complete" }
     if (recoverableToolError || cardRepairExhaustedInBatch || toolDetailsCalled || searchToolsCalled)
       return { kind: "continue" }

@@ -67,31 +67,42 @@ const displayConfig = z.object({
   density: z.enum(["comfortable", "compact"]).optional(),
 })
 
-const blockBase = {
+const lightweightBlockBase = {
   id: identifier,
   title: shortText.optional(),
-  sourceRefIds: z.array(identifier).max(8).optional(),
   collapsible: z.boolean().optional(),
   defaultExpanded: z.boolean().optional(),
 }
 
+const blockBase = {
+  ...lightweightBlockBase,
+  sourceRefIds: z.array(identifier).max(8).optional(),
+}
+
+const keyValueItems = z.array(z.object({
+  label: shortText,
+  value: z.string().max(2000),
+  format: z.enum(["text", "code", "status", "duration", "date_time", "bytes", "currency"]).optional(),
+  copyable: z.boolean().optional(),
+})).min(1).max(16)
+
+const lightweightMarkdownBlock = z.object({ ...lightweightBlockBase, type: z.literal("markdown"), content: z.string().trim().min(1).max(8000) })
+const lightweightCalloutBlock = z.object({ ...lightweightBlockBase, type: z.literal("callout"), tone, content: z.string().trim().min(1).max(2000) })
+const lightweightKeyValueBlock = z.object({ ...lightweightBlockBase, type: z.literal("key_value"), items: keyValueItems })
+
 const markdownBlock = z.object({ ...blockBase, type: z.literal("markdown"), content: z.string().trim().min(1).max(8000) })
 const calloutBlock = z.object({ ...blockBase, type: z.literal("callout"), tone, content: z.string().trim().min(1).max(2000) })
-const keyValueBlock = z.object({
-  ...blockBase,
-  type: z.literal("key_value"),
-  items: z.array(z.object({
-    label: shortText,
-    value: z.string().max(2000),
-    format: z.enum(["text", "code", "status", "duration", "date_time", "bytes", "currency"]).optional(),
-    copyable: z.boolean().optional(),
-  })).min(1).max(16),
-})
+const keyValueBlock = z.object({ ...blockBase, type: z.literal("key_value"), items: keyValueItems })
 
 const lightweightContextBlock = z.discriminatedUnion("type", [
-  markdownBlock,
-  calloutBlock,
-  keyValueBlock,
+  lightweightMarkdownBlock,
+  lightweightCalloutBlock,
+  lightweightKeyValueBlock,
+])
+
+const choiceContextBlock = z.discriminatedUnion("type", [
+  lightweightMarkdownBlock,
+  lightweightKeyValueBlock,
 ])
 
 const contentBlock = z.discriminatedUnion("type", [
@@ -299,17 +310,15 @@ const formField = z.union([
   }),
   z.object({
     ...keyValueFieldBase,
-    defaultValue: z.never().optional().describe("Secret 键值字段禁止提供默认值。"),
     valueMode: z.literal("secret"),
-  }),
+  }).strict(),
   z.object({
     ...fieldBase,
     type: z.literal("secret"),
-    defaultValue: z.never().optional().describe("Secret 字段禁止提供默认值。"),
     placeholder: z.string().max(200).optional(),
     generation: z.enum(["disabled", "optional", "required"]),
     defaultMode: z.enum(["manual", "generate"]).optional(),
-  }),
+  }).strict(),
 ])
 
 const nonFieldBindingValue = z.discriminatedUnion("type", [
@@ -419,7 +428,7 @@ const requestInputCardItem = z.object({
 const requestChoiceCardItem = z.object({
   id: identifier,
   presentation: requestChoicePresentation,
-  blocks: z.array(z.discriminatedUnion("type", [markdownBlock, keyValueBlock])).max(4).optional(),
+  blocks: z.array(choiceContextBlock).max(4).optional(),
   selection: choiceSelectionSchema.optional(),
   actions: z.array(cardAction).max(4).optional(),
 })
@@ -488,6 +497,13 @@ export const requestChoiceToolInput = z.object({
 }).strict().superRefine((input, context) => {
   input.cards.forEach((item, cardIndex) => {
     if (!item.selection) return
+    if (item.selection.minItems !== undefined && item.selection.maxItems !== undefined && item.selection.minItems > item.selection.maxItems) {
+      context.addIssue({
+        code: "custom",
+        message: "minItems must be less than or equal to maxItems.",
+        path: ["cards", cardIndex, "selection", "maxItems"],
+      })
+    }
     if (item.selection.multiple && typeof item.selection.defaultValue === "string") {
       context.addIssue({
         code: "custom",
@@ -504,7 +520,7 @@ export const requestChoiceToolInput = z.object({
     }
   })
   const normalized = normalizeRequestChoiceInput(input)
-  validateNormalizedCardGroup(normalized, context)
+  validateNormalizedCardGroup(normalized, mapChoiceRefinementContext(context))
 })
 
 export const createInteractionCardsInput = z.object({
@@ -599,7 +615,11 @@ export function normalizeRequestChoiceInput(input: z.output<typeof requestChoice
   }
 }
 
-function validateNormalizedCardGroup(input: z.input<typeof createInteractionCardsInput>, context: z.RefinementCtx): void {
+type ValidationIssueSink = {
+  addIssue: (issue: { code: "custom", message: string, path?: PropertyKey[] }) => void
+}
+
+function validateNormalizedCardGroup(input: z.input<typeof createInteractionCardsInput>, context: ValidationIssueSink): void {
   const formCards = input.cards.filter(item => item.form)
   const responseActions = [
     ...input.cards.flatMap(item => item.actions ?? []),
@@ -742,7 +762,7 @@ function validateNormalizedCardGroup(input: z.input<typeof createInteractionCard
       })
     }
     item.blocks?.forEach((block, blockIndex) => {
-      block.sourceRefIds?.forEach((refId, refIndex) => {
+      (block as { sourceRefIds?: string[] }).sourceRefIds?.forEach((refId, refIndex) => {
         if (!sourceRefIds.has(refId)) {
           context.addIssue({
             code: "custom",
@@ -846,6 +866,42 @@ function validateNormalizedCardGroup(input: z.input<typeof createInteractionCard
       }
     })
     fields.forEach((field, fieldIndex) => {
+      if ((field.type === "secret" || (field.type === "key_value" && field.valueMode === "secret"))
+        && "defaultValue" in (field as Record<string, unknown>)
+        && (field as Record<string, unknown>).defaultValue !== undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "Secret fields must not define defaultValue.",
+          path: ["cards", cardIndex, "form", "fields", fieldIndex, "defaultValue"],
+        })
+      }
+      if ((field.type === "text" || field.type === "textarea")
+        && field.minLength !== undefined
+        && field.maxLength !== undefined
+        && field.minLength > field.maxLength) {
+        context.addIssue({
+          code: "custom",
+          message: "minLength must be less than or equal to maxLength.",
+          path: ["cards", cardIndex, "form", "fields", fieldIndex, "maxLength"],
+        })
+      }
+      if (field.type === "number" && field.min !== undefined && field.max !== undefined && field.min > field.max) {
+        context.addIssue({
+          code: "custom",
+          message: "min must be less than or equal to max.",
+          path: ["cards", cardIndex, "form", "fields", fieldIndex, "max"],
+        })
+      }
+      if ((field.type === "multi_select" || field.type === "key_value")
+        && field.minItems !== undefined
+        && field.maxItems !== undefined
+        && field.minItems > field.maxItems) {
+        context.addIssue({
+          code: "custom",
+          message: "minItems must be less than or equal to maxItems.",
+          path: ["cards", cardIndex, "form", "fields", fieldIndex, "maxItems"],
+        })
+      }
       if (field.visibleWhen && !fieldsById.has(field.visibleWhen.fieldId)) {
         context.addIssue({
           code: "custom",
@@ -865,6 +921,24 @@ function validateNormalizedCardGroup(input: z.input<typeof createInteractionCard
           }
           seenOptionValues.add(option.value)
         })
+        if (field.type === "select" && field.defaultValue !== undefined && !seenOptionValues.has(field.defaultValue)) {
+          context.addIssue({
+            code: "custom",
+            message: `Default value "${field.defaultValue}" must match one of options[].value.`,
+            path: ["cards", cardIndex, "form", "fields", fieldIndex, "defaultValue"],
+          })
+        }
+        if (field.type === "multi_select" && field.defaultValue !== undefined) {
+          field.defaultValue.forEach((defaultItem, defaultIndex) => {
+            if (!seenOptionValues.has(defaultItem)) {
+              context.addIssue({
+                code: "custom",
+                message: `Default value "${defaultItem}" must match one of options[].value.`,
+                path: ["cards", cardIndex, "form", "fields", fieldIndex, "defaultValue", defaultIndex],
+              })
+            }
+          })
+        }
       }
     })
     item.actions?.forEach((action, actionIndex) => {
@@ -922,6 +996,28 @@ function validateNormalizedCardGroup(input: z.input<typeof createInteractionCard
   })
   if (Buffer.byteLength(JSON.stringify(input), "utf8") > 96 * 1024)
     context.addIssue({ code: "custom", message: "Card group exceeds 96 KiB." })
+}
+
+function mapChoiceRefinementContext(context: ValidationIssueSink): ValidationIssueSink {
+  return {
+    addIssue(issue) {
+      const path = issue.path ? mapChoiceIssuePath(issue.path) : undefined
+      context.addIssue(path ? { ...issue, path } : issue)
+    },
+  }
+}
+
+function mapChoiceIssuePath(path: readonly PropertyKey[]): PropertyKey[] {
+  if (path[0] === "cards" && typeof path[1] === "number" && path[2] === "form") {
+    if (path[3] === "fields" && path[4] === 0) {
+      return ["cards", path[1], "selection", ...path.slice(5)]
+    }
+    if (path[3] === "sections" && path[4] === 0 && path[5] === "fields" && path[6] === 0) {
+      return ["cards", path[1], "selection", ...path.slice(7)]
+    }
+    return ["cards", path[1], "selection", ...path.slice(3)]
+  }
+  return [...path]
 }
 
 function messageTemplateFieldIds(message: string): string[] {

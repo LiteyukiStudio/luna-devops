@@ -217,6 +217,8 @@ export type RunCheckpointState = {
   argumentRepairAttempts?: Record<string, number>
   /** 当前活跃的交互卡片占位与修复进度。 */
   cardGeneration?: RunCardGenerationState
+  /** 当前回合跨卡片工具累计修复失败次数。 */
+  cardRepairAttempts?: number
   /** 当前回合是否已耗尽交互卡片修复次数（仅阻断继续调用卡片工具，不杀死非卡片工具）。 */
   cardRepairExhausted?: boolean
   /** phase=awaiting_approval 时等待审批的持久化 tool call id。 */
@@ -336,4 +338,4 @@ export type CreateTurn = {
   modelSnapshot?: AIModelSnapshot
 }
 
-export type CreatedTurn = { turn: Turn, run: Run }
+export type CreatedTurn = { turn: Turn, run: Run, replayed?: boolean }

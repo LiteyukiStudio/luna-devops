@@ -41,6 +41,7 @@ export type CheckpointStateInput = {
   protocolRepairCount: number
   argumentRepairAttempts: ReadonlyMap<string, number>
   cardGeneration?: RunCheckpoint["state"]["cardGeneration"]
+  cardRepairAttempts?: number
   cardRepairExhausted?: boolean
   pendingToolCallId?: string
   waitingTask?: RunCheckpoint["state"]["waitingTask"]
@@ -58,6 +59,7 @@ export function checkpointState(input: CheckpointStateInput): RunCheckpointState
       ? { argumentRepairAttempts: Object.fromEntries(input.argumentRepairAttempts) }
       : {}),
     ...(input.cardGeneration && input.cardGeneration.status === "streaming" ? { cardGeneration: input.cardGeneration } : {}),
+    ...(input.cardRepairAttempts && input.cardRepairAttempts > 0 ? { cardRepairAttempts: input.cardRepairAttempts } : {}),
     ...(input.cardRepairExhausted ? { cardRepairExhausted: true } : {}),
     ...(input.pendingToolCallId ? { pendingToolCallId: input.pendingToolCallId } : {}),
     ...(input.waitingTask ? { waitingTask: input.waitingTask } : {}),

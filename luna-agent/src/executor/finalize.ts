@@ -90,6 +90,7 @@ export class RunFinalizer {
     toolName: string,
   ): Promise<ClaimedRun["status"]> {
     const result = await this.commitTerminal(async () => {
+      await this.repository.finalizeStreamingItems(run.id, status === "completed" ? "completed" : "failed")
       await this.repository.updateRun(run.id, "running", status, { completedAt: new Date().toISOString() })
       return { status, committed: true }
     })

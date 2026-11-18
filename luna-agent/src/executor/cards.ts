@@ -47,6 +47,7 @@ export class CardGenerationService {
     operationId: BusinessCardToolOperationId,
     modelCallId?: string,
     batchId?: string,
+    initialAttempt = 0,
   ): Promise<CardGeneration> {
     const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
     const title = typeof rawObject.title === "string" && rawObject.title.trim()
@@ -83,7 +84,7 @@ export class CardGenerationService {
         result: {
           summaryKey: "aiAssistant.cards.preparing",
           generationId,
-          attempt: 0,
+          attempt: initialAttempt,
           maxAttempts,
         },
       },
@@ -103,7 +104,7 @@ export class CardGenerationService {
       timelineIndex: item.timelineIndex,
       generationId,
       placeholderArguments,
-      attempt: 0,
+      attempt: initialAttempt,
       maxAttempts,
       status: "streaming",
     }
@@ -229,8 +230,9 @@ export class CardGenerationService {
     generation: CardGeneration,
     issues: InteractionCardValidationIssue[],
     errorCode: InteractionCardValidationFailure["errorCode"],
+    nextAttempt?: number,
   ): Promise<number> {
-    const attempt = generation.attempt + 1
+    const attempt = nextAttempt ?? (generation.attempt + 1)
     generation.attempt = attempt
     generation.issues = issues
     if (attempt >= generation.maxAttempts) {

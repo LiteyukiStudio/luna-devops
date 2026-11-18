@@ -287,6 +287,20 @@ const aiAssistant = {
       key: '키',
       value: '값',
       addEntry: '항목 추가',
+      validation: {
+        required: '필수 입력 항목입니다',
+        invalid: '입력 형식이 올바르지 않습니다',
+        numberInvalid: '유효한 숫자를 입력하세요',
+        integer: '정수를 입력하세요',
+        min: '{{min}} 이상이어야 합니다',
+        max: '{{max}} 이하여야 합니다',
+        minLength: '최소 {{count}}자 이상 입력하세요',
+        maxLength: '최대 {{count}}자까지 입력할 수 있습니다',
+        minItems: '최소 {{count}}개 항목을 선택하거나 추가하세요',
+        maxItems: '최대 {{count}}개 항목까지 선택하거나 추가할 수 있습니다',
+        keyRequired: '키 이름을 입력하세요',
+        keyValueIncomplete: '모든 항목의 키와 값을 모두 입력하세요',
+      },
       renderError: {
         group: '이 대화형 카드 세트는 일시적으로 표시할 수 없습니다. 다른 채팅 내용은 영향을 받지 않습니다.',
         card: '이 카드는 일시적으로 표시할 수 없습니다. 다른 카드는 계속 사용할 수 있습니다.',
@@ -598,6 +612,7 @@ const aiAssistant = {
       stop: '현재 작업을 중지할 수 없습니다',
       input: '보충 정보를 제출할 수 없습니다',
       approval: '승인 결정을 제출할 수 없습니다',
+      conversationMissing: '이 작업을 실행하기 전에 세션을 생성하거나 선택하세요',
     },
     approval: {
       title: '작업 승인이 필요합니다',

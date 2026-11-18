@@ -35,7 +35,9 @@ export interface AIAssistantRuntimeValue {
   executeAction: (action: AIUIAction) => Promise<boolean>
   open: boolean
   openAssistant: () => void
+  readLastDispatchedActionRun?: () => { sequence: number, runId: string, turnId: string } | null
   rememberWorkspaceLocation: (location: AIAssistantWorkspaceLocation) => void
+  runStatuses?: Record<string, string>
   selectedConversationId?: string
   selectConversation: (conversationId: string) => void
   setConversationSearch: (search: string) => void

@@ -313,10 +313,11 @@ export class RunStreamSession {
       }
       return
     }
+    const terminalToolStatuses = new Set(["succeeded", "failed", "rejected", "canceled", "skipped"])
     for (const [id, item] of this.items) {
       if (item.status === "streaming") {
         const nextStatus = item.type === "tool_call" ? "failed" : fallbackStatus
-        const nextContent = item.type === "tool_call" && item.content.status === "running"
+        const nextContent = item.type === "tool_call" && (typeof item.content.status !== "string" || !terminalToolStatuses.has(item.content.status))
           ? { ...item.content, status: "failed" }
           : item.content
         this.items.set(id, { ...item, status: nextStatus, content: nextContent, revision: item.revision + 1 })
