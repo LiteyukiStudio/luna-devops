@@ -52,7 +52,7 @@ export const aiApi = {
     }),
   cancelAIRun: (runId: string) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
-  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'reject' | 'approve' }) =>
+  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'reject' | 'approve' | 'approve_and_remember' }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(toolCallId)}/decision`, { method: 'POST', body: JSON.stringify(payload) }),
   submitAIRunInput: (runId: string, payload: { text: string, expectedVersion: number }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/input`, { method: 'POST', body: JSON.stringify(payload) }),

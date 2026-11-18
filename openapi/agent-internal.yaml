@@ -145,7 +145,7 @@ paths:
     post:
       operationId: decideInternalAIToolApproval
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/ToolCallId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentToolApprovalDecisionInput" } } } }
       responses:
         "202": { description: Decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
         "400": { $ref: "#/components/responses/AgentError" }
@@ -261,6 +261,12 @@ components:
       properties:
         text: { type: string, minLength: 1, maxLength: 131072, description: Text is trimmed and must not exceed 128 KiB when encoded as UTF-8. }
         expectedVersion: { type: integer }
+    AgentToolApprovalDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [approve, approve_and_remember, reject] }
     AgentConversationPage:
       type: object
       additionalProperties: false

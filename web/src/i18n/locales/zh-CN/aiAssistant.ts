@@ -615,10 +615,16 @@ const aiAssistant = {
       conversationMissing: '请先创建或选择一个会话后再执行此操作',
     },
     approval: {
-      title: '需要操作批准',
-      bindingHint: '本次决定只应用于此工具调用和页面所示参数。',
+      title: '需要高危操作批准',
+      reversibleTitle: '需要写操作批准',
+      tierL1: 'L1 本会话可记住',
+      tierL2: 'L2 逐次确认',
+      bindingHint: '高风险操作每次均与上方所示参数强绑定，不支持跨次豁免。',
+      rememberHint: '请核对上方参数；可仅批准本次，或在当前会话记住同类低风险操作。',
       reject: '拒绝',
       approve: '批准执行',
+      approveAndRemember: '批准并在本会话记住',
+      rememberNotAllowed: '该高风险操作不支持本会话记住授权，请逐次核对参数后批准',
     },
     conversations: {
       title: '会话',

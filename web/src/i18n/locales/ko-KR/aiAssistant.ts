@@ -615,10 +615,16 @@ const aiAssistant = {
       conversationMissing: '이 작업을 실행하기 전에 세션을 생성하거나 선택하세요',
     },
     approval: {
-      title: '작업 승인이 필요합니다',
-      bindingHint: '이 결정은 이 도구 호출과 표시된 파라미터에만 적용됩니다.',
+      title: '고위험 작업 승인이 필요합니다',
+      reversibleTitle: '변경 작업 승인이 필요합니다',
+      tierL1: 'L1 세션 기억 가능',
+      tierL2: 'L2 매회 확인',
+      bindingHint: '고위험 작업은 위에 표시된 파라미터에 엄격히 바인딩되며 매번 개별 승인이 필요합니다.',
+      rememberHint: '위 파라미터를 확인한 뒤 이번 한 번만 승인하거나 현재 세션에서 동일한 저위험 작업을 기억할 수 있습니다.',
       reject: '거부',
       approve: '실행 승인',
+      approveAndRemember: '승인 및 현재 세션에서 기억',
+      rememberNotAllowed: '이 고위험 작업은 세션 기억을 지원하지 않으므로 매번 파라미터를 확인한 후 승인해 주세요',
     },
     conversations: {
       title: '세션',

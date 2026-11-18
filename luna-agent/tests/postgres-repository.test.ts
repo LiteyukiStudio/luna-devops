@@ -608,6 +608,111 @@ suite("PostgresRepository (Drizzle) integration", () => {
       }),
     ])
   })
+
+  it("persists session-scoped L1 tool approvals per conversation and cascades on deleteConversation", async () => {
+    const convA = await repository.createConversation(owner, "会话记忆 A")
+    const convB = await repository.createConversation(owner, "会话记忆 B")
+    const turnA1 = await repository.createTurn(owner, {
+      conversationId: convA.id,
+      input: "触发构建 1",
+      pageContext: {},
+      idempotencyKey: key("mem-a1"),
+      actorSessionId: key("session"),
+    })
+    const turnA2 = await repository.createTurn(owner, {
+      conversationId: convA.id,
+      input: "触发构建 2",
+      pageContext: {},
+      idempotencyKey: key("mem-a2"),
+      actorSessionId: key("session"),
+    })
+    const turnB1 = await repository.createTurn(owner, {
+      conversationId: convB.id,
+      input: "隔离会话",
+      pageContext: {},
+      idempotencyKey: key("mem-b1"),
+      actorSessionId: key("session"),
+    })
+
+    expect(await repository.hasRememberedToolApproval(turnA1.run.id, "triggerBuildRun")).toBe(false)
+    await repository.rememberToolApproval(turnA1.run.id, "triggerBuildRun", "aitool_grant_a1")
+    // Idempotent duplicate insert
+    await repository.rememberToolApproval(turnA1.run.id, "triggerBuildRun", "aitool_grant_a1")
+
+    expect(await repository.hasRememberedToolApproval(turnA2.run.id, "triggerBuildRun")).toBe(true)
+    expect(await repository.hasRememberedToolApproval(turnA2.run.id, "createProject")).toBe(false)
+    expect(await repository.hasRememberedToolApproval(turnB1.run.id, "triggerBuildRun")).toBe(false)
+
+    await repository.deleteConversation(owner, convA.id)
+    const remaining = await repository.pool.query<{ count: string }>(
+      "select count(*)::text as count from ai.conversation_tool_approvals where conversation_id = $1",
+      [convA.id],
+    )
+    expect(remaining.rows[0]?.count).toBe("0")
+  })
+
+  it("atomically binds approve_and_remember to CAS tool_calls update and clears approval_decision on 428 fallback", async () => {
+    const cipher = new PayloadCipher(Buffer.alloc(32, 23), "tool-arguments-v1", "ai.tool_arguments_key_unavailable")
+    const store = new PostgresToolCallStore(repository.pool, repository, cipher)
+    const conv = await repository.createConversation(owner, "PG CAS Remember")
+    const turn = await repository.createTurn(owner, {
+      conversationId: conv.id,
+      input: "测试原子记忆",
+      pageContext: {},
+      idempotencyKey: key("pg-cas-rem"),
+      actorSessionId: key("session"),
+    })
+
+    const rejectedCallId = `aitool_cas_rej_${suffix}`
+    await store.insert({
+      id: rejectedCallId,
+      idempotencyKey: `aiidem_${rejectedCallId}`,
+      runId: turn.run.id,
+      operationId: "triggerBuildRun",
+      status: "rejected",
+      arguments: { buildConfigId: "bcfg_1" },
+      argumentsHash: "hash_rej",
+      attempt: 1,
+      rowVersion: 2,
+      executionCount: 0,
+    })
+
+    await expect(store.update(rejectedCallId, "awaiting_approval", {
+      status: "proposed",
+      approvalDecision: "approve_and_remember",
+      rowVersion: 3,
+    })).rejects.toThrow("ai.tool_call_state_conflict")
+    expect(await repository.hasRememberedToolApproval(turn.run.id, "triggerBuildRun")).toBe(false)
+
+    const validCallId = `aitool_cas_ok_${suffix}`
+    await store.insert({
+      id: validCallId,
+      idempotencyKey: `aiidem_${validCallId}`,
+      runId: turn.run.id,
+      operationId: "triggerBuildRun",
+      status: "awaiting_approval",
+      arguments: { buildConfigId: "bcfg_2" },
+      argumentsHash: "hash_ok",
+      attempt: 1,
+      rowVersion: 1,
+      executionCount: 0,
+    })
+
+    const approved = await store.update(validCallId, "awaiting_approval", {
+      status: "proposed",
+      approvalDecision: "approve_and_remember",
+      rowVersion: 2,
+    })
+    expect(approved.approvalDecision).toBe("approve_and_remember")
+    expect(await repository.hasRememberedToolApproval(turn.run.id, "triggerBuildRun")).toBe(true)
+
+    const reset = await store.update(validCallId, "proposed", {
+      status: "awaiting_approval",
+      clearApprovalDecision: true,
+      rowVersion: 3,
+    })
+    expect(reset.approvalDecision).toBeUndefined()
+  })
 })
 
 function executionSnapshot(toolCatalogDigest: string, runMaxToolCalls: number): RunExecutionSnapshot {

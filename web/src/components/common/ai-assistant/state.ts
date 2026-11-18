@@ -7,7 +7,7 @@ export type AIBlock
     | { id: string, turnId: string, runId?: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled' | 'interrupted', errorCode?: string }
     | { id: string, turnId: string, runId?: string, index: number, type: 'context_compacted', status: string }
-    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string }
+    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, approvalTier?: 'L0' | 'L1' | 'L2', approvalRememberable?: boolean, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string }
 
 export interface AIRunUsage {
   /** 只有 reported 状态允许参与上下文比例展示。 */
@@ -212,6 +212,8 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
           titleKey: item.toolCall.titleKey,
           errorCode: item.toolCall.errorCode,
           status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : 'running'),
+          approvalTier: item.toolCall.approvalTier,
+          approvalRememberable: item.toolCall.approvalRememberable,
           arguments: item.toolCall.arguments ?? {},
           result: item.toolCall.result,
           uiActions: item.toolCall.uiActions ?? [],
@@ -504,6 +506,8 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
     titleKey: item.toolCall.titleKey,
     errorCode: item.toolCall.errorCode,
     status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : item.status === 'failed' ? 'failed' : 'running'),
+    approvalTier: item.toolCall.approvalTier,
+    approvalRememberable: item.toolCall.approvalRememberable,
     arguments: item.toolCall.arguments ?? {},
     result: item.toolCall.result,
     uiActions: item.toolCall.uiActions ?? [],

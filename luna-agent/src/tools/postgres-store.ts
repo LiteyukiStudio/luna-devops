@@ -82,7 +82,7 @@ export class PostgresToolCallStore implements ToolCallStore {
       throw toolPersistenceError(error)
     }
   }
-  async update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>, expectedRunVersion?: number) {
+  async update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord> & { clearApprovalDecision?: boolean }, expectedRunVersion?: number) {
     const activeFence = activeRunningRunFence()
     const effectiveVersion = expectedRunVersion ?? activeFence?.expectedRunVersion
     const params = [
@@ -94,13 +94,25 @@ export class PostgresToolCallStore implements ToolCallStore {
       patch.result === undefined ? null : JSON.stringify(patch.result),
       patch.errorCode ?? null,
       patch.executionCount ?? null,
+      patch.clearApprovalDecision === true,
     ]
     if (effectiveVersion === undefined) {
       const row = (await this.pool.query<DbToolCall>(
-        `update ai.tool_calls set status=coalesce($3,status),row_version=coalesce($4,row_version),
-         approval_decision=coalesce($5,approval_decision),
-         result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),updated_at=now()
-         where id=$1 and status=$2 returning *`,
+        `with updated_call as (
+           update ai.tool_calls set status=coalesce($3,status),row_version=coalesce($4,row_version),
+           approval_decision=case when $9::boolean then null else coalesce($5,approval_decision) end,
+           result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),updated_at=now()
+           where id=$1 and status=$2 returning *
+         ),
+         remembered_grant as (
+           insert into ai.conversation_tool_approvals (conversation_id, operation_id, granted_by_tool_call_id)
+           select r.conversation_id, updated_call.operation_id, updated_call.id
+           from updated_call
+           join ai.runs r on r.id = updated_call.run_id
+           where $5 = 'approve_and_remember'
+           on conflict (conversation_id, operation_id) do nothing
+         )
+         select * from updated_call`,
         params,
       )).rows[0]
       if (!row) throw new Error("ai.tool_call_state_conflict")
@@ -108,17 +120,28 @@ export class PostgresToolCallStore implements ToolCallStore {
     }
     const row = (await this.pool.query<DbToolCall>(
       `with active_run as (
-         select r.id from ai.runs r
+         select r.id, r.conversation_id from ai.runs r
          join ai.tool_calls tc on tc.run_id = r.id
-         where tc.id = $1 and r.status = 'running' and r.row_version = $9
+         where tc.id = $1 and r.status = 'running' and r.row_version = $10
          for update of r
+       ),
+       updated_call as (
+         update ai.tool_calls set status=coalesce($3,status),row_version=coalesce($4,row_version),
+         approval_decision=case when $9::boolean then null else coalesce($5,approval_decision) end,
+         result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),updated_at=now()
+         from active_run
+         where ai.tool_calls.id=$1 and ai.tool_calls.status=$2 and ai.tool_calls.run_id=active_run.id
+         returning ai.tool_calls.*
+       ),
+       remembered_grant as (
+         insert into ai.conversation_tool_approvals (conversation_id, operation_id, granted_by_tool_call_id)
+         select active_run.conversation_id, updated_call.operation_id, updated_call.id
+         from updated_call
+         join active_run on active_run.id = updated_call.run_id
+         where $5 = 'approve_and_remember'
+         on conflict (conversation_id, operation_id) do nothing
        )
-       update ai.tool_calls set status=coalesce($3,status),row_version=coalesce($4,row_version),
-       approval_decision=coalesce($5,approval_decision),
-       result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),updated_at=now()
-       from active_run
-       where ai.tool_calls.id=$1 and ai.tool_calls.status=$2 and ai.tool_calls.run_id=active_run.id
-       returning ai.tool_calls.*`,
+       select * from updated_call`,
       [...params, effectiveVersion],
     )).rows[0]
     if (!row) {
@@ -156,14 +179,20 @@ export class PostgresToolCallStore implements ToolCallStore {
       : typeof existingItem?.batchId === "string"
         ? existingItem.batchId
         : undefined
+    const rawTier = event.data.approvalTier ?? call.approvalTier ?? existingItem?.approvalTier
+    const approvalTier = rawTier === "L0" || rawTier === "L1" || rawTier === "L2" ? rawTier : undefined
+    const rawRememberable = event.data.approvalRememberable ?? call.approvalRememberable ?? existingItem?.approvalRememberable
+    const approvalRememberable = typeof rawRememberable === "boolean" ? rawRememberable : undefined
     const content = {
         toolCallId: call.id,
         ...(modelCallId ? { modelCallId } : {}),
         ...(batchId ? { batchId } : {}),
         operationId: call.operationId, status: call.status, inputMode: call.inputMode ?? "model",
         ...(call.verificationForToolCallId ? { verificationForToolCallId: call.verificationForToolCallId } : {}),
+        ...(approvalTier ? { approvalTier } : {}),
+        ...(approvalRememberable !== undefined ? { approvalRememberable } : {}),
         arguments: redact(call.arguments), result: call.result, errorCode: call.errorCode,
-		approvalDecision: call.approvalDecision,
+        ...(call.approvalDecision ? { approvalDecision: call.approvalDecision } : {}),
         ...(typeof event.data.durationMs === "number" && Number.isFinite(event.data.durationMs)
           ? { durationMs: Math.max(0, Math.round(event.data.durationMs)) }
           : {}),
@@ -186,6 +215,12 @@ export class PostgresToolCallStore implements ToolCallStore {
     else {
       await this.repository.updateItemWithEvent(itemId, toolItemStatus(event.type), content, publicType, eventData)
     }
+  }
+  hasRememberedApproval(runId: string, operationId: string): Promise<boolean> {
+    return this.repository.hasRememberedToolApproval(runId, operationId)
+  }
+  rememberApproval(runId: string, operationId: string, grantedByToolCallId: string): Promise<void> {
+    return this.repository.rememberToolApproval(runId, operationId, grantedByToolCallId)
   }
   private map(row: DbToolCall): ToolCallRecord {
     if (!row.arguments_ciphertext)
@@ -224,8 +259,8 @@ type DbToolCall = {
   id: string; idempotency_key: string; verification_for_tool_call_id: string; run_id: string; operation_id: string; status: ToolCallStatus; input_mode: string; arguments: Record<string, unknown>;
   arguments_ciphertext: string | null;
   arguments_hash: string; attempt: number; row_version: number; execution_count: number;
-	approval_decision: "approve" | null;
-	result: unknown; error_code: string | null
+  approval_decision: "approve" | "approve_and_remember" | "remembered" | null;
+  result: unknown; error_code: string | null
 }
 
 function toolPersistenceError(error: unknown): Error {

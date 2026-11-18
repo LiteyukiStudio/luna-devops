@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +13,12 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/openapiscope"
 	"github.com/LiteyukiStudio/devops/openapi"
 	"sigs.k8s.io/yaml"
+)
+
+const (
+	ApprovalTierL0 = "L0"
+	ApprovalTierL1 = "L1"
+	ApprovalTierL2 = "L2"
 )
 
 type OpenAPIOperation struct {
@@ -25,6 +32,7 @@ type OpenAPIOperation struct {
 	AvoidWhen        LocalizedText           `json:"avoidWhen"`
 	Preconditions    LocalizedList           `json:"preconditions"`
 	SuccessEvidence  LocalizedText           `json:"successEvidence"`
+	ApprovalTier     string                  `json:"approvalTier"`
 	RequiresApproval bool                    `json:"requiresApproval"`
 	Idempotent       bool                    `json:"idempotent"`
 	Method           string                  `json:"method"`
@@ -228,11 +236,15 @@ func catalogOperation(document openAPIDocument, scopeResolver *openapiscope.Reso
 		summary = operationID
 	}
 	extension := mapValue(raw["x-luna-agent"])
-	requiresApproval := operationRequiresApproval(method, cliExtension, extension)
 	effect, verification, err := operationExecutionSemantics(method, extension)
 	if err != nil {
 		return OpenAPIOperation{}, fmt.Errorf("Agent operation %q execution semantics: %w", operationID, err)
 	}
+	approvalTier, err := operationApprovalTier(operationID, method, effect, tags, scopes, sensitivePaths, cliExtension, extension)
+	if err != nil {
+		return OpenAPIOperation{}, fmt.Errorf("Agent operation %q approval tier: %w", operationID, err)
+	}
+	requiresApproval := approvalTier != ApprovalTierL0
 	aliases := operationAliases(operationID, tags, extension)
 	purpose := localizedText(extension["purpose"])
 	if purpose.EN == "" {
@@ -249,6 +261,7 @@ func catalogOperation(document openAPIDocument, scopeResolver *openapiscope.Reso
 		AvoidWhen:        localizedText(extension["avoidWhen"]),
 		Preconditions:    localizedList(extension["preconditions"]),
 		SuccessEvidence:  localizedText(extension["successEvidence"]),
+		ApprovalTier:     approvalTier,
 		RequiresApproval: requiresApproval,
 		Idempotent:       strings.EqualFold(method, http.MethodGet) || boolValue(cliExtension["idempotent"]),
 		Method:           strings.ToUpper(method),
@@ -539,15 +552,98 @@ func splitOperationID(value string) []string {
 	return parts
 }
 
-func operationRequiresApproval(method string, cli, agent map[string]any) bool {
-	if value, ok := agent["requiresApproval"].(bool); ok {
-		return value
+var l2MandatoryOperations = map[string]struct{}{
+	"createAIModel":                 {},
+	"updateAIModel":                 {},
+	"updateConfigs":                 {},
+	"createUser":                    {},
+	"updateUser":                    {},
+	"createProjectMember":           {},
+	"updateProjectMember":           {},
+	"createRuntimeCluster":          {},
+	"updateRuntimeCluster":          {},
+	"installSystemAppTemplate":      {},
+	"updateProjectNetworkPolicy":    {},
+	"createProjectHookConfig":       {},
+	"updateProjectHookConfig":       {},
+	"createProjectRuntimeConfigSet": {},
+	"updateProjectRuntimeConfigSet": {},
+	"createRelease":                 {},
+	"rollbackRelease":               {},
+	"cancelRelease":                 {},
+	"restartDeploymentTarget":       {},
+	"updateDeploymentTarget":        {},
+	"createGatewayRoute":            {},
+	"updateGatewayRoute":            {},
+	"createArtifactRegistry":        {},
+	"updateArtifactRegistry":        {},
+}
+
+func operationApprovalTier(
+	operationID string,
+	method string,
+	effect string,
+	tags []string,
+	scopes []string,
+	sensitivePaths []string,
+	cli map[string]any,
+	agent map[string]any,
+) (string, error) {
+	if explicitTier := strings.ToUpper(stringValue(agent["approvalTier"])); explicitTier != "" {
+		switch explicitTier {
+		case ApprovalTierL0, ApprovalTierL1, ApprovalTierL2:
+			return explicitTier, nil
+		default:
+			return "", fmt.Errorf("unsupported approvalTier %q", explicitTier)
+		}
 	}
-	switch strings.ToLower(stringValue(cli["risk"])) {
-	case "high", "critical", "destructive", "sensitive":
-		return true
+	if explicitReq, ok := agent["requiresApproval"].(bool); ok && !explicitReq {
+		return ApprovalTierL0, nil
 	}
-	return strings.EqualFold(method, http.MethodDelete)
+	risk := strings.ToLower(stringValue(cli["risk"]))
+	highRisk := risk == "high" || risk == "critical" || risk == "destructive" || risk == "sensitive"
+	explicitRequiresApproval := boolValue(agent["requiresApproval"])
+
+	if (strings.EqualFold(method, http.MethodGet) || effect == "read" || effect == "discovery" || effect == "presentation" || effect == "interactive") && !explicitRequiresApproval && !highRisk {
+		return ApprovalTierL0, nil
+	}
+	if effect == "execute" && !explicitRequiresApproval && !highRisk && operationID == "testRuntimeCluster" {
+		return ApprovalTierL0, nil
+	}
+	if strings.EqualFold(method, http.MethodDelete) || highRisk {
+		return ApprovalTierL2, nil
+	}
+	if effect == "execute" && explicitRequiresApproval {
+		return ApprovalTierL2, nil
+	}
+	if len(sensitivePaths) > 0 && operationID != "installAppTemplate" {
+		return ApprovalTierL2, nil
+	}
+	for _, protectedScope := range []string{
+		"cluster:manage",
+		"user:manage",
+		"config:write",
+		"retention:manage",
+		"deployment:exec",
+		"deployment:release",
+		"secret:update",
+		"secret:view_value",
+		"registry:write",
+		"gateway:manage",
+	} {
+		if slices.Contains(scopes, protectedScope) {
+			return ApprovalTierL2, nil
+		}
+	}
+	for _, protectedTag := range []string{"Billing", "Auth", "AccessTokens", "OAuthApplications", "DataRetention", "Releases"} {
+		if slices.Contains(tags, protectedTag) {
+			return ApprovalTierL2, nil
+		}
+	}
+	if _, mandatory := l2MandatoryOperations[operationID]; mandatory {
+		return ApprovalTierL2, nil
+	}
+	return ApprovalTierL1, nil
 }
 
 func requestBodySchema(requestBody map[string]any) (map[string]any, string) {

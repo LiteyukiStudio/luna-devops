@@ -230,6 +230,7 @@ func TestAIToolExecutionIdentityMiddlewareHardening(t *testing.T) {
 	router.POST("/api/v1/projects/:projectId/notifications/rules", func(ctx *gin.Context) { ctx.JSON(http.StatusCreated, gin.H{"ok": true}) })
 	router.POST("/api/v1/notification-channels", func(ctx *gin.Context) { ctx.JSON(http.StatusCreated, gin.H{"ok": true}) })
 	router.GET("/api/v1/build/variable-sets", func(ctx *gin.Context) { ctx.JSON(http.StatusOK, gin.H{"ok": true}) })
+	router.POST("/api/v1/projects/:projectId/app-templates/:templateId/install", func(ctx *gin.Context) { ctx.JSON(http.StatusCreated, gin.H{"ok": true}) })
 
 	call := func(method, target, body, token, toolCallID, operationID string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -276,13 +277,47 @@ func TestAIToolExecutionIdentityMiddlewareHardening(t *testing.T) {
 		t.Fatalf("GET tool must not write AuditLog, got %#v", host.audits)
 	}
 
-	// 4) Request JSON with matching top-level projectIds and free-form variables map {"projectId":"other"} -> 201 (no false 403)
+	// 4) L1 write without approval -> 428 ai.approval_required; forged remembered without DB grant -> 428; valid remembered -> 201
+	rec = call(http.MethodPost, "/api/v1/projects/prj_bound/notifications/rules", `{"name":"Crash Rule","eventTypes":["release.failed"],"channelIds":["nch_1"],"filter":{"severities":["error"]}}`, host.callbackToken, "aitool_unapproved_l1", "createProjectNotificationRule")
+	if rec.Code != http.StatusPreconditionRequired || !strings.Contains(rec.Body.String(), "ai.approval_required") {
+		t.Fatalf("expected 428 ai.approval_required for unapproved L1 write, got %d %s", rec.Code, rec.Body.String())
+	}
+	state.mu.Lock()
+	state.approvalDecision = "remembered"
+	state.rememberedApproval = false
+	state.mu.Unlock()
+	rec = call(http.MethodPost, "/api/v1/projects/prj_bound/notifications/rules", `{"name":"Crash Rule","eventTypes":["release.failed"],"channelIds":["nch_1"],"filter":{"severities":["error"]}}`, host.callbackToken, "aitool_forged_remembered", "createProjectNotificationRule")
+	if rec.Code != http.StatusPreconditionRequired || !strings.Contains(rec.Body.String(), "ai.approval_required") {
+		t.Fatalf("expected 428 when approval_decision=remembered lacks DB grant, got %d %s", rec.Code, rec.Body.String())
+	}
+	state.mu.Lock()
+	state.rememberedApproval = true
+	state.mu.Unlock()
+
+	// 4b) L1 installAppTemplate with stage=dev accepts remembered approval, while stage=prod escalates to L2 and rejects remembered approval
+	rec = call(http.MethodPost, "/api/v1/projects/prj_bound/app-templates/redis/install", `{"applicationName":"Redis","applicationIdentifier":"redis","deploymentName":"Redis dev","stage":"dev","clusterId":"clu_1"}`, host.callbackToken, "aitool_install_dev", "installAppTemplate")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for dev installAppTemplate with remembered approval, got %d %s", rec.Code, rec.Body.String())
+	}
+	if len(host.audits) != 2 {
+		t.Fatalf("expected 2 AuditLogs after approved POST tool, got %#v", host.audits)
+	}
+	rec = call(http.MethodPost, "/api/v1/projects/prj_bound/app-templates/redis/install", `{"applicationName":"Redis","applicationIdentifier":"redis","deploymentName":"Redis prod","stage":"prod","clusterId":"clu_1"}`, host.callbackToken, "aitool_install_prod_remembered", "installAppTemplate")
+	if rec.Code != http.StatusPreconditionRequired || !strings.Contains(rec.Body.String(), "ai.approval_required") {
+		t.Fatalf("expected 428 ai.approval_required when stage=prod escalates L1 to L2, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// 4c) L2 createBuildVariableSet / createScopedNotificationChannel rejects remembered and requires explicit approve
+	rec = call(http.MethodPost, "/api/v1/build/variable-sets", `{"name":"vars","scope":"project","projectIds":["prj_bound"],"variables":{"projectId":"other"}}`, host.callbackToken, "aitool_l2_remembered", "createBuildVariableSet")
+	if rec.Code != http.StatusPreconditionRequired || !strings.Contains(rec.Body.String(), "ai.approval_required") {
+		t.Fatalf("expected 428 ai.approval_required for L2 with remembered decision, got %d %s", rec.Code, rec.Body.String())
+	}
+	state.mu.Lock()
+	state.approvalDecision = "approve"
+	state.mu.Unlock()
 	rec = call(http.MethodPost, "/api/v1/build/variable-sets", `{"name":"vars","scope":"project","projectIds":["prj_bound"],"variables":{"projectId":"other"}}`, host.callbackToken, "aitool_nested", "createBuildVariableSet")
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("nested projectId falsely rejected: %d %s", rec.Code, rec.Body.String())
-	}
-	if len(host.audits) != 2 {
-		t.Fatalf("expected 2 AuditLogs after second POST tool, got %#v", host.audits)
 	}
 
 	// 5) Request JSON with mismatched top-level body.projectIds or omitted projectIds -> 403 ai.project_scope_mismatch
@@ -407,12 +442,13 @@ func (h *stubAIToolHost) MonitorProjectAuthorization(*gin.Context, context.Conte
 func (h *stubAIToolHost) WriteContinuousAuthorizationRevoked(*gin.Context) {}
 
 type stubAIToolDBState struct {
-	mu               sync.Mutex
-	userRole         string
-	projectID        string
-	operationID      string
-	inputMode        string
-	approvalDecision string
+	mu                 sync.Mutex
+	userRole           string
+	projectID          string
+	operationID        string
+	inputMode          string
+	approvalDecision   string
+	rememberedApproval bool
 }
 
 type stubSQLConnector struct{ state *stubAIToolDBState }
@@ -445,12 +481,12 @@ func (c stubSQLConn) QueryContext(_ context.Context, query string, _ []driver.Na
 			cols: []string{
 				"owner_user_id", "actor_session_id", "conversation_id", "run_status",
 				"conversation_owner_id", "conversation_project_id", "operation_id",
-				"tool_status", "input_mode", "approval_decision",
+				"tool_status", "input_mode", "approval_decision", "remembered_approval",
 			},
 			rows: [][]driver.Value{{
 				"usr_1", "ses_1", "aicnv_1", "running",
 				"usr_1", c.state.projectID, c.state.operationID,
-				"running", inputMode, c.state.approvalDecision,
+				"running", inputMode, c.state.approvalDecision, c.state.rememberedApproval,
 			}},
 		}, nil
 	case strings.Contains(lower, `from "users"`):

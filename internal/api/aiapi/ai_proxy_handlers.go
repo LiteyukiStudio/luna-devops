@@ -528,6 +528,32 @@ func validateRunInput(_ *Handler, ctx *gin.Context, _ model.User, body []byte) b
 	return true
 }
 
+func validateApprovalDecisionInput(_ *Handler, ctx *gin.Context, _ model.User, body []byte) bool {
+	var raw map[string]any
+	if json.Unmarshal(body, &raw) != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI approval decision")
+		return false
+	}
+	for key := range raw {
+		if key != "decision" {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI approval decision")
+			return false
+		}
+	}
+	decision, ok := raw["decision"].(string)
+	if !ok {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI approval decision")
+		return false
+	}
+	switch decision {
+	case "approve", "approve_and_remember", "reject":
+		return true
+	default:
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI approval decision")
+		return false
+	}
+}
+
 func projectIDFromAIRequest(ctx *gin.Context, body []byte) string {
 	if value := strings.TrimSpace(ctx.Query("projectId")); value != "" {
 		return value
@@ -588,5 +614,5 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"GET /api/v1/ai/runs/:runId/events":                          {method: "GET", internal: "/internal/v1/runs/:runId/events", stream: true},
 	"POST /api/v1/ai/runs/:runId/cancel":                         {method: "POST", internal: "/internal/v1/runs/:runId/cancel", status: http.StatusAccepted},
 	"POST /api/v1/ai/runs/:runId/input":                          {method: "POST", internal: "/internal/v1/runs/:runId/input", status: http.StatusAccepted, validate: validateRunInput},
-	"POST /api/v1/ai/runs/:runId/approvals/:toolCallId/decision": {method: "POST", internal: "/internal/v1/runs/:runId/approvals/:toolCallId/decision", status: http.StatusAccepted},
+	"POST /api/v1/ai/runs/:runId/approvals/:toolCallId/decision": {method: "POST", internal: "/internal/v1/runs/:runId/approvals/:toolCallId/decision", status: http.StatusAccepted, validate: validateApprovalDecisionInput},
 }

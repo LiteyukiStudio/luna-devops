@@ -31,6 +31,7 @@ type aiToolExecutionBinding struct {
 	ToolStatus            string `gorm:"column:tool_status"`
 	InputMode             string `gorm:"column:input_mode"`
 	ApprovalDecision      string `gorm:"column:approval_decision"`
+	RememberedApproval    bool   `gorm:"column:remembered_approval"`
 }
 
 // aiToolExecutionIdentityMiddleware turns the Agent's single service identity
@@ -95,8 +96,8 @@ func (h *Handler) aiToolExecutionIdentityMiddleware() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
-		if operation.RequiresApproval && binding.ApprovalDecision != "approve" {
-			writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "high-risk AI tool requires approval")
+		if !aiToolApprovalSatisfied(ctx, operation, binding) {
+			writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "AI tool execution requires approval")
 			ctx.Abort()
 			return
 		}
@@ -110,6 +111,83 @@ func (h *Handler) aiToolExecutionIdentityMiddleware() gin.HandlerFunc {
 			h.auditWithContext(binding.OwnerUserID, "ai.tool.execute", operation.OperationID+":"+toolCallID, success, "AI service-bound platform operation executed", requestContext)
 		}
 	}
+}
+
+func aiToolApprovalSatisfied(ctx *gin.Context, operation aitool.OpenAPIOperation, binding aiToolExecutionBinding) bool {
+	tier := strings.ToUpper(strings.TrimSpace(operation.ApprovalTier))
+	if tier == "" {
+		if operation.RequiresApproval {
+			tier = aitool.ApprovalTierL2
+		} else {
+			tier = aitool.ApprovalTierL0
+		}
+	}
+	if tier == aitool.ApprovalTierL1 && aiRequestTargetsProductionStage(ctx, operation) {
+		tier = aitool.ApprovalTierL2
+	}
+	decision := strings.TrimSpace(binding.ApprovalDecision)
+	switch tier {
+	case aitool.ApprovalTierL0:
+		return true
+	case aitool.ApprovalTierL1:
+		return decision == "approve" ||
+			decision == "approve_and_remember" ||
+			(decision == "remembered" && binding.RememberedApproval)
+	case aitool.ApprovalTierL2:
+		return decision == "approve"
+	default:
+		return false
+	}
+}
+
+func aiRequestTargetsProductionStage(ctx *gin.Context, operation aitool.OpenAPIOperation) bool {
+	for _, value := range ctx.Request.URL.Query()["stage"] {
+		if isProductionStageValue(value) {
+			return true
+		}
+	}
+	if isProductionStageValue(ctx.Param("stage")) {
+		return true
+	}
+	if !operation.RequestBody || ctx.Request.Body == nil {
+		return false
+	}
+	properties, _ := operation.InputSchema["properties"].(map[string]any)
+	bodySchema, _ := properties["body"].(map[string]any)
+	bodyProperties, _ := bodySchema["properties"].(map[string]any)
+	if _, declaresStage := bodyProperties["stage"]; !declaresStage {
+		return false
+	}
+	const maxToolJSONBody = 8 << 20
+	raw, err := io.ReadAll(io.LimitReader(ctx.Request.Body, maxToolJSONBody+1))
+	ctx.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	if err != nil || len(raw) > maxToolJSONBody {
+		return true
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return false
+	}
+	var decoded map[string]any
+	if json.Unmarshal(raw, &decoded) != nil {
+		return true
+	}
+	candidate, exists, ambiguous := lookupJSONObjectField(decoded, "stage")
+	if ambiguous {
+		return true
+	}
+	if !exists {
+		return false
+	}
+	stageText, ok := candidate.(string)
+	if !ok {
+		return true
+	}
+	return isProductionStageValue(stageText)
+}
+
+func isProductionStageValue(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	return normalized == "prod" || normalized == "production"
 }
 
 func aiOperationScopesAllowed(role string, scopes []string) bool {
@@ -512,7 +590,13 @@ func (h *Handler) resolveAIToolExecutionBinding(ctx *gin.Context, runID, toolCal
 		       tc.operation_id,
 		       tc.status AS tool_status,
 		       COALESCE(tc.input_mode, '') AS input_mode,
-		       COALESCE(tc.approval_decision, '') AS approval_decision
+		       COALESCE(tc.approval_decision, '') AS approval_decision,
+		       EXISTS (
+		           SELECT 1
+		           FROM ai.conversation_tool_approvals AS cta
+		           WHERE cta.conversation_id = r.conversation_id
+		             AND cta.operation_id = tc.operation_id
+		       ) AS remembered_approval
 		FROM ai.runs AS r
 		JOIN ai.conversations AS c ON c.id = r.conversation_id
 		JOIN ai.tool_calls AS tc ON tc.run_id = r.id

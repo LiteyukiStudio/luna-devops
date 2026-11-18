@@ -177,6 +177,7 @@ export class TestRepository implements Repository {
     this.conversations.delete(id)
     this.summaries.delete(id)
     this.contextUsageByConversation.delete(id)
+    this.rememberedToolApprovals.delete(id)
     const turnIds = [...this.turns.values()].filter(t => t.conversationId === id).map(t => t.id)
     for (const turnId of turnIds) this.turns.delete(turnId)
     for (const [runId, run] of this.runs) {
@@ -969,6 +970,27 @@ export class TestRepository implements Repository {
         hasOlder,
         ...(hasOlder && pageTurns[0] ? { oldestTurnIndex: pageTurns[0].turnIndex } : {}),
       },
+    }
+  }
+
+  private readonly rememberedToolApprovals = new Map<string, Map<string, string>>()
+
+  async hasRememberedToolApproval(runId: string, operationId: string): Promise<boolean> {
+    const run = this.runs.get(runId)
+    if (!run) return false
+    return this.rememberedToolApprovals.get(run.conversationId)?.has(operationId) === true
+  }
+
+  async rememberToolApproval(runId: string, operationId: string, grantedByToolCallId = ""): Promise<void> {
+    const run = this.runs.get(runId)
+    if (!run) throw new Error("ai.run_not_found")
+    let operations = this.rememberedToolApprovals.get(run.conversationId)
+    if (!operations) {
+      operations = new Map<string, string>()
+      this.rememberedToolApprovals.set(run.conversationId, operations)
+    }
+    if (!operations.has(operationId)) {
+      operations.set(operationId, grantedByToolCallId)
     }
   }
 }

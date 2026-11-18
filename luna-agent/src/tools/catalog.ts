@@ -54,6 +54,7 @@ const operationSchema = z.object({
   avoidWhen: toolLocalizedTextSchema,
   preconditions: toolLocalizedListSchema,
   successEvidence: toolLocalizedTextSchema,
+  approvalTier: z.enum(["L0", "L1", "L2"]).optional(),
   requiresApproval: z.boolean(),
   idempotent: z.boolean(),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
@@ -198,7 +199,13 @@ export class ToolCatalog {
   }
 }
 
+function resolveStaticApprovalTier(operation: Pick<ToolOperation, "approvalTier" | "requiresApproval">): "L0" | "L1" | "L2" {
+  if (operation.approvalTier) return operation.approvalTier
+  return operation.requiresApproval ? "L2" : "L0"
+}
+
 function toSummary(operation: ToolOperation): ToolCatalogSummary {
+  const approvalTier = resolveStaticApprovalTier(operation)
   return {
     operationId: operation.operationId,
     name: operation.name,
@@ -210,6 +217,7 @@ function toSummary(operation: ToolOperation): ToolCatalogSummary {
     avoidWhen: operation.avoidWhen,
     preconditions: operation.preconditions,
     successEvidence: operation.successEvidence,
+    approvalTier,
     requiresApproval: operation.requiresApproval,
   }
 }
@@ -232,7 +240,12 @@ function modelDescription(operation: ToolOperation): string {
   const avoid = operation.avoidWhen.zh ? `不适用场景：${operation.avoidWhen.zh}。` : ""
   const preconditions = operation.preconditions.zh.length ? `前置条件：${operation.preconditions.zh.join("；")}。` : ""
   const evidence = operation.successEvidence.zh ? `成功证据：${operation.successEvidence.zh}。` : ""
-  const approval = operation.requiresApproval ? "这是高风险操作，执行前需要用户批准。" : ""
+  const tier = resolveStaticApprovalTier(operation)
+  const approval = tier === "L2"
+    ? "这是 L2 高风险操作，每次调用均需用户核对参数后单独批准。"
+    : tier === "L1"
+      ? "这是 L1 写操作，执行前需用户批准（支持在本会话记住同操作授权；若目标为生产环境 prod 则升级为 L2 逐次批准）。"
+      : ""
   return `${operation.name}。用途：${purpose}。${avoid}${preconditions}${evidence}${approval}`
 }
 

@@ -11615,7 +11615,7 @@ components:
       additionalProperties: false
       required: [decision]
       properties:
-        decision: { type: string, enum: [approve, reject] }
+        decision: { type: string, enum: [approve, approve_and_remember, reject] }
     AIInteractionCardToolActionInput:
       type: object
       additionalProperties: false
@@ -11954,7 +11954,7 @@ components:
     AIPlatformToolCatalogOperation:
       type: object
       additionalProperties: false
-      required: [operationId, name, summary, category, tags, aliases, purpose, avoidWhen, preconditions, successEvidence, requiresApproval, idempotent, method, path, requiredScopes, inputSchema, outputSchema, parameters, requestBody, requestRequired]
+      required: [operationId, name, summary, category, tags, aliases, purpose, avoidWhen, preconditions, successEvidence, approvalTier, requiresApproval, idempotent, method, path, requiredScopes, inputSchema, outputSchema, parameters, requestBody, requestRequired]
       properties:
         operationId: { type: string }
         name: { type: string }
@@ -11972,6 +11972,7 @@ components:
         avoidWhen: { $ref: "#/components/schemas/AIAgentLocalizedText" }
         preconditions: { $ref: "#/components/schemas/AIAgentLocalizedList" }
         successEvidence: { $ref: "#/components/schemas/AIAgentLocalizedText" }
+        approvalTier: { type: string, enum: [L0, L1, L2] }
         requiresApproval: { type: boolean }
         idempotent: { type: boolean }
         method: { type: string, enum: [GET, POST, PUT, PATCH, DELETE] }
@@ -15756,7 +15757,7 @@ components:
           maxItems: 128
           items: { $ref: "#/components/schemas/RuntimeEnvironmentVariableInput" }
         configFiles: { type: string }
-        secretFiles: { type: string }
+        secretFiles: { type: string, writeOnly: true, x-luna-sensitive: true }
         enabled: { type: boolean }
     ProjectHookConfigInput:
       type: object

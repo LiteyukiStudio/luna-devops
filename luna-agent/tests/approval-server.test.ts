@@ -41,6 +41,29 @@ const approvalCatalog = ToolCatalog.load([
     category: "thing",
     requiredScopes: ["project:read"],
   },
+  {
+    ...testToolOperation("deployTemplate"),
+    operationId: "deployTemplate",
+    method: "POST",
+    path: "/api/v1/templates/deploy",
+    category: "thing",
+    approvalTier: "L1",
+    requiresApproval: true,
+    requiredScopes: ["project:write"],
+    idempotent: true,
+    timeoutMs: 1000,
+    effect: "write",
+    verification: [{ operationId: "getThingState", family: "resource", singleton: true }],
+    inputSchema: {
+      type: "object",
+      properties: {
+        stage: { type: "string" },
+        name: { type: "string" },
+      },
+      required: ["stage", "name"],
+      additionalProperties: false,
+    },
+  },
 ])
 
 async function approvalFixture(
@@ -355,6 +378,211 @@ describe("approval decisions", () => {
     completeTool()
     await runningPromise
     expect((await fixture.repository.getRun("usr_owner", runId))?.status).toBe("completed")
+    await fixture.app.close()
+  })
+
+  it("remembers L1 approve_and_remember within the conversation, isolates other conversations, and escalates stage=prod or L2 to per-call approval", async () => {
+    const fixture = await approvalFixture()
+    const conversation = await fixture.repository.createConversation("usr_owner", "L1 session memory")
+    const turn1 = await fixture.repository.createTurn("usr_owner", {
+      conversationId: conversation.id,
+      input: "第一次安装 dev 模板",
+      pageContext: {},
+      idempotencyKey: "approval-l1-turn1",
+    })
+    await fixture.repository.updateRun(turn1.run.id, "queued", "running")
+
+    const firstL1 = await fixture.tools.propose({
+      runId: turn1.run.id,
+      operationId: "deployTemplate",
+      arguments: { stage: "dev", name: "redis-1" },
+    })
+    expect(firstL1).toMatchObject({
+      status: "awaiting_approval",
+      approvalTier: "L1",
+      approvalRememberable: true,
+    })
+    await fixture.repository.updateRun(turn1.run.id, "running", "waiting_approval")
+
+    const rememberRes = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${turn1.run.id}/approvals/${firstL1.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve_and_remember" },
+    })
+    expect(rememberRes.statusCode).toBe(202)
+    expect(fixture.store.records.get(firstL1.id)?.approvalDecision).toBe("approve_and_remember")
+
+    // Subsequent L1 call in the SAME conversation executes automatically with approvalDecision="remembered"
+    const turn2 = await fixture.repository.createTurn("usr_owner", {
+      conversationId: conversation.id,
+      input: "第二次安装 test 模板",
+      pageContext: {},
+      idempotencyKey: "approval-l1-turn2",
+    })
+    await fixture.repository.updateRun(turn2.run.id, "queued", "running")
+    const secondL1 = await fixture.tools.propose({
+      runId: turn2.run.id,
+      operationId: "deployTemplate",
+      arguments: { stage: "test", name: "redis-2" },
+    })
+    expect(secondL1).toMatchObject({
+      status: "succeeded",
+      approvalDecision: "remembered",
+      approvalTier: "L1",
+    })
+
+    // Same operationId with stage="prod" dynamically escalates to L2, ignores session memory, and rejects approve_and_remember
+    const prodEscalated = await fixture.tools.propose({
+      runId: turn2.run.id,
+      operationId: "deployTemplate",
+      arguments: { stage: "prod", name: "redis-prod" },
+    })
+    expect(prodEscalated).toMatchObject({
+      status: "awaiting_approval",
+      approvalTier: "L2",
+      approvalRememberable: false,
+    })
+    await fixture.repository.updateRun(turn2.run.id, "running", "waiting_approval")
+
+    const timelineRes = await fixture.app.inject({
+      method: "GET",
+      url: `/internal/v1/conversations/${conversation.id}/timeline`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+    })
+    const timeline = timelineRes.json<{
+      turns: Array<{ selectedRun?: { items: Array<{ toolCall?: Record<string, unknown> }> } }>
+    }>()
+    const prodTimelineItem = timeline.turns.flatMap(t => t.selectedRun?.items ?? []).find(item => item.toolCall?.id === prodEscalated.id)
+    expect(prodTimelineItem?.toolCall).toMatchObject({
+      approvalTier: "L2",
+      approvalRememberable: false,
+    })
+
+    const forbiddenRememberRes = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${turn2.run.id}/approvals/${prodEscalated.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve_and_remember" },
+    })
+    expect(forbiddenRememberRes.statusCode).toBe(409)
+    expect(forbiddenRememberRes.json()).toMatchObject({
+      error: { code: "ai.approval_remember_not_allowed" },
+    })
+
+    // Static L2 operation also rejects approve_and_remember
+    const otherRunId = await waitingRun(fixture, "usr_owner", "other-conversation")
+    const otherConvL1 = await fixture.tools.propose({
+      runId: otherRunId,
+      operationId: "deployTemplate",
+      arguments: { stage: "dev", name: "isolated" },
+    })
+    expect(otherConvL1.status).toBe("awaiting_approval")
+
+    const staticL2 = await fixture.tools.propose({
+      runId: otherRunId,
+      operationId: "updateThing",
+      arguments: { value: "high-risk" },
+    })
+    expect(staticL2).toMatchObject({
+      status: "awaiting_approval",
+      approvalTier: "L2",
+      approvalRememberable: false,
+    })
+    await fixture.repository.updateRun(otherRunId, "running", "waiting_approval")
+    const staticL2RememberRes = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${otherRunId}/approvals/${staticL2.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve_and_remember" },
+    })
+    expect(staticL2RememberRes.statusCode).toBe(409)
+    expect(staticL2RememberRes.json()).toMatchObject({
+      error: { code: "ai.approval_remember_not_allowed" },
+    })
+
+    // Lost CAS race after rejection must NOT pollute session memory
+    const rejectFirstRes = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${otherRunId}/approvals/${otherConvL1.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "reject" },
+    })
+    expect(rejectFirstRes.statusCode).toBe(202)
+    const lateRememberRes = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${otherRunId}/approvals/${otherConvL1.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve_and_remember" },
+    })
+    expect(lateRememberRes.statusCode).toBe(409)
+    expect(await fixture.repository.hasRememberedToolApproval(otherRunId, "deployTemplate")).toBe(false)
+
+    await fixture.app.close()
+  })
+
+  it("clears approvalDecision and escalates to L2 when a remembered L1 call hits HTTP 428 ai.approval_required", async () => {
+    let attempts = 0
+    const client = new DeterministicLunaApiClient((request) => {
+      if (request.operation.operationId === "getThingState") return { status: 200, body: { ready: true } }
+      attempts += 1
+      if (attempts === 1) {
+        return { status: 428, body: { code: "ai.approval_required" } }
+      }
+      return { status: 200, body: { deployed: true } }
+    })
+    const fixture = await approvalFixture(client)
+    const conversation = await fixture.repository.createConversation("usr_owner", "428 Escalation")
+    const turn = await fixture.repository.createTurn("usr_owner", {
+      conversationId: conversation.id,
+      input: "安装模板",
+      pageContext: {},
+      idempotencyKey: "approval-428-escalation",
+    })
+    await fixture.repository.updateRun(turn.run.id, "queued", "running")
+    await fixture.repository.rememberToolApproval(turn.run.id, "deployTemplate", "aitool_seed_grant")
+
+    const escalated = await fixture.tools.propose({
+      runId: turn.run.id,
+      operationId: "deployTemplate",
+      arguments: { stage: "dev", name: "escalated-service" },
+    })
+    expect(escalated).toMatchObject({
+      status: "awaiting_approval",
+      approvalTier: "L2",
+      approvalRememberable: false,
+    })
+    expect(escalated.approvalDecision).toBeUndefined()
+    await fixture.repository.updateRun(turn.run.id, "running", "waiting_approval")
+
+    const rememberAgainRes = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${turn.run.id}/approvals/${escalated.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve_and_remember" },
+    })
+    expect(rememberAgainRes.statusCode).toBe(409)
+    expect(rememberAgainRes.json()).toMatchObject({
+      error: { code: "ai.approval_remember_not_allowed" },
+    })
+
+    const approveOnceRes = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${turn.run.id}/approvals/${escalated.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve" },
+    })
+    expect(approveOnceRes.statusCode).toBe(202)
+    expect(fixture.store.records.get(escalated.id)).toMatchObject({
+      status: "proposed",
+      approvalDecision: "approve",
+    })
+
+    await fixture.repository.updateRun(turn.run.id, "queued", "running")
+    const executed = await fixture.tools.executePendingCall(escalated.id)
+    expect(executed.status).toBe("succeeded")
+    expect(attempts).toBe(2)
+
     await fixture.app.close()
   })
 })

@@ -615,10 +615,16 @@ const aiAssistant = {
       conversationMissing: 'Create or select a conversation before running this action',
     },
     approval: {
-      title: 'Approval required',
-      bindingHint: 'This decision applies only to this tool call and its displayed parameters.',
+      title: 'High-risk approval required',
+      reversibleTitle: 'Write approval required',
+      tierL1: 'L1 Session-rememberable',
+      tierL2: 'L2 Per-call only',
+      bindingHint: 'High-risk operations are strictly bound to the parameters shown above and require per-call confirmation.',
+      rememberHint: 'Review the parameters above; approve once, or remember this low-risk operation for the current conversation.',
       reject: 'Reject',
       approve: 'Approve',
+      approveAndRemember: 'Approve & remember for session',
+      rememberNotAllowed: 'This high-risk operation requires per-call approval and cannot be remembered for the session',
     },
     conversations: {
       title: 'Conversations',

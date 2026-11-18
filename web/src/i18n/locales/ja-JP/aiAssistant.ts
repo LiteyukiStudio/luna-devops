@@ -615,10 +615,16 @@ const aiAssistant = {
       conversationMissing: 'この操作を実行する前にセッションを作成または選択してください',
     },
     approval: {
-      title: '操作承認が必要です',
-      bindingHint: 'この決定は、このツール呼び出しと表示中のパラメータにのみ適用されます。',
+      title: '高リスク操作の承認が必要です',
+      reversibleTitle: '変更操作の承認が必要です',
+      tierL1: 'L1 セッション記憶可',
+      tierL2: 'L2 都度確認',
+      bindingHint: '高リスク操作は上記パラメータに厳密に紐づき、毎回個別の承認が必要です。',
+      rememberHint: '上記パラメータを確認し、今回のみ承認するか、このセッション内で同一の低リスク操作を記憶できます。',
       reject: '拒否',
       approve: '実行を承認',
+      approveAndRemember: '承認してこのセッションで記憶',
+      rememberNotAllowed: 'この高リスク操作はセッション記憶に対応していません。パラメータを確認のうえ都度承認してください',
     },
     conversations: {
       title: 'セッション',

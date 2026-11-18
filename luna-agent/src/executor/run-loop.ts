@@ -636,7 +636,7 @@ export class RunLoop {
   ): Promise<boolean> {
     let call = await this.tools.inspect(toolCallId)
     if (!call) throw new Error("ai.tool_call_not_found")
-    if (call.status === "proposed" && call.approvalDecision === "approve") {
+    if (call.status === "proposed" && (call.approvalDecision === "approve" || call.approvalDecision === "approve_and_remember" || call.approvalDecision === "remembered")) {
       call = await this.tools.executePendingCall(toolCallId, signal)
       if (call.status !== "awaiting_approval") {
         const itemId = `${call.id}:item`

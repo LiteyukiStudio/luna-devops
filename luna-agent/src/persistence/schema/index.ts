@@ -4,7 +4,7 @@ export { runs } from "./runs.js"
 export { items, runEvents } from "./timeline.js"
 export { idempotencyKeys } from "./idempotency.js"
 export { conversationSummaries } from "./summaries.js"
-export { toolCalls } from "./tool-calls.js"
+export { toolCalls, conversationToolApprovals } from "./tool-calls.js"
 export { runCheckpoints } from "./run-checkpoints.js"
 export { modelUsages } from "./model-usages.js"
 

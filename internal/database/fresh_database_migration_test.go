@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 135
+	latestMigrationVersion   = 136
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -92,6 +92,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000134_ai_run_waiting_external.down.sql":                    false,
 		"000135_ai_run_lease.up.sql":                                 false,
 		"000135_ai_run_lease.down.sql":                               false,
+		"000136_ai_tool_approval_memory.up.sql":                      false,
+		"000136_ai_tool_approval_memory.down.sql":                    false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -576,6 +578,9 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.tool_calls", column: "execution_count"},
 		{table: "ai.tool_calls", column: "idempotency_key"},
 		{table: "ai.tool_calls", column: "verification_for_tool_call_id"},
+		{table: "ai.conversation_tool_approvals", column: "conversation_id"},
+		{table: "ai.conversation_tool_approvals", column: "operation_id"},
+		{table: "ai.conversation_tool_approvals", column: "granted_by_tool_call_id"},
 		{table: "build_runs", column: "idempotency_key"},
 		{table: "build_runs", column: "idempotency_request_hash"},
 		{table: "releases", column: "idempotency_key"},

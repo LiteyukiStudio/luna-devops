@@ -520,8 +520,23 @@ func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
 		t.Fatalf("GET tool call must NOT write AuditLog: before=%d after=%d", auditAfterPost, auditAfterGet)
 	}
 
-	// 4) Top-level body.projectIds matching bound project with free-form variables map containing "projectId":"other" -> 201 Created
-	seedToolCall("aitool_nested_ok", "createBuildVariableSet", "")
+	// 4) L1 remembered approval works when ai.conversation_tool_approvals row exists, while L2 createBuildVariableSet requires explicit approve
+	if err := db.Exec(`INSERT INTO ai.conversation_tool_approvals (conversation_id, operation_id, granted_by_tool_call_id) VALUES (?, 'triggerBuildRun', 'aitool_grant_1')`, conversationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	seedToolCall("aitool_l2_forbid_remembered", "createBuildVariableSet", "remembered")
+	l2RememberedReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"ci-vars","scope":"project","projectIds":["`+boundProject.ID+`"],"variables":{"K":"V"},"enabled":true}`))
+	l2RememberedReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	l2RememberedReq.Header.Set("Content-Type", "application/json")
+	l2RememberedReq.Header.Set(aiapi.RunIDHeader, runID)
+	l2RememberedReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_l2_forbid_remembered")
+	l2RememberedRec := httptest.NewRecorder()
+	router.ServeHTTP(l2RememberedRec, l2RememberedReq)
+	if l2RememberedRec.Code != http.StatusPreconditionRequired || !strings.Contains(l2RememberedRec.Body.String(), "ai.approval_required") {
+		t.Fatalf("expected 428 ai.approval_required for L2 createBuildVariableSet with remembered, got %d %s", l2RememberedRec.Code, l2RememberedRec.Body.String())
+	}
+
+	seedToolCall("aitool_nested_ok", "createBuildVariableSet", "approve")
 	nestedBody := `{"name":"ci-vars","scope":"project","projectIds":["` + boundProject.ID + `"],"variables":{"FIREBASE_CONFIG":"{\"projectId\":\"` + otherProject.ID + `\"}","projectId":"` + otherProject.ID + `"},"enabled":true}`
 	nestedReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(nestedBody))
 	nestedReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
@@ -538,7 +553,7 @@ func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
 	}
 
 	// 5) Top-level body.projectIds mismatch or omitted (e.g. scope=global/user) -> 403 ai.project_scope_mismatch
-	seedToolCall("aitool_top_mismatch", "createBuildVariableSet", "")
+	seedToolCall("aitool_top_mismatch", "createBuildVariableSet", "approve")
 	mismatchReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"bad-vars","scope":"project","projectIds":["`+otherProject.ID+`"]}`))
 	mismatchReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	mismatchReq.Header.Set("Content-Type", "application/json")
@@ -550,7 +565,7 @@ func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
 		t.Fatalf("expected 403 ai.project_scope_mismatch, got %d %s", mismatchRec.Code, mismatchRec.Body.String())
 	}
 
-	seedToolCall("aitool_global_bypass", "createBuildVariableSet", "")
+	seedToolCall("aitool_global_bypass", "createBuildVariableSet", "approve")
 	globalReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"user-vars","scope":"user","projectId":"`+boundProject.ID+`"}`))
 	globalReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	globalReq.Header.Set("Content-Type", "application/json")
@@ -562,7 +577,7 @@ func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
 		t.Fatalf("expected 403 ai.project_scope_mismatch when omitting projectIds in project conversation, got %d %s", globalRec.Code, globalRec.Body.String())
 	}
 
-	seedToolCall("aitool_forged_scope", "createBuildVariableSet", "")
+	seedToolCall("aitool_forged_scope", "createBuildVariableSet", "approve")
 	forgedScopeReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"user-forged","scope":"user","projectIds":["`+boundProject.ID+`"]}`))
 	forgedScopeReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	forgedScopeReq.Header.Set("Content-Type", "application/json")
@@ -574,7 +589,7 @@ func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
 		t.Fatalf("expected 403 ai.project_scope_mismatch when scope=user carries forged projectIds, got %d %s", forgedScopeRec.Code, forgedScopeRec.Body.String())
 	}
 
-	seedToolCall("aitool_case_smuggle", "createBuildVariableSet", "")
+	seedToolCall("aitool_case_smuggle", "createBuildVariableSet", "approve")
 	caseSmuggleReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"case-smuggle","scope":"project","projectIds":["`+boundProject.ID+`"],"ProjectIds":["`+otherProject.ID+`"]}`))
 	caseSmuggleReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	caseSmuggleReq.Header.Set("Content-Type", "application/json")

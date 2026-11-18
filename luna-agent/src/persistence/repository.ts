@@ -239,5 +239,7 @@ export interface Repository {
   finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">, expectedRowVersion?: number): Promise<void>
   appendEvent(runId: string, type: string, data: Record<string, unknown>): Promise<RunEvent>
   getEvents(ownerUserId: string, runId: string, after: number): Promise<RunEvent[]>
+  hasRememberedToolApproval(runId: string, operationId: string): Promise<boolean>
+  rememberToolApproval(runId: string, operationId: string, grantedByToolCallId: string): Promise<void>
   getTimeline(ownerUserId: string, conversationId: string, options?: TimelinePageOptions): Promise<TimelinePage | undefined>
 }

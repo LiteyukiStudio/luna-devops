@@ -1632,6 +1632,40 @@ export class PostgresRepository implements Repository {
     }, { isolationLevel: "repeatable read", accessMode: "read only" })
   }
 
+  async hasRememberedToolApproval(runId: string, operationId: string): Promise<boolean> {
+    const result = await this.pool.query<{ granted: boolean }>(
+      `select exists (
+         select 1
+         from ai.runs r
+         join ai.conversation_tool_approvals cta
+           on cta.conversation_id = r.conversation_id
+          and cta.operation_id = $2
+         where r.id = $1
+       ) as granted`,
+      [runId, operationId],
+    )
+    return result.rows[0]?.granted === true
+  }
+
+  async rememberToolApproval(runId: string, operationId: string, grantedByToolCallId: string): Promise<void> {
+    const inserted = await this.pool.query<{ conversation_id: string }>(
+      `insert into ai.conversation_tool_approvals (conversation_id, operation_id, granted_by_tool_call_id)
+       select r.conversation_id, $2, $3
+       from ai.runs r
+       where r.id = $1
+       on conflict (conversation_id, operation_id) do nothing
+       returning conversation_id`,
+      [runId, operationId, grantedByToolCallId],
+    )
+    if (inserted.rowCount === 0) {
+      const exists = await this.pool.query<{ id: string }>(
+        `select id from ai.runs where id = $1`,
+        [runId],
+      )
+      if (exists.rowCount === 0) throw new Error("ai.run_not_found")
+    }
+  }
+
   /** 原子推进 next_item_position 并插入 Timeline Item；计数器原子更新无法以 ORM 查询安全表达，保留最小 sql 模板 */
   private async appendItemWith(db: Querier, value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
     const position = (await db.update(runs)

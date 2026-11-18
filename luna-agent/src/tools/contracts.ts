@@ -29,6 +29,8 @@ export const toolRouteParameterSchema = z.object({
 
 export type ToolRouteParameter = z.infer<typeof toolRouteParameterSchema>
 
+export type ToolApprovalTier = "L0" | "L1" | "L2"
+
 export type ToolCatalogSummary = {
   operationId: string
   name: string
@@ -40,6 +42,7 @@ export type ToolCatalogSummary = {
   avoidWhen: ToolLocalizedText
   preconditions: ToolLocalizedList
   successEvidence: ToolLocalizedText
+  approvalTier: ToolApprovalTier
   requiresApproval: boolean
 }
 

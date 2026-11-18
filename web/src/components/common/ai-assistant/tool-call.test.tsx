@@ -213,15 +213,98 @@ describe('ai assistant tool status icon', () => {
 
     expect(container.querySelector('details')).not.toHaveAttribute('open')
     expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
+    expect(container.querySelector('[data-ai-approval-parameters]')).toHaveTextContent('applicationId')
+    expect(container.querySelector('[data-ai-approval-parameters]')).toHaveTextContent('app-1')
     expect(screen.getByRole('button', { name: '拒绝' })).toBeVisible()
     expect(screen.getByRole('button', { name: '批准执行' })).toBeVisible()
-    expect(screen.queryByRole('button', { name: '始终允许' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '批准并在本会话记住' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '批准执行' }))
     await waitFor(() => expect(onApproval).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-1', toolCallId: 'tool-call-1' }),
       'approve',
     ))
+  })
+
+  it('offers session-remembered approval alongside one-time approve for L1 reversible calls', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const onApproval = vi.fn(async () => {})
+    render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('awaiting_approval'),
+          approvalTier: 'L1',
+          approvalRememberable: true,
+          arguments: { projectId: 'prj_1', body: { stage: 'dev' } },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={onApproval}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: '拒绝' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '批准执行' })).toBeVisible()
+    const rememberBtn = screen.getByRole('button', { name: '批准并在本会话记住' })
+    expect(rememberBtn).toBeVisible()
+
+    fireEvent.click(rememberBtn)
+    await waitFor(() => expect(onApproval).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: 'run-1', toolCallId: 'tool-call-1', approvalTier: 'L1' }),
+      'approve_and_remember',
+    ))
+  })
+
+  it('renders all approval parameters without dropping fields beyond 5 entries and prevents duplicate synchronous clicks', async () => {
+    await i18next.changeLanguage('zh-CN')
+    let resolveApproval!: () => void
+    const onApproval = vi.fn(() => new Promise<void>((resolve) => {
+      resolveApproval = resolve
+    }))
+    const { container } = render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('awaiting_approval'),
+          approvalTier: 'L2',
+          approvalRememberable: false,
+          arguments: {
+            projectId: 'prj_99',
+            templateId: 'tpl_pg',
+            body: {
+              applicationName: 'Core DB',
+              applicationIdentifier: 'core-db',
+              deploymentName: 'core-db-prod',
+              clusterId: 'cls_prod_1',
+              stage: 'prod',
+              command: 'rm -rf /var/lib/postgresql/data',
+            },
+          },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={onApproval}
+      />,
+    )
+
+    const paramsPanel = container.querySelector('[data-ai-approval-parameters]')
+    expect(paramsPanel).not.toBeNull()
+    for (const expectedText of [
+      'prj_99',
+      'tpl_pg',
+      'Core DB',
+      'core-db',
+      'core-db-prod',
+      'cls_prod_1',
+      'prod',
+      'rm -rf /var/lib/postgresql/data',
+    ]) {
+      expect(paramsPanel).toHaveTextContent(expectedText)
+    }
+
+    const approveBtn = screen.getByRole('button', { name: '批准执行' })
+    fireEvent.click(approveBtn)
+    fireEvent.click(approveBtn)
+    expect(onApproval).toHaveBeenCalledTimes(1)
+    resolveApproval()
+    await waitFor(() => expect(approveBtn).not.toBeDisabled())
   })
 
   it('does not show approval controls for an ordinary tool call', () => {

@@ -134,6 +134,13 @@ function presentItem(item: TimelineItem) {
   const argumentsHash = stringValue(item.content.argumentsHash)
   const traceId = stringValue(item.content.traceId)
   const operationId = stringValue(item.content.operationId) ?? "unknown"
+  const rawApprovalTier = stringValue(item.content.approvalTier)
+  const approvalTier = rawApprovalTier === "L0" || rawApprovalTier === "L1" || rawApprovalTier === "L2"
+    ? rawApprovalTier
+    : undefined
+  const approvalRememberable = typeof item.content.approvalRememberable === "boolean"
+    ? item.content.approvalRememberable
+    : undefined
   return {
     ...base,
     toolCall: {
@@ -143,6 +150,8 @@ function presentItem(item: TimelineItem) {
       callIndex: item.timelineIndex,
       status,
       arguments: objectValue(item.content.arguments),
+      ...(approvalTier ? { approvalTier } : {}),
+      ...(approvalRememberable !== undefined ? { approvalRememberable } : {}),
       ...(item.content.result !== undefined ? { result: presentToolResult(item.content.result, errorCode) } : {}),
       ...(Array.isArray(objectValue(item.content.result).uiActions)
         ? { uiActions: objectValue(item.content.result).uiActions as ReturnType<typeof optionUIActions> }

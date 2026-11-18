@@ -1,5 +1,5 @@
-import { index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core"
-import { aiSchema } from "./conversations.js"
+import { index, integer, jsonb, primaryKey, text, timestamp } from "drizzle-orm/pg-core"
+import { aiSchema, conversations } from "./conversations.js"
 import { runs } from "./runs.js"
 
 export const toolCalls = aiSchema.table("tool_calls", {
@@ -16,7 +16,7 @@ export const toolCalls = aiSchema.table("tool_calls", {
   attempt: integer("attempt").notNull().default(1),
   executionCount: integer("execution_count").notNull().default(0),
   rowVersion: integer("row_version").notNull().default(1),
-  approvalDecision: text("approval_decision").$type<"approve">(),
+  approvalDecision: text("approval_decision").$type<"approve" | "approve_and_remember" | "remembered">(),
   result: jsonb("result").$type<unknown>(),
   errorCode: text("error_code"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -25,5 +25,16 @@ export const toolCalls = aiSchema.table("tool_calls", {
   index("ai_tool_calls_run_created_idx").on(table.runId, table.createdAt),
 ])
 
+export const conversationToolApprovals = aiSchema.table("conversation_tool_approvals", {
+  conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  operationId: text("operation_id").notNull(),
+  grantedByToolCallId: text("granted_by_tool_call_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, table => [
+  primaryKey({ columns: [table.conversationId, table.operationId] }),
+])
+
 export type ToolCallRow = typeof toolCalls.$inferSelect
 export type NewToolCallRow = typeof toolCalls.$inferInsert
+export type ConversationToolApprovalRow = typeof conversationToolApprovals.$inferSelect
+export type NewConversationToolApprovalRow = typeof conversationToolApprovals.$inferInsert

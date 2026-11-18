@@ -402,7 +402,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
     secured.post("/internal/v1/runs/:runId/approvals/:toolCallId/decision", async (request, reply) => {
       const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
       const body = z.object({
-        decision: z.enum(["reject", "approve"]),
+        decision: z.enum(["reject", "approve", "approve_and_remember"]),
       }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run) return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
@@ -415,8 +415,13 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       }
       if (selected.runId !== runId) return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
       const isMatchingDecisionRecorded = (call: Awaited<ReturnType<typeof input.tools.inspect>>) =>
-        (body.decision === "approve" && call.approvalDecision === "approve" && call.status !== "canceled")
-        || (body.decision === "reject" && call.status === "rejected")
+        call.status !== "awaiting_approval"
+        && call.status !== "canceled"
+        && (
+          (body.decision === "approve" && (call.approvalDecision === "approve" || call.approvalDecision === "approve_and_remember"))
+          || (body.decision === "approve_and_remember" && call.approvalDecision === "approve_and_remember")
+          || (body.decision === "reject" && call.status === "rejected")
+        )
       const ensureQueuedAfterDecision = async (fallbackStatus: Run["status"]): Promise<Run["status"]> => {
         const current = await input.repository.getRun(request.actor.userId, runId)
         const currentStatus = current?.status ?? fallbackStatus
@@ -451,6 +456,9 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         return reply.code(202).send({ runId, state: nextState })
       }
       catch (error) {
+        if (error instanceof Error && error.message === "ai.approval_remember_not_allowed") {
+          return reply.code(409).send(errorBody("ai.approval_remember_not_allowed", request.id))
+        }
         if (
           error instanceof RunStateConflictError
           || (error instanceof Error && (error.message === "ai.approval_not_pending" || error.message === "ai.tool_call_state_conflict"))
@@ -610,7 +618,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
                 ? 503
                 : code === "ai.provider_timeout"
                   ? 504
-                  : code === "idempotency_conflict" || code === "ai.run_state_conflict" || code === "ai.not_configured" || code === "ai.model_not_available"
+                  : code === "idempotency_conflict" || code === "ai.run_state_conflict" || code === "ai.not_configured" || code === "ai.model_not_available" || code === "ai.approval_remember_not_allowed"
                     ? 409
                     : code === "ai.internal_error"
                       ? 500

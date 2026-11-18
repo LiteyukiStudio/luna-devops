@@ -166,7 +166,7 @@ func TestPlatformCatalogJSONIsMinimalAndSelfContained(t *testing.T) {
 			t.Fatalf("legacy catalog field %s leaked: %s", removed, text)
 		}
 	}
-	for _, required := range []string{"operationId", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions", "successEvidence", "requiresApproval", "effect", "inputSchema", "outputSchema", "parameters"} {
+	for _, required := range []string{"operationId", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions", "successEvidence", "requiresApproval", "approvalTier", "effect", "inputSchema", "outputSchema", "parameters"} {
 		if !strings.Contains(text, `"`+required+`"`) {
 			t.Fatalf("catalog JSON is missing %s: %s", required, text)
 		}
@@ -439,7 +439,7 @@ func TestAppTemplateInstallCatalogCarriesStrictStageAndSemantics(t *testing.T) {
 	if !ok {
 		t.Fatal("missing installAppTemplate")
 	}
-	if operation.RequiresApproval || !reflect.DeepEqual(operation.RequiredScopes, []string{"project:write"}) {
+	if !operation.RequiresApproval || operation.ApprovalTier != ApprovalTierL1 || !reflect.DeepEqual(operation.RequiredScopes, []string{"project:write"}) {
 		t.Fatalf("installAppTemplate policy = %#v", operation)
 	}
 	if strings.TrimSpace(operation.Purpose.ZH) == "" || strings.TrimSpace(operation.AvoidWhen.ZH) == "" || len(operation.Preconditions.ZH) == 0 || strings.TrimSpace(operation.SuccessEvidence.ZH) == "" {
@@ -785,5 +785,81 @@ paths:
 	ifBranch := mapValue(grouped["if"])
 	if _, hasAdditional := ifBranch["additionalProperties"]; hasAdditional {
 		t.Fatalf("if constraint must not inject additionalProperties=false: %#v", ifBranch)
+	}
+}
+
+func TestPlatformCatalogClassifiesOperationsIntoL0L1L2Tiers(t *testing.T) {
+	operations, err := PlatformCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range operations {
+		switch op.ApprovalTier {
+		case ApprovalTierL0:
+			if op.RequiresApproval {
+				t.Errorf("%s is L0 but RequiresApproval=true", op.OperationID)
+			}
+			if op.Effect == "write" || op.Effect == "async" || op.Method == "DELETE" {
+				t.Errorf("%s mutation entered L0 auto tier", op.OperationID)
+			}
+		case ApprovalTierL1, ApprovalTierL2:
+			if !op.RequiresApproval {
+				t.Errorf("%s is %s but RequiresApproval=false", op.OperationID, op.ApprovalTier)
+			}
+		default:
+			t.Errorf("%s has invalid ApprovalTier %q", op.OperationID, op.ApprovalTier)
+		}
+		if op.Method == "DELETE" && op.ApprovalTier != ApprovalTierL2 {
+			t.Errorf("DELETE %s must be L2, got %s", op.OperationID, op.ApprovalTier)
+		}
+	}
+	wantTiers := map[string]string{
+		"getProject":                           ApprovalTierL0,
+		"webSearch":                            ApprovalTierL0,
+		"fetchWebPage":                         ApprovalTierL0,
+		"createProject":                        ApprovalTierL1,
+		"createApplication":                    ApprovalTierL1,
+		"triggerBuildRun":                      ApprovalTierL1,
+		"createProjectNotificationRule":        ApprovalTierL1,
+		"installAppTemplate":                   ApprovalTierL1,
+		"installSystemAppTemplate":             ApprovalTierL2,
+		"previewProjectVolumeDeletion":         ApprovalTierL2,
+		"createDeploymentTarget":               ApprovalTierL2,
+		"createBuildVariableSet":               ApprovalTierL2,
+		"createRelease":                        ApprovalTierL2,
+		"rollbackRelease":                      ApprovalTierL2,
+		"cancelRelease":                        ApprovalTierL2,
+		"createProjectRuntimeConfigSet":        ApprovalTierL2,
+		"updateProjectRuntimeConfigSet":        ApprovalTierL2,
+		"createProjectHookConfig":              ApprovalTierL2,
+		"updateProjectHookConfig":              ApprovalTierL2,
+		"createGatewayRoute":                   ApprovalTierL2,
+		"updateGatewayRoute":                   ApprovalTierL2,
+		"createArtifactRegistry":               ApprovalTierL2,
+		"updateArtifactRegistry":               ApprovalTierL2,
+		"deleteApplication":                    ApprovalTierL2,
+		"createProjectVolume":                  ApprovalTierL2,
+		"execReleaseRuntimeCommand":            ApprovalTierL2,
+		"updateDeploymentTargetRuntimeSecrets": ApprovalTierL2,
+		"createBillingWalletTransaction":       ApprovalTierL2,
+		"createProjectMember":                  ApprovalTierL2,
+	}
+	for opID, want := range wantTiers {
+		op, ok := PlatformOperation(opID)
+		if !ok {
+			t.Fatalf("missing %s", opID)
+		}
+		if op.ApprovalTier != want {
+			t.Errorf("%s ApprovalTier = %q, want %q", opID, op.ApprovalTier, want)
+		}
+	}
+	for _, secretSetOp := range []string{"createProjectRuntimeConfigSet", "updateProjectRuntimeConfigSet"} {
+		op, ok := PlatformOperation(secretSetOp)
+		if !ok {
+			t.Fatalf("missing %s", secretSetOp)
+		}
+		if !slices.Contains(op.SensitivePaths, "body.secretFiles") {
+			t.Errorf("%s SensitivePaths = %#v, want body.secretFiles", secretSetOp, op.SensitivePaths)
+		}
 	}
 }

@@ -15,6 +15,7 @@ export type AIConversationPage = AISchemas['AIConversationPage']
 export type AIMessagePart = AISchemas['AIMessagePart']
 export type AIRunStatus = AISelectedRunTransport['status']
 export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'running' | 'succeeded' | 'failed' | 'rejected' | 'canceled' | 'skipped'
+export type AIToolApprovalTier = 'L0' | 'L1' | 'L2'
 
 export interface AIToolDisplayResult {
   summaryKey: string
@@ -58,6 +59,8 @@ export type AITimelineItem = Omit<AITimelineItemTransport, 'toolCall'> & {
     errorCode?: string
     callIndex: number
     status?: AIToolStatus
+    approvalTier?: AIToolApprovalTier
+    approvalRememberable?: boolean
     arguments?: Record<string, unknown>
     result?: AIToolDisplayResult
     uiActions?: AIUIAction[]

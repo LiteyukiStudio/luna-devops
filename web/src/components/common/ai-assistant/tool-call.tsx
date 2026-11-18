@@ -4,6 +4,7 @@ import { ChevronRight, LoaderCircle, ShieldAlert } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { ApiError } from '@/api'
 import { StatusBadge } from '@/components/common/status-badge'
 import { StatusGlyph } from '@/components/common/status-indicator'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
@@ -17,7 +18,7 @@ import { AIToolCallDetails } from './tool-call-details'
 import { toolDisplayName } from './tool-display-name'
 
 export type ToolCallBlock = Extract<AIBlock, { type: 'tool_call' }>
-export type AIApprovalDecision = 'reject' | 'approve'
+export type AIApprovalDecision = 'reject' | 'approve' | 'approve_and_remember'
 
 interface WaitForTaskDisplayInfo {
   projectId: string
@@ -195,35 +196,97 @@ function ActionButton({ action, onAction, surface }: { action: AIUIAction, onAct
   return <Button className={surface === 'page' ? 'min-h-11 px-3 pointer-fine:min-h-8' : 'h-8 px-3 text-xs'} disabled={pending || done} size="sm" variant={variant} onClick={() => void execute()}>{done ? t('aiAssistant.actions.opened') : label}</Button>
 }
 
+function formatApprovalParameterEntries(args: Record<string, unknown>): Array<{ key: string, value: string }> {
+  const entries: Array<{ key: string, value: string }> = []
+  const pushEntry = (key: string, raw: unknown) => {
+    if (raw === undefined)
+      return
+    const formatted = typeof raw === 'string'
+      ? raw
+      : typeof raw === 'number' || typeof raw === 'boolean' || raw === null
+        ? String(raw)
+        : JSON.stringify(raw)
+    entries.push({ key, value: formatted })
+  }
+  for (const [key, value] of Object.entries(args)) {
+    if (key === 'body' && value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [bodyKey, bodyValue] of Object.entries(value as Record<string, unknown>)) {
+        pushEntry(`body.${bodyKey}`, bodyValue)
+      }
+      continue
+    }
+    pushEntry(key, value)
+  }
+  return entries
+}
+
 function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface: 'page' | 'window' }) {
   const { t } = useTranslation()
   const page = surface === 'page'
-  const [pending, setPending] = useState(false)
+  const [pendingDecision, setPendingDecision] = useState<AIApprovalDecision | null>(null)
+  const decidingRef = useRef(false)
+  const pending = pendingDecision !== null
+  const rememberable = block.approvalRememberable === true && block.approvalTier === 'L1'
+  const parameterEntries = formatApprovalParameterEntries(block.arguments)
   const decide = async (decision: AIApprovalDecision) => {
+    if (decidingRef.current)
+      return
     try {
-      setPending(true)
+      decidingRef.current = true
+      setPendingDecision(decision)
       await onApproval(block, decision)
     }
     catch (error) {
-      toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.approval'))
+      if (error instanceof ApiError && error.code === 'ai.approval_remember_not_allowed') {
+        toast.error(t('aiAssistant.approval.rememberNotAllowed'))
+      }
+      else {
+        toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.approval'))
+      }
     }
     finally {
-      setPending(false)
+      decidingRef.current = false
+      setPendingDecision(null)
     }
   }
   return (
-    <div className="grid gap-2.5 bg-warning-subtle/60 px-3 py-3">
+    <div className="grid gap-2.5 bg-warning-subtle/60 px-3 py-3" data-ai-approval-tier={rememberable ? 'L1' : 'L2'}>
       <div className="flex items-start gap-2">
         <ShieldAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
-        <div className="grid min-w-0 gap-0.5">
-          <strong className="text-sm font-medium text-foreground">{t('aiAssistant.approval.title')}</strong>
-          <p className="text-xs leading-5 text-muted-foreground">{t('aiAssistant.approval.bindingHint')}</p>
+        <div className="grid min-w-0 flex-1 gap-0.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <strong className="text-sm font-medium text-foreground">
+              {rememberable ? t('aiAssistant.approval.reversibleTitle') : t('aiAssistant.approval.title')}
+            </strong>
+            <StatusBadge className="px-1.5 py-0 text-[11px] leading-4" tone={rememberable ? 'info' : 'warning'}>
+              {rememberable ? t('aiAssistant.approval.tierL1') : t('aiAssistant.approval.tierL2')}
+            </StatusBadge>
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {rememberable ? t('aiAssistant.approval.rememberHint') : t('aiAssistant.approval.bindingHint')}
+          </p>
         </div>
       </div>
-      <div className={page ? 'grid grid-cols-2 gap-2 pointer-fine:flex pointer-fine:justify-end' : 'flex flex-wrap justify-end gap-2'}>
+      {parameterEntries.length > 0 && (
+        <dl className="grid max-h-44 gap-1 overflow-y-auto rounded-control border border-border/70 bg-surface px-2.5 py-2 text-xs" data-ai-approval-parameters>
+          {parameterEntries.map(entry => (
+            <div key={entry.key} className="flex items-baseline justify-between gap-3">
+              <dt className="shrink-0 font-mono text-[11px] text-muted-foreground">{entry.key}</dt>
+              <dd className="min-w-0 break-all text-right font-mono text-[11px] text-foreground">{entry.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <div className={page ? 'grid grid-cols-2 gap-2 pointer-fine:flex pointer-fine:flex-wrap pointer-fine:justify-end' : 'flex flex-wrap justify-end gap-2'}>
         <Button className={page ? 'min-h-12 w-full pointer-fine:min-h-8 pointer-fine:w-auto' : 'h-8 px-3 text-xs'} disabled={pending} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
+        {rememberable && (
+          <Button className={page ? 'min-h-12 w-full pointer-fine:min-h-8 pointer-fine:w-auto' : 'h-8 px-3 text-xs'} disabled={pending} size="sm" variant="outline" onClick={() => void decide('approve_and_remember')}>
+            {pendingDecision === 'approve_and_remember' && <LoaderCircle className="animate-spin motion-reduce:animate-none" />}
+            {t('aiAssistant.approval.approveAndRemember')}
+          </Button>
+        )}
         <Button className={page ? 'min-h-12 w-full pointer-fine:min-h-8 pointer-fine:w-auto' : 'h-8 px-3 text-xs'} disabled={pending} size="sm" onClick={() => void decide('approve')}>
-          {pending && <LoaderCircle className="animate-spin motion-reduce:animate-none" />}
+          {pendingDecision === 'approve' && <LoaderCircle className="animate-spin motion-reduce:animate-none" />}
           {t('aiAssistant.approval.approve')}
         </Button>
       </div>
