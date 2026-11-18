@@ -4,7 +4,8 @@ import { createId } from "../id.js"
 import { redact, redactSensitivePaths } from "../redaction.js"
 import { agentMetrics, errorDiagnostic, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { ToolArgumentsInvalidError, validateToolArguments } from "./argument-validator.js"
-import type { Repository } from "../persistence/repository.js"
+import { RunStateConflictError, type Repository } from "../persistence/repository.js"
+import { activeRunningRunVersionFence } from "../persistence/run-fence.js"
 import type { ToolCatalog } from "./catalog.js"
 import { UnknownToolOutcomeError, type LunaApiToolClient, type ToolExecutionResult } from "./luna-api-client.js"
 import { InMemoryLoopGuard, type LoopGuard, type LoopGuardState, type ToolLoopSnapshot } from "./loop-guard.js"
@@ -37,12 +38,12 @@ export type ToolEvent = { type: string, toolCallId: string, data: Record<string,
 export type ApprovalDecision = "reject" | "approve"
 
 export interface ToolCallStore {
-  insert(value: ToolCallRecord): Promise<void>
+  insert(value: ToolCallRecord, expectedRunVersion?: number): Promise<void>
   get(id: string): Promise<ToolCallRecord | undefined>
   /** Run 的工具执行事实，按创建顺序返回；恢复时用它核对批次是否已落地。 */
   listByRun(runId: string): Promise<ToolCallRecord[]>
-  update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>): Promise<ToolCallRecord>
-  emit(event: ToolEvent): Promise<void>
+  update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>, expectedRunVersion?: number): Promise<ToolCallRecord>
+  emit(event: ToolEvent, expectedRunVersion?: number): Promise<void>
 }
 
 export class ToolInterruption extends Error {
@@ -117,7 +118,7 @@ export class ToolOrchestrator {
     }
     catch (error) {
       if (!(error instanceof ToolArgumentsInvalidError)) throw error
-      return this.rejectInvalidArguments(input, argumentsHash, idempotencyKey, attempt, error)
+      return this.rejectInvalidArguments(input, argumentsHash, idempotencyKey, attempt, error, signal)
     }
     const id = createId("aitool")
     const record: ToolCallRecord = {
@@ -136,6 +137,7 @@ export class ToolOrchestrator {
       executionCount: 0,
       inputMode,
     }
+    signal?.throwIfAborted()
     await this.store.insert(record)
     telemetryLog("agent.tool.proposed", "info", { "luna.run.id": input.runId, "tool.name": input.operationId })
     await this.store.emit({
@@ -525,6 +527,16 @@ export class ToolOrchestrator {
           })
         }
         catch (error) {
+          if (error instanceof RunStateConflictError) throw error
+          if (
+            stableErrorCode(error) === "ai.run_lease_lost"
+            || (signal.aborted && stableErrorCode(signal.reason) === "ai.run_lease_lost")
+          ) {
+            outcome = "abandoned"
+            throw error instanceof Error && stableErrorCode(error) === "ai.run_lease_lost"
+              ? error
+              : new Error("ai.run_lease_lost", { cause: error })
+          }
           let durablyCanceled: ToolCallRecord | undefined
           if (signal.aborted) {
             try {
@@ -571,6 +583,10 @@ export class ToolOrchestrator {
 			...errorDiagnostic(error, errorCode),
           })
           return failed
+        }
+        if (signal.aborted && stableErrorCode(signal.reason) === "ai.run_lease_lost") {
+          outcome = "abandoned"
+          throw new Error("ai.run_lease_lost")
         }
         span.setAttribute("http.response.status_code", result.status)
         recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", genAIToolCallObject({
@@ -656,6 +672,7 @@ export class ToolOrchestrator {
     idempotencyKey: string,
     attempt: number,
     error: ToolArgumentsInvalidError,
+    signal?: AbortSignal,
   ): Promise<ToolCallRecord> {
     const result = error.toJSON()
     const id = createId("aitool")
@@ -676,6 +693,7 @@ export class ToolOrchestrator {
       result,
       ...(input.inputMode ? { inputMode: input.inputMode } : {}),
     }
+    signal?.throwIfAborted()
     await this.store.insert(record)
     telemetryLog("agent.tool.arguments_invalid", "warn", {
       "luna.run.id": input.runId,
@@ -811,14 +829,25 @@ export class MemoryToolCallStore implements ToolCallStore {
 
 export class ProjectingToolCallStore implements ToolCallStore {
   constructor(private readonly inner: ToolCallStore, private readonly repository: Repository) {}
-  insert(value: ToolCallRecord) { return this.inner.insert(value) }
+  async insert(value: ToolCallRecord, expectedRunVersion?: number) {
+    const effective = expectedRunVersion ?? activeRunningRunVersionFence(value.runId)
+    if (effective !== undefined) await this.repository.assertRunningRunVersion(value.runId, effective)
+    return this.inner.insert(value, effective)
+  }
   get(id: string) { return this.inner.get(id) }
   listByRun(runId: string) { return this.inner.listByRun(runId) }
-  update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>) { return this.inner.update(id, expected, patch) }
-  async emit(event: ToolEvent) {
-    await this.inner.emit(event)
+  async update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>, expectedRunVersion?: number) {
+    const existing = await this.inner.get(id)
+    const effective = expectedRunVersion ?? (existing ? activeRunningRunVersionFence(existing.runId) : undefined)
+    if (existing && effective !== undefined) await this.repository.assertRunningRunVersion(existing.runId, effective)
+    return this.inner.update(id, expected, patch, effective)
+  }
+  async emit(event: ToolEvent, expectedRunVersion?: number) {
     const call = await this.inner.get(event.toolCallId)
     if (!call) return
+    const effective = expectedRunVersion ?? activeRunningRunVersionFence(call.runId)
+    if (effective !== undefined) await this.repository.assertRunningRunVersion(call.runId, effective)
+    await this.inner.emit(event, effective)
     const execution = await this.repository.getExecutionInput(call.runId)
     if (!execution) return
     const itemId = `${call.id}:item`

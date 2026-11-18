@@ -26,6 +26,7 @@ When running from source, API reads these variables from the root `.env`. Docker
 | `AI_AGENT_BASE_URL` | Empty | Sets the Agent address used by API; use an HTTP(S) URL. |
 | `AI_AGENT_TIMEOUT` | `10s` | Bounds non-streaming API-to-Agent requests; use a Go duration such as `10s` or `1m`; SSE is not bounded by this setting. |
 | `AI_INTERNAL_SECRET`<sup>3</sup> | Empty | Authenticates internal API-Agent requests; use a secret of at least 32 bytes. |
+| `AI_INTERNAL_SECRET_PREVIOUS`<sup>3</sup> | Empty | Accepts Agent callback credentials derived from the retiring internal secret during rolling rotation; use a secret of at least 32 bytes while rotating, then clear it and restart once rollout completes. |
 
 1. Note: `SECRET_ENCRYPTION_KEY` is required in production; changing it makes stored encrypted credentials unreadable.
 2. Note: These settings create the first administrator only when the database has never contained a user. They never overwrite an active administrator; API refuses to start if users exist but no active administrator remains.

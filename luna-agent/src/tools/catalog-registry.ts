@@ -1,4 +1,4 @@
-import { ToolCatalog } from "./catalog.js"
+import type { ToolCatalog } from "./catalog.js"
 
 export type ToolCatalogRefresh = {
   changed: boolean
@@ -22,6 +22,7 @@ export class ToolCatalogRegistry {
   current(): ToolCatalog { return this.currentCatalog }
   digest(): string { return this.currentCatalog.digest }
   version(): string { return this.currentVersion }
+  has(digest: string): boolean { return this.snapshots.has(digest) }
 
   get(digest: string): ToolCatalog {
     const catalog = this.snapshots.get(digest)
@@ -43,13 +44,6 @@ export class ToolCatalogRegistry {
     this.currentCatalog = prepared
     this.currentVersion = version
     return { changed: previousDigest !== prepared.digest, previousDigest, currentDigest: prepared.digest, version }
-  }
-
-  restore(input: unknown, expectedDigest: string): void {
-    if (this.snapshots.has(expectedDigest)) return
-    const prepared = ToolCatalog.load(input)
-    if (prepared.digest !== expectedDigest) throw new Error("ai.tool_catalog_snapshot_invalid")
-    this.snapshots.set(prepared.digest, prepared)
   }
 
   retain(activeDigests: Iterable<string>): void {

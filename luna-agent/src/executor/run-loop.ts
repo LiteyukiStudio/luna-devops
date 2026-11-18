@@ -14,7 +14,7 @@ import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.j
 import type { TaskStatusClient } from "../tools/wait-for-task.js"
 import { checkpointState, resumePlan } from "./checkpoint.js"
 import { modelDecision } from "./decision.js"
-import { RunFinalizer, type TerminalCommit } from "./finalize.js"
+import { isLeaseLostError, RunFinalizer, type TerminalCommit } from "./finalize.js"
 import { decisionAction, resumeAction, toolBatchAction } from "./graph.js"
 import { StreamModelFinalizationError, streamModel } from "./streaming.js"
 import { reasoningByToolCallItemId } from "./resume.js"
@@ -29,6 +29,7 @@ export type RunLoopInput = {
   runtimeSettings: RuntimeSettings
   providerConfig: RemoteProviderConfig
   toolCatalogDigest: string
+  onStopLeaseHeartbeat?: () => void
   signal: AbortSignal
   span: Span
 }
@@ -50,8 +51,19 @@ export class RunLoop {
   }
 
   async execute(input: RunLoopInput): Promise<string> {
-    const { run, runtimeSettings, providerConfig, signal, span } = input
+    const { run, runtimeSettings, providerConfig, onStopLeaseHeartbeat, signal, span } = input
     let outcome = "completed"
+    const exitLeaseLost = (): string => {
+      onStopLeaseHeartbeat?.()
+      telemetryLog("agent.run.lease_lost", "warn", {
+        "operation": "agent.run.execute",
+        "outcome": "abandoned",
+        "error.code": "ai.run_lease_lost",
+        "luna.run.id": run.id,
+      })
+      span.setAttribute("luna.run.outcome", "lease_lost")
+      return "lease_lost"
+    }
     let pendingTerminal: TerminalCommit | undefined
     let pendingFlushStream: ((fallbackStatus?: "completed" | "failed") => Promise<void>) | undefined
     let checkpointRevision = 0
@@ -90,7 +102,7 @@ export class RunLoop {
         step: number,
         state: RunCheckpointState,
       ) => {
-        checkpointRevision = await this.saveCheckpoint(run.id, checkpointRevision, phase, step, state)
+        checkpointRevision = await this.saveCheckpoint(run.id, checkpointRevision, run.rowVersion, phase, step, state)
       }
 
       if (checkpoint?.phase === "waiting_external" && checkpoint.state.waitingTask) {
@@ -98,8 +110,10 @@ export class RunLoop {
         const waitingTask = checkpoint.state.waitingTask
         const wakeAt = new Date().toISOString()
         outcome = "waiting_external"
+        onStopLeaseHeartbeat?.()
         await this.repository.updateRun(run.id, "running", "waiting_external", {
           wakeAt,
+          expectedRowVersion: run.rowVersion,
           eventData: {
             projectId: waitingTask.projectId,
             taskType: waitingTask.taskType,
@@ -142,16 +156,18 @@ export class RunLoop {
           telemetryLog("agent.run.waiting_approval", "info", { "luna.run.id": run.id, "tool.name": directCall.operationId })
           await writeCheckpoint("awaiting_approval", modelStep, currentState({ pendingToolCallId: directCall.id }))
           signal.throwIfAborted()
-          await this.repository.updateRun(run.id, "running", "waiting_approval")
+          onStopLeaseHeartbeat?.()
+          await this.repository.updateRun(run.id, "running", "waiting_approval", { expectedRowVersion: run.rowVersion })
           span.setAttribute("luna.run.outcome", outcome)
           return outcome
         }
         if (directCall.status === "rejected") {
           await writeCheckpoint("finalizing", modelStep, currentState())
           try {
-            outcome = await this.finalizer.completeDirectTool(run, "completed", directCall.operationId)
+            outcome = await this.finalizer.completeDirectTool(run, "completed", directCall.operationId, onStopLeaseHeartbeat)
           }
           catch (error) {
+            if (isLeaseLostError(error, run.rowVersion)) return exitLeaseLost()
             return await this.handleTerminalPersistenceFailure(run, span, error)
           }
           span.setAttribute("luna.run.outcome", outcome)
@@ -167,9 +183,11 @@ export class RunLoop {
             run,
             "completed",
             directCall.operationId,
+            onStopLeaseHeartbeat,
           )
         }
         catch (error) {
+          if (isLeaseLostError(error, run.rowVersion)) return exitLeaseLost()
           return await this.handleTerminalPersistenceFailure(run, span, error)
         }
         span.setAttribute("luna.run.outcome", outcome)
@@ -188,7 +206,8 @@ export class RunLoop {
             ...(checkpoint?.state.pendingBatchCalls?.length ? { pendingBatchCalls: checkpoint.state.pendingBatchCalls } : {}),
           }))
           signal.throwIfAborted()
-          await this.repository.updateRun(run.id, "running", "waiting_approval")
+          onStopLeaseHeartbeat?.()
+          await this.repository.updateRun(run.id, "running", "waiting_approval", { expectedRowVersion: run.rowVersion })
           span.setAttribute("luna.run.outcome", outcome)
           return outcome
         }
@@ -204,7 +223,8 @@ export class RunLoop {
             ...(batch.remainingCalls?.length ? { pendingBatchCalls: batch.remainingCalls } : {}),
           }))
           signal.throwIfAborted()
-          await this.repository.updateRun(run.id, "running", "waiting_approval")
+          onStopLeaseHeartbeat?.()
+          await this.repository.updateRun(run.id, "running", "waiting_approval", { expectedRowVersion: run.rowVersion })
           span.setAttribute("luna.run.outcome", outcome)
           return outcome
         }
@@ -222,8 +242,10 @@ export class RunLoop {
             ...(batch.remainingCalls?.length ? { pendingBatchCalls: batch.remainingCalls } : {}),
           }))
           signal.throwIfAborted()
+          onStopLeaseHeartbeat?.()
           await this.repository.updateRun(run.id, "running", "waiting_external", {
             wakeAt: batch.wakeAt,
+            expectedRowVersion: run.rowVersion,
             eventData: {
               projectId: batch.waitingTask.projectId,
               taskType: batch.waitingTask.taskType,
@@ -447,11 +469,13 @@ export class RunLoop {
           recoveredFinal,
           assistantRenamed: toolState.assistantRenamed,
           providerConfig,
+          ...(onStopLeaseHeartbeat ? { onStopLeaseHeartbeat } : {}),
           signal,
           span,
         })
       }
       catch (error) {
+        if (isLeaseLostError(error, run.rowVersion)) return exitLeaseLost()
         return await this.handleTerminalPersistenceFailure(run, span, error)
       }
       span.setAttribute("luna.run.outcome", outcome)
@@ -461,11 +485,15 @@ export class RunLoop {
       const error = caughtError instanceof ToolInterruption && signal.aborted
         ? (signal.reason instanceof Error ? signal.reason : new Error("ai.run_canceled"))
         : caughtError
+      if (isLeaseLostError(error, run.rowVersion) || (signal.aborted && isLeaseLostError(signal.reason, run.rowVersion))) {
+        return exitLeaseLost()
+      }
       if (error instanceof StreamModelFinalizationError) {
         pendingTerminal = error.finalizeTerminal
         pendingFlushStream = error.flushStream
       }
       if (error instanceof TerminalPersistenceExhaustedError) {
+        onStopLeaseHeartbeat?.()
         return await this.handleTerminalPersistenceFailure(run, span, error)
       }
       const message = error instanceof Error ? error.message : "ai.run_failed"
@@ -483,6 +511,8 @@ export class RunLoop {
           await this.toolStep.failCard(run.id, toolState, cardError)
         }
         catch (persistenceError) {
+          if (isLeaseLostError(persistenceError, run.rowVersion)) return exitLeaseLost()
+          onStopLeaseHeartbeat?.()
           return await this.handleTerminalPersistenceFailure(run, span, persistenceError)
         }
       }
@@ -498,9 +528,11 @@ export class RunLoop {
             error,
             pendingTerminal,
             error instanceof RunStateConflictError ? "durable_state" : "abort_signal",
+            onStopLeaseHeartbeat,
           )
         }
         catch (persistenceError) {
+          if (isLeaseLostError(persistenceError, run.rowVersion)) return exitLeaseLost()
           return await this.handleTerminalPersistenceFailure(run, span, persistenceError)
         }
         span.setAttribute("luna.run.outcome", outcome)
@@ -509,9 +541,10 @@ export class RunLoop {
       }
       if (errorCode === "ai.agent_stopping") {
         try {
-          outcome = await this.finalizer.interrupt(run, pendingTerminal)
+          outcome = await this.finalizer.interrupt(run, pendingTerminal, onStopLeaseHeartbeat)
         }
         catch (persistenceError) {
+          if (isLeaseLostError(persistenceError, run.rowVersion)) return exitLeaseLost()
           return await this.handleTerminalPersistenceFailure(run, span, persistenceError)
         }
         span.setAttribute("luna.run.outcome", outcome)
@@ -526,7 +559,7 @@ export class RunLoop {
           "outcome": outcome,
         })
         try {
-          checkpointRevision = await this.saveCheckpoint(run.id, checkpointRevision, "awaiting_input", modelStep, checkpointState({
+          checkpointRevision = await this.saveCheckpoint(run.id, checkpointRevision, run.rowVersion, "awaiting_input", modelStep, checkpointState({
             loopGuard: this.tools.runLoopState(run.id),
             protocolRepairCount,
             argumentRepairAttempts: toolState?.providerArgumentRepairAttempts ?? new Map(),
@@ -535,9 +568,11 @@ export class RunLoop {
             ...(toolState?.cardRepairExhausted ? { cardRepairExhausted: true } : {}),
           }))
           await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })
-          await this.repository.updateRun(run.id, "running", "waiting_input")
+          onStopLeaseHeartbeat?.()
+          await this.repository.updateRun(run.id, "running", "waiting_input", { expectedRowVersion: run.rowVersion })
         }
         catch (persistenceError) {
+          if (isLeaseLostError(persistenceError, run.rowVersion)) return exitLeaseLost()
           return await this.handleTerminalPersistenceFailure(run, span, persistenceError)
         }
         span.setAttribute("luna.run.outcome", outcome)
@@ -550,9 +585,10 @@ export class RunLoop {
         span.setAttribute("luna.run.target_status", error.targetStatus)
       }
       try {
-        outcome = await this.finalizer.fail(run, error, pendingTerminal)
+        outcome = await this.finalizer.fail(run, error, pendingTerminal, onStopLeaseHeartbeat)
       }
       catch (persistenceError) {
+        if (isLeaseLostError(persistenceError, run.rowVersion)) return exitLeaseLost()
         return await this.handleTerminalPersistenceFailure(run, span, persistenceError)
       }
       span.setAttribute("luna.run.outcome", outcome)
@@ -576,12 +612,14 @@ export class RunLoop {
   private async saveCheckpoint(
     runId: string,
     expectedRevision: number,
+    expectedRunVersion: number,
     phase: "model" | "tool_execution" | "verification" | "awaiting_input" | "awaiting_approval" | "waiting_external" | "finalizing",
     modelStep: number,
     state: RunCheckpointState,
   ): Promise<number> {
     const saved = await this.repository.saveRunCheckpoint(runId, {
       expectedRevision,
+      expectedRunVersion,
       phase,
       modelStep,
       toolCallCount: this.tools.toolLoopSnapshot(runId).executed,

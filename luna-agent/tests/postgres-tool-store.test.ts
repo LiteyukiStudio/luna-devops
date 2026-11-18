@@ -65,7 +65,34 @@ describe("Postgres tool argument storage", () => {
     expect(calls[0]?.[13]).toBe(JSON.stringify({ code: "ai.tool_arguments_invalid", retryable: true }))
     expect(calls[0]?.[14]).toBe("ai.tool_arguments_invalid")
     expect(calls[0]?.[15]).toBe(0)
+    const insertedCiphertext = typeof calls[0]?.[8] === "string" ? calls[0][8] : ""
+    expect(JSON.parse(insertedCiphertext)).toMatchObject({ aadBound: true })
     await expect(store.get("aitool_1")).resolves.toMatchObject({ arguments: executable, executionCount: 1 })
+
+    // Cross-row transplantation (moving aitool_1 ciphertext onto aitool_2) must fail decryption
+    const tamperedQuery = vi.fn(async () => ({
+      rows: [{
+        id: "aitool_2",
+        run_id: "airun_1",
+        operation_id: "installAppTemplate",
+        status: "proposed",
+        arguments: {},
+        arguments_ciphertext: insertedCiphertext,
+        arguments_hash: "sha256:test",
+        attempt: 1,
+        row_version: 1,
+        execution_count: 0,
+        approval_decision: null,
+        result: null,
+        error_code: null,
+      }],
+    }))
+    const tamperedStore = new PostgresToolCallStore(
+      { query: tamperedQuery } as unknown as Pool,
+      {} as Repository,
+      new PayloadCipher(Buffer.alloc(32, 9), "tool-arguments-test", "ai.tool_arguments_key_unavailable"),
+    )
+    await expect(tamperedStore.get("aitool_2")).rejects.toThrow("ai.tool_arguments_key_unavailable")
   })
 
   it("never executes a legacy redacted projection when encrypted arguments are missing", async () => {

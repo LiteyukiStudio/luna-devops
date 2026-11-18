@@ -124,7 +124,10 @@ or explicitly restart the consuming workload.
 AI is fail-closed and disabled by default. Set `ai.enabled=true` and point
 `ai.existingSecret` to a Secret containing one stable `ai-internal-secret` key
 (or override `ai.internalSecretKey`). Generate it with `openssl rand -hex 32`;
-API and Agent derive all purpose-specific internal keys. The Agent image tag
+API and Agent derive all purpose-specific internal keys. During rolling key
+rotation, store the retiring secret under the optional
+`ai-internal-secret-previous` key (`ai.internalSecretPreviousKey`) until both
+workloads finish rolling out, then remove it. The Agent image tag
 follows the chart `appVersion` unless `ai.agent.image.tag` is set explicitly.
 
 For a short, controlled diagnostic window, set

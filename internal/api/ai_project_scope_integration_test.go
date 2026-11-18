@@ -68,18 +68,6 @@ func TestAIProjectListVisibilityDirectExecutionPostgres(t *testing.T) {
 	if !projectItemsContain(boundItems, related.ID) || projectItemsContain(boundItems, unrelated.ID) {
 		t.Fatalf("project-bound visibility items = %#v", boundItems)
 	}
-
-	directTools := aitool.NewService(db)
-	dashboardRelated, err := directTools.Execute(t.Context(), aitool.Request{OperationID: "getDashboard", UserID: admin.ID, Arguments: map[string]any{}})
-	if err != nil {
-		t.Fatalf("direct getDashboard default visibility: %v", err)
-	}
-	assertAIProjectMapResult(t, dashboardRelated, "projects", "related", related.ID, unrelated.ID, false)
-	dashboardAll, err := directTools.Execute(t.Context(), aitool.Request{OperationID: "getDashboard", UserID: admin.ID, Arguments: map[string]any{"visibility": "all"}})
-	if err != nil {
-		t.Fatalf("direct getDashboard all visibility: %v", err)
-	}
-	assertAIProjectMapResult(t, dashboardAll, "projects", "all", related.ID, unrelated.ID, true)
 }
 
 func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testing.T) {
@@ -202,7 +190,7 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	defer target.Close()
 
 	handlers := NewHandlers(db, mustTestConfig(t))
-	handlers.aiTools = aitool.NewService(db, aitool.WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+	handlers.aiTools = aitool.NewService(aitool.WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		return security.AdminEgressPolicy(), nil
 	}))
 	router := gin.New()
@@ -416,26 +404,186 @@ func projectItemsContain(items []any, projectID string) bool {
 	return false
 }
 
-func assertAIProjectMapResult(t *testing.T, result aitool.Result, key, visibility, relatedID, unrelatedID string, wantUnrelated bool) {
-	t.Helper()
-	value, ok := result.Value.(map[string]any)
-	if !ok {
-		t.Fatalf("AI result value = %#v", result.Value)
-	}
-	items, ok := value[key].([]map[string]any)
-	if !ok {
-		t.Fatalf("AI result %s = %#v", key, value[key])
-	}
-	contains := func(projectID string) bool {
-		for _, item := range items {
-			if item["id"] == projectID {
-				return true
-			}
+func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REDIS_ADDR", "")
+	t.Setenv(aiagent.InternalSecretEnvironment, "ai-identity-hardening-secret-000001")
+	db := aiProjectScopeIntegrationDB(t)
+	keys := mustTestAIKeys(t)
+
+	now := time.Now().UTC()
+	normalUser := model.User{ID: "usr_ai_norm", Email: "ai-norm@example.test", Name: "Normal User", Role: authz.PlatformRoleUser}
+	normalSession := model.UserSession{ID: "ses_ai_norm", UserID: normalUser.ID, TokenHash: "ai-norm-session-token", ExpiresAt: now.Add(time.Hour)}
+	boundProject := model.Project{ID: "prj_ai_norm_bound", Identifier: "ai-norm-bound", Name: "Bound", DeleteStatus: "active"}
+	otherProject := model.Project{ID: "prj_ai_norm_other", Identifier: "ai-norm-other", Name: "Other", DeleteStatus: "active"}
+	member := model.ProjectMember{ID: "prjm_ai_norm", ProjectID: boundProject.ID, UserID: normalUser.ID, Role: authz.ProjectRoleOwner}
+	for _, seed := range []any{&normalUser, &normalSession, &boundProject, &otherProject, &member} {
+		if err := db.Create(seed).Error; err != nil {
+			t.Fatalf("seed %T: %v", seed, err)
 		}
-		return false
 	}
-	if fmt.Sprint(value["visibility"]) != visibility || !contains(relatedID) || contains(unrelatedID) != wantUnrelated {
-		t.Fatalf("AI project result = %#v", value)
+
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = writer.Write([]byte("public guide"))
+	}))
+	defer target.Close()
+
+	handlers := NewHandlers(db, mustTestConfig(t))
+	handlers.aiTools = aitool.NewService(aitool.WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+		return security.AdminEgressPolicy(), nil
+	}))
+	handlers.domains = newDomainHandlers(handlers)
+	router := gin.New()
+	router.Use(handlers.domains.ai.AIToolExecutionIdentityMiddleware())
+	router.GET("/api/v1/data-retention/catalog", handlers.domains.platform.ListDataRetentionCatalog)
+	router.POST("/api/v1/ai-tools/fetch-web-page", handlers.domains.ai.ExecuteAIFetchWebPage)
+	router.GET("/api/v1/projects/:projectId", handlers.domains.project.GetProject)
+	router.POST("/api/v1/build/variable-sets", handlers.domains.build.CreateBuildVariableSet)
+
+	conversationID := "aicnv_ai_norm"
+	turnID := "aitrn_ai_norm"
+	runID := "airun_ai_norm"
+	if err := db.Exec(`INSERT INTO ai.conversations (id, owner_user_id, title, status, project_id) VALUES (?, ?, 'hardening test', 'active', ?)`, conversationID, normalUser.ID, boundProject.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id) VALUES (?, ?, 1, 'running', 'test tools', ?)`, turnID, conversationID, runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id) VALUES (?, ?, ?, ?, 1, 'running', 'system-v4', 'test', ?)`, runID, normalUser.ID, conversationID, turnID, normalSession.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	seedToolCall := func(id, operationID, approval string) {
+		t.Helper()
+		var approvalValue any
+		if approval != "" {
+			approvalValue = approval
+		}
+		if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode, approval_decision) VALUES (?, ?, ?, 'running', '{}'::jsonb, 'model', ?)`, id, runID, operationID, approvalValue).Error; err != nil {
+			t.Fatalf("seed tool_call %s: %v", id, err)
+		}
+	}
+
+	// 1) Normal user calling admin-only scope tool -> 403 ai.tool_permission_denied
+	seedToolCall("aitool_admin_scope", "listDataRetentionCatalog", "")
+	adminReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-retention/catalog", nil)
+	adminReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	adminReq.Header.Set(aiapi.RunIDHeader, runID)
+	adminReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_admin_scope")
+	adminRec := httptest.NewRecorder()
+	router.ServeHTTP(adminRec, adminReq)
+	if adminRec.Code != http.StatusForbidden || !strings.Contains(adminRec.Body.String(), "ai.tool_permission_denied") {
+		t.Fatalf("expected 403 ai.tool_permission_denied, got %d %s", adminRec.Code, adminRec.Body.String())
+	}
+
+	// 2) Normal user calling web:read tool -> 200 OK AND writes AuditLog (POST)
+	var auditBefore int64
+	if err := db.Model(&model.AuditLog{}).Where("action = ?", "ai.tool.execute").Count(&auditBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	seedToolCall("aitool_web_read", "fetchWebPage", "")
+	webReq := httptest.NewRequest(http.MethodPost, "/api/v1/ai-tools/fetch-web-page", bytes.NewBufferString(`{"url":"`+target.URL+`"}`))
+	webReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	webReq.Header.Set("Content-Type", "application/json")
+	webReq.Header.Set(aiapi.RunIDHeader, runID)
+	webReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_web_read")
+	webRec := httptest.NewRecorder()
+	router.ServeHTTP(webRec, webReq)
+	if webRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for web:read tool, got %d %s", webRec.Code, webRec.Body.String())
+	}
+	var auditAfterPost int64
+	if err := db.Model(&model.AuditLog{}).Where("action = ?", "ai.tool.execute").Count(&auditAfterPost).Error; err != nil {
+		t.Fatal(err)
+	}
+	if auditAfterPost != auditBefore+1 {
+		t.Fatalf("POST tool call must write AuditLog: before=%d after=%d", auditBefore, auditAfterPost)
+	}
+
+	// 3) Read-only GET tool call -> 200 OK AND must NOT write AuditLog
+	seedToolCall("aitool_get_proj", "getProject", "")
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+boundProject.ID, nil)
+	getReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	getReq.Header.Set(aiapi.RunIDHeader, runID)
+	getReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_get_proj")
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for getProject, got %d %s", getRec.Code, getRec.Body.String())
+	}
+	var auditAfterGet int64
+	if err := db.Model(&model.AuditLog{}).Where("action = ?", "ai.tool.execute").Count(&auditAfterGet).Error; err != nil {
+		t.Fatal(err)
+	}
+	if auditAfterGet != auditAfterPost {
+		t.Fatalf("GET tool call must NOT write AuditLog: before=%d after=%d", auditAfterPost, auditAfterGet)
+	}
+
+	// 4) Top-level body.projectIds matching bound project with free-form variables map containing "projectId":"other" -> 201 Created
+	seedToolCall("aitool_nested_ok", "createBuildVariableSet", "")
+	nestedBody := `{"name":"ci-vars","scope":"project","projectIds":["` + boundProject.ID + `"],"variables":{"FIREBASE_CONFIG":"{\"projectId\":\"` + otherProject.ID + `\"}","projectId":"` + otherProject.ID + `"},"enabled":true}`
+	nestedReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(nestedBody))
+	nestedReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	nestedReq.Header.Set("Content-Type", "application/json")
+	nestedReq.Header.Set(aiapi.RunIDHeader, runID)
+	nestedReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_nested_ok")
+	nestedRec := httptest.NewRecorder()
+	router.ServeHTTP(nestedRec, nestedReq)
+	if nestedRec.Code == http.StatusForbidden && strings.Contains(nestedRec.Body.String(), "ai.project_scope_mismatch") {
+		t.Fatalf("nested projectId in user payload falsely triggered ai.project_scope_mismatch: %d %s", nestedRec.Code, nestedRec.Body.String())
+	}
+	if nestedRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for createBuildVariableSet with nested dict, got %d %s", nestedRec.Code, nestedRec.Body.String())
+	}
+
+	// 5) Top-level body.projectIds mismatch or omitted (e.g. scope=global/user) -> 403 ai.project_scope_mismatch
+	seedToolCall("aitool_top_mismatch", "createBuildVariableSet", "")
+	mismatchReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"bad-vars","scope":"project","projectIds":["`+otherProject.ID+`"]}`))
+	mismatchReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	mismatchReq.Header.Set("Content-Type", "application/json")
+	mismatchReq.Header.Set(aiapi.RunIDHeader, runID)
+	mismatchReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_top_mismatch")
+	mismatchRec := httptest.NewRecorder()
+	router.ServeHTTP(mismatchRec, mismatchReq)
+	if mismatchRec.Code != http.StatusForbidden || !strings.Contains(mismatchRec.Body.String(), "ai.project_scope_mismatch") {
+		t.Fatalf("expected 403 ai.project_scope_mismatch, got %d %s", mismatchRec.Code, mismatchRec.Body.String())
+	}
+
+	seedToolCall("aitool_global_bypass", "createBuildVariableSet", "")
+	globalReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"user-vars","scope":"user","projectId":"`+boundProject.ID+`"}`))
+	globalReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	globalReq.Header.Set("Content-Type", "application/json")
+	globalReq.Header.Set(aiapi.RunIDHeader, runID)
+	globalReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_global_bypass")
+	globalRec := httptest.NewRecorder()
+	router.ServeHTTP(globalRec, globalReq)
+	if globalRec.Code != http.StatusForbidden || !strings.Contains(globalRec.Body.String(), "ai.project_scope_mismatch") {
+		t.Fatalf("expected 403 ai.project_scope_mismatch when omitting projectIds in project conversation, got %d %s", globalRec.Code, globalRec.Body.String())
+	}
+
+	seedToolCall("aitool_forged_scope", "createBuildVariableSet", "")
+	forgedScopeReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"user-forged","scope":"user","projectIds":["`+boundProject.ID+`"]}`))
+	forgedScopeReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	forgedScopeReq.Header.Set("Content-Type", "application/json")
+	forgedScopeReq.Header.Set(aiapi.RunIDHeader, runID)
+	forgedScopeReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_forged_scope")
+	forgedScopeRec := httptest.NewRecorder()
+	router.ServeHTTP(forgedScopeRec, forgedScopeReq)
+	if forgedScopeRec.Code != http.StatusForbidden || !strings.Contains(forgedScopeRec.Body.String(), "ai.project_scope_mismatch") {
+		t.Fatalf("expected 403 ai.project_scope_mismatch when scope=user carries forged projectIds, got %d %s", forgedScopeRec.Code, forgedScopeRec.Body.String())
+	}
+
+	seedToolCall("aitool_case_smuggle", "createBuildVariableSet", "")
+	caseSmuggleReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"case-smuggle","scope":"project","projectIds":["`+boundProject.ID+`"],"ProjectIds":["`+otherProject.ID+`"]}`))
+	caseSmuggleReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	caseSmuggleReq.Header.Set("Content-Type", "application/json")
+	caseSmuggleReq.Header.Set(aiapi.RunIDHeader, runID)
+	caseSmuggleReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_case_smuggle")
+	caseSmuggleRec := httptest.NewRecorder()
+	router.ServeHTTP(caseSmuggleRec, caseSmuggleReq)
+	if caseSmuggleRec.Code != http.StatusForbidden || !strings.Contains(caseSmuggleRec.Body.String(), "ai.project_scope_mismatch") {
+		t.Fatalf("expected 403 ai.project_scope_mismatch on case-variant ProjectIds smuggling, got %d %s", caseSmuggleRec.Code, caseSmuggleRec.Body.String())
 	}
 }
 

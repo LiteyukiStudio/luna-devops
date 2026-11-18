@@ -75,7 +75,7 @@ export function recordAIContent(
   attributes: Attributes = {},
 ): void {
   if (!aiContentCaptureEnabled) return
-  const content = serializeAIContent(value)
+  const content = serializeAIContent(redact(value))
   if (content.truncated) {
     span.setAttribute("luna.ai.content.truncated", true)
     span.addEvent("luna.ai.content.omitted", {
@@ -407,7 +407,7 @@ export async function* withSpanStream<T>(
 
 export function isExpectedCancellation(error: unknown): boolean {
   const code = stableErrorCode(error)
-  return code === "ai.run_canceled" || code === "ai.agent_stopping"
+  return code === "ai.run_canceled" || code === "ai.agent_stopping" || code === "ai.run_lease_lost"
 }
 
 function activeAICorrelationAttributes(): Attributes {

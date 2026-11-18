@@ -7,17 +7,22 @@ import (
 )
 
 type Config struct {
-	Available            bool
-	BaseURL              string
-	ServiceToken         string
-	ActorSigningKey      string
-	CallbackServiceToken string
-	Timeout              time.Duration
+	Available                    bool
+	BaseURL                      string
+	ServiceToken                 string
+	ActorSigningKey              string
+	CallbackServiceToken         string
+	PreviousCallbackServiceToken string
+	Timeout                      time.Duration
 }
 
 // NewConfig builds an immutable AI Agent client snapshot from values already
 // parsed by the process configuration adapter.
 func NewConfig(available bool, baseURL string, timeout time.Duration, internalSecret string) (Config, error) {
+	return NewConfigWithPrevious(available, baseURL, timeout, internalSecret, "")
+}
+
+func NewConfigWithPrevious(available bool, baseURL string, timeout time.Duration, internalSecret, previousInternalSecret string) (Config, error) {
 	cfg := Config{
 		Available: available,
 		BaseURL:   strings.TrimSpace(baseURL),
@@ -34,6 +39,15 @@ func NewConfig(available bool, baseURL string, timeout time.Duration, internalSe
 		cfg.ServiceToken = keys.ServiceToken
 		cfg.ActorSigningKey = keys.ActorSigningKey
 		cfg.CallbackServiceToken = keys.CallbackServiceToken
+	}
+	if strings.TrimSpace(previousInternalSecret) != "" {
+		previousKeys, err := DeriveInternalKeys(previousInternalSecret)
+		if err != nil {
+			return Config{}, fmt.Errorf("AI_INTERNAL_SECRET_PREVIOUS must contain at least 32 bytes")
+		}
+		if strings.TrimSpace(previousInternalSecret) != strings.TrimSpace(internalSecret) {
+			cfg.PreviousCallbackServiceToken = previousKeys.CallbackServiceToken
+		}
 	}
 	if !cfg.Available {
 		return cfg, nil

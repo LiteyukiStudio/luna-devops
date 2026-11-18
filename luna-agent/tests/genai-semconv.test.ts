@@ -11,6 +11,7 @@ import {
   genAIToolCallObject,
   genAIToolDefinitions,
   genAIToolSpanAttributes,
+  registerToolCatalogSensitivePaths,
 } from "../src/genai-semconv.js"
 
 describe("OpenTelemetry GenAI semantic conventions", () => {
@@ -37,13 +38,14 @@ describe("OpenTelemetry GenAI semantic conventions", () => {
         "server.port": 443,
       },
     })
-    expect(genAIClientTokenUsageAttributes("deepseek", "deepseek-chat", "input", "deepseek-chat-v3")).toEqual({
+    const tokenAttrs = genAIClientTokenUsageAttributes("deepseek", "deepseek-chat", "input")
+    expect(tokenAttrs).toEqual({
       "gen_ai.operation.name": "chat",
       "gen_ai.provider.name": "deepseek",
       "gen_ai.request.model": "deepseek-chat",
-      "gen_ai.response.model": "deepseek-chat-v3",
       "gen_ai.token.type": "input",
     })
+    expect(tokenAttrs).not.toHaveProperty("gen_ai.response.model")
     expect(genAIToolSpanAttributes({ name: "listProjects", callId: "call-1", description: "List projects" })).toEqual({
       "gen_ai.operation.name": "execute_tool",
       "gen_ai.agent.name": genAIAgentName,
@@ -102,5 +104,31 @@ describe("OpenTelemetry GenAI semantic conventions", () => {
     }])
     expect(genAIToolCallObject(["a", "b"])).toEqual({ items: ["a", "b"] })
     expect(genAIToolCallObject("ok")).toEqual({ value: "ok" })
+  })
+
+  it("redacts sensitivePaths of historical evicted catalog tools even when omitted from current step tools", () => {
+    registerToolCatalogSensitivePaths([
+      ["updateHistoricalCredentials", ["body.registryCredentialValue"]],
+    ])
+    const captured = genAIInputMessages([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{
+          id: "call_old",
+          operationId: "updateHistoricalCredentials",
+          arguments: { body: { registryCredentialValue: "raw-harbor-secret", keep: "ok" } },
+        }],
+      },
+    ], [])
+    expect(captured).toEqual([{
+      role: "assistant",
+      parts: [{
+        type: "tool_call",
+        id: "call_old",
+        name: "updateHistoricalCredentials",
+        arguments: { body: { registryCredentialValue: "[REDACTED]", keep: "ok" } },
+      }],
+    }])
   })
 })

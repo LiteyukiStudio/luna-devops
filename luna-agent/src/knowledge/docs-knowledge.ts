@@ -38,6 +38,10 @@ type DocsChunk = {
   docId: string
   locale: DocsLocale
   sectionId: string
+  parentSectionId?: string
+  parentHeading?: string
+  level: 1 | 2 | 3
+  continuation?: boolean
   title: string
   heading: string
   body: string
@@ -61,14 +65,14 @@ const descriptionCharacters = 80
 const bundleRoot = new URL("../../knowledge/docs/", import.meta.url)
 
 /**
- * 随 Agent 构建打包的公开文档知识库：按 H2/H3 切分章节，用与工具目录相同的中英文分词和 BM25F 检索。
+ * 随 Agent 构建打包的公开文档知识库：按 H2/H3 切分章节，按语言分别建立独立 BM25F 索引。
  * 文档内容是第一方参考资料，但仍只作为事实来源，不作为可执行指令。
  */
 export class DocsKnowledge {
   readonly digest: string
   private readonly pages = new Map<string, DocsPage>()
   private readonly chunks = new Map<string, DocsChunk>()
-  private readonly index: BM25FIndex
+  private readonly indices: Record<DocsLocale, BM25FIndex>
   private readonly navigation = new Map<string, NavigationItem[]>()
 
   constructor(
@@ -88,13 +92,17 @@ export class DocsKnowledge {
         ? entries.map(item => ({ type: "dir", name: item.activeMatch?.split("/").filter(Boolean)[0] ?? "", label: item.text ?? "" }))
         : entries)
     }
+    const chunksByLocale: Record<DocsLocale, DocsChunk[]> = { zh: [], en: [] }
     for (const file of files) {
       const page = parsePage(file.path, file.content)
       if (!page) continue
       this.pages.set(page.docId, page)
-      for (const chunk of page.chunks) this.chunks.set(chunk.key, chunk)
+      for (const chunk of page.chunks) {
+        this.chunks.set(chunk.key, chunk)
+        chunksByLocale[chunk.locale].push(chunk)
+      }
     }
-    this.index = new BM25FIndex([...this.chunks.values()].map(chunk => ({
+    const buildIndex = (localeChunks: DocsChunk[]) => new BM25FIndex(localeChunks.map(chunk => ({
       operationId: chunk.key,
       fields: {
         title: { text: chunk.title, weight: 3 },
@@ -103,14 +111,27 @@ export class DocsKnowledge {
         body: { text: chunk.body, weight: 1 },
       },
     })), new UnicodeLexicalTokenizer())
+    this.indices = {
+      zh: buildIndex(chunksByLocale.zh),
+      en: buildIndex(chunksByLocale.en),
+    }
   }
 
   search(query: string, locale: DocsLocale | undefined, limit: number): DocsSearchItem[] {
-    const ranked = this.index.search(query, this.chunks.size)
+    if (limit <= 0) return []
+    const candidateLimit = Math.max(limit * 4, 24)
+    const ranked = locale
+      ? this.indices[locale].search(query, candidateLimit)
+      : [...this.indices.zh.search(query, candidateLimit), ...this.indices.en.search(query, candidateLimit)]
+          .sort((left, right) => right.score - left.score || left.operationId.localeCompare(right.operationId))
     const items: DocsSearchItem[] = []
+    const seenSections = new Set<string>()
     for (const match of ranked) {
       const chunk = this.chunks.get(match.operationId)
-      if (!chunk || (locale && chunk.locale !== locale)) continue
+      if (!chunk) continue
+      const sectionKey = `${chunk.docId}#${chunk.sectionId}`
+      if (seenSections.has(sectionKey)) continue
+      seenSections.add(sectionKey)
       items.push({
         docId: chunk.docId,
         sectionId: chunk.sectionId,
@@ -137,14 +158,39 @@ export class DocsKnowledge {
   read(docId: string, sectionId?: string): DocsReadResult | undefined {
     const page = this.pages.get(docId)
     if (!page) return undefined
-    const sections = page.chunks.filter(chunk => chunk.sectionId).map(chunk => ({ sectionId: chunk.sectionId, heading: chunk.heading }))
-    const selected = sectionId ? page.chunks.filter(chunk => chunk.sectionId === sectionId) : page.chunks
+    const sections = collectPageSections(page.chunks)
+    const selected = sectionId
+      ? page.chunks.filter(chunk => chunk.sectionId === sectionId || chunk.parentSectionId === sectionId)
+      : page.chunks
     if (sectionId && !selected.length) return undefined
-    const full = selected.map(chunk => chunk.heading && chunk.heading !== page.title ? `## ${chunk.heading}\n\n${chunk.body}` : chunk.body).join("\n\n").trim()
+    const renderedParts: string[] = []
+    let emittedParentSectionId: string | undefined
+    for (const chunk of selected) {
+      if (chunk.parentSectionId && chunk.parentHeading) {
+        if (emittedParentSectionId !== chunk.parentSectionId) {
+          const wantsParentHeading = !sectionId || sectionId === chunk.parentSectionId
+          const hasExplicitParentChunk = selected.some(candidate => candidate.sectionId === chunk.parentSectionId)
+          if (wantsParentHeading && !hasExplicitParentChunk) {
+            renderedParts.push(`## ${chunk.parentHeading}`)
+          }
+          emittedParentSectionId = chunk.parentSectionId
+        }
+      }
+      else if (chunk.sectionId) {
+        emittedParentSectionId = chunk.sectionId
+      }
+      renderedParts.push(renderDocsChunk(chunk, page.title))
+    }
+    const full = renderedParts.join("\n\n").trim()
+    const resolvedSectionHeading = sectionId
+      ? (selected[0]!.sectionId === sectionId
+          ? selected[0]!.heading
+          : (selected[0]!.parentHeading ?? selected[0]!.heading))
+      : undefined
     return {
       docId,
       title: page.title,
-      ...(sectionId ? { section: selected[0]!.heading } : {}),
+      ...(resolvedSectionHeading ? { section: resolvedSectionHeading } : {}),
       sections,
       content: full.slice(0, maxReadCharacters),
       truncated: full.length > maxReadCharacters,
@@ -167,30 +213,51 @@ export class DocsKnowledge {
       else directories.set(rest[0]!, (directories.get(rest[0]!) ?? 0) + 1)
     }
     const meta = this.navigation.get(directory) ?? []
-    const ordered = [
-      ...meta.map(item => item.name).filter((name): name is string => Boolean(name)),
-      ...[...directories.keys(), ...documents.keys()].sort(),
-    ]
-    const seen = new Set<string>()
+    const seenDirs = new Set<string>()
+    const seenDocs = new Set<string>()
     const entries: DocsTreeEntry[] = []
-    for (const name of ordered) {
-      if (seen.has(name)) continue
-      seen.add(name)
-      const label = meta.find(item => item.name === name)?.label
-      const childDirectory = `${directory}/${name}`
+
+    const pushDirectory = (name: string, metaLabel?: string) => {
       const documentCount = directories.get(name)
-      if (documentCount !== undefined) {
-        entries.push({
-          type: "dir",
-          path: childDirectory.split("/").slice(1).join("/"),
-          label: label || documents.get(name)?.title || name,
-          documentCount,
-          ...(depth > 1 ? { children: this.directoryEntries(childDirectory, depth - 1) } : {}),
-        })
-        continue
-      }
+      if (documentCount === undefined || seenDirs.has(name)) return
+      seenDirs.add(name)
+      const childDirectory = `${directory}/${name}`
+      const indexPage = this.pages.get(`${childDirectory}/index`)
+      entries.push({
+        type: "dir",
+        path: childDirectory.split("/").slice(1).join("/"),
+        label: metaLabel || indexPage?.title || documents.get(name)?.title || name,
+        documentCount,
+        ...(depth > 1 ? { children: this.directoryEntries(childDirectory, depth - 1) } : {}),
+      })
+    }
+
+    const pushDocument = (name: string) => {
       const page = documents.get(name)
-      if (page) entries.push({ type: "doc", docId: page.docId, title: page.title, description: page.description })
+      if (!page || seenDocs.has(name)) return
+      seenDocs.add(name)
+      entries.push({ type: "doc", docId: page.docId, title: page.title, description: page.description })
+    }
+
+    for (const item of meta) {
+      if (!item.name) continue
+      if (item.type === "dir") {
+        pushDirectory(item.name, item.label)
+      }
+      else if (item.type === "file") {
+        pushDocument(item.name)
+      }
+      else {
+        pushDirectory(item.name, item.label)
+        pushDocument(item.name)
+      }
+    }
+
+    const remainingNames = [...new Set([...directories.keys(), ...documents.keys()])].sort()
+    for (const name of remainingNames) {
+      const dirLabel = meta.find(item => item.name === name && item.type !== "file")?.label
+      pushDirectory(name, dirLabel)
+      pushDocument(name)
     }
     return entries
   }
@@ -199,9 +266,16 @@ export class DocsKnowledge {
     if (!this.baseUrl) return {}
     const [locale, ...rest] = docId.split("/")
     const path = rest.join("/").replace(/(^|\/)index$/u, "")
-    const prefix = locale === "zh" ? "" : `/${locale}`
-    const url = new URL(`${prefix}/${path}`.replace(/\/+$/u, "") || "/", this.baseUrl)
-    if (sectionId) url.hash = sectionId
+    const url = new URL(this.baseUrl)
+    const basePath = url.pathname.replace(/^\/+|\/+$/gu, "")
+    const segments = [
+      ...(basePath ? [basePath] : []),
+      ...(locale === "zh" ? [] : [locale]),
+      ...(path ? [path.replace(/^\/+|\/+$/gu, "")] : []),
+    ].filter(Boolean)
+    url.pathname = segments.length ? `/${segments.join("/")}` : "/"
+    url.search = ""
+    url.hash = sectionId ? sectionId : ""
     return { url: url.toString() }
   }
 }
@@ -222,6 +296,55 @@ export function bundledDocsKnowledge(): DocsKnowledge {
   return bundled
 }
 
+function collectPageSections(chunks: DocsChunk[]): Array<{ sectionId: string, heading: string }> {
+  const seen = new Set<string>()
+  const sections: Array<{ sectionId: string, heading: string }> = []
+  for (const chunk of chunks) {
+    if (chunk.parentSectionId && chunk.parentHeading && !seen.has(chunk.parentSectionId)) {
+      seen.add(chunk.parentSectionId)
+      sections.push({ sectionId: chunk.parentSectionId, heading: chunk.parentHeading })
+    }
+    if (chunk.sectionId && !seen.has(chunk.sectionId)) {
+      seen.add(chunk.sectionId)
+      sections.push({ sectionId: chunk.sectionId, heading: chunk.heading })
+    }
+  }
+  return sections
+}
+
+function renderDocsChunk(chunk: DocsChunk, pageTitle: string): string {
+  if (chunk.continuation || !chunk.heading || chunk.level === 1 || chunk.heading === pageTitle) {
+    return chunk.body
+  }
+  const hashes = chunk.level === 3 ? "###" : "##"
+  return `${hashes} ${chunk.heading}\n\n${chunk.body}`
+}
+
+function splitLongTextByParagraphs(text: string, maxChars: number): string[] {
+  const trimmed = text.trim()
+  if (!trimmed) return []
+  if (trimmed.length <= maxChars) return [trimmed]
+  const paragraphs = trimmed.split(/\n\s*\n/u)
+  const pieces: string[] = []
+  let current = ""
+  for (const rawParagraph of paragraphs) {
+    const paragraph = rawParagraph.trim()
+    if (!paragraph) continue
+    if (!current) {
+      current = paragraph
+      continue
+    }
+    if (current.length + 2 + paragraph.length <= maxChars) {
+      current = `${current}\n\n${paragraph}`
+      continue
+    }
+    pieces.push(current)
+    current = paragraph
+  }
+  if (current) pieces.push(current)
+  return pieces
+}
+
 function parsePage(path: string, content: string): DocsPage | undefined {
   const match = /^(zh|en)\/(.+)\.mdx?$/u.exec(path)
   if (!match) return undefined
@@ -230,7 +353,7 @@ function parsePage(path: string, content: string): DocsPage | undefined {
   const frontmatter = frontmatterFields(content)
   const lines = stripFrontmatter(content).split(/\r?\n/u)
   let title = frontmatter.title ?? ""
-  const sections: Array<{ heading: string, level: number, lines: string[] }> = [{ heading: "", level: 1, lines: [] }]
+  const sections: Array<{ heading: string, level: 1 | 2 | 3, lines: string[] }> = [{ heading: "", level: 1, lines: [] }]
   let inFence = false
   for (const line of lines) {
     if (/^\s*(```|~~~)/u.test(line)) inFence = !inFence
@@ -240,33 +363,117 @@ function parsePage(path: string, content: string): DocsPage | undefined {
       continue
     }
     if (heading && heading[1]!.length >= 2) {
-      sections.push({ heading: heading[2]!, level: heading[1]!.length, lines: [] })
+      const level = heading[1]!.length === 3 ? 3 : 2
+      sections.push({ heading: heading[2]!, level, lines: [] })
       continue
     }
     sections[sections.length - 1]!.lines.push(line)
   }
   title ||= match[2]!.split("/").at(-1)!
 
-  // H3 并入所属 H2；只有单个 H2 章节过长时才按 H3 继续拆分，保持检索粒度与上下文完整性的平衡。
-  const grouped: Array<{ heading: string, parts: Array<{ heading: string, text: string }> }> = []
+  // H3 默认并入所属 H2；只有单个 H2 章节过长时才拆分为子片段，且完整保留 level 与 parentSectionId。
+  const usedSlugs = new Map<string, number>()
+  const uniqueSlug = (heading: string): string => {
+    const base = slug(heading)
+    if (!base) return ""
+    const count = usedSlugs.get(base) ?? 0
+    usedSlugs.set(base, count + 1)
+    return count === 0 ? base : `${base}-${count}`
+  }
+
+  const grouped: Array<{
+    heading: string
+    sectionId: string
+    level: 1 | 2
+    parts: Array<{ heading: string, sectionId: string, level: 1 | 2 | 3, body: string }>
+  }> = []
   for (const section of sections) {
-    const text = section.lines.join("\n").trim()
-    if (section.level <= 2 || !grouped.length) grouped.push({ heading: section.heading, parts: [{ heading: section.heading, text }] })
-    else grouped[grouped.length - 1]!.parts.push({ heading: section.heading, text: `### ${section.heading}\n\n${text}` })
+    const body = section.lines.join("\n").trim()
+    const sectionId = section.level >= 2 && section.heading ? uniqueSlug(section.heading) : ""
+    if (section.level <= 2 || !grouped.length) {
+      const groupLevel: 1 | 2 = section.level === 1 ? 1 : 2
+      grouped.push({
+        heading: section.heading,
+        sectionId,
+        level: groupLevel,
+        parts: [{ heading: section.heading, sectionId, level: section.level, body }],
+      })
+    }
+    else {
+      grouped[grouped.length - 1]!.parts.push({ heading: section.heading, sectionId, level: 3, body })
+    }
   }
 
   const chunks: DocsChunk[] = []
+  const appendPartChunks = (input: {
+    heading: string
+    level: 1 | 2 | 3
+    sectionId: string
+    parentSectionId?: string
+    parentHeading?: string
+    body: string
+  }) => {
+    const segments = splitLongTextByParagraphs(input.body, maxChunkCharacters)
+    segments.forEach((segment, segmentIndex) => {
+      chunks.push({
+        key: `${docId}#${input.sectionId}#${chunks.length}`,
+        docId,
+        locale,
+        sectionId: input.sectionId,
+        ...(input.parentSectionId ? { parentSectionId: input.parentSectionId } : {}),
+        ...(input.parentHeading ? { parentHeading: input.parentHeading } : {}),
+        level: input.level,
+        ...(segmentIndex > 0 ? { continuation: true } : {}),
+        title,
+        heading: input.heading || title,
+        body: segment,
+      })
+    })
+  }
+
   for (const group of grouped) {
-    const body = group.parts.map(part => part.text).join("\n\n").trim()
-    if (!body && !group.heading) continue
-    const pieces = body.length > maxChunkCharacters && group.parts.length > 1
-      ? group.parts.map((part, index) => ({ heading: index === 0 ? group.heading : part.heading, body: part.text.trim() }))
-      : [{ heading: group.heading, body }]
-    for (const piece of pieces) {
-      if (!piece.body) continue
-      const sectionId = piece.heading ? slug(piece.heading) : ""
-      chunks.push({ key: `${docId}#${sectionId}#${chunks.length}`, docId, locale, sectionId, title, heading: piece.heading || title, body: piece.body })
+    const combinedBody = group.parts
+      .map((part, index) => {
+        if (index === 0) return part.body
+        return part.body ? `### ${part.heading}\n\n${part.body}` : `### ${part.heading}`
+      })
+      .filter(Boolean)
+      .join("\n\n")
+      .trim()
+    if (!combinedBody && !group.heading) continue
+    const groupSectionId = group.sectionId
+
+    if (combinedBody.length > maxChunkCharacters && group.parts.length > 1) {
+      for (const [index, part] of group.parts.entries()) {
+        if (!part.body) continue
+        if (index === 0) {
+          appendPartChunks({
+            heading: group.heading,
+            level: group.level,
+            sectionId: groupSectionId,
+            body: part.body,
+          })
+        }
+        else {
+          appendPartChunks({
+            heading: part.heading,
+            level: 3,
+            sectionId: part.sectionId,
+            ...(groupSectionId ? { parentSectionId: groupSectionId, parentHeading: group.heading } : {}),
+            body: part.body,
+          })
+        }
+      }
+      continue
     }
+
+    if (!combinedBody) continue
+    appendPartChunks({
+      heading: group.heading,
+      level: group.level,
+      sectionId: groupSectionId,
+      body: combinedBody,
+    })
   }
   return { docId, title, description: frontmatter.description ? truncateDescription(frontmatter.description) : describe(chunks[0]?.body ?? ""), chunks }
 }

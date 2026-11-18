@@ -229,6 +229,11 @@ function resourceVerificationForCall(
     const value = primitiveValue(call.arguments[name])
       ?? primitiveValue(body[name])
       ?? primitiveValue(result[name])
+      ?? (name === "projectId"
+        ? singleStringArrayElement(call.arguments.projectIds)
+          ?? singleStringArrayElement(body.projectIds)
+          ?? singleStringArrayElement(result.projectIds)
+        : undefined)
     if (value !== undefined) argumentsValue[name] = value
   }
   const required = Array.isArray(readOperation.inputSchema.required)
@@ -339,4 +344,10 @@ function recordValue(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function singleStringArrayElement(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = [...new Set(value.map(item => stringValue(item)).filter((item): item is string => Boolean(item)))]
+  return items.length === 1 ? items[0] : undefined
 }

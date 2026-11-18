@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/LiteyukiStudio/devops/internal/aitool"
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/database"
@@ -137,7 +136,7 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 		t.Fatalf("created = %#v", created)
 	}
 
-	// 2. Marketplace ListAppTemplates & GetAppTemplate & aitool include enabled platform template
+	// 2. Marketplace ListAppTemplates & GetAppTemplate include enabled platform template
 	rec = performJSONBearerRequest(t, router, http.MethodGet, "/api/v1/app-templates?query=internal-suite", accessToken, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list marketplace = %d %s", rec.Code, rec.Body.String())
@@ -149,24 +148,9 @@ func TestPlatformAppTemplatesLifecycleMarketplaceAndInstall(t *testing.T) {
 	if len(listed) != 1 || listed[0]["id"] != createdID || listed[0]["source"] != "platform" {
 		t.Fatalf("listed = %#v", listed)
 	}
-
-	aiSvc := aitool.NewService(db)
-	aiList, err := aiSvc.Execute(context.Background(), aitool.Request{
-		OperationID: "listAppTemplates",
-		Arguments:   map[string]any{"query": "internal-suite"},
-	})
-	if err != nil {
-		t.Fatalf("aitool listAppTemplates: %v", err)
-	}
-	aiItems := aiList.Value.(map[string]any)["items"].([]map[string]any)
-	if len(aiItems) != 1 || aiItems[0]["id"] != createdID {
-		t.Fatalf("aiItems = %#v", aiItems)
-	}
-	if _, err := aiSvc.Execute(context.Background(), aitool.Request{
-		OperationID: "getAppTemplate",
-		Arguments:   map[string]any{"slug": "internal-suite"},
-	}); err != nil {
-		t.Fatalf("aitool getAppTemplate by slug: %v", err)
+	rec = performJSONBearerRequest(t, router, http.MethodGet, "/api/v1/app-templates/internal-suite", accessToken, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get marketplace template by slug = %d %s", rec.Code, rec.Body.String())
 	}
 
 	// 3. Install the multi-component platform template (installNow=false so task queue is not required)

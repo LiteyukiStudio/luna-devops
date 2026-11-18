@@ -1,9 +1,6 @@
 import type { ModelRequest } from "./provider.js"
 import { OpenAIChatCompletionsProvider } from "./openai-chat-completions.js"
 
-/** 网关不回传推理原文时的占位值；非空是为了不触发上游的“缺失 reasoning_content”校验。 */
-const unavailableReasoningContent = "（上一轮推理内容没有随响应返回。）"
-
 /** DeepSeek 的 reasoning_content、max_tokens 与用量字段兼容只存在于此适配器。 */
 export class DeepSeekChatCompletionsProvider extends OpenAIChatCompletionsProvider {
   protected override providerName(): string {
@@ -21,17 +18,31 @@ export class DeepSeekChatCompletionsProvider extends OpenAIChatCompletionsProvid
   }
 
   /**
-   * 思考模式要求回传每一轮 assistant 的 reasoning_content：
-   * 带 tools 的请求连没有工具调用的 assistant 轮次也要回传，缺失即 400。
-   * 网关不回传推理原文时没有可还原的 CoT，用固定占位保证字段非空（部分网关的 DTO
-   * 会把空串当缺省丢弃），不把正文伪装成思维链。
+   * 按 DeepSeek 官方多轮工具调用规范：
+   * - 历史轮次（messageIndex < lastUserIndex）的 assistant 消息直接省略 reasoning_content，不注入伪造占位文本；
+   * - 当前轮次工具调用链（messageIndex > lastUserIndex）的 assistant 步必须携带非空字符串字段（无思考文本时回退单空格 `" "`，防止中间网关 `omitempty` 剥离空字符串引发 DeepSeek 400）。
    */
-  protected override assistantPayload(
-    message: Extract<ModelRequest["messages"][number], { role: "assistant" }>,
-    messageIndex: number,
-  ): Record<string, unknown> {
-    const reasoning = message.reasoning?.trim() ? message.reasoning : unavailableReasoningContent
-    return { ...super.assistantPayload(message, messageIndex), reasoning_content: reasoning }
+  protected override providerMessages(messages: ModelRequest["messages"]): unknown[] {
+    let lastUserIndex = -1
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === "user") {
+        lastUserIndex = index
+        break
+      }
+    }
+    return messages.map((message, messageIndex) => {
+      if (message.role === "tool") {
+        return { role: "tool", tool_call_id: message.toolCallId, content: message.content }
+      }
+      if (message.role === "assistant") {
+        const base = super.assistantPayload(message, messageIndex)
+        if (messageIndex > lastUserIndex) {
+          return { ...base, reasoning_content: message.reasoning || " " }
+        }
+        return base
+      }
+      return message
+    })
   }
 
   protected override reasoningDelta(delta: Record<string, unknown> | undefined): string {
@@ -53,4 +64,3 @@ export class DeepSeekChatCompletionsProvider extends OpenAIChatCompletionsProvid
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
-

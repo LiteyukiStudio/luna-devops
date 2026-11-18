@@ -4,6 +4,7 @@ import { createId } from "../id.js"
 import { redact } from "../redaction.js"
 import { agentMetrics, errorDiagnostic, internalSpanOptions, isExpectedCancellation, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { modelDecision } from "./decision.js"
+import { isLeaseLostError } from "./finalize.js"
 import { contentError } from "./tool-results.js"
 import type { RunStreamBus, RunStreamSession } from "../run-stream-bus.js"
 
@@ -234,6 +235,7 @@ export async function streamModel(
   }).catch((error: unknown) => {
     const sourceError = error instanceof StreamModelFinalizationError ? error.cause : error
     const canceled = isExpectedCancellation(sourceError)
+      || (expectedRunVersion !== undefined && isLeaseLostError(sourceError, expectedRunVersion))
     outcome = canceled ? "canceled" : stableErrorCode(sourceError)
     agentMetrics.modelRequests.add(1, { operation: "stream", outcome })
     agentMetrics.modelSteps.add(1, { outcome })

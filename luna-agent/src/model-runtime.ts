@@ -133,7 +133,7 @@ export class ModelRuntime {
         { role: "system", content: "根据会话内容生成一个简洁标题，并使用用户当前语言。只返回标题，不要添加引号、Markdown、句末标点或解释；标题不超过 30 个字符。" },
         { role: "user", content: `用户消息：${input}\n助手回复：${answer.slice(0, 600)}` },
       ],
-      maxOutputTokens: 48,
+      maxOutputTokens: Math.min(256, model?.maxOutputTokens ?? 256),
       budget: { ...budget, operation: "title" },
       ...(signal ? { signal } : {}),
       ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),

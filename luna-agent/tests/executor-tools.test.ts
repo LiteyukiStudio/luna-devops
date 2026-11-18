@@ -4,6 +4,7 @@ import { TestRepository } from "./support/test-repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
 import type { ModelProvider } from "../src/provider/provider.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
+import { ToolCatalogRegistry } from "../src/tools/catalog-registry.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolInterruption, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { getToolDetailsTool } from "../src/tools/tool-details.js"
@@ -167,6 +168,7 @@ describe("RunExecutor slim lifecycle", () => {
     const run = await repository.claimNextQueuedRun()
     if (!run) throw new Error("missing run")
     run.startedAt = new Date(Date.now() - 60_000).toISOString()
+    repository.expireRunLease(run.id)
     const streamBus = new CleanupBus(repository)
     const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()), { streamBus })
 
@@ -218,6 +220,7 @@ describe("RunExecutor slim lifecycle", () => {
     })
     const firstRun = await repository.claimNextQueuedRun()
     if (!firstRun) throw new Error("missing first run")
+    repository.expireRunLease(firstRun.id)
     const secondConversation = await repository.createConversation("usr_reconcile_second", "second")
     const secondCreated = await repository.createTurn("usr_reconcile_second", {
       conversationId: secondConversation.id, input: "second", pageContext: {},
@@ -225,6 +228,7 @@ describe("RunExecutor slim lifecycle", () => {
     })
     const secondRun = await repository.claimNextQueuedRun()
     if (!secondRun) throw new Error("missing second run")
+    repository.expireRunLease(secondRun.id)
     const interrupt = repository.interruptOrphanedRun.bind(repository)
     const attempts = new Map<string, number>()
     repository.interruptOrphanedRun = vi.fn(async (runId: string, rowVersion: number) => {
@@ -428,7 +432,7 @@ describe("RunExecutor slim lifecycle", () => {
 
     expect(observed.filter(item => item.runId === approvalRunId)).toEqual([
       { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
-      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
+      { runId: approvalRunId, configVersion: "cfg-approval-new", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
     expect(observed.filter(item => item.runId === nextTurn.run.id)).toEqual([
       { runId: nextTurn.run.id, configVersion: "cfg-approval-new", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
@@ -1026,6 +1030,197 @@ describe("RunExecutor slim lifecycle", () => {
     expect(records[0]?.content.result).toMatchObject({ loadedOperationIds: ["getProject"], missingOperationIds: ["missingTool"], duplicate: false })
     expect(records[1]?.content.result).toMatchObject({ loadedOperationIds: ["getProject"], alreadySelectedOperationIds: ["getProject"], duplicate: true, cacheHit: true })
     expect((records[1]?.content.result as { items: unknown[] }).items).toHaveLength(1)
+  })
+
+  it("smoothly switches a resumed Run to current ToolCatalog after restart + catalog upgrade and caps title budget at 256", async () => {
+    const oldCatalog = ToolCatalog.load([testToolOperation("restartRelease", {
+      effect: "read",
+      method: "POST",
+      path: "/api/v1/releases/{releaseId}/restart",
+      requiresApproval: true,
+      idempotent: true,
+      parameters: [{ inputName: "releaseId", wireName: "releaseId", in: "path", required: true }],
+      inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
+    })])
+    const upgradedCatalog = ToolCatalog.load([
+      ...oldCatalog.all(),
+      testToolOperation("listProjects"),
+    ])
+    expect(upgradedCatalog.digest).not.toBe(oldCatalog.digest)
+
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_catalog_upgrade", "新会话")
+    const created = await repository.createTurn("usr_catalog_upgrade", {
+      conversationId: conversation.id,
+      input: "重启发布",
+      pageContext: {},
+      idempotencyKey: "catalog-upgrade-restart",
+      actorSessionId: "ses_catalog_upgrade",
+    })
+    const store = new MemoryToolCallStore()
+    const apiClient = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
+
+    let modelCalls = 0
+    let capturedTitleMaxTokens: number | undefined
+    const provider: ModelProvider = {
+      async *stream() {
+        modelCalls += 1
+        if (modelCalls === 1) {
+          yield {
+            type: "completed",
+            usage: { status: "reported" as const, value: { inputTokens: 3, outputTokens: 2, totalTokens: 5 } },
+            toolCalls: [{ id: "call-upgrade-1", operationId: "restartRelease", arguments: { releaseId: "rel_1" } }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "升级后恢复完成。" }
+        yield {
+          type: "completed",
+          usage: { status: "reported" as const, value: { inputTokens: 4, outputTokens: 2, totalTokens: 6 } },
+        }
+      },
+      async complete(request) {
+        if (request.budget?.operation === "title") {
+          capturedTitleMaxTokens = request.maxOutputTokens
+          return { text: "重启发布", usage: { status: "reported" as const, value: { inputTokens: 4, outputTokens: 3, totalTokens: 7 } } }
+        }
+        return { text: "ok", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+
+    // Pod 1 claims Run under oldCatalog and pauses at waiting_approval
+    const oldRemote = testRemoteConfigSource(remoteConfig("v1", "https://v1.example/v1/", oldCatalog.all()))
+    const oldRegistry = new ToolCatalogRegistry(oldCatalog, "v1")
+    const oldTools = new ToolOrchestrator(
+      async (runId) => {
+        const state = await repository.getRunToolState(runId)
+        return state && oldRegistry.has(state.toolCatalogDigest) ? oldRegistry.get(state.toolCatalogDigest) : oldRegistry.current()
+      },
+      apiClient,
+      new ProjectingToolCallStore(store, repository),
+    )
+    const firstExecutor = testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => oldCatalog.modelTools(["restartRelease"]) })),
+      { catalog: oldCatalog, runtimeConfig: oldRemote.source, catalogRegistry: oldRegistry, tools: oldTools },
+    )
+    await expect(firstExecutor.runOnce()).resolves.toBe(true)
+    expect((await repository.getRun("usr_catalog_upgrade", created.run.id))?.status).toBe("waiting_approval")
+    expect((await repository.getRun("usr_catalog_upgrade", created.run.id))?.toolCatalogDigest).toBe(oldCatalog.digest)
+    await firstExecutor.stop()
+
+    // Simulate process restart + new deployment with upgradedCatalog (oldCatalog.digest is NOT in newRegistry)
+    const newRemote = testRemoteConfigSource(remoteConfig("v2", "https://v2.example/v1/", upgradedCatalog.all()))
+    const newRegistry = new ToolCatalogRegistry(upgradedCatalog, "v2")
+    expect(newRegistry.has(oldCatalog.digest)).toBe(false)
+    const newTools = new ToolOrchestrator(
+      async (runId) => {
+        const state = await repository.getRunToolState(runId)
+        return state && newRegistry.has(state.toolCatalogDigest) ? newRegistry.get(state.toolCatalogDigest) : newRegistry.current()
+      },
+      apiClient,
+      new ProjectingToolCallStore(store, repository),
+    )
+    const pending = [...store.records.values()][0]!
+    await newTools.resolveApproval(pending.id, "approve")
+    await repository.updateRun(created.run.id, "waiting_approval", "queued")
+
+    const secondExecutor = testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({
+        resolve: (_page, _input, _ids, _signal, digest) => {
+          const selected = digest && newRegistry.has(digest) ? newRegistry.get(digest) : newRegistry.current()
+          return selected.modelTools(["restartRelease"])
+        },
+      })),
+      { catalog: upgradedCatalog, runtimeConfig: newRemote.source, catalogRegistry: newRegistry, tools: newTools },
+    )
+    await expect(secondExecutor.runOnce()).resolves.toBe(true)
+    await secondExecutor.stop()
+
+    const finished = await repository.getRun("usr_catalog_upgrade", created.run.id)
+    expect(finished?.status).toBe("completed")
+    expect(finished?.toolCatalogDigest).toBe(upgradedCatalog.digest)
+    expect(capturedTitleMaxTokens).toBe(256)
+  })
+
+  it("never interrupts an active leased Run during RollingUpdate startup, recovers expired leases, and aborts when renewRunLease returns false", async () => {
+    vi.useFakeTimers()
+    const repository = new TestRepository()
+    const activeConv = await repository.createConversation("usr_lease_active", "active")
+    const activeTurn = await repository.createTurn("usr_lease_active", {
+      conversationId: activeConv.id,
+      input: "active run on old pod",
+      pageContext: {},
+      idempotencyKey: "lease-active",
+      actorSessionId: "ses_lease_active",
+    })
+    const activeClaimed = await repository.claimNextQueuedRun()
+    if (!activeClaimed) throw new Error("missing active claimed run")
+
+    const expiredConv = await repository.createConversation("usr_lease_expired", "expired")
+    const expiredTurn = await repository.createTurn("usr_lease_expired", {
+      conversationId: expiredConv.id,
+      input: "crashed run on dead pod",
+      pageContext: {},
+      idempotencyKey: "lease-expired",
+      actorSessionId: "ses_lease_expired",
+    })
+    const expiredClaimed = await repository.claimNextQueuedRun()
+    if (!expiredClaimed) throw new Error("missing expired claimed run")
+    repository.expireRunLease(expiredClaimed.id)
+
+    // New Pod starts up during RollingUpdate -> must ONLY recover expiredClaimed and NEVER touch activeClaimed
+    const newPodExecutor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
+    newPodExecutor.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect((await repository.getRun("usr_lease_active", activeTurn.run.id))?.status).toBe("running")
+    expect((await repository.getRun("usr_lease_active", activeTurn.run.id))?.rowVersion).toBe(activeClaimed.rowVersion)
+    expect((await repository.getRun("usr_lease_expired", expiredTurn.run.id))?.status).toBe("interrupted")
+
+    // Advance past 60s without heartbeat on activeClaimed -> periodic 15s orphan sweep recovers it automatically
+    await vi.advanceTimersByTimeAsync(76_000)
+    expect((await repository.getRun("usr_lease_active", activeTurn.run.id))?.status).toBe("interrupted")
+    await newPodExecutor.stop()
+
+    // Also verify renewRunLease returning false aborts an in-flight execution immediately with ai.run_canceled
+    let streamAborted = false
+    const blockingProvider: ModelProvider = {
+      async *stream(request) {
+        await new Promise<void>((_resolve, reject) => {
+          request.signal?.addEventListener("abort", () => {
+            streamAborted = true
+            reject(request.signal?.reason instanceof Error ? request.signal.reason : new Error("ai.run_canceled"))
+          }, { once: true })
+        })
+        yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } }
+      },
+      async complete() {
+        return { text: "ok", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const cancelConv = await repository.createConversation("usr_lease_lost", "lease lost")
+    const cancelTurn = await repository.createTurn("usr_lease_lost", {
+      conversationId: cancelConv.id,
+      input: "canceled on another pod",
+      pageContext: {},
+      idempotencyKey: "lease-lost",
+      actorSessionId: "ses_lease_lost",
+    })
+    repository.renewRunLease = vi.fn(async () => "canceled" as const)
+    const lostLeaseExecutor = testExecutor(repository, new ModelRuntime(blockingProvider, testRegistry()))
+    const runningPromise = lostLeaseExecutor.runOnce()
+    await vi.advanceTimersByTimeAsync(20_000)
+    await runningPromise
+    await lostLeaseExecutor.stop()
+
+    expect(streamAborted).toBe(true)
+    expect((await repository.getRun("usr_lease_lost", cancelTurn.run.id))?.status).toBe("canceled")
   })
 })
 

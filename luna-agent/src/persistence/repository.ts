@@ -27,6 +27,7 @@ export class RunStateConflictError extends Error {
     readonly expectedStatus: Run["status"],
     readonly targetStatus: Run["status"],
     readonly actualStatus?: Run["status"],
+    readonly actualRowVersion?: number,
   ) {
     super("ai.run_state_conflict")
   }
@@ -50,6 +51,8 @@ export class RunCheckpointConflictError extends Error {
 
 /** 启动对账结果：requeued 表示可安全续跑，interrupted 表示无法续跑，skipped 表示 Run 已不是 running。 */
 export type OrphanedRunRecovery = "requeued" | "interrupted" | "skipped"
+export type RunLeaseRenewalOutcome = "renewed" | "canceled" | "lost"
+export type InterruptRunOptions = { ignoreActiveLease?: boolean }
 
 export type ConversationListOptions = {
   search?: string
@@ -145,6 +148,7 @@ export type RunStreamBatch = {
 
 export type UpdateRunOptions = Partial<Run> & {
   clearWakeAt?: boolean
+  expectedRowVersion?: number
   eventData?: Record<string, unknown>
 }
 
@@ -176,6 +180,7 @@ export interface Repository {
   assertPositiveAvailableBalance(ownerUserId: string): Promise<void>
   createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn>
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
+  assertRunningRunVersion(runId: string, expectedRunVersion: number): Promise<void>
   getRunToolState(runId: string): Promise<Pick<Run, "toolCatalogDigest" | "selectedOperationIds"> | undefined>
   getRunStreamPosition(runId: string): Promise<RunStreamPosition | undefined>
   persistRunStreamBatch(batch: RunStreamBatch): Promise<void>
@@ -186,13 +191,15 @@ export interface Repository {
     protectedOperationIds?: ReadonlySet<string>,
   ): Promise<RunToolSelection>
   listActiveToolCatalogDigests(): Promise<string[]>
-  cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
+  cancelRun(ownerUserId: string, runId: string, expectedRowVersion?: number): Promise<Run | undefined>
   claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot, userConcurrentRuns?: number): Promise<ClaimedRun | undefined>
+  renewRunLease(runId: string, expectedRowVersion: number, leaseMs: number): Promise<RunLeaseRenewalOutcome>
+  updateRunToolCatalogDigest(runId: string, toolCatalogDigest: string, expectedRowVersion?: number): Promise<void>
   claimDueWaitingExternalRuns(limit: number, leaseMs: number, now?: Date): Promise<Run[]>
   rescheduleWaitingExternalRun(runId: string, expectedCheckpointRevision: number, pollCount: number, wakeAt: string): Promise<boolean>
   resolveWaitingExternalRun(input: ResolveWaitingExternalRunInput): Promise<boolean>
-  listRunningRuns(): Promise<Array<Pick<Run, "id" | "rowVersion">>>
-  interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean>
+  listRunningRuns(now?: Date): Promise<Array<Pick<Run, "id" | "rowVersion">>>
+  interruptOrphanedRun(runId: string, expectedRunVersion: number, options?: InterruptRunOptions): Promise<boolean>
   recoverOrphanedRun(runId: string, expectedRunVersion: number, maxRecoveries: number): Promise<OrphanedRunRecovery>
   loadRunCheckpoint(runId: string): Promise<RunCheckpoint | undefined>
   saveRunCheckpoint(runId: string, advance: RunCheckpointAdvance): Promise<RunCheckpoint>
@@ -229,7 +236,7 @@ export interface Repository {
     eventType: string,
     eventData?: Record<string, unknown>,
   ): Promise<TimelineMutation & { resultItem: TimelineItem }>
-  finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">): Promise<void>
+  finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">, expectedRowVersion?: number): Promise<void>
   appendEvent(runId: string, type: string, data: Record<string, unknown>): Promise<RunEvent>
   getEvents(ownerUserId: string, runId: string, after: number): Promise<RunEvent[]>
   getTimeline(ownerUserId: string, conversationId: string, options?: TimelinePageOptions): Promise<TimelinePage | undefined>

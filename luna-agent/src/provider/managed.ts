@@ -102,6 +102,7 @@ export function createConfiguredProvider(config: RemoteProviderConfig, modelName
     promptCacheKeyEnabled: dialect === "openai" && promptCacheKeyEnabled(config),
     model: modelName,
     timeoutMs: config.runtime.providerTimeoutMs,
+    maxRequestRetries: config.runtime.maxRequestRetries,
   })
 }
 

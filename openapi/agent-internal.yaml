@@ -115,19 +115,6 @@ paths:
         "409": { $ref: "#/components/responses/AgentError" }
         "413": { $ref: "#/components/responses/AgentError" }
         "503": { $ref: "#/components/responses/AgentError" }
-  /internal/v1/turns/{turnId}/runs:
-    parameters:
-      - { $ref: "#/components/parameters/ActorContext" }
-      - { $ref: "#/components/parameters/ActorSignature" }
-      - { $ref: "#/components/parameters/TurnId" }
-    get:
-      operationId: listInternalAIRuns
-      responses: { "200": { description: Paginated runs, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
-    post:
-      operationId: createInternalAIRun
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
-      responses: { "202": { description: Run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/runs/{runId}:
     get:
       operationId: getInternalAIRun
@@ -175,7 +162,6 @@ components:
     ActorSignature: { name: X-Luna-Actor-Signature, in: header, required: true, schema: { type: string, pattern: "^sha256=[0-9a-f]{64}$" }, description: HMAC-SHA256 over the exact ActorContext value using the independently derived actor-signing key. }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
     ConversationId: { name: conversationId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
-    TurnId: { name: turnId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
     RunId: { name: runId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
     ToolCallId: { name: toolCallId, in: path, required: true, schema: { type: string, minLength: 5, maxLength: 64 } }
   schemas:

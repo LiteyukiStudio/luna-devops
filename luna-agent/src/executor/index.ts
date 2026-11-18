@@ -2,6 +2,7 @@ import type { DocsKnowledge } from "../knowledge/docs-knowledge.js"
 import type { ClaimedRun, RunExecutionSnapshot } from "../domain.js"
 import type { ModelRuntime } from "../model-runtime.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
+import { withRunningRunVersionFence } from "../persistence/run-fence.js"
 import type { RemoteConfigSource, RemoteProviderConfig } from "../provider/config-client.js"
 import type { RunStreamBus } from "../run-stream-bus.js"
 import { agentRuntimeInternals, runtimeSettingsFromRemote, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
@@ -25,6 +26,7 @@ import {
   withSpan,
 } from "../telemetry.js"
 import { maxRunRecoveries } from "./checkpoint.js"
+import { isLeaseLostError } from "./finalize.js"
 import { RunLoop } from "./run-loop.js"
 
 export type RunExecutorDependencies = {
@@ -39,11 +41,17 @@ export type RunExecutorDependencies = {
   taskStatusClient?: TaskStatusClient
 }
 
+const RUN_LEASE_DURATION_MS = 60_000
+const RUN_LEASE_RENEW_INTERVAL_MS = 20_000
+const LOCAL_LEASE_SAFETY_MARGIN_MS = 2_000
+const ORPHAN_LEASE_SWEEP_INTERVAL_MS = 15_000
+
 export class RunExecutor {
   private timer?: NodeJS.Timeout
   private started = false
   private reconciled = false
   private stopping = false
+  private lastOrphanSweepAt = 0
   private pumpRequested = false
   private pumpPromise: Promise<void> | undefined
   private readonly stopController = new AbortController()
@@ -102,6 +110,7 @@ export class RunExecutor {
         if (this.stopping) return
         if (complete) {
           this.reconciled = true
+          this.lastOrphanSweepAt = Date.now()
           tick()
           return
         }
@@ -350,6 +359,11 @@ export class RunExecutor {
         do {
           this.pumpRequested = false
           if (this.stopping) break
+          const nowMs = Date.now()
+          if (this.reconciled && nowMs - this.lastOrphanSweepAt >= ORPHAN_LEASE_SWEEP_INTERVAL_MS) {
+            this.lastOrphanSweepAt = nowMs
+            await this.recoverOrphanedRuns()
+          }
           await this.pollDueWaitingExternalRuns()
           while (!this.stopping && this.active.size < this.runtimeSettings.agentConcurrentRuns) {
             let claimed: { run: ClaimedRun, candidateExecutionSnapshot: RunExecutionSnapshot } | undefined
@@ -394,7 +408,6 @@ export class RunExecutor {
   private async claimNextRun(): Promise<{ run: ClaimedRun, candidateExecutionSnapshot: RunExecutionSnapshot } | undefined> {
     const candidateExecutionSnapshot: RunExecutionSnapshot = Object.freeze({
       runtimeSettings: this.runtimeSettings,
-      providerConfig: this.providerConfig,
       toolCatalogDigest: this.catalogRegistry.digest(),
     })
     const run = await this.repository.claimNextQueuedRun(
@@ -415,6 +428,11 @@ export class RunExecutor {
     run: ClaimedRun,
     candidateExecutionSnapshot: RunExecutionSnapshot,
   ): Promise<boolean> {
+    const priorSettlement = this.settlements.get(run.id)
+    if (priorSettlement) {
+      this.controllers.get(run.id)?.abort(new Error("ai.run_lease_lost"))
+      await priorSettlement
+    }
     let outcome = "failed"
     let settleRun!: () => void
     const settlement = new Promise<void>((resolve) => { settleRun = resolve })
@@ -423,6 +441,57 @@ export class RunExecutor {
     this.controllers.set(run.id, abort)
     const spanSettings = run.executionSnapshot?.runtimeSettings ?? this.runtimeSettings
     const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), spanSettings.runTimeoutMs)
+    let leaseStopped = false
+    let leaseDeadlineTimer: NodeJS.Timeout | undefined
+    let stopLeaseHeartbeat = () => { leaseStopped = true }
+    const scheduleLeaseDeadline = (durationMs: number) => {
+      if (leaseDeadlineTimer) clearTimeout(leaseDeadlineTimer)
+      if (leaseStopped || abort.signal.aborted) return
+      leaseDeadlineTimer = setTimeout(() => {
+        if (leaseStopped || abort.signal.aborted) return
+        stopLeaseHeartbeat()
+        abort.abort(new Error("ai.run_lease_lost"))
+      }, Math.max(1_000, durationMs - LOCAL_LEASE_SAFETY_MARGIN_MS))
+      leaseDeadlineTimer.unref()
+    }
+    scheduleLeaseDeadline(RUN_LEASE_DURATION_MS)
+    const leaseTimer = setInterval(() => {
+      if (this.stopping || leaseStopped || abort.signal.aborted) return
+      void this.repository.renewRunLease(run.id, run.rowVersion, RUN_LEASE_DURATION_MS)
+        .then((renewal) => {
+          if (leaseStopped || abort.signal.aborted) return
+          if (renewal === "renewed") {
+            scheduleLeaseDeadline(RUN_LEASE_DURATION_MS)
+            return
+          }
+          if (renewal === "canceled") {
+            stopLeaseHeartbeat()
+            abort.abort(new Error("ai.run_canceled"))
+          }
+          else if (renewal === "lost") {
+            stopLeaseHeartbeat()
+            abort.abort(new Error("ai.run_lease_lost"))
+          }
+        })
+        .catch((error) => {
+          telemetryLog("agent.run.lease_renew_failed", "warn", {
+            "operation": "agent.run.lease_renew",
+            "outcome": "failed",
+            "luna.run.id": run.id,
+            ...errorDiagnostic(error, "ai.persistence_unavailable"),
+          })
+        })
+    }, RUN_LEASE_RENEW_INTERVAL_MS)
+    leaseTimer.unref()
+    stopLeaseHeartbeat = () => {
+      if (leaseStopped) return
+      leaseStopped = true
+      clearInterval(leaseTimer)
+      if (leaseDeadlineTimer) {
+        clearTimeout(leaseDeadlineTimer)
+        leaseDeadlineTimer = undefined
+      }
+    }
     const startedAt = performance.now()
     agentMetrics.activeRuns.add(1)
     try {
@@ -434,23 +503,39 @@ export class RunExecutor {
         try {
           const executionSnapshot = run.executionSnapshot ?? candidateExecutionSnapshot
           const runtimeSettings = executionSnapshot.runtimeSettings
-          const providerConfig = executionSnapshot.providerConfig
-          const toolCatalogDigest = executionSnapshot.toolCatalogDigest
-          if (!providerConfig || !toolCatalogDigest || toolCatalogDigest !== run.toolCatalogDigest)
-            throw new Error("ai.tool_catalog_snapshot_invalid")
-          this.catalogRegistry.restore(providerConfig.toolCatalog, toolCatalogDigest)
+          const providerConfig = this.providerConfig
+          if (!providerConfig) throw new Error("ai.provider_config_unavailable")
+          let toolCatalogDigest = executionSnapshot.toolCatalogDigest ?? run.toolCatalogDigest
+          let effectiveRun = run
+          if (!toolCatalogDigest || !this.catalogRegistry.has(toolCatalogDigest)) {
+            toolCatalogDigest = this.catalogRegistry.current().digest
+            await this.repository.updateRunToolCatalogDigest(run.id, toolCatalogDigest, run.rowVersion)
+            effectiveRun = { ...run, toolCatalogDigest }
+          }
 
           this.tools.setRunMaxToolCallsForRun(run.id, runtimeSettings.runMaxToolCalls)
-          return await this.runLoop.execute({
-            run,
+          return await withRunningRunVersionFence(run.id, run.rowVersion, () => this.runLoop.execute({
+            run: effectiveRun,
             runtimeSettings,
             providerConfig,
             toolCatalogDigest,
+            onStopLeaseHeartbeat: stopLeaseHeartbeat,
             signal: abort.signal,
             span,
-          })
+          }))
         }
         catch (error) {
+          stopLeaseHeartbeat()
+          if (isLeaseLostError(error, run.rowVersion) || (abort.signal.aborted && isLeaseLostError(abort.signal.reason, run.rowVersion))) {
+            telemetryLog("agent.run.lease_lost", "warn", {
+              "operation": "agent.run.execute",
+              "outcome": "abandoned",
+              "error.code": "ai.run_lease_lost",
+              "luna.run.id": run.id,
+            })
+            span.setAttribute("luna.run.outcome", "lease_lost")
+            return "lease_lost"
+          }
           outcome = error instanceof RunStateConflictError ? "canceled" : stableErrorCode(error)
           telemetryLog("agent.run.dispatch_failed", "error", {
             "operation": "agent.run.execute",
@@ -472,18 +557,21 @@ export class RunExecutor {
       })
     }
     finally {
+      stopLeaseHeartbeat()
       clearTimeout(timeout)
-      this.controllers.delete(run.id)
-      if (!["waiting_approval", "waiting_input"].includes(outcome))
+      if (this.controllers.get(run.id) === abort) this.controllers.delete(run.id)
+      if (!["waiting_approval", "waiting_input", "lease_lost"].includes(outcome))
         this.tools.clearRunLoopState(run.id)
       const metricAttributes = { outcome }
       agentMetrics.activeRuns.add(-1)
       agentMetrics.runs.add(1, metricAttributes)
       agentMetrics.runDuration.record((performance.now() - startedAt) / 1000, metricAttributes)
-      const finalRun = await this.repository.getRun(run.ownerUserId, run.id).catch(() => undefined)
-      if (finalRun && !["queued", "running"].includes(finalRun.status))
-        await this.streamBus.cleanup(run.id).catch(() => undefined)
-      this.settlements.delete(run.id)
+      if (outcome !== "lease_lost") {
+        const finalRun = await this.repository.getRun(run.ownerUserId, run.id).catch(() => undefined)
+        if (finalRun && !["queued", "running"].includes(finalRun.status))
+          await this.streamBus.cleanup(run.id).catch(() => undefined)
+      }
+      if (this.settlements.get(run.id) === settlement) this.settlements.delete(run.id)
       settleRun()
     }
     return true
@@ -507,6 +595,12 @@ export class RunExecutor {
     }
     for (const run of running) {
       try {
+        const localController = this.controllers.get(run.id)
+        const localSettlement = this.settlements.get(run.id)
+        if (localController || localSettlement) {
+          localController?.abort(new Error("ai.run_lease_lost"))
+          if (localSettlement) await localSettlement
+        }
         const recovery = await this.repository.recoverOrphanedRun(run.id, run.rowVersion, maxRunRecoveries)
         if (recovery === "requeued") {
           telemetryLog("agent.run.recovered", "warn", {

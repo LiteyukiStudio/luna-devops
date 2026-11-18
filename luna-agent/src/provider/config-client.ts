@@ -225,9 +225,13 @@ export class RemoteConfigSnapshot implements RemoteConfigSource {
           await this.scheduleRetry(retry + 1, maxRetries, request.signal, retryAfterMs, String(response.status))
         }
         catch (error) {
-          if (request.signal.aborted || retry >= maxRetries) throw error
-          agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: "network_error" })
-          await this.scheduleRetry(retry + 1, maxRetries, request.signal, undefined, "network_error")
+          if (request.signal.aborted) {
+            agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: "timeout" })
+            throw error
+          }
+          agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: "failed" })
+          if (retry >= maxRetries) throw error
+          await this.scheduleRetry(retry + 1, maxRetries, request.signal, undefined, "failed")
         }
       }
     }

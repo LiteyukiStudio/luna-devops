@@ -38,22 +38,23 @@ type initialAdminEnvironment struct {
 }
 
 type apiEnvironment struct {
-	Addr                 string                  `env:"API_ADDR" envDefault:":8080"`
-	Database             databasePoolEnvironment `envPrefix:"API_DB_"`
-	TrustedProxyCIDRs    string                  `env:"TRUSTED_PROXY_CIDRS"`
-	InitialAdmin         initialAdminEnvironment
-	MetricsEnabled       bool          `env:"METRICS_ENABLED" envDefault:"false"`
-	MetricsAddr          string        `env:"METRICS_ADDR"`
-	MetricsPath          string        `env:"METRICS_PATH" envDefault:"/metrics"`
-	EnableHSTS           *bool         `env:"APP_ENABLE_HSTS"`
-	CORSOrigins          string        `env:"APP_CORS_ORIGINS"`
-	AppVersion           string        `env:"APP_VERSION" envDefault:"dev"`
-	TraceEndpoint        string        `env:"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"`
-	TraceHeaders         string        `env:"OTEL_EXPORTER_OTLP_TRACES_HEADERS"`
-	AIAssistantAvailable bool          `env:"AI_ASSISTANT_AVAILABLE" envDefault:"false"`
-	AIAgentTimeout       time.Duration `env:"AI_AGENT_TIMEOUT" envDefault:"10s"`
-	AIAgentBaseURL       string        `env:"AI_AGENT_BASE_URL"`
-	AIInternalSecret     string        `env:"AI_INTERNAL_SECRET"`
+	Addr                     string                  `env:"API_ADDR" envDefault:":8080"`
+	Database                 databasePoolEnvironment `envPrefix:"API_DB_"`
+	TrustedProxyCIDRs        string                  `env:"TRUSTED_PROXY_CIDRS"`
+	InitialAdmin             initialAdminEnvironment
+	MetricsEnabled           bool          `env:"METRICS_ENABLED" envDefault:"false"`
+	MetricsAddr              string        `env:"METRICS_ADDR"`
+	MetricsPath              string        `env:"METRICS_PATH" envDefault:"/metrics"`
+	EnableHSTS               *bool         `env:"APP_ENABLE_HSTS"`
+	CORSOrigins              string        `env:"APP_CORS_ORIGINS"`
+	AppVersion               string        `env:"APP_VERSION" envDefault:"dev"`
+	TraceEndpoint            string        `env:"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"`
+	TraceHeaders             string        `env:"OTEL_EXPORTER_OTLP_TRACES_HEADERS"`
+	AIAssistantAvailable     bool          `env:"AI_ASSISTANT_AVAILABLE" envDefault:"false"`
+	AIAgentTimeout           time.Duration `env:"AI_AGENT_TIMEOUT" envDefault:"10s"`
+	AIAgentBaseURL           string        `env:"AI_AGENT_BASE_URL"`
+	AIInternalSecret         string        `env:"AI_INTERNAL_SECRET"`
+	AIInternalSecretPrevious string        `env:"AI_INTERNAL_SECRET_PREVIOUS"`
 }
 
 type workerEnvironment struct {

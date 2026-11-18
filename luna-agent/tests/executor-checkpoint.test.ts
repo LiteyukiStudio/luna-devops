@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { RunCheckpoint, TimelineItem } from "../src/domain.js"
 import type { RunExecutor } from "../src/executor/index.js"
 import { checkpointState, maxRunRecoveries, resumePlan } from "../src/executor/checkpoint.js"
@@ -104,6 +104,7 @@ async function restart(executor: RunExecutor): Promise<boolean> {
 async function claimOrThrow(repository: TestRepository) {
   const claimed = await repository.claimNextQueuedRun()
   if (!claimed) throw new Error("missing claimed run")
+  repository.expireRunLease(claimed.id)
   return claimed
 }
 
@@ -1081,5 +1082,323 @@ describe("Phase 2：checkpoint 恢复边界", () => {
       status: "failed",
       errorCode: "ai.wallet_balance_insufficient",
     })
+  })
+
+  it("真实租约丢失后旧副本仅本地放弃，绝不误杀新副本已接管并完成的 Run", async () => {
+    vi.useFakeTimers()
+    try {
+      const owner = "usr_lease_loss"
+      const repository = new TestRepository()
+      const conversation = await repository.createConversation(owner, "lease-loss")
+      const created = await repository.createTurn(owner, {
+        conversationId: conversation.id,
+        input: "检查项目状态",
+        pageContext: {},
+        idempotencyKey: "lease-loss-1",
+        actorSessionId: "ses_lease_loss",
+      })
+      const runId = created.run.id
+
+      let oldReplicaStarted!: () => void
+      const oldReplicaStreaming = new Promise<void>((resolve) => { oldReplicaStarted = resolve })
+
+      const stalledProvider: ModelProvider = {
+        async *stream(request) {
+          yield { type: "message_delta", delta: "旧副本部分流式输出…" }
+          oldReplicaStarted()
+          await new Promise<never>((_resolve, reject) => {
+            request.signal?.addEventListener("abort", () => {
+              const reason: unknown = request.signal?.reason
+              reject(reason instanceof Error ? reason : new Error("ai.run_canceled"))
+            }, { once: true })
+          })
+        },
+        async complete() {
+          return { text: "标题", toolCalls: [], usage: reportedUsage }
+        },
+        capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+        health: async () => ({ ok: true }),
+      }
+
+      const oldExecutor = testExecutor(repository, new ModelRuntime(stalledProvider, testRegistry()))
+      const oldRunPromise = oldExecutor.runOnce()
+      await oldReplicaStreaming
+
+      // 模拟旧副本假死超过租约有效期，新副本通过孤儿恢复重新排队并完成该 Run
+      repository.expireRunLease(runId)
+      const { provider: freshProvider } = scriptedProvider([{ text: "新副本已完成全部处理。" }])
+      const newExecutor = testExecutor(repository, new ModelRuntime(freshProvider, testRegistry()))
+      expect(await restart(newExecutor)).toBe(true)
+      expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
+      const completedRowVersion = (await repository.getRun(owner, runId))!.rowVersion
+
+      // 推进时钟触发旧副本 20s 续租心跳：旧副本检测到租约丢失后必须静默退出，不得把 completed 改成 canceled 或 failed
+      await vi.advanceTimersByTimeAsync(20_000)
+      await oldRunPromise
+
+      const afterOldReplicaExit = await repository.getRun(owner, runId)
+      expect(afterOldReplicaExit).toMatchObject({
+        status: "completed",
+        rowVersion: completedRowVersion,
+      })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("工具批次执行期间租约丢失：旧副本既不写入 tool.failed 也不继续提交批次剩余工具或旧 checkpoint", async () => {
+    vi.useFakeTimers()
+    try {
+      const owner = "usr_tool_batch_lease_loss"
+      const repository = new TestRepository()
+      const conversation = await repository.createConversation(owner, "tool-batch-lease-loss")
+      const created = await repository.createTurn(owner, {
+        conversationId: conversation.id,
+        input: "连续检查项目与应用",
+        pageContext: {},
+        idempotencyKey: "tool-batch-lease-loss-1",
+        actorSessionId: "ses_tool_batch_lease_loss",
+      })
+      const runId = created.run.id
+      const catalog = ToolCatalog.load([
+        testToolOperation("getProject"),
+        testToolOperation("listApplications"),
+      ])
+
+      let toolInFlight!: () => void
+      const waitToolInFlight = new Promise<void>((resolve) => { toolInFlight = resolve })
+
+      const slowClient = new DeterministicLunaApiClient(async (request) => {
+        toolInFlight()
+        await new Promise<never>((_resolve, reject) => {
+          request.signal?.addEventListener("abort", () => {
+            const reason: unknown = request.signal?.reason
+            reject(reason instanceof Error ? reason : new Error("ai.run_canceled"))
+          }, { once: true })
+        })
+        return { status: 200, body: {} }
+      })
+
+      const oldTools = new ToolOrchestrator(
+        catalog,
+        slowClient,
+        new ProjectingToolCallStore(repository.toolCallStore, repository),
+      )
+      const { provider: oldProvider } = scriptedProvider([{
+        toolCalls: [
+          { id: "call_batch_1", operationId: "getProject", arguments: {} },
+          { id: "call_batch_2", operationId: "listApplications", arguments: {} },
+        ],
+      }])
+      const oldExecutor = testExecutor(
+        repository,
+        new ModelRuntime(oldProvider, testRegistry({ resolve: () => catalog.modelTools(["getProject", "listApplications"]) })),
+        { catalog, tools: oldTools },
+      )
+      const oldRunPromise = oldExecutor.runOnce()
+      await waitToolInFlight
+
+      // 旧副本卡在第 1 个工具网络请求时租约过期，新副本孤儿恢复（发现 running 工具而 fail-closed 为 failed）
+      repository.expireRunLease(runId)
+      const { provider: newProvider } = scriptedProvider([{ text: "不应执行" }])
+      const newClient = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
+      const newExecutor = testExecutor(
+        repository,
+        new ModelRuntime(newProvider, testRegistry()),
+        { catalog, tools: restartedTool(repository, catalog, newClient) },
+      )
+      expect(await restart(newExecutor)).toBe(true)
+      const settledRun = await repository.getRun(owner, runId)
+      expect(settledRun).toMatchObject({ status: "failed", errorCode: "ai.tool_outcome_unknown" })
+      const eventsBeforeOldWake = await repository.getEvents(owner, runId, 0)
+
+      // 触发旧副本 20s 续租心跳，唤醒被挂起的 slowClient：旧副本严禁写 tool.failed，严禁 propose listApplications！
+      await vi.advanceTimersByTimeAsync(20_000)
+      await oldRunPromise
+
+      const toolRecords = await repository.toolCallStore.listByRun(runId)
+      expect(toolRecords.map(item => item.operationId)).toEqual(["getProject"])
+      expect(await repository.getEvents(owner, runId, 0)).toEqual(eventsBeforeOldWake)
+      expect(await repository.getRun(owner, runId)).toMatchObject({
+        status: "failed",
+        errorCode: "ai.tool_outcome_unknown",
+        rowVersion: settledRun!.rowVersion,
+      })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("completed 提交后标题生成跨越 20s 续租周期时不会被误中止", async () => {
+    vi.useFakeTimers()
+    try {
+      const owner = "usr_title_after_complete"
+      const repository = new TestRepository()
+      const conversation = await repository.createConversation(owner, "新对话", undefined, "default")
+      await repository.createTurn(owner, {
+        conversationId: conversation.id,
+        input: "帮我总结构建流水线配置步骤",
+        pageContext: {},
+        idempotencyKey: "title-after-complete-1",
+        actorSessionId: "ses_title_1",
+      })
+
+      let titleSignalAborted = false
+      let resolveTitle!: () => void
+      const titleReady = new Promise<void>((resolve) => { resolveTitle = resolve })
+      let titleStarted!: () => void
+      const waitTitleStarted = new Promise<void>((resolve) => { titleStarted = resolve })
+
+      const provider: ModelProvider = {
+        async *stream() {
+          yield { type: "message_delta", delta: "以下是构建流水线配置步骤。" }
+          yield { type: "completed", finishReason: "stop", usage: reportedUsage }
+        },
+        async complete(request) {
+          titleStarted()
+          request.signal?.addEventListener("abort", () => {
+            titleSignalAborted = true
+          }, { once: true })
+          await titleReady
+          return { text: "构建流水线配置指南", toolCalls: [], usage: reportedUsage }
+        },
+        capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+        health: async () => ({ ok: true }),
+      }
+
+      const executor = testExecutor(repository, new ModelRuntime(provider, testRegistry()))
+      const runPromise = executor.runOnce()
+      await waitTitleStarted
+
+      // Run 已提交为 completed，此时推进 2100ms（在 4000ms titleTimeout 内，但若提前经过 19s 流式阶段会跨过 20s 刻度）：
+      // 这里即使直接推进 25_000ms 模拟假时钟跳过续租刻度（此处先测试续租定时器已在 complete 入口被清除，不会触发 renewRunLease）
+      const renewSpy = vi.spyOn(repository, "renewRunLease")
+      await vi.advanceTimersByTimeAsync(2_500)
+      expect(renewSpy).not.toHaveBeenCalled()
+      expect(titleSignalAborted).toBe(false)
+
+      resolveTitle()
+      await runPromise
+
+      expect((await repository.getConversation(owner, conversation.id))?.title).toBe("构建流水线配置指南")
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("租约过期后旧副本收到 SIGTERM (stop) 或续租连续抛错触发本地到期护栏时绝不污染新副本工具与事件", async () => {
+    vi.useFakeTimers()
+    try {
+      const owner = "usr_sigterm_after_lease_loss"
+      const repository = new TestRepository()
+      const conversation = await repository.createConversation(owner, "sigterm-fencing")
+      const created = await repository.createTurn(owner, {
+        conversationId: conversation.id,
+        input: "查看项目详情",
+        pageContext: {},
+        idempotencyKey: "sigterm-fencing-1",
+        actorSessionId: "ses_sigterm_1",
+      })
+      const runId = created.run.id
+      const catalog = ToolCatalog.load([testToolOperation("getProject")])
+
+      let toolInFlight!: () => void
+      const waitToolInFlight = new Promise<void>((resolve) => { toolInFlight = resolve })
+
+      const slowClient = new DeterministicLunaApiClient(async (request) => {
+        toolInFlight()
+        await new Promise<never>((_resolve, reject) => {
+          request.signal?.addEventListener("abort", () => {
+            const reason: unknown = request.signal?.reason
+            reject(reason instanceof Error ? reason : new Error("ai.agent_stopping"))
+          }, { once: true })
+        })
+        return { status: 200, body: {} }
+      })
+
+      const oldTools = new ToolOrchestrator(
+        catalog,
+        slowClient,
+        new ProjectingToolCallStore(repository.toolCallStore, repository),
+      )
+      const { provider: oldProvider } = scriptedProvider([{
+        toolCalls: [{ id: "call_sigterm_1", operationId: "getProject", arguments: {} }],
+      }])
+      const oldExecutor = testExecutor(
+        repository,
+        new ModelRuntime(oldProvider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+        { catalog, tools: oldTools },
+      )
+      const oldRunPromise = oldExecutor.runOnce()
+      await waitToolInFlight
+
+      // 模拟旧副本租约过期、新副本完成孤儿恢复对账
+      repository.expireRunLease(runId)
+      const { provider: newProvider } = scriptedProvider([{ text: "不应调用" }])
+      const newExecutor = testExecutor(
+        repository,
+        new ModelRuntime(newProvider, testRegistry()),
+        { catalog, tools: restartedTool(repository, catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))) },
+      )
+      expect(await restart(newExecutor)).toBe(true)
+      const settledRun = await repository.getRun(owner, runId)
+      expect(settledRun).toMatchObject({ status: "failed", errorCode: "ai.tool_outcome_unknown" })
+      const eventsSnapshot = await repository.getEvents(owner, runId, 0)
+      const itemsSnapshot = (await repository.getTimeline(owner, conversation.id))?.turns[0]?.items ?? []
+
+      // 此时旧副本收到 RollingUpdate SIGTERM -> stop()（中止原因为 ai.agent_stopping 而非 ai.run_lease_lost）
+      // 旧副本的所有 tool_calls.update / items / events 写入都必须被 expectedRunVersion 围栏拦下并静默退出！
+      await oldExecutor.stop()
+      await oldRunPromise
+
+      expect(await repository.getEvents(owner, runId, 0)).toEqual(eventsSnapshot)
+      expect((await repository.getTimeline(owner, conversation.id))?.turns[0]?.items).toEqual(itemsSnapshot)
+      expect(await repository.getRun(owner, runId)).toMatchObject({
+        status: "failed",
+        errorCode: "ai.tool_outcome_unknown",
+        rowVersion: settledRun!.rowVersion,
+      })
+
+      // 同时验证续租接口连续抛错时，本地租约到期定时器会在 58s 安全边界主动触发 ai.run_lease_lost
+      const created2 = await repository.createTurn(owner, {
+        conversationId: conversation.id,
+        input: "测试本地租约到期护栏",
+        pageContext: {},
+        idempotencyKey: "local-deadline-1",
+        actorSessionId: "ses_sigterm_1",
+      })
+      let abortedReason: unknown
+      const hangingProvider: ModelProvider = {
+        async *stream(request) {
+          yield { type: "message_delta", delta: "等待续租故障…" }
+          await new Promise<never>((_resolve, reject) => {
+            request.signal?.addEventListener("abort", () => {
+              abortedReason = request.signal?.reason
+              reject(abortedReason instanceof Error ? abortedReason : new Error("aborted"))
+            }, { once: true })
+          })
+        },
+        async complete() {
+          return { text: "标题", toolCalls: [], usage: reportedUsage }
+        },
+        capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+        health: async () => ({ ok: true }),
+      }
+      vi.spyOn(repository, "renewRunLease").mockRejectedValue(new Error("db connection lost"))
+      const deadlineExecutor = testExecutor(repository, new ModelRuntime(hangingProvider, testRegistry()))
+      const deadlinePromise = deadlineExecutor.runOnce()
+      await vi.advanceTimersByTimeAsync(59_000)
+      await deadlinePromise
+      expect(abortedReason).toBeInstanceOf(Error)
+      expect((abortedReason as Error).message).toBe("ai.run_lease_lost")
+      // 旧副本因本地租约到期主动放弃后，Run 保持 running 等待孤儿恢复对账，不被误改为 failed/canceled
+      expect((await repository.getRun(owner, created2.run.id))?.status).toBe("running")
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })

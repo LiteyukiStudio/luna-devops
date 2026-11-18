@@ -1,8 +1,10 @@
 import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { BffHmacRequestVerifier } from "../src/auth.js"
+import { loadConfig } from "../src/config.js"
+import { deriveInternalKeys } from "../src/internal-secret.js"
 
-describe("BFF Actor Context authentication", () => {
+describe("BFF Actor Context authentication and key rotation", () => {
   it("verifies independent service and actor materials", async () => {
     const serviceToken = "s".repeat(32)
     const signingKey = "k".repeat(32)
@@ -19,6 +21,7 @@ describe("BFF Actor Context authentication", () => {
     })
     expect(actor.userId).toBe("usr_a")
   })
+
   it("rejects a modified Actor Context", async () => {
     const requestVerifier = new BffHmacRequestVerifier("s".repeat(32), "k".repeat(32))
     await expect(requestVerifier.verify({
@@ -26,5 +29,42 @@ describe("BFF Actor Context authentication", () => {
       "x-luna-actor-context": "modified",
       "x-luna-actor-signature": `sha256=${"0".repeat(64)}`,
     })).rejects.toThrow("ai.unauthorized")
+  })
+
+  it("accepts requests signed with AI_INTERNAL_SECRET_PREVIOUS during rolling rotation without allowing cross-key mixing", async () => {
+    const previous = deriveInternalKeys("previous-bff-hmac-secret-32-bytes-minimum")
+    const current = deriveInternalKeys("current-bff-hmac-secret-32-bytes-minimum!")
+    const verifier = new BffHmacRequestVerifier(
+      current.serviceToken,
+      current.actorSigningKey,
+      { serviceToken: previous.serviceToken, actorSigningKey: previous.actorSigningKey },
+    )
+    const now = Math.floor(Date.now() / 1000)
+    const encoded = Buffer.from(JSON.stringify({
+      userId: "usr_rotating", sessionId: "sess_rotating", locale: "zh-CN",
+      issuedAt: now, expiresAt: now + 60, requestId: "req_rot",
+    })).toString("base64url")
+
+    const oldSig = `sha256=${createHmac("sha256", previous.actorSigningKey).update(encoded).digest("hex")}`
+    const fromPrevious = await verifier.verify({
+      authorization: `Bearer ${previous.serviceToken}`,
+      "x-luna-actor-context": encoded,
+      "x-luna-actor-signature": oldSig,
+    })
+    expect(fromPrevious.userId).toBe("usr_rotating")
+
+    // Mixing current bearer token with previous HMAC signature must fail
+    await expect(verifier.verify({
+      authorization: `Bearer ${current.serviceToken}`,
+      "x-luna-actor-context": encoded,
+      "x-luna-actor-signature": oldSig,
+    })).rejects.toThrow("ai.unauthorized")
+
+    // Config validates AI_INTERNAL_SECRET_PREVIOUS UTF-8 byte length >= 32 when non-empty
+    expect(() => loadConfig({
+      NODE_ENV: "test",
+      AI_INTERNAL_SECRET: "c".repeat(32),
+      AI_INTERNAL_SECRET_PREVIOUS: "too-short",
+    })).toThrow("32")
   })
 })

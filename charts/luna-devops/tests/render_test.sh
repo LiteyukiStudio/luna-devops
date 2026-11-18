@@ -56,6 +56,13 @@ if helm template luna-devops "$chart_dir" --namespace luna-devops \
 fi
 assert_contains "$worker_secret_env_error" 'AI_INTERNAL_SECRET is managed by the chart and cannot be set through worker.extraEnv' 'worker.extraEnv does not reject managed secrets'
 
+api_prev_secret_env_error="$tmp_dir/api-prev-secret-env.err"
+if helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set-string api.extraEnv.AI_INTERNAL_SECRET_PREVIOUS=must-not-be-plaintext > /dev/null 2> "$api_prev_secret_env_error"; then
+  fail 'api.extraEnv must not accept AI_INTERNAL_SECRET_PREVIOUS in plaintext'
+fi
+assert_contains "$api_prev_secret_env_error" 'AI_INTERNAL_SECRET_PREVIOUS is managed by the chart and cannot be set through api.extraEnv' 'api.extraEnv does not reject AI_INTERNAL_SECRET_PREVIOUS'
+
 api_worker_env_error="$tmp_dir/api-worker-env.err"
 if helm template luna-devops "$chart_dir" --namespace luna-devops \
   --set-string api.extraEnv.BUILD_JOB_TIMEOUT_SECONDS=60 > /dev/null 2> "$api_worker_env_error"; then
@@ -315,6 +322,8 @@ assert_contains "$agent_render" '^[[:space:]]+- name: OTEL_SERVICE_VERSION$' 'Ag
 assert_contains "$agent_render" '^[[:space:]]+- name: AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS$' 'Agent database-span diagnostic setting is missing'
 assert_contains "$agent_render" '^[[:space:]]+value: "false"$' 'Agent database-span diagnostics are not disabled by default'
 assert_count "$agent_render" '^[[:space:]]+checksum\.luna\.devops/managed-secrets:' 5 'Agent does not carry the managed Secret checksum'
+assert_count "$agent_render" '^[[:space:]]+- name: AI_INTERNAL_SECRET_PREVIOUS$' 2 'API and Agent must both mount optional AI_INTERNAL_SECRET_PREVIOUS'
+assert_count "$agent_render" '^[[:space:]]+key: ai-internal-secret-previous$' 2 'AI_INTERNAL_SECRET_PREVIOUS key reference is missing'
 
 agent_diagnostics_render="$tmp_dir/agent-diagnostics.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops \

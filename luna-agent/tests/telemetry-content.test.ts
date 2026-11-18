@@ -44,8 +44,15 @@ describe("AI content telemetry", () => {
       expect(attributes).toEqual({})
 
       configureAIContentCapture(true)
-      recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "visible" })
-      expect(JSON.parse(attributes["gen_ai.input.messages"] as string)).toEqual({ content: "visible" })
+      recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", {
+        content: "visible",
+        password: "must-not-leak-in-span",
+      })
+      expect(JSON.parse(attributes["gen_ai.input.messages"] as string)).toEqual({
+        content: "visible",
+        password: "[REDACTED]",
+      })
+      expect(attributes["gen_ai.input.messages"]).not.toContain("must-not-leak-in-span")
       expect(attributes["luna.ai.content.truncated"]).toBeUndefined()
       expect(JSON.stringify(write.mock.calls)).not.toContain("visible")
     }

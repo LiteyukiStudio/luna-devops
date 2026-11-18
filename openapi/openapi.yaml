@@ -10915,20 +10915,6 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { description: Tool action message or request body exceeds maximum allowed size, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
-  /api/v1/ai/turns/{turnId}/runs:
-    parameters: [{ name: turnId, in: path, required: true, schema: { type: string } }]
-    get:
-      operationId: listAIRuns
-      tags: [AI Assistant]
-      security: [{ SessionCookie: [] }]
-      responses: { "200": { description: Paginated run list, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
-    post:
-      operationId: createAIRun
-      tags: [AI Assistant]
-      security: [{ SessionCookie: [] }]
-      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string } }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
-      responses: { "202": { description: Regenerated run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
   /api/v1/ai/runs/{runId}:
     get:
       operationId: getAIRun
@@ -13579,6 +13565,9 @@ components:
         namespace: { type: string }
         scope: { type: string, enum: [global, project, user] }
         ownerRef: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
         isDefault: { type: boolean }
         capabilities: { type: array, items: { type: string } }
       required: [name, provider, endpoint, scope]
@@ -13657,6 +13646,9 @@ components:
         providerId: { type: string }
         scope: { type: string, enum: [global, project, user] }
         ownerRef: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
         externalUserId: { type: string }
         username: { type: string }
         avatarUrl: { type: string }
@@ -13672,6 +13664,9 @@ components:
         baseUrl: { type: string }
         scope: { type: string, enum: [global, project, user] }
         ownerRef: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
         authType: { type: string, enum: [oauth, github-app, pat] }
         clientId: { type: string }
         clientSecret: { type: string, writeOnly: true }
@@ -14541,8 +14536,8 @@ components:
       properties:
         name: { type: string }
         username: { type: string }
-        password: { type: string }
-        token: { type: string }
+        password: { type: string, writeOnly: true, x-luna-sensitive: true }
+        token: { type: string, writeOnly: true, x-luna-sensitive: true }
         usage: { type: string, enum: [pull, push, push-pull] }
         scope: { type: string, enum: [user, project, global] }
         projectIds:
@@ -15001,10 +14996,11 @@ components:
       required: [name]
       properties:
         name: { type: string, minLength: 1 }
-        description: { type: string }
-        scope: { type: string, enum: [global, project, application] }
-        projectId: { type: string }
-        applicationId: { type: string }
+        scope: { type: string, enum: [global, project, user] }
+        ownerRef: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
         variables:
           type: object
           additionalProperties: { type: string }

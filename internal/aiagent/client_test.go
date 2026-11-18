@@ -89,6 +89,31 @@ func TestNewConfigRequiresTrustMaterialWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestNewConfigWithPreviousValidatesAndDeduplicatesRotationSecret(t *testing.T) {
+	current := "current-ai-internal-secret-32-bytes!!"
+	previous := "previous-ai-internal-secret-32-bytes!"
+
+	if _, err := NewConfigWithPrevious(true, "http://agent.internal", 10*time.Second, current, "too-short"); err == nil || !strings.Contains(err.Error(), "AI_INTERNAL_SECRET_PREVIOUS") {
+		t.Fatalf("expected AI_INTERNAL_SECRET_PREVIOUS length error, got %v", err)
+	}
+
+	rotated, err := NewConfigWithPrevious(true, "http://agent.internal", 10*time.Second, current, previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.PreviousCallbackServiceToken == "" || rotated.PreviousCallbackServiceToken == rotated.CallbackServiceToken {
+		t.Fatalf("expected distinct PreviousCallbackServiceToken, got %q vs %q", rotated.PreviousCallbackServiceToken, rotated.CallbackServiceToken)
+	}
+
+	deduped, err := NewConfigWithPrevious(true, "http://agent.internal", 10*time.Second, current, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deduped.PreviousCallbackServiceToken != "" {
+		t.Fatalf("expected duplicate previous secret to be cleared, got %q", deduped.PreviousCallbackServiceToken)
+	}
+}
+
 func TestEnabledConfigReportsClientInitializationError(t *testing.T) {
 	config := Config{Available: true, BaseURL: "://invalid", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: 10 * time.Second}
 	client, err := config.Client()

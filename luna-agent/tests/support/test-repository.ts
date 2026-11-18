@@ -21,9 +21,11 @@ import {
   RunStateConflictError,
   selectOperationsWithExecutedProtection,
   type ConversationListOptions,
+  type InterruptRunOptions,
   type RecordReportedModelUsageInput,
   type ResolveWaitingExternalRunInput,
   type Repository,
+  type RunLeaseRenewalOutcome,
   type TimelinePageOptions,
   type ModelCallOperation,
   type RunStreamBatch,
@@ -31,7 +33,7 @@ import {
 } from "../../src/persistence/repository.js"
 import type { OfficialModelUsage } from "../../src/provider/provider.js"
 import { createTurnRequestHash } from "../../src/persistence/create-turn-hash.js"
-import { immutableRemoteProviderConfig } from "../../src/provider/config-client.js"
+import { activeRunningRunVersionFence } from "../../src/persistence/run-fence.js"
 import { runtimeSettingsSnapshot } from "../../src/runtime-settings.js"
 import { MemoryToolCallStore } from "../../src/tools/orchestrator.js"
 
@@ -42,6 +44,7 @@ export class TestRepository implements Repository {
   private readonly conversations = new Map<string, Conversation>()
   private readonly turns = new Map<string, Turn>()
   private readonly runs = new Map<string, StoredRun>()
+  private readonly runLeaseExpiresAt = new Map<string, number>()
   private readonly executionSnapshots = new Map<string, RunExecutionSnapshot>()
   private readonly items: TimelineItem[] = []
   private readonly events: RunEvent[] = []
@@ -63,6 +66,11 @@ export class TestRepository implements Repository {
 
   setWalletBalance(ownerUserId: string, balanceCredits: number) {
     this.walletBalances.set(ownerUserId, balanceCredits)
+  }
+
+  /** 测试辅助：模拟持有 running 状态的旧副本崩溃后租约已过期（或历史无租约行）。 */
+  expireRunLease(runId: string, expiredAtMs = Date.now() - 1_000) {
+    this.runLeaseExpiresAt.set(runId, expiredAtMs)
   }
 
   recordedModelUsages() {
@@ -127,7 +135,7 @@ export class TestRepository implements Repository {
         .filter(run => run.conversationId === id)
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))[0]
       if (latestRun && latestRun.status !== "running") {
-        await this.appendEvent(latestRun.id, "conversation.title.updated", {
+        await this.appendEventUnchecked(latestRun.id, "conversation.title.updated", {
           title: input.title,
           titleSource: "user",
           locked: true,
@@ -138,13 +146,14 @@ export class TestRepository implements Repository {
   }
 
   async renameConversationByAssistant(id: string, title: string, runId?: string) {
+    if (runId) this.checkRunningRunVersion(runId)
     const value = this.conversations.get(id)
     if (!value || value.titleSource === "user") return undefined
     if (runId && this.runs.get(runId)?.conversationId !== id) throw new Error("ai.run_conversation_mismatch")
     const next: Conversation = { ...value, title, titleSource: "assistant", updatedAt: new Date().toISOString() }
     this.conversations.set(id, next)
     if (runId) {
-      await this.appendEvent(runId, "conversation.title.updated", {
+      await this.appendEventUnchecked(runId, "conversation.title.updated", {
         title,
         titleSource: "assistant",
         locked: false,
@@ -173,6 +182,7 @@ export class TestRepository implements Repository {
     for (const [runId, run] of this.runs) {
       if (run.conversationId !== id) continue
       this.runs.delete(runId)
+      this.runLeaseExpiresAt.delete(runId)
       this.executionSnapshots.delete(runId)
     }
     return true
@@ -240,14 +250,14 @@ export class TestRepository implements Repository {
       this.runs.set(run.id, run)
       const created = { turn, run }
       this.idempotency.set(key, { hash, created })
-      const userItem = await this.appendItem({ id: `${turn.id}:input`, runId, turnId: turn.id, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
-      await this.appendEvent(runId, "run.input_received", {
+      const userItem = await this.appendItemUnchecked({ id: `${turn.id}:input`, runId, turnId: turn.id, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
+      await this.appendEventUnchecked(runId, "run.input_received", {
         initial: true,
         item: structuredClone(userItem),
         conversationTitle: this.conversations.get(input.conversationId)?.title,
         conversationTitleSource: this.conversations.get(input.conversationId)?.titleSource,
       })
-      await this.appendEvent(runId, "run.queued", { state: "queued" })
+      await this.appendEventUnchecked(runId, "run.queued", { state: "queued" })
       return { ...created, replayed: false }
     }
     finally {
@@ -258,6 +268,17 @@ export class TestRepository implements Repository {
   async getRun(ownerUserId: string, id: string) {
     const value = this.runs.get(id)
     return value?.ownerUserId === ownerUserId ? value : undefined
+  }
+  async assertRunningRunVersion(runId: string, expectedRunVersion: number): Promise<void> {
+    this.checkRunningRunVersion(runId, expectedRunVersion)
+  }
+  private checkRunningRunVersion(runId: string, expectedRunVersion?: number): void {
+    const effective = expectedRunVersion ?? activeRunningRunVersionFence(runId)
+    if (effective === undefined) return
+    const current = this.runs.get(runId)
+    if (!current || current.status !== "running" || current.rowVersion !== effective) {
+      throw new RunStateConflictError(runId, "running", "running", current?.status, current?.rowVersion)
+    }
   }
   async getRunToolState(runId: string) {
     const run = this.runs.get(runId)
@@ -285,7 +306,7 @@ export class TestRepository implements Repository {
       && (this.streamHighWatermarks.get(batch.runId) ?? 0) >= batch.eventHighWatermark
     if (alreadyPersisted && (!batch.terminal || run.status === batch.terminal.to)) return
     if (run.rowVersion !== batch.expectedRunVersion || run.status !== "running") {
-      throw new RunStateConflictError(batch.runId, batch.terminal?.from ?? "running", batch.terminal?.to ?? "running", run.status)
+      throw new RunStateConflictError(batch.runId, batch.terminal?.from ?? "running", batch.terminal?.to ?? "running", run.status, run.rowVersion)
     }
     if (existingItemCount || existingEventCount) throw new Error("ai.stream_batch_partial_conflict")
     if (position.nextItemPosition !== batch.expected.nextItemPosition) throw new Error("ai.stream_item_position_conflict")
@@ -303,12 +324,13 @@ export class TestRepository implements Repository {
         if (conversation && conversation.titleSource !== "user") {
           conversation.title = batch.terminal.conversationTitle
           conversation.titleSource = "assistant"
-          await this.appendEvent(batch.runId, "conversation.title.updated", {
+          await this.appendEventUnchecked(batch.runId, "conversation.title.updated", {
             title: batch.terminal.conversationTitle, titleSource: "assistant", locked: false,
           })
         }
       }
       delete run.wakeAt
+      this.runLeaseExpiresAt.delete(batch.runId)
       Object.assign(run, {
         status: batch.terminal.to,
         completedAt: batch.terminal.completedAt,
@@ -317,7 +339,7 @@ export class TestRepository implements Repository {
       })
       const turn = this.turns.get(run.turnId)
       if (turn) turn.status = batch.terminal.to
-      await this.appendEvent(batch.runId, `run.${batch.terminal.to}`, {
+      await this.appendEventUnchecked(batch.runId, `run.${batch.terminal.to}`, {
         state: batch.terminal.to,
         rowVersion: run.rowVersion,
         ...(batch.terminal.errorCode ? { errorCode: batch.terminal.errorCode } : {}),
@@ -330,6 +352,7 @@ export class TestRepository implements Repository {
     limit: number,
     protectedOperationIds?: ReadonlySet<string>,
   ) {
+    this.checkRunningRunVersion(runId)
     const run = this.runs.get(runId)
     if (!run) throw new Error("ai.run_not_found")
     const requested = [...new Set(operationIds)].filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
@@ -349,12 +372,14 @@ export class TestRepository implements Repository {
       .map(run => run.toolCatalogDigest))]
   }
 
-  async cancelRun(ownerUserId: string, id: string) {
+  async cancelRun(ownerUserId: string, id: string, expectedRowVersion?: number) {
     const run = this.runs.get(id)
     if (run?.ownerUserId !== ownerUserId) return undefined
     if (!run || ["completed", "failed", "canceled", "expired", "interrupted"].includes(run.status)) return run
+    if (expectedRowVersion !== undefined && run.rowVersion !== expectedRowVersion) return run
     run.status = "canceled"
     delete run.wakeAt
+    this.runLeaseExpiresAt.delete(id)
     run.completedAt = new Date().toISOString()
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
@@ -379,7 +404,7 @@ export class TestRepository implements Repository {
         item.status = "completed"
         item.content = { ...item.content, status: "canceled", result: canceledResult, errorCode: "ai.run_canceled" }
         item.revision += 1
-        await this.appendEvent(id, "item.finalized", {
+        await this.appendEventUnchecked(id, "item.finalized", {
           itemId: item.id,
           ...(typeof item.content.toolCallId === "string" ? { toolCallId: item.content.toolCallId } : {}),
           item: structuredClone(item),
@@ -388,10 +413,10 @@ export class TestRepository implements Repository {
       else if (item.status === "streaming") {
         item.status = "failed"
         item.revision += 1
-        await this.appendEvent(id, "item.finalized", { itemId: item.id, item: structuredClone(item) })
+        await this.appendEventUnchecked(id, "item.finalized", { itemId: item.id, item: structuredClone(item) })
       }
     }
-    await this.appendEvent(id, "run.canceled", { state: "canceled", rowVersion: run.rowVersion })
+    await this.appendEventUnchecked(id, "run.canceled", { state: "canceled", rowVersion: run.rowVersion })
     return run
   }
 
@@ -424,15 +449,46 @@ export class TestRepository implements Repository {
     }
     run.status = "running"
     delete run.wakeAt
+    this.runLeaseExpiresAt.set(run.id, Date.now() + 60_000)
     run.startedAt ??= new Date().toISOString()
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = "running"
-    await this.appendEvent(run.id, "run.running", { state: "running", rowVersion: run.rowVersion })
+    await this.appendEventUnchecked(run.id, "run.running", { state: "running", rowVersion: run.rowVersion })
     const restoredSnapshot = this.executionSnapshots.get(run.id)
     return {
       ...run,
       ...(restoredSnapshot ? { executionSnapshot: cloneExecutionSnapshot(restoredSnapshot) } : {}),
+    }
+  }
+
+  async renewRunLease(runId: string, expectedRowVersion: number, leaseMs: number): Promise<RunLeaseRenewalOutcome> {
+    const run = this.runs.get(runId)
+    if (!run) return "lost"
+    const leaseExpiresAt = this.runLeaseExpiresAt.get(runId)
+    if (
+      run.status === "running"
+      && run.rowVersion === expectedRowVersion
+      && leaseExpiresAt !== undefined
+      && leaseExpiresAt > Date.now()
+    ) {
+      const boundedLeaseMs = Math.max(1_000, Math.floor(leaseMs))
+      this.runLeaseExpiresAt.set(runId, Date.now() + boundedLeaseMs)
+      return "renewed"
+    }
+    return run.status === "canceled" ? "canceled" : "lost"
+  }
+
+  async updateRunToolCatalogDigest(runId: string, toolCatalogDigest: string, expectedRowVersion?: number): Promise<void> {
+    const run = this.runs.get(runId)
+    if (!run || (expectedRowVersion !== undefined && run.rowVersion !== expectedRowVersion)) return
+    run.toolCatalogDigest = toolCatalogDigest
+    const existingSnapshot = this.executionSnapshots.get(runId)
+    if (existingSnapshot) {
+      this.executionSnapshots.set(runId, cloneExecutionSnapshot({
+        runtimeSettings: existingSnapshot.runtimeSettings,
+        toolCatalogDigest,
+      }))
     }
   }
 
@@ -479,8 +535,8 @@ export class TestRepository implements Repository {
     const checkpoint = this.checkpoints.get(input.runId)
     if (!run || run.status !== "waiting_external" || !checkpoint || checkpoint.revision !== input.expectedCheckpointRevision)
       return false
-    const item = await this.updateItem(input.itemId, input.itemStatus, input.itemContent)
-    await this.appendEvent(input.runId, input.eventType, {
+    const item = await this.updateItemUnchecked(input.itemId, input.itemStatus, input.itemContent)
+    await this.appendEventUnchecked(input.runId, input.eventType, {
       ...input.eventData,
       itemId: item.id,
       toolCallId: input.toolCallId,
@@ -492,40 +548,56 @@ export class TestRepository implements Repository {
     checkpoint.updatedAt = new Date().toISOString()
     run.status = "queued"
     delete run.wakeAt
+    this.runLeaseExpiresAt.delete(input.runId)
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = "queued"
-    await this.appendEvent(input.runId, "run.queued", { state: "queued", rowVersion: run.rowVersion })
+    await this.appendEventUnchecked(input.runId, "run.queued", { state: "queued", rowVersion: run.rowVersion })
     return true
   }
-  async listRunningRuns() {
-    return [...this.runs.values()].filter(run => run.status === "running")
+  async listRunningRuns(now?: Date) {
+    const referenceMs = (now ?? new Date()).getTime()
+    return [...this.runs.values()]
+      .filter((run) => {
+        if (run.status !== "running") return false
+        const leaseExpiresAt = this.runLeaseExpiresAt.get(run.id)
+        return leaseExpiresAt === undefined || leaseExpiresAt <= referenceMs
+      })
       .map(run => ({ id: run.id, rowVersion: run.rowVersion }))
   }
-  async interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean> {
+  async interruptOrphanedRun(runId: string, expectedRunVersion: number, options?: InterruptRunOptions): Promise<boolean> {
     const run = this.runs.get(runId)
     if (!run || run.status !== "running" || run.rowVersion !== expectedRunVersion) return false
+    if (options?.ignoreActiveLease !== true) {
+      const leaseExpiresAt = this.runLeaseExpiresAt.get(runId)
+      if (leaseExpiresAt !== undefined && leaseExpiresAt > Date.now()) return false
+    }
     await this.updateRun(runId, "running", "interrupted", {
-      completedAt: new Date().toISOString(), errorCode: "ai.agent_restarted",
+      completedAt: new Date().toISOString(),
+      errorCode: "ai.agent_restarted",
+      expectedRowVersion: expectedRunVersion,
     })
     return true
   }
   async recoverOrphanedRun(runId: string, expectedRunVersion: number, maxRecoveries: number) {
     const run = this.runs.get(runId)
     if (!run || run.status !== "running" || run.rowVersion !== expectedRunVersion) return "skipped" as const
+    const leaseExpiresAt = this.runLeaseExpiresAt.get(runId)
+    if (leaseExpiresAt !== undefined && leaseExpiresAt > Date.now()) return "skipped" as const
     const checkpoint = this.checkpoints.get(runId)
     if (!checkpoint || checkpoint.recoveries >= maxRecoveries) {
-      await this.interruptOrphanedRun(runId, expectedRunVersion)
-      return "interrupted" as const
+      const interrupted = await this.interruptOrphanedRun(runId, expectedRunVersion)
+      return interrupted ? "interrupted" as const : "skipped" as const
     }
     checkpoint.recoveries += 1
     checkpoint.revision += 1
     checkpoint.updatedAt = new Date().toISOString()
     run.status = "queued"
+    this.runLeaseExpiresAt.delete(runId)
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = "queued"
-    await this.appendEvent(runId, "run.requeued", {
+    await this.appendEventUnchecked(runId, "run.requeued", {
       state: "queued", rowVersion: run.rowVersion, reason: "ai.agent_restarted", recoveries: checkpoint.recoveries,
     })
     return "requeued" as const
@@ -535,9 +607,12 @@ export class TestRepository implements Repository {
     return value ? structuredClone(value) : undefined
   }
   async saveRunCheckpoint(runId: string, advance: RunCheckpointAdvance) {
+    this.checkRunningRunVersion(runId, advance.expectedRunVersion)
     const current = this.checkpoints.get(runId)
     const revision = advance.expectedRevision + 1
-    if (current && current.revision === revision) return structuredClone(current)
+    if (current && current.revision === revision) {
+      return structuredClone(current)
+    }
     if (current ? current.revision !== advance.expectedRevision : advance.expectedRevision !== 0)
       throw new RunCheckpointConflictError(runId, advance.expectedRevision, current?.revision)
     const now = new Date().toISOString()
@@ -699,13 +774,18 @@ export class TestRepository implements Repository {
 
   async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: UpdateRunOptions = {}) {
     const run = this.runs.get(runId)
-    if (!run || run.status !== from) throw new RunStateConflictError(runId, from, to, run?.status)
-    const { clearWakeAt, eventData, ...restFields } = fields
+    if (!run || run.status !== from || (fields.expectedRowVersion !== undefined && run.rowVersion !== fields.expectedRowVersion)) {
+      throw new RunStateConflictError(runId, from, to, run?.status, run?.rowVersion)
+    }
+    const { clearWakeAt, expectedRowVersion, eventData, ...restFields } = fields
+    void expectedRowVersion
     Object.assign(run, restFields, { status: to, rowVersion: run.rowVersion + 1 })
     if (clearWakeAt || to !== "waiting_external") delete run.wakeAt
+    if (to === "running") this.runLeaseExpiresAt.set(runId, Date.now() + 60_000)
+    else this.runLeaseExpiresAt.delete(runId)
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = to
-    await this.appendEvent(runId, `run.${to}`, {
+    await this.appendEventUnchecked(runId, `run.${to}`, {
       state: to,
       rowVersion: run.rowVersion,
       ...(restFields.errorCode ? { errorCode: restFields.errorCode } : {}),
@@ -715,6 +795,11 @@ export class TestRepository implements Repository {
   }
 
   async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
+    this.checkRunningRunVersion(value.runId)
+    return this.appendItemUnchecked(value)
+  }
+
+  private async appendItemUnchecked(value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
     const timelineIndex = this.items.filter(item => item.runId === value.runId).length
     const item: TimelineItem = { ...value, id: value.id ?? createId("aiitm"), timelineIndex, revision: 1, createdAt: new Date().toISOString() }
     this.items.push(item)
@@ -730,6 +815,13 @@ export class TestRepository implements Repository {
   async updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
     const item = this.items.find(candidate => candidate.id === itemId)
     if (!item) throw new Error("ai.item_not_found")
+    this.checkRunningRunVersion(item.runId)
+    return this.updateItemUnchecked(itemId, status, content)
+  }
+
+  private async updateItemUnchecked(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
+    const item = this.items.find(candidate => candidate.id === itemId)
+    if (!item) throw new Error("ai.item_not_found")
     item.status = status
     item.content = content
     item.revision += 1
@@ -741,8 +833,9 @@ export class TestRepository implements Repository {
     eventType: string,
     eventData: Record<string, unknown> = {},
   ) {
-    const item = await this.appendItem(value)
-    const event = await this.appendEvent(item.runId, eventType, { ...eventData, item: structuredClone(item) })
+    this.checkRunningRunVersion(value.runId)
+    const item = await this.appendItemUnchecked(value)
+    const event = await this.appendEventUnchecked(item.runId, eventType, { ...eventData, item: structuredClone(item) })
     return { item, event }
   }
 
@@ -753,8 +846,11 @@ export class TestRepository implements Repository {
     eventType: string,
     eventData: Record<string, unknown> = {},
   ) {
-    const item = await this.updateItem(itemId, status, content)
-    const event = await this.appendEvent(item.runId, eventType, { ...eventData, item: structuredClone(item) })
+    const existing = this.items.find(candidate => candidate.id === itemId)
+    if (!existing) throw new Error("ai.item_not_found")
+    this.checkRunningRunVersion(existing.runId)
+    const item = await this.updateItemUnchecked(itemId, status, content)
+    const event = await this.appendEventUnchecked(item.runId, eventType, { ...eventData, item: structuredClone(item) })
     return { item, event }
   }
 
@@ -766,11 +862,12 @@ export class TestRepository implements Repository {
     eventType: string,
     eventData: Record<string, unknown> = {},
   ) {
-    const item = await this.updateItem(itemId, status, content)
-    const resultItem = await this.appendItem(resultValue)
+    this.checkRunningRunVersion(resultValue.runId)
+    const item = await this.updateItemUnchecked(itemId, status, content)
+    const resultItem = await this.appendItemUnchecked(resultValue)
     if (resultItem.runId !== item.runId || resultItem.turnId !== item.turnId)
       throw new Error("ai.tool_result_binding_mismatch")
-    const event = await this.appendEvent(item.runId, eventType, {
+    const event = await this.appendEventUnchecked(item.runId, eventType, {
       ...eventData,
       item: structuredClone(item),
       resultItem: structuredClone(resultItem),
@@ -778,7 +875,11 @@ export class TestRepository implements Repository {
     return { item, resultItem, event }
   }
 
-  async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
+  async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">, expectedRowVersion?: number) {
+    if (expectedRowVersion !== undefined) {
+      const run = this.runs.get(runId)
+      if (!run || run.rowVersion !== expectedRowVersion) return
+    }
     const terminalToolStatuses = new Set(["succeeded", "failed", "rejected", "canceled", "skipped"])
     const items = this.items.filter(item => item.runId === runId && item.status === "streaming")
     for (const item of items) {
@@ -787,11 +888,16 @@ export class TestRepository implements Repository {
         item.content = { ...item.content, status: "failed" }
       }
       item.revision += 1
-      await this.appendEvent(runId, "item.finalized", { item: structuredClone(item) })
+      await this.appendEventUnchecked(runId, "item.finalized", { item: structuredClone(item) })
     }
   }
 
   async appendEvent(runId: string, type: string, data: Record<string, unknown>) {
+    this.checkRunningRunVersion(runId)
+    return this.appendEventUnchecked(runId, type, data)
+  }
+
+  private async appendEventUnchecked(runId: string, type: string, data: Record<string, unknown>) {
     const sequence = Math.max(
       this.streamHighWatermarks.get(runId) ?? 0,
       ...this.events.filter(event => event.runId === runId).map(event => event.sequence),
@@ -870,9 +976,6 @@ export class TestRepository implements Repository {
 function cloneExecutionSnapshot(snapshot: RunExecutionSnapshot): RunExecutionSnapshot {
   return Object.freeze({
     runtimeSettings: runtimeSettingsSnapshot(snapshot.runtimeSettings),
-    ...(snapshot.providerConfig ? {
-      providerConfig: immutableRemoteProviderConfig(structuredClone(snapshot.providerConfig)),
-    } : {}),
     ...(snapshot.toolCatalogDigest ? { toolCatalogDigest: snapshot.toolCatalogDigest } : {}),
   })
 }

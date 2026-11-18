@@ -76,6 +76,9 @@ const schema = z.object({
   AI_INTERNAL_SECRET: optionalValue(z.string().trim().refine(value => Buffer.byteLength(value, "utf8") >= 32, {
     message: "must contain at least 32 UTF-8 bytes",
   })),
+  AI_INTERNAL_SECRET_PREVIOUS: optionalValue(z.string().trim().refine(value => Buffer.byteLength(value, "utf8") >= 32, {
+    message: "must contain at least 32 UTF-8 bytes",
+  })),
   LUNA_API_BASE_URL: optionalValue(httpOrigin),
   /** 公开文档站根地址；设置后 search_docs / read_doc 结果附带可点击的文档链接。 */
   AI_DOCS_BASE_URL: optionalValue(httpURL),

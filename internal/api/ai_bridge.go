@@ -53,6 +53,9 @@ func (host aiHost) AIActorOverride(ctx *gin.Context) (aiagent.ActorContext, stri
 func (host aiHost) AIAgentCallbackServiceToken() string {
 	return host.handlers.config.AIAgent.CallbackServiceToken
 }
+func (host aiHost) AIAgentPreviousCallbackServiceToken() string {
+	return host.handlers.config.AIAgent.PreviousCallbackServiceToken
+}
 func (host aiHost) AIPlatformActor(ctx context.Context) (aiapi.PlatformActor, bool) {
 	actor, ok := ctx.Value(aiPlatformActorContextKey{}).(aiPlatformActor)
 	return aiapi.PlatformActor{UserID: actor.UserID, SessionID: actor.SessionID, ProjectID: actor.ProjectID}, ok

@@ -62,6 +62,7 @@ ai:
   agentTimeout: 10s
   existingSecret: ""
   internalSecretKey: ai-internal-secret
+  internalSecretPreviousKey: ai-internal-secret-previous
   agent:
     # Optional public docs site origin. When set, the assistant cites links to the
     # bundled docs sections it answers from (for example https://docs.example.com).

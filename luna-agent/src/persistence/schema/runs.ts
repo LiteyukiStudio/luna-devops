@@ -22,6 +22,7 @@ export const runs = aiSchema.table("runs", {
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
   completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
   wakeAt: timestamp("wake_at", { withTimezone: true, mode: "date" }),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
   errorCode: text("error_code"),
   modelId: text("model_id"),
   modelName: text("model_name"),
@@ -37,6 +38,7 @@ export const runs = aiSchema.table("runs", {
   unique("runs_turn_id_run_index_key").on(table.turnId, table.runIndex),
   index("ai_runs_queue_idx").on(table.status, table.createdAt).where(sql`${table.status} = 'queued'`),
   index("ai_runs_waiting_external_wake_idx").on(table.wakeAt, table.id).where(sql`${table.status} = 'waiting_external'`),
+  index("ai_runs_running_lease_idx").on(table.leaseExpiresAt, table.id).where(sql`${table.status} = 'running'`),
 ])
 
 export type RunRow = typeof runs.$inferSelect

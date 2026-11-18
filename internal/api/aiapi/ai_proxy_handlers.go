@@ -563,7 +563,7 @@ func cloneAIQuery(query url.Values) url.Values {
 }
 
 func expandAIInternalPath(path string, ctx *gin.Context) string {
-	for _, parameter := range []string{"conversationId", "turnId", "runId", "toolCallId", "actionId", "operationId"} {
+	for _, parameter := range []string{"conversationId", "runId", "toolCallId"} {
 		path = strings.ReplaceAll(path, ":"+parameter, url.PathEscape(ctx.Param(parameter)))
 	}
 	return path
@@ -584,8 +584,6 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"GET /api/v1/ai/conversations/:conversationId/timeline":      {method: "GET", internal: "/internal/v1/conversations/:conversationId/timeline"},
 	"POST /api/v1/ai/conversations/:conversationId/turns":        {method: "POST", internal: "/internal/v1/conversations/:conversationId/turns", status: http.StatusAccepted, validate: validateTurnInput},
 	"POST /api/v1/ai/conversations/:conversationId/tool-actions": {method: "POST", internal: "/internal/v1/conversations/:conversationId/tool-actions", status: http.StatusAccepted, validate: validateToolActionInput},
-	"GET /api/v1/ai/turns/:turnId/runs":                          {method: "GET", internal: "/internal/v1/turns/:turnId/runs"},
-	"POST /api/v1/ai/turns/:turnId/runs":                         {method: "POST", internal: "/internal/v1/turns/:turnId/runs", status: http.StatusAccepted},
 	"GET /api/v1/ai/runs/:runId":                                 {method: "GET", internal: "/internal/v1/runs/:runId"},
 	"GET /api/v1/ai/runs/:runId/events":                          {method: "GET", internal: "/internal/v1/runs/:runId/events", stream: true},
 	"POST /api/v1/ai/runs/:runId/cancel":                         {method: "POST", internal: "/internal/v1/runs/:runId/cancel", status: http.StatusAccepted},

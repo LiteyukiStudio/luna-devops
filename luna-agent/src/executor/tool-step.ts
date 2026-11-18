@@ -181,6 +181,7 @@ export class ToolStepRunner {
     }
 
     for (let callIndex = 0; callIndex < input.calls.length; callIndex += 1) {
+      signal?.throwIfAborted()
       const toolCall = input.calls[callIndex]!
       if (state.cardRepairExhausted && isBusinessCardToolOperationId(toolCall.operationId)) {
         commitCallResult(toolCall, {

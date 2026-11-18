@@ -122,7 +122,6 @@ func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 			slog.Bool("ai.enabled", aiConfig.Available))
 	}
 	handlers.aiTools = aitool.NewService(
-		db,
 		aitool.WithWebPolicyProvider(handlers.aiWebEgressPolicyForUser),
 		aitool.WithWebProxyProvider(handlers.aiWebProxyPoolForUser),
 	)

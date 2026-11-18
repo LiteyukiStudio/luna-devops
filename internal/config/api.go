@@ -110,11 +110,12 @@ func buildAPI(raw apiEnvironment, shared Shared, decodeErr error) (APIConfig, er
 		!environmentKeyFailed(decodeErr, "AI_AGENT_TIMEOUT") &&
 		baseURLErr == nil {
 		var aiConfigErr error
-		cfg.AIAgent, aiConfigErr = aiagent.NewConfig(
+		cfg.AIAgent, aiConfigErr = aiagent.NewConfigWithPrevious(
 			raw.AIAssistantAvailable,
 			aiBaseURL,
 			raw.AIAgentTimeout,
 			raw.AIInternalSecret,
+			raw.AIInternalSecretPrevious,
 		)
 		errs = appendError(errs, aiConfigErr)
 	}

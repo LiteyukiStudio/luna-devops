@@ -98,6 +98,14 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.aiSecretName" . }}
                   key: {{ .Values.ai.internalSecretKey }}
+            {{- if .Values.ai.internalSecretPreviousKey }}
+            - name: AI_INTERNAL_SECRET_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.aiSecretName" . }}
+                  key: {{ .Values.ai.internalSecretPreviousKey }}
+                  optional: true
+            {{- end }}
             {{- if .Values.ai.agent.docsBaseUrl }}
             - name: AI_DOCS_BASE_URL
               value: {{ .Values.ai.agent.docsBaseUrl | quote }}

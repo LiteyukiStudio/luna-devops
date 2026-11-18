@@ -3,8 +3,8 @@ import type { CreatedTurn, RunExecutionSnapshot } from "../src/domain.js"
 import { PayloadCipher } from "../src/payload-cipher.js"
 import { PostgresRepository } from "../src/persistence/postgres.js"
 import { RunCheckpointConflictError, RunStateConflictError } from "../src/persistence/repository.js"
-import type { RemoteProviderConfig } from "../src/provider/config-client.js"
-import { defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
+import { withRunningRunVersionFence } from "../src/persistence/run-fence.js"
+import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { PostgresToolCallStore } from "../src/tools/postgres-store.js"
@@ -92,27 +92,33 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect(claimed[0]?.status).toBe("running")
   })
 
-  it("encrypts and restores the first-claim execution snapshot after a repository restart", async () => {
+  it("encrypts and restores the minimal execution snapshot without apiKey or toolCatalog after a repository restart", async () => {
     while (await repository.claimNextQueuedRun()) { /* drain earlier queued fixtures */ }
     const conversation = await repository.createConversation(owner, "配置快照")
     const created = await repository.createTurn(owner, {
       conversationId: conversation.id, input: "等待批准", pageContext: {},
       idempotencyKey: key("execution-snapshot"), actorSessionId: key("session"),
     })
-    const oldSnapshot = executionSnapshot("cfg-old", "old-provider-secret")
-    const newSnapshot = executionSnapshot("cfg-new", "new-provider-secret")
+    const oldSnapshot = executionSnapshot("sha256:catalog-old", 64)
+    const newSnapshot = executionSnapshot("sha256:catalog-new", 128)
 
     const firstClaim = await repository.claimNextQueuedRun(oldSnapshot)
     expect(firstClaim?.id).toBe(created.run.id)
-    expect(firstClaim?.executionSnapshot?.providerConfig?.version).toBe("cfg-old")
-    expect(firstClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(defaultRuntimeSettings.assistantMaxOutputTokens)
+    expect(firstClaim?.executionSnapshot).toEqual({
+      runtimeSettings: { ...defaultRuntimeSettings, runMaxToolCalls: 64 },
+      toolCatalogDigest: "sha256:catalog-old",
+    })
     expect(await repository.getRun(owner, created.run.id)).not.toHaveProperty("executionSnapshot")
     const stored = await repository.pool.query<{ execution_snapshot_ciphertext: string }>(
       "select execution_snapshot_ciphertext from ai.runs where id = $1",
       [created.run.id],
     )
-    expect(stored.rows[0]?.execution_snapshot_ciphertext).not.toContain("old-provider-secret")
-    expect(stored.rows[0]?.execution_snapshot_ciphertext).not.toContain("https://cfg-old.example/v1/")
+    const rawCiphertext = stored.rows[0]?.execution_snapshot_ciphertext ?? ""
+    const decryptedPlaintext = JSON.parse(runExecutionSnapshotCipher().decrypt(rawCiphertext, created.run.id)) as Record<string, unknown>
+    expect(decryptedPlaintext).not.toHaveProperty("providerConfig")
+    expect(decryptedPlaintext).not.toHaveProperty("toolCatalog")
+    expect(JSON.stringify(decryptedPlaintext)).not.toContain("apiKey")
+    expect(() => runExecutionSnapshotCipher().decrypt(rawCiphertext, "airun_other")).toThrow()
 
     await repository.updateRun(created.run.id, "running", "waiting_approval")
     await repository.updateRun(created.run.id, "waiting_approval", "queued")
@@ -120,12 +126,16 @@ suite("PostgresRepository (Drizzle) integration", () => {
     try {
       const resumed = await restarted.claimNextQueuedRun(newSnapshot)
       expect(resumed?.id).toBe(created.run.id)
-      expect(resumed?.executionSnapshot?.providerConfig?.version).toBe("cfg-old")
-      expect(resumed?.executionSnapshot?.providerConfig?.provider.apiKey).toBe("old-provider-secret")
-      expect(resumed?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(defaultRuntimeSettings.assistantMaxOutputTokens)
-      expect(resumed?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(defaultRuntimeSettings.maxCardRepairAttempts)
-      expect(resumed?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(defaultRuntimeSettings.runMaxToolCalls)
+      expect(resumed?.executionSnapshot).toEqual({
+        runtimeSettings: { ...defaultRuntimeSettings, runMaxToolCalls: 64 },
+        toolCatalogDigest: "sha256:catalog-old",
+      })
       if (!resumed) throw new Error("expected resumed Run")
+      await expect(restarted.listRunningRuns()).resolves.not.toContainEqual(expect.objectContaining({ id: resumed.id }))
+      await expect(restarted.renewRunLease(resumed.id, resumed.rowVersion, 60_000)).resolves.toBe("renewed")
+      await expect(restarted.renewRunLease(resumed.id, resumed.rowVersion + 1, 60_000)).resolves.toBe("lost")
+      await restarted.pool.query("update ai.runs set lease_expires_at = now() - interval '1 second' where id = $1", [resumed.id])
+      await expect(restarted.renewRunLease(resumed.id, resumed.rowVersion, 60_000)).resolves.toBe("lost")
       await restarted.updateRun(resumed.id, "running", "completed", { completedAt: new Date().toISOString() })
 
       const next = await restarted.createTurn(owner, {
@@ -134,10 +144,13 @@ suite("PostgresRepository (Drizzle) integration", () => {
       })
       const nextClaim = await restarted.claimNextQueuedRun(newSnapshot)
       expect(nextClaim?.id).toBe(next.run.id)
-      expect(nextClaim?.executionSnapshot?.providerConfig?.version).toBe("cfg-new")
-      expect(nextClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(defaultRuntimeSettings.assistantMaxOutputTokens)
-      expect(nextClaim?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(defaultRuntimeSettings.maxCardRepairAttempts)
-      expect(nextClaim?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(defaultRuntimeSettings.runMaxToolCalls)
+      expect(nextClaim?.executionSnapshot).toEqual({
+        runtimeSettings: { ...defaultRuntimeSettings, runMaxToolCalls: 128 },
+        toolCatalogDigest: "sha256:catalog-new",
+      })
+      if (!nextClaim) throw new Error("expected next claimed Run")
+      await restarted.cancelRun(owner, nextClaim.id)
+      await expect(restarted.renewRunLease(nextClaim.id, nextClaim.rowVersion, 60_000)).resolves.toBe("canceled")
     }
     finally {
       await restarted.close()
@@ -452,7 +465,13 @@ suite("PostgresRepository (Drizzle) integration", () => {
       return { runId: created.run.id, rowVersion: claimed.rowVersion }
     }
 
+    const expireLease = async (runId: string) => {
+      await repository.pool.query("update ai.runs set lease_expires_at = now() - interval '1 second' where id = $1", [runId])
+    }
+
     const legacy = await claimRun("legacy")
+    expect(await repository.recoverOrphanedRun(legacy.runId, legacy.rowVersion, 3)).toBe("skipped")
+    await expireLease(legacy.runId)
     expect(await repository.recoverOrphanedRun(legacy.runId, legacy.rowVersion, 3)).toBe("interrupted")
     expect(await repository.getRun(owner, legacy.runId)).toMatchObject({
       status: "interrupted", errorCode: "ai.agent_restarted",
@@ -462,6 +481,8 @@ suite("PostgresRepository (Drizzle) integration", () => {
     await repository.saveRunCheckpoint(recoverable.runId, {
       expectedRevision: 0, phase: "model", modelStep: 1, toolCallCount: 1, state: {},
     })
+    expect(await repository.recoverOrphanedRun(recoverable.runId, recoverable.rowVersion, 3)).toBe("skipped")
+    await expireLease(recoverable.runId)
     expect(await repository.recoverOrphanedRun(recoverable.runId, recoverable.rowVersion, 3)).toBe("requeued")
     expect(await repository.getRun(owner, recoverable.runId)).toMatchObject({ status: "queued" })
     expect((await repository.loadRunCheckpoint(recoverable.runId))?.recoveries).toBe(1)
@@ -469,9 +490,24 @@ suite("PostgresRepository (Drizzle) integration", () => {
     const exhausted = await repository.claimNextQueuedRun()
     if (!exhausted) throw new Error("missing claimed run")
     expect(exhausted.id).toBe(recoverable.runId)
+    // Stale replica with old rowVersion + old expectedRevision must fail checkpoint save after recovery
+    await expect(repository.saveRunCheckpoint(recoverable.runId, {
+      expectedRevision: 1,
+      expectedRunVersion: recoverable.rowVersion,
+      phase: "model",
+      modelStep: 1,
+      toolCallCount: 1,
+      state: {},
+    })).rejects.toThrow("ai.run_state_conflict")
     await repository.saveRunCheckpoint(recoverable.runId, {
-      expectedRevision: 1, phase: "model", modelStep: 1, toolCallCount: 1, state: {},
+      expectedRevision: 2,
+      expectedRunVersion: exhausted.rowVersion,
+      phase: "model",
+      modelStep: 1,
+      toolCallCount: 1,
+      state: {},
     })
+    await expireLease(recoverable.runId)
     expect(await repository.recoverOrphanedRun(recoverable.runId, exhausted.rowVersion, 1)).toBe("interrupted")
     expect(await repository.getRun(owner, recoverable.runId)).toMatchObject({
       status: "interrupted", errorCode: "ai.agent_restarted",
@@ -503,6 +539,27 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect(client.calls).toHaveLength(2)
     await expect(repository.pool.query(`update ai.tool_calls set execution_count=-1 where id=$1`, [pending.id]))
       .rejects.toMatchObject({ code: "23514" })
+
+    const claimed = await repository.claimNextQueuedRun()
+    if (!claimed) throw new Error("expected claimed Run")
+    const store = new PostgresToolCallStore(repository.pool, repository, cipher)
+    await expect(withRunningRunVersionFence(claimed.id, claimed.rowVersion - 1, () => store.insert({
+      id: key("stale-tool"),
+      idempotencyKey: key("stale-idem"),
+      runId: claimed.id,
+      operationId: "getProject",
+      status: "proposed",
+      arguments: {},
+      argumentsHash: "sha256:stale",
+      attempt: 1,
+      rowVersion: 1,
+      executionCount: 0,
+    }))).rejects.toBeInstanceOf(RunStateConflictError)
+    await expect(withRunningRunVersionFence(claimed.id, claimed.rowVersion - 1, () => store.update(pending.id, "succeeded", {
+      status: "failed",
+    }))).rejects.toBeInstanceOf(RunStateConflictError)
+    await expect(withRunningRunVersionFence(claimed.id, claimed.rowVersion - 1, () => repository.appendEvent(claimed.id, "run.started", {})))
+      .rejects.toBeInstanceOf(RunStateConflictError)
   })
 
   it("retains supplemental waiting_input user messages in cross-turn getExecutionInput and listConversationHistory", async () => {
@@ -553,41 +610,9 @@ suite("PostgresRepository (Drizzle) integration", () => {
   })
 })
 
-function executionSnapshot(version: string, apiKey: string): RunExecutionSnapshot {
+function executionSnapshot(toolCatalogDigest: string, runMaxToolCalls: number): RunExecutionSnapshot {
   return {
-    runtimeSettings: { ...defaultRuntimeSettings },
-    providerConfig: remoteProviderConfig(version, apiKey),
-  }
-}
-
-function remoteProviderConfig(version: string, apiKey: string): RemoteProviderConfig {
-  const runtime: RemoteRuntimeSettings = {
-    providerTimeoutMs: defaultRuntimeSettings.providerTimeoutMs,
-    maxRequestRetries: defaultRuntimeSettings.maxRequestRetries,
-    runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
-    agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
-    userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
-  }
-  return {
-    version,
-    provider: {
-      baseUrl: `https://${version}.example/v1/`,
-      apiKey,
-      providerCompatibility: "openai",
-      promptCacheKeyMode: "disabled",
-      channelAffinityEnabled: false,
-      configured: true,
-      models: [{
-        id: "aimod_snapshot",
-        name: "snapshot-model",
-        maxContextTokens: 32_000,
-        maxOutputTokens: 8_000,
-        inputCreditsPerMillion: "1",
-        outputCreditsPerMillion: "2",
-        cachedInputCreditsPerMillion: "0.5",
-      }],
-    },
-    runtime,
-    toolCatalog: [],
+    runtimeSettings: { ...defaultRuntimeSettings, runMaxToolCalls },
+    toolCatalogDigest,
   }
 }

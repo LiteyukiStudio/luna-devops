@@ -20,7 +20,6 @@ const dynamicResourceParents = new Set([
   'routes',
   'runs',
   'tokens',
-  'turns',
   'users',
   'volume-imports',
   'volume-transfers',

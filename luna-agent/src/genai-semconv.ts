@@ -1,15 +1,35 @@
 import type { Attributes } from "@opentelemetry/api"
 import type { ModelMessage, ModelToolCall, ModelToolDefinition } from "./provider/provider.js"
-import { redactSensitivePaths } from "./redaction.js"
+import { redact, redactSensitivePaths } from "./redaction.js"
 
 export const genAISchemaURL = "https://opentelemetry.io/schemas/gen-ai-dev/1.42.0-dev"
 export const genAIAgentName = "Luna Agent"
 export const genAIAgentDescription = "Operates and diagnoses Luna DevOps resources."
 
 let genAIAgentVersion: string | undefined
+const registeredCatalogSensitivePaths = new Map<string, readonly string[]>()
 
 export function configureGenAIAgentVersion(value?: string): void {
   genAIAgentVersion = value?.trim() || undefined
+}
+
+/**
+ * 将平台工具目录中的全量 sensitivePaths 注入全局映射，确保历史轮次中调用过、
+ * 当前模型步已被 LRU 淘汰未挂载的工具参数在 OTel 内容采集中仍按路径脱敏。
+ */
+export function registerToolCatalogSensitivePaths(entries: Iterable<readonly [string, readonly string[]]>): void {
+  for (const [operationId, paths] of entries) {
+    if (!paths.length) continue
+    const existing = registeredCatalogSensitivePaths.get(operationId)
+    if (!existing) {
+      registeredCatalogSensitivePaths.set(operationId, [...paths])
+      continue
+    }
+    const merged = new Set([...existing, ...paths])
+    if (merged.size > existing.length) {
+      registeredCatalogSensitivePaths.set(operationId, [...merged])
+    }
+  }
 }
 
 type GenAITextPart = { type: "text", content: string }
@@ -67,18 +87,20 @@ export function genAIModelSpan(baseUrl: string, providerName: string, model: str
   }
 }
 
+/**
+ * 低基数 Token 用量指标标签：仅保留平台受控的 provider / request.model / operation / token.type，
+ * 上游自由文本 gen_ai.response.model 只写入 Span Attribute，严禁进入 Metric Label。
+ */
 export function genAIClientTokenUsageAttributes(
   providerName: string,
   requestModel: string,
   tokenType: "input" | "output",
-  responseModel?: string,
 ): Attributes {
   return {
     "gen_ai.operation.name": "chat",
     "gen_ai.provider.name": providerName,
     "gen_ai.request.model": requestModel,
     "gen_ai.token.type": tokenType,
-    ...(responseModel ? { "gen_ai.response.model": responseModel } : {}),
   }
 }
 
@@ -97,8 +119,12 @@ export function genAIToolSpanAttributes(input: {
   }
 }
 
-export function genAIInputMessages(messages: ModelMessage[], tools?: ModelToolDefinition[]): GenAIInputMessage[] {
-  const sensitivePaths = toolSensitivePaths(tools)
+export function genAIInputMessages(
+  messages: ModelMessage[],
+  tools?: ModelToolDefinition[],
+  catalogSensitivePaths?: ReadonlyMap<string, readonly string[]>,
+): GenAIInputMessage[] {
+  const sensitivePaths = toolSensitivePaths(tools, catalogSensitivePaths)
   return messages.map((message) => {
     if (message.role === "tool") {
       return {
@@ -106,7 +132,7 @@ export function genAIInputMessages(messages: ModelMessage[], tools?: ModelToolDe
         parts: [{
           type: "tool_call_response",
           id: message.toolCallId,
-          response: parseJSONValue(message.content),
+          response: redact(parseJSONValue(message.content)),
         }],
       }
     }
@@ -119,13 +145,17 @@ export function genAIInputMessages(messages: ModelMessage[], tools?: ModelToolDe
   })
 }
 
-export function genAIOutputMessages(input: {
-  text: string
-  reasoningSummary?: string
-  toolCalls?: ModelToolCall[]
-  finishReason?: string
-}, tools?: ModelToolDefinition[]): GenAIOutputMessage[] {
-  const sensitivePaths = toolSensitivePaths(tools)
+export function genAIOutputMessages(
+  input: {
+    text: string
+    reasoningSummary?: string
+    toolCalls?: ModelToolCall[]
+    finishReason?: string
+  },
+  tools?: ModelToolDefinition[],
+  catalogSensitivePaths?: ReadonlyMap<string, readonly string[]>,
+): GenAIOutputMessage[] {
+  const sensitivePaths = toolSensitivePaths(tools, catalogSensitivePaths)
   const parts: GenAIMessagePart[] = []
   if (input.reasoningSummary) parts.push({ type: "reasoning", content: input.reasoningSummary })
   if (input.text) parts.push({ type: "text", content: input.text })
@@ -154,18 +184,31 @@ export function genAIToolCallObject(value: unknown): Record<string, unknown> {
 
 function genAIToolCallPart(call: ModelToolCall, sensitivePaths: ReadonlyMap<string, readonly string[]>): GenAIToolCallPart {
   const paths = sensitivePaths.get(call.operationId) ?? []
+  const pathRedacted = paths.length ? redactSensitivePaths(call.arguments, paths) : call.arguments
   return {
     type: "tool_call",
     name: call.operationId,
     ...(call.id ? { id: call.id } : {}),
-    arguments: paths.length ? redactSensitivePaths(call.arguments, paths) : call.arguments,
+    arguments: redact(pathRedacted),
   }
 }
 
-function toolSensitivePaths(tools: ModelToolDefinition[] | undefined): ReadonlyMap<string, readonly string[]> {
-  return new Map((tools ?? [])
-    .filter(tool => tool.sensitivePaths?.length)
-    .map(tool => [tool.operationId, tool.sensitivePaths ?? []]))
+function toolSensitivePaths(
+  tools: ModelToolDefinition[] | undefined,
+  catalogSensitivePaths?: ReadonlyMap<string, readonly string[]>,
+): ReadonlyMap<string, readonly string[]> {
+  const merged = new Map<string, readonly string[]>(registeredCatalogSensitivePaths)
+  if (catalogSensitivePaths) {
+    for (const [operationId, paths] of catalogSensitivePaths) {
+      if (paths.length) merged.set(operationId, paths)
+    }
+  }
+  for (const tool of tools ?? []) {
+    if (!tool.sensitivePaths?.length) continue
+    const existing = merged.get(tool.operationId)
+    merged.set(tool.operationId, existing ? [...new Set([...existing, ...tool.sensitivePaths])] : tool.sensitivePaths)
+  }
+  return merged
 }
 
 function parseJSONValue(value: string): unknown {

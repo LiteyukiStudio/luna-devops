@@ -34,10 +34,15 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     })
   }
   const internalKeys = deriveInternalKeys(config.AI_INTERNAL_SECRET)
+  const trimmedPreviousSecret = config.AI_INTERNAL_SECRET_PREVIOUS?.trim()
+  const previousKeys = trimmedPreviousSecret && trimmedPreviousSecret !== config.AI_INTERNAL_SECRET.trim()
+    ? deriveInternalKeys(trimmedPreviousSecret)
+    : undefined
   const runExecutionSnapshotCipher = new PayloadCipher(
     internalKeys.runExecutionSnapshotEncryptionKey,
     "run-execution-snapshot-v1",
     "ai.run_execution_snapshot_key_unavailable",
+    previousKeys?.runExecutionSnapshotEncryptionKey,
   )
   const repository = new PostgresRepository(config.DATABASE_URL, {
     maxConnections: config.AI_DATABASE_MAX_CONNECTIONS,
@@ -56,16 +61,26 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   const rawProvider = new ManagedProvider(remoteConfig)
   const provider = new UsageRecordingModelProvider(rawProvider, repository)
   const requestVerifier = config.AUTH_MODE === "bff-hmac"
-    ? new BffHmacRequestVerifier(internalKeys.serviceToken, internalKeys.actorSigningKey)
+    ? new BffHmacRequestVerifier(
+        internalKeys.serviceToken,
+        internalKeys.actorSigningKey,
+        previousKeys
+          ? { serviceToken: previousKeys.serviceToken, actorSigningKey: previousKeys.actorSigningKey }
+          : undefined,
+      )
     : new DevelopmentRequestVerifier()
   const toolArgumentsCipher = new PayloadCipher(
     internalKeys.toolArgumentsEncryptionKey,
     "tool-arguments-v1",
     "ai.tool_arguments_key_unavailable",
+    previousKeys?.toolArgumentsEncryptionKey,
   )
   const catalog = remoteConfig.currentCatalog()
   if (!catalog) throw new Error("ai.provider_config_unavailable")
   const catalogRegistry = new ToolCatalogRegistry(catalog, initialRemoteConfig.version)
+  const resolveCatalog = (digest?: string) => digest && catalogRegistry.has(digest)
+    ? catalogRegistry.get(digest)
+    : catalogRegistry.current()
   const toolStore = new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
   const budgetOverrides = {
     ...(config.AI_RUN_MAX_MODEL_STEPS !== undefined ? { maxModelSteps: config.AI_RUN_MAX_MODEL_STEPS } : {}),
@@ -75,7 +90,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   const tools = new ToolOrchestrator(async (runId) => {
     const state = await repository.getRunToolState(runId)
     if (!state) throw new Error("ai.run_not_found")
-    return catalogRegistry.get(state.toolCatalogDigest)
+    return resolveCatalog(state.toolCatalogDigest)
   }, new HttpLunaApiToolClient(
     config.LUNA_API_BASE_URL,
     internalKeys.callbackServiceToken,
@@ -102,7 +117,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
         return await withSpan("agent.tools.retrieve", internalSpanOptions({
           "luna.agent.tool_retrieval.trigger": "automatic",
         }), async span => {
-          const selectedCatalog = toolCatalogDigest ? catalogRegistry.get(toolCatalogDigest) : catalogRegistry.current()
+          const selectedCatalog = resolveCatalog(toolCatalogDigest)
           const retrievedTools = selectedCatalog.modelTools(loadedOperationIds)
           strategy = "explicit_details"
           candidateCount = loadedOperationIds.length
@@ -136,7 +151,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
       }
     },
     search: (input, _pageContext, _signal, toolCatalogDigest) => {
-      const selectedCatalog = toolCatalogDigest ? catalogRegistry.get(toolCatalogDigest) : catalogRegistry.current()
+      const selectedCatalog = resolveCatalog(toolCatalogDigest)
       return {
         ...selectedCatalog.search(input),
         loadedOperationIds: [], missingOperationIds: [], catalogDigest: selectedCatalog.digest,
@@ -144,7 +159,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
       }
     },
     details: (operationIds, toolCatalogDigest) => {
-      const selectedCatalog = toolCatalogDigest ? catalogRegistry.get(toolCatalogDigest) : catalogRegistry.current()
+      const selectedCatalog = resolveCatalog(toolCatalogDigest)
       const result = selectedCatalog.semanticDetails(operationIds)
       return {
         items: result.items,

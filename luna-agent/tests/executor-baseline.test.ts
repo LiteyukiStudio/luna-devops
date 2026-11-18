@@ -494,6 +494,7 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     const { repository, conversation, runId } = await queuedRun(owner, "baseline-restart")
     const claimed = await repository.claimNextQueuedRun()
     if (!claimed) throw new Error("missing claimed run")
+    repository.expireRunLease(claimed.id)
     const turnId = (await repository.getTimeline(owner, conversation.id))!.turns[0]!.id
     if (boundary === "工具完成后") {
       const toolCallItem = await repository.appendItem({

@@ -1,4 +1,3 @@
-import type { RemoteProviderConfig } from "./provider/config-client.js"
 import type { RuntimeSettings } from "./runtime-settings.js"
 
 export const runStatuses = [
@@ -122,10 +121,9 @@ export type Run = {
   latestUsageMaxContextTokensSnapshot?: number
 }
 
-/** 仅供 Executor claim 使用；不得通过 Run 查询或 API 返回。 */
+/** 仅供 Executor claim 使用；不得通过 Run 查询或 API 返回。严禁包含 providerConfig / apiKey / toolCatalog。 */
 export type RunExecutionSnapshot = {
   runtimeSettings: RuntimeSettings
-  providerConfig?: RemoteProviderConfig
   toolCatalogDigest?: string
 }
 
@@ -259,6 +257,7 @@ export type RunToolVerification = {
 /** Executor 对 checkpoint 的一次推进；expectedRevision=0 表示首次创建。 */
 export type RunCheckpointAdvance = {
   expectedRevision: number
+  expectedRunVersion?: number
   phase: RunCheckpointPhase
   modelStep: number
   toolCallCount: number

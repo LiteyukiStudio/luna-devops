@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
+import { agentMetrics } from "../src/telemetry.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 
 afterEach(() => {
@@ -197,6 +198,37 @@ describe("RemoteConfigSnapshot", () => {
   it("maps an unavailable authority endpoint to a stable error", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unauthorized", { status: 401 })))
     await expect(client().initialize()).rejects.toThrow("ai.provider_config_unavailable")
+  })
+
+  it("records low-cardinality failed and timeout outcomes on fetch failure without network_error", async () => {
+    vi.useFakeTimers()
+    const addSpy = vi.spyOn(agentMetrics.externalRequests, "add")
+    try {
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        throw new TypeError("fetch failed")
+      }))
+      const failedInit = expect(client().initialize()).rejects.toThrow("ai.provider_config_unavailable")
+      await vi.advanceTimersByTimeAsync(15_000)
+      await failedInit
+      const outcomes = addSpy.mock.calls.map(call => call[1]?.outcome)
+      expect(outcomes.length).toBeGreaterThan(0)
+      expect(outcomes.every(outcome => outcome === "failed")).toBe(true)
+      expect(outcomes).not.toContain("network_error")
+
+      addSpy.mockClear()
+      vi.stubGlobal("fetch", vi.fn(async (_url: URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason instanceof Error ? init.signal.reason : new Error("aborted"))
+        }, { once: true })
+      })))
+      const pending = expect(client().initialize()).rejects.toThrow("ai.provider_config_unavailable")
+      await vi.advanceTimersByTimeAsync(agentRuntimeInternals.configFetchTimeoutMs + 100)
+      await pending
+      expect(addSpy.mock.calls.map(call => call[1]?.outcome)).toEqual(["timeout"])
+    }
+    finally {
+      addSpy.mockRestore()
+    }
   })
 })
 

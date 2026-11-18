@@ -304,9 +304,10 @@ export class RunStreamSession {
   ): Promise<void> {
     if (this.committed) {
       if (terminal && !this.terminalCommitted) {
-        await this.repository.finalizeStreamingItems(this.runId, fallbackStatus)
+        await this.repository.finalizeStreamingItems(this.runId, fallbackStatus, this.expectedRunVersion)
         await this.repository.updateRun(this.runId, terminal.from, terminal.to, {
           completedAt: terminal.completedAt,
+          expectedRowVersion: this.expectedRunVersion,
           ...(terminal.errorCode ? { errorCode: terminal.errorCode } : {}),
         })
         this.terminalCommitted = true

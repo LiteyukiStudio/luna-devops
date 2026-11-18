@@ -315,7 +315,7 @@ func TestExplicitEnvFileFailureIsReturned(t *testing.T) {
 func TestExplicitEnvFileFailureDoesNotExposeFileContents(t *testing.T) {
 	resetEnvLoader(t)
 	envFile := filepath.Join(t.TempDir(), "malformed.env")
-	content := "INVALID LINE WITHOUT EQUALS\nSECRET_ENCRYPTION_KEY=must-not-leak\nAI_INTERNAL_SECRET=also-must-not-leak\n"
+	content := "INVALID LINE WITHOUT EQUALS\nSECRET_ENCRYPTION_KEY=must-not-leak\nAI_INTERNAL_SECRET=also-must-not-leak\nAI_INTERNAL_SECRET_PREVIOUS=prev-must-not-leak\n"
 	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -325,10 +325,37 @@ func TestExplicitEnvFileFailureDoesNotExposeFileContents(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadEnvironment() accepted a malformed explicit file")
 	}
-	for _, secret := range []string{"must-not-leak", "also-must-not-leak", "SECRET_ENCRYPTION_KEY", "AI_INTERNAL_SECRET"} {
+	for _, secret := range []string{"must-not-leak", "also-must-not-leak", "prev-must-not-leak", "SECRET_ENCRYPTION_KEY", "AI_INTERNAL_SECRET", "AI_INTERNAL_SECRET_PREVIOUS"} {
 		if strings.Contains(err.Error(), secret) {
 			t.Fatalf("LoadEnvironment() error exposed file contents: %q", err)
 		}
+	}
+}
+
+func TestLoadAPISupportsAIInternalSecretPreviousRotation(t *testing.T) {
+	resetEnvLoader(t)
+	envFile := filepath.Join(t.TempDir(), "api-rotation.env")
+	if err := os.WriteFile(envFile, []byte("APP_ENV=development\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ENV_FILE", envFile)
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("AI_ASSISTANT_AVAILABLE", "true")
+	t.Setenv("AI_AGENT_BASE_URL", "http://127.0.0.1:8091")
+	t.Setenv("AI_INTERNAL_SECRET", "current-ai-internal-secret-32-bytes!!")
+	t.Setenv("AI_INTERNAL_SECRET_PREVIOUS", "previous-ai-internal-secret-32-bytes!")
+
+	cfg, err := LoadAPI()
+	if err != nil {
+		t.Fatalf("LoadAPI() error = %v", err)
+	}
+	if cfg.AIAgent.PreviousCallbackServiceToken == "" || cfg.AIAgent.PreviousCallbackServiceToken == cfg.AIAgent.CallbackServiceToken {
+		t.Fatalf("expected rotated PreviousCallbackServiceToken, got %#v", cfg.AIAgent)
+	}
+
+	t.Setenv("AI_INTERNAL_SECRET_PREVIOUS", "short-secret")
+	if _, err := LoadAPI(); err == nil || !strings.Contains(err.Error(), "AI_INTERNAL_SECRET_PREVIOUS") {
+		t.Fatalf("LoadAPI() accepted short AI_INTERNAL_SECRET_PREVIOUS: %v", err)
 	}
 }
 

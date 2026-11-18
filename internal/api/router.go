@@ -124,8 +124,6 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.GET("/ai/conversations/:conversationId/timeline", domains.ai.ProxyAIRequest)
 		v1.POST("/ai/conversations/:conversationId/turns", domains.ai.ProxyAIRequest)
 		v1.POST("/ai/conversations/:conversationId/tool-actions", domains.ai.ProxyAIRequest)
-		v1.GET("/ai/turns/:turnId/runs", domains.ai.ProxyAIRequest)
-		v1.POST("/ai/turns/:turnId/runs", domains.ai.ProxyAIRequest)
 		v1.GET("/ai/runs/:runId", domains.ai.ProxyAIRequest)
 		v1.GET("/ai/runs/:runId/events", domains.ai.ProxyAIRequest)
 		v1.POST("/ai/runs/:runId/cancel", domains.ai.ProxyAIRequest)

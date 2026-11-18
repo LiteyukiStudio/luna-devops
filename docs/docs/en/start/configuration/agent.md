@@ -15,6 +15,7 @@ Source-based development reads the root `.env` first; use `luna-agent/.env.local
 | `DATABASE_URL` | Empty | Connects to PostgreSQL; use a PostgreSQL connection URI. |
 | `AUTH_MODE` | `development` | Selects internal-request authentication; use `development` or `bff-hmac`. |
 | `AI_INTERNAL_SECRET`<sup>1</sup> | Empty | Authenticates internal API-Agent requests; use a secret of at least 32 bytes. |
+| `AI_INTERNAL_SECRET_PREVIOUS`<sup>1</sup> | Empty | Accepts internal requests and decrypts persisted snapshot or tool-argument ciphertexts protected by the retiring internal secret during rolling rotation; use a secret of at least 32 bytes while rotating, then clear it and restart once rollout completes. |
 | `LUNA_API_BASE_URL` | Empty | Sets the API address used by Agent; use an HTTP(S) URL. |
 | `AI_DOCS_BASE_URL` | Empty | Sets the public docs site origin; use an HTTP(S) URL without query parameters. When set, the assistant links to the docs sections it answers from; when empty it cites the document title only. Docs are bundled into the Agent image and match the platform version, so this address is never fetched at runtime. Helm: `ai.agent.docsBaseUrl`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Empty | Sets the telemetry receiver; use the Collector OTLP/HTTP URL. |

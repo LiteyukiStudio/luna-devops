@@ -60,6 +60,7 @@ func TestDockerComposeApplicationEnvironmentAllowlist(t *testing.T) {
 		"AI_AGENT_BASE_URL":                       apiOnly("http://agent:8091"),
 		"AI_AGENT_TIMEOUT":                        apiOnly("${AI_AGENT_TIMEOUT:-10s}"),
 		"AI_INTERNAL_SECRET":                      apiAndAgent("${AI_INTERNAL_SECRET:-}"),
+		"AI_INTERNAL_SECRET_PREVIOUS":             apiAndAgent("${AI_INTERNAL_SECRET_PREVIOUS:-}"),
 		"AUTH_MODE":                               agentOnly("bff-hmac"),
 		"LUNA_API_BASE_URL":                       agentOnly("http://api:8080"),
 		"OTEL_SERVICE_VERSION":                    agentOnly("${DEVOPS_IMAGE_TAG:-nightly}"),

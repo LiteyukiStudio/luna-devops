@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
+import { registerToolCatalogSensitivePaths } from "../genai-semconv.js"
 import type { ModelToolDefinition } from "../provider/provider.js"
 import { validateToolArguments } from "./argument-validator.js"
 import {
@@ -86,6 +87,7 @@ const maximumPageSize = 100
 export class ToolCatalog {
   private readonly operations: Map<string, ToolOperation>
   private readonly orderedOperations: ToolOperation[]
+  private readonly sensitivePathsMap: ReadonlyMap<string, readonly string[]>
   private readonly bm25: BM25FIndex
   readonly digest: string
 
@@ -102,6 +104,12 @@ export class ToolCatalog {
       }
     }
     this.orderedOperations = Object.freeze([...immutableValues].sort(compareOperations)) as ToolOperation[]
+    this.sensitivePathsMap = new Map(
+      this.orderedOperations
+        .filter(operation => operation.sensitivePaths.length > 0)
+        .map(operation => [operation.operationId, operation.sensitivePaths]),
+    )
+    registerToolCatalogSensitivePaths(this.sensitivePathsMap)
     const discoverableOperations = immutableValues.filter(operation => discoverable(operation))
     const tokenizer = new UnicodeLexicalTokenizer()
     this.bm25 = new BM25FIndex(discoverableOperations.map(operation => ({
@@ -123,6 +131,10 @@ export class ToolCatalog {
 
   all(): ToolOperation[] {
     return [...this.orderedOperations]
+  }
+
+  sensitivePathsByOperation(): ReadonlyMap<string, readonly string[]> {
+    return this.sensitivePathsMap
   }
 
   discoverableOperations(): ToolOperation[] {

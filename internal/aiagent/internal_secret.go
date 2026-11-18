@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	InternalSecretEnvironment = "AI_INTERNAL_SECRET"
-	internalSecretSalt        = "luna-devops/ai-internal/v1"
+	InternalSecretEnvironment         = "AI_INTERNAL_SECRET"
+	InternalSecretPreviousEnvironment = "AI_INTERNAL_SECRET_PREVIOUS"
+	internalSecretSalt                = "luna-devops/ai-internal/v1"
 )
 
 type InternalKeys struct {

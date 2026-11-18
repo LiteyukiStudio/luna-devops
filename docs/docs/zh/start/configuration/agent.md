@@ -15,6 +15,7 @@
 | `DATABASE_URL` | 空 | 连接 PostgreSQL；填写 PostgreSQL 连接 URI。 |
 | `AUTH_MODE` | `development` | 选择内部请求鉴权模式；可填 `development` 或 `bff-hmac`。 |
 | `AI_INTERNAL_SECRET`<sup>1</sup> | 空 | 鉴权 API 与 Agent 的内部请求；填写至少 32 字节的密钥。 |
+| `AI_INTERNAL_SECRET_PREVIOUS`<sup>1</sup> | 空 | 在滚动轮换内部密钥期间同时接受旧密钥签名的内部请求并解密存量快照与工具参数密文；填写至少 32 字节的旧密钥，平时留空，轮换完成后清空并重启。 |
 | `LUNA_API_BASE_URL` | 空 | 设置 Agent 访问 API 的地址；填写 HTTP(S) URL。 |
 | `AI_DOCS_BASE_URL` | 空 | 设置公开文档站根地址；填写不含查询参数的 HTTP(S) URL。设置后助手依据文档回答时附上对应章节链接；留空时只注明文档标题。文档内容随 Agent 镜像打包，与平台版本一致，不会在运行时访问该地址。Helm 对应 `ai.agent.docsBaseUrl`。 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | 设置遥测数据接收端；填写 Collector 的 OTLP/HTTP URL。 |

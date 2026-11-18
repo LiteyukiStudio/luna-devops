@@ -339,10 +339,132 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
     expect(result).not.toHaveProperty("reasoningSummary")
     expect(result.usage).toEqual({ status: "reported", value: { inputTokens: 3, outputTokens: 1, totalTokens: 4 } })
   })
+  it("retries transient 502 and 429 before first chunk on complete and stream, respecting Retry-After, and never retries after first delta", async () => {
+    let completeAttempts = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      completeAttempts += 1
+      if (completeAttempts === 1) {
+        return new Response(JSON.stringify({ error: { message: "bad gateway" } }), { status: 502 })
+      }
+      if (completeAttempts === 2) {
+        return new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+          headers: { "retry-after-ms": "1" },
+        })
+      }
+      return new Response(JSON.stringify({
+        id: "resp_retry_ok",
+        model: "gpt-4o",
+        choices: [{ message: { content: "recovered" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+      }), { status: 200 })
+    }))
+
+    const retriedComplete = await new OpenAIChatCompletionsProvider({
+      ...options,
+      maxRequestRetries: 2,
+    }).complete(request)
+    expect(completeAttempts).toBe(3)
+    expect(retriedComplete.text).toBe("recovered")
+
+    // Stream retries transient 502 before first delta
+    let streamPreDeltaAttempts = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      streamPreDeltaAttempts += 1
+      if (streamPreDeltaAttempts === 1) {
+        return new Response(JSON.stringify({ error: { message: "bad gateway" } }), {
+          status: 502,
+          headers: { "retry-after-ms": "1" },
+        })
+      }
+      return streamResponse([
+        JSON.stringify({ id: "s_ok", model: "gpt-4o", choices: [{ delta: { content: "hello" } }] }),
+        JSON.stringify({ id: "s_ok", model: "gpt-4o", choices: [], usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 } }),
+        "[DONE]",
+      ])
+    }))
+    const streamOkEvents = await collect(new OpenAIChatCompletionsProvider({ ...options, maxRequestRetries: 2 }))
+    expect(streamPreDeltaAttempts).toBe(2)
+    expect(streamOkEvents.find(event => event.type === "message_delta")).toMatchObject({ delta: "hello" })
+
+    // Stream MUST NOT retry after yielding the first delta when mid-stream breaks
+    let midStreamAttempts = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      midStreamAttempts += 1
+      const encoder = new TextEncoder()
+      let step = 0
+      const brokenBody = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          step += 1
+          if (step === 1) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              id: "s_mid",
+              model: "gpt-4o",
+              choices: [{ delta: { content: "partial" } }],
+            })}\n\n`))
+            return
+          }
+          controller.error(new Error("socket reset mid-stream"))
+        },
+      })
+      return new Response(brokenBody, { status: 200, headers: { "content-type": "text/event-stream" } })
+    }))
+    await expect(collect(new OpenAIChatCompletionsProvider({ ...options, maxRequestRetries: 3 })))
+      .rejects.toThrow("ai.provider_unavailable")
+    expect(midStreamAttempts).toBe(1)
+  })
+
+  it("never retries HTTP 429 insufficient_quota while retrying HTTP 429 rate_limit_exceeded and pre-first-delta SSE rate_limit_exceeded", async () => {
+    let quotaAttempts = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      quotaAttempts += 1
+      return new Response(JSON.stringify({
+        error: { code: "insufficient_quota", type: "insufficient_quota", message: "You exceeded your current quota" },
+      }), { status: 429, headers: { "content-type": "application/json", "retry-after": "0" } })
+    }))
+    await expect(new OpenAIChatCompletionsProvider({ ...options, maxRequestRetries: 3 }).complete(request))
+      .rejects.toThrow("ai.provider_quota_exhausted")
+    expect(quotaAttempts).toBe(1)
+
+    let rateLimitAttempts = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      rateLimitAttempts += 1
+      if (rateLimitAttempts === 1) {
+        return new Response(JSON.stringify({
+          error: { code: "rate_limit_exceeded", message: "Too many requests" },
+        }), { status: 429, headers: { "content-type": "application/json", "retry-after": "0" } })
+      }
+      return new Response(JSON.stringify({
+        id: "resp_rl_ok", model: "gpt-test", choices: [{ message: { content: "ok" } }],
+        usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    }))
+    const recovered = await new OpenAIChatCompletionsProvider({ ...options, maxRequestRetries: 2 }).complete(request)
+    expect(recovered.text).toBe("ok")
+    expect(rateLimitAttempts).toBe(2)
+
+    let sseRateLimitAttempts = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      sseRateLimitAttempts += 1
+      if (sseRateLimitAttempts === 1) {
+        return streamResponse([
+          JSON.stringify({ error: { code: "rate_limit_exceeded", message: "Rate limit in SSE" } }),
+        ])
+      }
+      return streamResponse([
+        JSON.stringify({ id: "sse_rl_ok", model: "gpt-test", choices: [{ delta: { content: "stream-ok" }, finish_reason: "stop" }] }),
+        JSON.stringify({ id: "sse_rl_ok", model: "gpt-test", choices: [], usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }),
+        "[DONE]",
+      ])
+    }))
+    const streamEvents = await collect(new OpenAIChatCompletionsProvider({ ...options, maxRequestRetries: 2 }))
+    expect(sseRateLimitAttempts).toBe(2)
+    expect(streamEvents.find(event => event.type === "message_delta")).toMatchObject({ delta: "stream-ok" })
+  })
 })
 
 describe("DeepSeekChatCompletionsProvider adapter", () => {
-  it("echoes reasoning_content on every assistant message without inventing a chain of thought", async () => {
+  it("omits reasoning_content on historical turns (< lastUserIndex) and preserves reasoning_content on current turn tool chain (> lastUserIndex)", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       id: "deepseek_1", model: "deepseek-chat", choices: [{ message: { content: "done" } }],
       usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
@@ -351,21 +473,29 @@ describe("DeepSeekChatCompletionsProvider adapter", () => {
     await new DeepSeekChatCompletionsProvider({ ...options, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" }).complete({
       ...request,
       messages: [
-        { role: "user", content: "hello" },
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "turn 1 question" },
+        { role: "assistant", content: "turn 1 tool step", toolCalls: [{ id: "call_hist", operationId: "getBuild", arguments: {} }], reasoning: "历史轮思考" },
+        { role: "tool", toolCallId: "call_hist", content: "{}" },
+        { role: "assistant", content: "turn 1 final answer" },
+        { role: "user", content: "turn 2 question" },
         { role: "assistant", content: "working", toolCalls: [{ id: "call_1", operationId: "getBuild", arguments: {} }], reasoning: "先读取构建记录" },
         { role: "tool", toolCallId: "call_1", content: "{}" },
-        { role: "assistant", content: "已完成" },
+        { role: "assistant", content: "", toolCalls: [{ id: "call_2", operationId: "listProjects", arguments: {} }] },
+        { role: "tool", toolCallId: "call_2", content: "{}" },
       ],
     })
     const body = requestBody(fetchMock)
     expect(body).toMatchObject({ max_tokens: 100 })
     expect(body).not.toHaveProperty("max_completion_tokens")
     const assistantMessages = (body.messages as Array<Record<string, unknown>>).filter(message => message.role === "assistant")
-    expect(assistantMessages[0]).toMatchObject({ reasoning_content: "先读取构建记录" })
-    expect(assistantMessages[1]).toMatchObject({ content: "已完成" })
-    // 网关不回传思维链时字段仍必须非空，否则会被上游当作缺失；占位不复制正文。
-    expect(String(assistantMessages[1]?.reasoning_content)).not.toBe("")
-    expect(String(assistantMessages[1]?.reasoning_content)).not.toBe("已完成")
+    // Historical turn assistant messages (< lastUserIndex) must omit reasoning_content completely
+    expect(assistantMessages[0]).not.toHaveProperty("reasoning_content")
+    expect(assistantMessages[1]).not.toHaveProperty("reasoning_content")
+    expect(JSON.stringify(body)).not.toContain("上一轮推理内容")
+    // Current turn assistant messages (> lastUserIndex) carry real reasoning or single-space fallback so omitempty gateways never strip it
+    expect(assistantMessages[2]).toMatchObject({ reasoning_content: "先读取构建记录" })
+    expect(assistantMessages[3]).toMatchObject({ reasoning_content: " " })
   })
 
   it("maps non-streaming prompt_cache_hit_tokens into the normalized cache-read field", async () => {

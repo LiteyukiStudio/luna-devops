@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { trace } from "@opentelemetry/api"
 import { z } from "zod"
 import { redact } from "../redaction.js"
+import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 import { genAIClientTokenUsageAttributes, genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
 import { agentMetrics, clientSpanOptions, errorDiagnostic, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
 import { mapProviderError, parseProviderErrorBody, ProviderRequestError, type ProviderFailureStage } from "./provider-error.js"
@@ -24,6 +25,12 @@ export type OpenAIChatCompletionsOptions = {
   promptCacheKeyEnabled: boolean
   model: string
   timeoutMs: number
+  maxRequestRetries?: number
+}
+
+type ProviderRetryState = {
+  used: number
+  max: number
 }
 
 type ProviderHTTPResponse = {
@@ -149,56 +156,68 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
     return withSpan(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...modelRequestSpanAttributes(request) }), async span => {
       try {
         this.recordRequest(span, request)
-        const providerResponse = await this.fetchCompletion(request, false)
-        try {
-          const response = providerResponse.response
-          const providerRequestId = response.headers.get("x-request-id") ?? undefined
-          const raw: unknown = await response.json().catch((error) => {
-            if (providerResponse.signal.aborted || request.signal?.aborted || error instanceof Error && (error.name === "AbortError" || error.message === "ai.provider_timeout")) {
-              throw transportError(providerResponse.signal.aborted ? providerResponse.signal.reason : error, request.signal, "response_body", { providerRequestId })
-            }
-            throw new ProviderRequestError("ai.provider_response_invalid", {
-              stage: "response_body", requestOutcome: "unknown", ...(providerRequestId ? { providerRequestId } : {}),
+        const retryState: ProviderRetryState = { used: 0, max: this.maxRetries() }
+        for (;;) {
+          const providerResponse = await this.fetchCompletion(request, false, retryState)
+          try {
+            const response = providerResponse.response
+            const providerRequestId = response.headers.get("x-request-id") ?? undefined
+            const raw: unknown = await response.json().catch((error) => {
+              if (providerResponse.signal.aborted || request.signal?.aborted || error instanceof Error && (error.name === "AbortError" || error.message === "ai.provider_timeout")) {
+                throw transportError(providerResponse.signal.aborted ? providerResponse.signal.reason : error, request.signal, "response_body", { providerRequestId })
+              }
+              throw new ProviderRequestError("ai.provider_response_invalid", {
+                stage: "response_body", requestOutcome: "unknown", ...(providerRequestId ? { providerRequestId } : {}),
+              })
             })
-          })
-          if (isRecord(raw) && raw.error !== undefined && raw.error !== null) {
-            throw providerPayloadError(raw.error, "response_body", providerRequestId)
-          }
-          const parsed = completionSchema.safeParse(raw)
-          if (!parsed.success) throw this.schemaError("ai.provider_response_invalid", "response_body", providerRequestId)
-          const body = parsed.data
-          const responseId = body.id ?? undefined
-          const responseModel = body.model ?? undefined
-          const message = body.choices[0]?.message
-          const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
-          const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
-          const finishReason = body.choices[0]?.finish_reason ?? undefined
-          this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
-          const text = contentText(message?.content)
-          recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({ text, toolCalls, ...(finishReason ? { finishReason } : {}) }, request.tools))
-          if (usage.status !== "reported") {
-            throw new ProviderRequestError("ai.provider_usage_unavailable", {
-              stage: "response_body",
-              requestOutcome: "unknown",
+            if (isRecord(raw) && raw.error !== undefined && raw.error !== null) {
+              throw providerPayloadError(raw.error, "response_body", providerRequestId)
+            }
+            const parsed = completionSchema.safeParse(raw)
+            if (!parsed.success) throw this.schemaError("ai.provider_response_invalid", "response_body", providerRequestId)
+            const body = parsed.data
+            const responseId = body.id ?? undefined
+            const responseModel = body.model ?? undefined
+            const message = body.choices[0]?.message
+            const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
+            const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
+            const finishReason = body.choices[0]?.finish_reason ?? undefined
+            this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
+            const text = contentText(message?.content)
+            recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({ text, toolCalls, ...(finishReason ? { finishReason } : {}) }, request.tools))
+            if (usage.status !== "reported") {
+              throw new ProviderRequestError("ai.provider_usage_unavailable", {
+                stage: "response_body",
+                requestOutcome: "unknown",
+                ...(providerRequestId ? { providerRequestId } : {}),
+                ...(responseId ? { responseId } : {}),
+                ...(responseModel ? { responseModel } : {}),
+              })
+            }
+            return {
+              text,
+              usage,
+              ...(toolCalls.length ? { toolCalls } : {}),
+              ...(finishReason ? { finishReason } : {}),
               ...(providerRequestId ? { providerRequestId } : {}),
               ...(responseId ? { responseId } : {}),
               ...(responseModel ? { responseModel } : {}),
-            })
+              ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
+              ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
+            }
           }
-          return {
-            text,
-            usage,
-            ...(toolCalls.length ? { toolCalls } : {}),
-            ...(finishReason ? { finishReason } : {}),
-            ...(providerRequestId ? { providerRequestId } : {}),
-            ...(responseId ? { responseId } : {}),
-            ...(responseModel ? { responseModel } : {}),
-            ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
-            ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
+          catch (error) {
+            if (!request.signal?.aborted && isRetryableProviderTransportError(error) && retryState.used < retryState.max) {
+              providerResponse.dispose()
+              retryState.used += 1
+              await this.scheduleProviderRetry("chat_complete", retryState.used, retryState.max, request.signal, undefined, error.message)
+              continue
+            }
+            throw error
           }
-        }
-        finally {
-          providerResponse.dispose()
+          finally {
+            providerResponse.dispose()
+          }
         }
       }
       catch (error) {
@@ -281,79 +300,105 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   private async *streamAttempt(request: ModelRequest, span: Span): AsyncIterable<ModelEvent> {
     try {
       this.recordRequest(span, request)
-      const providerResponse = await this.fetchCompletion(request, true)
-      try {
-        const response = providerResponse.response
-        const providerRequestId = response.headers.get("x-request-id") ?? undefined
-        if (!response.body) throw this.schemaError("ai.provider_empty_stream", "stream", providerRequestId)
-        let usage: ModelUsage = { status: "unavailable", reason: "stream_ended_without_usage" }
-        let usageSeen = false
-        let finishReason: string | undefined
-        let responseId: string | undefined
-        let responseModel: string | undefined
-        let responseText = ""
-        let reasoningText = ""
-        let toolDeltaEmitted = false
-        const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
-        for await (const data of readSSEData(response.body, request.signal, () => ({ providerRequestId, responseId, responseModel }))) {
-          if (!data || data === "[DONE]") continue
-          let raw: unknown
-          try { raw = JSON.parse(data) }
-          catch { throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId) }
-          if (isRecord(raw) && raw.error !== undefined && raw.error !== null) {
-            throw providerPayloadError(raw.error, "stream", providerRequestId, responseId, responseModel)
+      const retryState: ProviderRetryState = { used: 0, max: this.maxRetries() }
+      for (;;) {
+        let deltaEmitted = false
+        const providerResponse = await this.fetchCompletion(request, true, retryState)
+        try {
+          const response = providerResponse.response
+          const providerRequestId = response.headers.get("x-request-id") ?? undefined
+          if (!response.body) throw this.schemaError("ai.provider_empty_stream", "stream", providerRequestId)
+          let usage: ModelUsage = { status: "unavailable", reason: "stream_ended_without_usage" }
+          let usageSeen = false
+          let finishReason: string | undefined
+          let responseId: string | undefined
+          let responseModel: string | undefined
+          let responseText = ""
+          let reasoningText = ""
+          let toolDeltaEmitted = false
+          const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
+          for await (const data of readSSEData(response.body, request.signal, () => ({ providerRequestId, responseId, responseModel }))) {
+            if (!data || data === "[DONE]") continue
+            let raw: unknown
+            try { raw = JSON.parse(data) }
+            catch { throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId) }
+            if (isRecord(raw) && raw.error !== undefined && raw.error !== null) {
+              throw providerPayloadError(raw.error, "stream", providerRequestId, responseId, responseModel)
+            }
+            const parsed = streamChunkSchema.safeParse(raw)
+            if (!parsed.success) throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId)
+            const chunk = parsed.data
+            responseId = chunk.id ?? responseId
+            responseModel = chunk.model ?? responseModel
+            const choice = chunk.choices[0]
+            const delta = (choice?.delta ?? undefined) as Record<string, unknown> | undefined
+            finishReason = choice?.finish_reason ?? finishReason
+            const reasoning = this.reasoningDelta(delta)
+            const content = contentText(delta?.content)
+            if (reasoning) {
+              deltaEmitted = true
+              reasoningText += reasoning
+              yield { type: "reasoning_summary_delta", delta: reasoning }
+            }
+            if (content) {
+              deltaEmitted = true
+              responseText += content
+              yield { type: "message_delta", delta: content }
+            }
+            for (const fragment of choice?.delta?.tool_calls ?? []) {
+              if (!toolDeltaEmitted) {
+                toolDeltaEmitted = true
+                deltaEmitted = true
+                yield { type: "tool_call_delta" }
+              }
+              const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
+              if (!current.id && fragment.id) current.id = fragment.id
+              current.operationId += fragment.function?.name ?? ""
+              current.arguments += fragment.function?.arguments ?? ""
+              toolFragments.set(fragment.index, current)
+            }
+            if (chunk.usage !== undefined && chunk.usage !== null) {
+              usageSeen = true
+              usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
+            }
           }
-          const parsed = streamChunkSchema.safeParse(raw)
-          if (!parsed.success) throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId)
-          const chunk = parsed.data
-          responseId = chunk.id ?? responseId
-          responseModel = chunk.model ?? responseModel
-          const choice = chunk.choices[0]
-          const delta = (choice?.delta ?? undefined) as Record<string, unknown> | undefined
-          finishReason = choice?.finish_reason ?? finishReason
-          const reasoning = this.reasoningDelta(delta)
-          const content = contentText(delta?.content)
-          if (reasoning) { reasoningText += reasoning; yield { type: "reasoning_summary_delta", delta: reasoning } }
-          if (content) { responseText += content; yield { type: "message_delta", delta: content } }
-          for (const fragment of choice?.delta?.tool_calls ?? []) {
-            if (!toolDeltaEmitted) { toolDeltaEmitted = true; yield { type: "tool_call_delta" } }
-            const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
-            if (!current.id && fragment.id) current.id = fragment.id
-            current.operationId += fragment.function?.name ?? ""
-            current.arguments += fragment.function?.arguments ?? ""
-            toolFragments.set(fragment.index, current)
+          if (!usageSeen) usage = { status: "unavailable", reason: "stream_ended_without_usage" }
+          const toolCalls = parseToolFragments(toolFragments)
+          this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
+          recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
+            text: responseText, ...(reasoningText ? { reasoningSummary: reasoningText } : {}), ...(toolCalls.length ? { toolCalls } : {}), ...(finishReason ? { finishReason } : {}),
+          }, request.tools))
+          if (usage.status !== "reported") {
+            throw new ProviderRequestError("ai.provider_usage_unavailable", {
+              stage: "stream",
+              requestOutcome: "unknown",
+              ...(providerRequestId ? { providerRequestId } : {}),
+              ...(responseId ? { responseId } : {}),
+              ...(responseModel ? { responseModel } : {}),
+            })
           }
-          if (chunk.usage !== undefined && chunk.usage !== null) {
-            usageSeen = true
-            usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
-          }
-        }
-        if (!usageSeen) usage = { status: "unavailable", reason: "stream_ended_without_usage" }
-        const toolCalls = parseToolFragments(toolFragments)
-        this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
-        recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
-          text: responseText, ...(reasoningText ? { reasoningSummary: reasoningText } : {}), ...(toolCalls.length ? { toolCalls } : {}), ...(finishReason ? { finishReason } : {}),
-        }, request.tools))
-        if (usage.status !== "reported") {
-          throw new ProviderRequestError("ai.provider_usage_unavailable", {
-            stage: "stream",
-            requestOutcome: "unknown",
+          yield {
+            type: "completed", usage,
+            ...(toolCalls.length ? { toolCalls } : {}),
+            ...(finishReason ? { finishReason } : {}),
             ...(providerRequestId ? { providerRequestId } : {}),
             ...(responseId ? { responseId } : {}),
             ...(responseModel ? { responseModel } : {}),
-          })
+          }
+          return
         }
-        yield {
-          type: "completed", usage,
-          ...(toolCalls.length ? { toolCalls } : {}),
-          ...(finishReason ? { finishReason } : {}),
-          ...(providerRequestId ? { providerRequestId } : {}),
-          ...(responseId ? { responseId } : {}),
-          ...(responseModel ? { responseModel } : {}),
+        catch (error) {
+          if (!deltaEmitted && !request.signal?.aborted && isRetryableProviderTransportError(error) && retryState.used < retryState.max) {
+            providerResponse.dispose()
+            retryState.used += 1
+            await this.scheduleProviderRetry("chat_stream", retryState.used, retryState.max, request.signal, undefined, error.message)
+            continue
+          }
+          throw error
         }
-      }
-      finally {
-        providerResponse.dispose()
+        finally {
+          providerResponse.dispose()
+        }
       }
     }
     catch (error) {
@@ -364,71 +409,135 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
     }
   }
 
-  private async fetchCompletion(request: ModelRequest, stream: boolean): Promise<ProviderHTTPResponse> {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(new Error("ai.provider_timeout")), this.options.timeoutMs)
-    const abort = () => controller.abort(request.signal?.reason)
-    let listening = false
-    let disposed = false
-    const dispose = () => {
-      if (disposed) return
-      disposed = true
-      clearTimeout(timer)
-      if (listening) request.signal?.removeEventListener("abort", abort)
-    }
-    if (request.signal?.aborted) controller.abort(request.signal.reason)
-    else if (request.signal) {
-      request.signal.addEventListener("abort", abort, { once: true })
-      listening = true
-    }
-    try {
-      let response: Response
+  private maxRetries(): number {
+    const raw = this.options.maxRequestRetries
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return 0
+    return Math.max(0, Math.min(10, Math.floor(raw)))
+  }
+
+  private async scheduleProviderRetry(
+    operation: "chat_complete" | "chat_stream",
+    attempt: number,
+    maxRetries: number,
+    signal: AbortSignal | undefined,
+    retryAfterMs: number | undefined,
+    reason: string,
+  ): Promise<void> {
+    trace.getActiveSpan()?.addEvent("provider.request.retry_scheduled", {
+      operation,
+      "retry.attempt": attempt,
+      "retry.max_retries": maxRetries,
+      "retry.reason": reason,
+    })
+    telemetryLog("agent.provider.retry_scheduled", "warn", {
+      operation: `agent.provider.${operation}`,
+      "retry.attempt": attempt,
+      "retry.max_retries": maxRetries,
+      "retry.reason": reason,
+    })
+    await waitForRetry(attempt, {
+      maxRetries,
+      ...(signal ? { signal } : {}),
+      ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+    })
+  }
+
+  private async fetchCompletion(request: ModelRequest, stream: boolean, retryState: ProviderRetryState): Promise<ProviderHTTPResponse> {
+    const metricOperation = stream ? "chat_stream" : "chat_complete"
+    const logOperation = stream ? "agent.provider.chat_stream" : "agent.provider.chat_complete"
+    const requestBody = JSON.stringify(this.buildRequestBody(request, stream))
+    const headers = this.requestHeaders(request)
+    const targetUrl = new URL("chat/completions", ensureTrailingSlash(this.options.baseUrl))
+    for (;;) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(new Error("ai.provider_timeout")), this.options.timeoutMs)
+      const abort = () => controller.abort(request.signal?.reason)
+      let listening = false
+      let disposed = false
+      const dispose = () => {
+        if (disposed) return
+        disposed = true
+        clearTimeout(timer)
+        if (listening) request.signal?.removeEventListener("abort", abort)
+      }
+      if (request.signal?.aborted) controller.abort(request.signal.reason)
+      else if (request.signal) {
+        request.signal.addEventListener("abort", abort, { once: true })
+        listening = true
+      }
       try {
-        response = await fetch(new URL("chat/completions", ensureTrailingSlash(this.options.baseUrl)), {
-          method: "POST",
-          headers: this.requestHeaders(request),
-          body: JSON.stringify(this.buildRequestBody(request, stream)),
-          signal: controller.signal,
-        })
+        let response: Response
+        try {
+          response = await fetch(targetUrl, {
+            method: "POST",
+            headers,
+            body: requestBody,
+            signal: controller.signal,
+          })
+        }
+        catch (error) {
+          const mapped = transportError(error, request.signal, "dispatch")
+          if (!request.signal?.aborted) {
+            agentMetrics.externalRequests.add(1, {
+              target: "model_provider",
+              operation: metricOperation,
+              outcome: mapped.message === "ai.provider_timeout" ? "timeout" : "failed",
+            })
+          }
+          telemetryLog("agent.provider.request_failed", "warn", { operation: logOperation, outcome: "failed", ...errorDiagnostic(mapped, mapped.message) })
+          if (!request.signal?.aborted && isRetryableProviderTransportError(mapped) && retryState.used < retryState.max) {
+            controller.abort()
+            dispose()
+            retryState.used += 1
+            await this.scheduleProviderRetry(metricOperation, retryState.used, retryState.max, request.signal, undefined, mapped.message)
+            continue
+          }
+          throw mapped
+        }
+        const providerRequestId = response.headers.get("x-request-id") ?? undefined
+        if (!response.ok) {
+          agentMetrics.externalRequests.add(1, { target: "model_provider", operation: metricOperation, outcome: String(response.status) })
+          const retryAfterMs = parseRetryAfter(response.headers)
+          const raw = await response.json().catch((error) => {
+            if (request.signal?.aborted) throw transportError(error, request.signal, "response_headers", { providerRequestId })
+            return undefined
+          })
+          const detail = parseProviderErrorBody(raw)
+          const code = mapProviderError(response.status, detail)
+          const error = new ProviderRequestError(code, {
+            status: response.status, stage: "response_headers", requestOutcome: "rejected",
+            ...(detail.code ? { providerCode: detail.code } : {}),
+            ...(detail.type ? { providerType: detail.type } : {}),
+            ...(detail.param ? { providerParam: detail.param } : {}),
+            ...(providerRequestId ? { providerRequestId } : {}),
+          })
+          telemetryLog("agent.provider.request_failed", "warn", {
+            operation: logOperation, outcome: "failed",
+            "http.response.status_code": response.status, "provider.error.code": detail.code ?? "unknown",
+            // 上游拒绝原因才能定位方言/契约问题；截断并脱敏，不进入面向用户的错误文案。
+            ...(detail.message ? { "provider.error.message": redact(detail.message).slice(0, 200) } : {}),
+            ...errorDiagnostic(error, code),
+          })
+          if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined)
+          if (!request.signal?.aborted && isRetryableProviderStatusCode(response.status, code) && retryState.used < retryState.max) {
+            controller.abort()
+            dispose()
+            retryState.used += 1
+            await this.scheduleProviderRetry(metricOperation, retryState.used, retryState.max, request.signal, retryAfterMs, String(response.status))
+            continue
+          }
+          throw error
+        }
+        agentMetrics.externalRequests.add(1, { target: "model_provider", operation: metricOperation, outcome: "success" })
+        trace.getActiveSpan()?.setAttribute("http.response.status_code", response.status)
+        if (providerRequestId) trace.getActiveSpan()?.setAttribute("server.request.id", providerRequestId)
+        return { response, signal: controller.signal, dispose }
       }
       catch (error) {
-        const mapped = transportError(error, request.signal, "dispatch")
-        telemetryLog("agent.provider.request_failed", "warn", { operation: stream ? "agent.provider.chat_stream" : "agent.provider.chat_complete", outcome: "failed", ...errorDiagnostic(mapped, mapped.message) })
-        throw mapped
-      }
-      const providerRequestId = response.headers.get("x-request-id") ?? undefined
-      if (!response.ok) {
-        const raw = await response.clone().json().catch((error) => {
-          if (request.signal?.aborted) throw transportError(error, request.signal, "response_headers", { providerRequestId })
-          return undefined
-        })
-        const detail = parseProviderErrorBody(raw)
-        const code = mapProviderError(response.status, detail)
-        const error = new ProviderRequestError(code, {
-          status: response.status, stage: "response_headers", requestOutcome: "rejected",
-          ...(detail.code ? { providerCode: detail.code } : {}),
-          ...(detail.type ? { providerType: detail.type } : {}),
-          ...(detail.param ? { providerParam: detail.param } : {}),
-          ...(providerRequestId ? { providerRequestId } : {}),
-        })
-        telemetryLog("agent.provider.request_failed", "warn", {
-          operation: stream ? "agent.provider.chat_stream" : "agent.provider.chat_complete", outcome: "failed",
-          "http.response.status_code": response.status, "provider.error.code": detail.code ?? "unknown",
-          // 上游拒绝原因才能定位方言/契约问题；截断并脱敏，不进入面向用户的错误文案。
-          ...(detail.message ? { "provider.error.message": redact(detail.message).slice(0, 200) } : {}),
-          ...errorDiagnostic(error, code),
-        })
+        controller.abort()
+        dispose()
         throw error
       }
-      agentMetrics.externalRequests.add(1, { target: "model_provider", operation: stream ? "chat_stream" : "chat_complete", outcome: "success" })
-      trace.getActiveSpan()?.setAttribute("http.response.status_code", response.status)
-      if (providerRequestId) trace.getActiveSpan()?.setAttribute("server.request.id", providerRequestId)
-      return { response, signal: controller.signal, dispose }
-    }
-    catch (error) {
-      controller.abort()
-      dispose()
-      throw error
     }
   }
 
@@ -473,11 +582,11 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
     if (usage.status === "reported") {
       agentMetrics.modelTokenUsage.record(
         usage.value.inputTokens,
-        genAIClientTokenUsageAttributes(this.providerName(), this.options.model, "input", responseModel),
+        genAIClientTokenUsageAttributes(this.providerName(), this.options.model, "input"),
       )
       agentMetrics.modelTokenUsage.record(
         usage.value.outputTokens,
-        genAIClientTokenUsageAttributes(this.providerName(), this.options.model, "output", responseModel),
+        genAIClientTokenUsageAttributes(this.providerName(), this.options.model, "output"),
       )
     }
     if (finishReason) span.setAttribute("gen_ai.response.finish_reasons", [finishReason])
@@ -672,6 +781,16 @@ function contentText(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function isRetryableProviderStatusCode(status: number, code: string): boolean {
+  return isRetryableHTTPStatus(status)
+    && (code === "ai.provider_rate_limited" || code === "ai.provider_timeout" || code === "ai.provider_unavailable")
+}
+
+function isRetryableProviderTransportError(error: unknown): error is ProviderRequestError {
+  return error instanceof ProviderRequestError
+    && (error.message === "ai.provider_unavailable" || error.message === "ai.provider_timeout" || error.message === "ai.provider_rate_limited")
 }
 
 function ensureTrailingSlash(value: string): string {

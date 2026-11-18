@@ -24,7 +24,7 @@ func TestFetchWebPageExtractsReadableTextAndLinks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+	service := NewService(WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		return security.AdminEgressPolicy(), nil
 	}))
 	result, err := service.fetchWebPage(context.Background(), "usr_test", map[string]any{
@@ -55,7 +55,7 @@ func TestFetchWebPageAppliesIPBlockList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer server.Close()
 
-	service := NewService(nil, WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+	service := NewService(WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		policy := security.AdminEgressPolicy()
 		policy.IPBlockList = []string{"127.0.0.0/8"}
 		return policy, nil
@@ -73,7 +73,7 @@ func TestFetchWebPageRejectsBinaryContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+	service := NewService(WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		return security.AdminEgressPolicy(), nil
 	}))
 	_, err := service.fetchWebPage(context.Background(), "usr_test", map[string]any{"url": server.URL})
@@ -83,7 +83,7 @@ func TestFetchWebPageRejectsBinaryContent(t *testing.T) {
 }
 
 func TestFetchWebPageRejectsCredentialBearingURLs(t *testing.T) {
-	service := NewService(nil, WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+	service := NewService(WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		return security.AdminEgressPolicy(), nil
 	}))
 	for _, target := range []string{
@@ -103,7 +103,7 @@ func TestFetchWebPageValidatesEveryRedirect(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+	service := NewService(WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		policy := security.AdminEgressPolicy()
 		policy.DomainBlockList = []string{"blocked.example"}
 		return policy, nil
@@ -131,7 +131,6 @@ func TestFetchWebPageUsesAuthenticatedProxyWithoutExposingCredentials(t *testing
 	proxyURL.User = url.UserPassword("proxy-user", "proxy-password")
 
 	service := NewService(
-		nil,
 		WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 			policy := security.AdminEgressPolicy()
 			policy.DomainAllowList = []string{"example.com"}
@@ -170,7 +169,6 @@ func TestWebProxyPoolRotatesBetweenEntries(t *testing.T) {
 	defer second.Close()
 
 	service := NewService(
-		nil,
 		WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 			policy := security.AdminEgressPolicy()
 			policy.DomainAllowList = []string{"example.com"}
@@ -200,7 +198,6 @@ func TestEnabledWebProxyFailureDoesNotFallBackToDirectAccess(t *testing.T) {
 	defer target.Close()
 
 	service := NewService(
-		nil,
 		WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 			return security.AdminEgressPolicy(), nil
 		}),
@@ -239,16 +236,109 @@ func TestParseWebProxyPoolValidatesAndDeduplicates(t *testing.T) {
 	}
 }
 
-func TestParseDuckDuckGoResultsDecodesTargets(t *testing.T) {
+func TestParseDuckDuckGoResultsDecodesTargetsAndSnippets(t *testing.T) {
 	content := []byte(`<html><body>
-		<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2FLiteyukiStudio%2Fluna-devops">Luna DevOps</a>
-		<a class="result__a" href="https://example.com/docs">Deployment guide</a>
+		<div class="result results_links results_links_deep web-result">
+			<div class="links_main links_deep result__body">
+				<h2 class="result__title">
+					<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2FLiteyukiStudio%2Fluna-devops">Luna DevOps</a>
+				</h2>
+				<a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2FLiteyukiStudio%2Fluna-devops">Cloud-native <b>DevOps</b> platform for BuildKit and Kubernetes.</a>
+			</div>
+		</div>
+		<div class="result results_links">
+			<a class="result__a" href="https://example.com/docs">Deployment guide</a>
+			<div class="result__snippet">  Step-by-step   rollout   instructions. </div>
+		</div>
 	</body></html>`)
 	items := parseDuckDuckGoResults(content, "https://html.duckduckgo.com/html/?q=luna", 5)
 	if len(items) != 2 {
 		t.Fatalf("items = %#v", items)
 	}
-	if items[0].URL != "https://github.com/LiteyukiStudio/luna-devops" || items[1].Title != "Deployment guide" {
-		t.Fatalf("items = %#v", items)
+	if items[0].URL != "https://github.com/LiteyukiStudio/luna-devops" ||
+		items[0].Snippet != "Cloud-native DevOps platform for BuildKit and Kubernetes." {
+		t.Fatalf("items[0] = %#v", items[0])
+	}
+	if items[1].Title != "Deployment guide" || items[1].Snippet != "Step-by-step rollout instructions." {
+		t.Fatalf("items[1] = %#v", items[1])
+	}
+
+	unsafe := []byte(`<html><body>
+		<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=javascript%3Aalert(1)">XSS</a></div>
+		<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fsecret%3Fapi_key%3Dleak">Credential URL</a></div>
+		<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=%2Frelative%2Fpath">Relative Redirect</a></div>
+		<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FC%2B%2B%3Fterms%3DC%2523%26lang%3Den">C++ and C#</a></div>
+	</body></html>`)
+	got := parseDuckDuckGoResults(unsafe, "https://html.duckduckgo.com/html/?q=test", 5)
+	if len(got) != 1 || got[0].URL != "https://en.wikipedia.org/wiki/C++?terms=C%23&lang=en" {
+		t.Fatalf("expected unsafe/relative uddg targets filtered and C++/C%%23 URL preserved intact, got: %#v", got)
+	}
+}
+
+func TestWebSearchRejectsAcceptedStatusAndChallengePages(t *testing.T) {
+	var mode atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch mode.Load() {
+		case 0:
+			writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+			writer.WriteHeader(http.StatusAccepted)
+			_, _ = writer.Write([]byte(`<html><body>processing</body></html>`))
+		case 1:
+			writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write([]byte(`<html><body><div class="anomaly-modal"><form id="challenge-form"></form></div></body></html>`))
+		default:
+			writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write([]byte(`<html><body><div class="result"><a class="result__a" href="https://example.com/ok">Luna Docs</a><a class="result__snippet">Authoritative platform docs</a></div></body></html>`))
+		}
+	}))
+	defer server.Close()
+
+	service := NewService(
+		WithWebSearchEndpoint(server.URL+"/html/"),
+		WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+			return security.AdminEgressPolicy(), nil
+		}),
+	)
+
+	mode.Store(0)
+	if _, err := service.Execute(t.Context(), Request{
+		OperationID: "webSearch",
+		UserID:      "usr_test",
+		Arguments:   map[string]any{"query": "luna devops"},
+	}); !errors.Is(err, ErrWebRequestFailed) {
+		t.Fatalf("202 Accepted error = %v, want ErrWebRequestFailed", err)
+	}
+	if _, err := service.Execute(t.Context(), Request{
+		OperationID: "fetchWebPage",
+		UserID:      "usr_test",
+		Arguments:   map[string]any{"url": server.URL + "/html/"},
+	}); !errors.Is(err, ErrWebRequestFailed) {
+		t.Fatalf("fetchWebPage 202 Accepted error = %v, want ErrWebRequestFailed", err)
+	}
+
+	mode.Store(1)
+	if _, err := service.Execute(t.Context(), Request{
+		OperationID: "webSearch",
+		UserID:      "usr_test",
+		Arguments:   map[string]any{"query": "luna devops"},
+	}); !errors.Is(err, ErrWebRequestFailed) {
+		t.Fatalf("challenge page error = %v, want ErrWebRequestFailed", err)
+	}
+
+	mode.Store(2)
+	result, err := service.Execute(t.Context(), Request{
+		OperationID: "webSearch",
+		UserID:      "usr_test",
+		Arguments:   map[string]any{"query": "luna devops"},
+	})
+	if err != nil {
+		t.Fatalf("valid search error = %v", err)
+	}
+	payload := result.Value.(map[string]any)
+	items := payload["items"].([]webSearchItem)
+	if len(items) != 1 || items[0].Snippet != "Authoritative platform docs" {
+		t.Fatalf("search items = %#v", items)
 	}
 }

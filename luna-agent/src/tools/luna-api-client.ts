@@ -89,9 +89,11 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
         await this.scheduleRetry(operation, retry + 1, maxRetries, signal, retryAfterMs, String(response.status))
       }
       catch (error) {
-        if (signal?.aborted || !retryableOperation || retry >= maxRetries) throw error
-        agentMetrics.externalRequests.add(1, { target: "luna_api", operation, outcome: "network_error" })
-        await this.scheduleRetry(operation, retry + 1, maxRetries, signal, undefined, "network_error")
+        if (signal?.aborted) throw error
+        const outcome = isFetchTimeoutError(error) ? "timeout" : "failed"
+        agentMetrics.externalRequests.add(1, { target: "luna_api", operation, outcome })
+        if (!retryableOperation || retry >= maxRetries) throw error
+        await this.scheduleRetry(operation, retry + 1, maxRetries, signal, undefined, outcome)
       }
     }
   }
@@ -176,6 +178,10 @@ function allowedToolHeader(name: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isFetchTimeoutError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")
 }
 
 function pathParameterValue(value: unknown): string {

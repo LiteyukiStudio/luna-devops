@@ -2,7 +2,8 @@ import type { Span } from "@opentelemetry/api"
 import { createId } from "../id.js"
 import type { ClaimedRun } from "../domain.js"
 import type { ModelRuntime } from "../model-runtime.js"
-import { RunStateConflictError, type Repository } from "../persistence/repository.js"
+import { RunCheckpointConflictError, RunStateConflictError, type Repository } from "../persistence/repository.js"
+import { withoutRunningRunVersionFence } from "../persistence/run-fence.js"
 import type { RemoteProviderConfig } from "../provider/config-client.js"
 import { genAIOutputMessages } from "../genai-semconv.js"
 import { redact } from "../redaction.js"
@@ -34,6 +35,7 @@ export type CompleteRunInput = {
   recoveredFinal: boolean
   assistantRenamed: boolean
   providerConfig?: RemoteProviderConfig
+  onStopLeaseHeartbeat?: () => void
   signal: AbortSignal
   span: Span
 }
@@ -52,17 +54,21 @@ export class RunFinalizer {
       finishReason: input.finalFinishReason ?? "stop",
     }))
     input.span.setAttribute("gen_ai.response.finish_reasons", [input.finalFinishReason ?? "stop"])
-    const result = await this.commitTerminal(async () => {
+    input.onStopLeaseHeartbeat?.()
+    const result = await this.commitTerminal(run.rowVersion, async () => {
       if (pendingTerminal) {
         await pendingTerminal("completed")
       }
       else if (recoveredFinal && finalAnswer.trim()) {
-        await this.repository.finalizeStreamingItems(run.id, "completed")
+        await this.repository.finalizeStreamingItems(run.id, "completed", run.rowVersion)
         await this.commitRecoveredFinalMessage(run, finalAnswer)
       }
       else {
-        await this.repository.finalizeStreamingItems(run.id, "completed")
-        await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
+        await this.repository.finalizeStreamingItems(run.id, "completed", run.rowVersion)
+        await this.repository.updateRun(run.id, "running", "completed", {
+          completedAt: new Date().toISOString(),
+          expectedRowVersion: run.rowVersion,
+        })
       }
       return { status: "completed", committed: true }
     })
@@ -88,10 +94,15 @@ export class RunFinalizer {
     run: ClaimedRun,
     status: "completed" | "failed",
     toolName: string,
+    onStopLeaseHeartbeat?: () => void,
   ): Promise<ClaimedRun["status"]> {
-    const result = await this.commitTerminal(async () => {
-      await this.repository.finalizeStreamingItems(run.id, status === "completed" ? "completed" : "failed")
-      await this.repository.updateRun(run.id, "running", status, { completedAt: new Date().toISOString() })
+    onStopLeaseHeartbeat?.()
+    const result = await this.commitTerminal(run.rowVersion, async () => {
+      await this.repository.finalizeStreamingItems(run.id, status === "completed" ? "completed" : "failed", run.rowVersion)
+      await this.repository.updateRun(run.id, "running", status, {
+        completedAt: new Date().toISOString(),
+        expectedRowVersion: run.rowVersion,
+      })
       return { status, committed: true }
     })
     if (!result.committed) {
@@ -116,17 +127,22 @@ export class RunFinalizer {
     error: unknown,
     pendingTerminal?: TerminalCommit,
     source: "abort_signal" | "durable_state" = "abort_signal",
+    onStopLeaseHeartbeat?: () => void,
   ): Promise<ClaimedRun["status"]> {
+    onStopLeaseHeartbeat?.()
     const errorCode = stableErrorCode(error)
-    const result = await this.commitTerminal(async () => {
+    const result = await this.commitTerminal(run.rowVersion, async () => {
       if (pendingTerminal) {
         await pendingTerminal("canceled", errorCode)
         return { status: "canceled", committed: true }
       }
       else {
-        await this.repository.finalizeStreamingItems(run.id, "failed")
-        const canceled = await this.repository.cancelRun(run.ownerUserId, run.id)
-        if (canceled) return { status: "canceled", committed: true }
+        await this.repository.finalizeStreamingItems(run.id, "failed", run.rowVersion)
+        const canceled = await this.repository.cancelRun(run.ownerUserId, run.id, run.rowVersion)
+        if (canceled && canceled.status === "canceled") return { status: "canceled", committed: true }
+        if (canceled && canceled.rowVersion !== run.rowVersion && !isTerminalStatus(canceled.status)) {
+          throw new Error("ai.run_lease_lost")
+        }
         return { status: await this.requireConfirmedTerminal(run), committed: false }
       }
     })
@@ -146,17 +162,23 @@ export class RunFinalizer {
     return result.status
   }
 
-  async interrupt(run: ClaimedRun, pendingTerminal?: TerminalCommit): Promise<ClaimedRun["status"]> {
+  async interrupt(
+    run: ClaimedRun,
+    pendingTerminal?: TerminalCommit,
+    onStopLeaseHeartbeat?: () => void,
+  ): Promise<ClaimedRun["status"]> {
+    onStopLeaseHeartbeat?.()
     const errorCode = "ai.agent_stopping"
-    const result = await this.commitTerminal(async () => {
+    const result = await this.commitTerminal(run.rowVersion, async () => {
       if (pendingTerminal) {
         await pendingTerminal("interrupted", errorCode)
       }
       else {
-        await this.repository.finalizeStreamingItems(run.id, "failed")
+        await this.repository.finalizeStreamingItems(run.id, "failed", run.rowVersion)
         await this.repository.updateRun(run.id, "running", "interrupted", {
           completedAt: new Date().toISOString(),
           errorCode,
+          expectedRowVersion: run.rowVersion,
         })
       }
       return { status: "interrupted", committed: true }
@@ -174,18 +196,25 @@ export class RunFinalizer {
     return result.status
   }
 
-  async fail(run: ClaimedRun, error: unknown, pendingTerminal?: TerminalCommit): Promise<ClaimedRun["status"]> {
+  async fail(
+    run: ClaimedRun,
+    error: unknown,
+    pendingTerminal?: TerminalCommit,
+    onStopLeaseHeartbeat?: () => void,
+  ): Promise<ClaimedRun["status"]> {
+    onStopLeaseHeartbeat?.()
     const message = error instanceof Error ? error.message : "ai.run_failed"
     const errorCode = stableError(message)
-    const result = await this.commitTerminal(async () => {
+    const result = await this.commitTerminal(run.rowVersion, async () => {
       if (pendingTerminal) {
         await pendingTerminal("failed", errorCode)
       }
       else {
-        await this.repository.finalizeStreamingItems(run.id, "failed")
+        await this.repository.finalizeStreamingItems(run.id, "failed", run.rowVersion)
         await this.repository.updateRun(run.id, "running", "failed", {
           completedAt: new Date().toISOString(),
           errorCode,
+          expectedRowVersion: run.rowVersion,
         })
       }
       return { status: "failed", committed: true }
@@ -209,12 +238,7 @@ export class RunFinalizer {
   }
 
   async terminalPersistenceExhausted(run: ClaimedRun, error: unknown): Promise<void> {
-    let interrupted = await this.repository.interruptOrphanedRun(run.id, run.rowVersion).catch(() => false)
-    if (!interrupted) {
-      const current = await this.repository.getRun(run.ownerUserId, run.id).catch(() => undefined)
-      if (current?.status === "running")
-        interrupted = await this.repository.interruptOrphanedRun(run.id, current.rowVersion).catch(() => false)
-    }
+    const interrupted = await this.repository.interruptOrphanedRun(run.id, run.rowVersion, { ignoreActiveLease: true }).catch(() => false)
     if (interrupted) await this.cleanupTerminalStream(run.id)
     telemetryLog("agent.run.terminal_persistence_exhausted", "error", {
       operation: "agent.run.terminal_persistence",
@@ -245,7 +269,7 @@ export class RunFinalizer {
         executionInput.model,
         providerConfig,
       )
-      if (title) await this.repository.renameConversationByAssistant(run.conversationId, title, run.id)
+      if (title) await withoutRunningRunVersionFence(() => this.repository.renameConversationByAssistant(run.conversationId, title, run.id))
     }
     catch (error) {
       telemetryLog("agent.conversation.title.failed", "warn", {
@@ -259,7 +283,7 @@ export class RunFinalizer {
 
   private async appendPostProcessCompleted(runId: string): Promise<void> {
     try {
-      await this.repository.appendEvent(runId, "run.postprocess.completed", {})
+      await withoutRunningRunVersionFence(() => this.repository.appendEvent(runId, "run.postprocess.completed", {}))
     }
     catch (error) {
       telemetryLog("agent.run.postprocess_marker_failed", "warn", {
@@ -272,12 +296,16 @@ export class RunFinalizer {
   }
 
   private async commitTerminal(
+    expectedRowVersion: number,
     operation: () => Promise<{ status: ClaimedRun["status"], committed: boolean }>,
   ): Promise<{ status: ClaimedRun["status"], committed: boolean }> {
     try {
       return await operation()
     }
     catch (error) {
+      if (isLeaseLostError(error, expectedRowVersion)) {
+        throw new Error("ai.run_lease_lost", { cause: error })
+      }
       if (!isConfirmedTerminalRace(error)) throw error
       return { status: error.actualStatus, committed: false }
     }
@@ -326,4 +354,16 @@ function isConfirmedTerminalRace(error: unknown): error is RunStateConflictError
 
 function isTerminalStatus(status: string): boolean {
   return ["completed", "failed", "canceled", "expired", "interrupted"].includes(status)
+}
+
+export function isLeaseLostError(error: unknown, expectedRowVersion: number): boolean {
+  const unwrapped = error instanceof Error && error.name === "StreamModelFinalizationError"
+    ? error.cause
+    : error
+  const code = stableErrorCode(unwrapped)
+  if (code === "ai.run_lease_lost" || unwrapped instanceof RunCheckpointConflictError) return true
+  if (!(unwrapped instanceof RunStateConflictError) || unwrapped.actualRowVersion === undefined) return false
+  if (unwrapped.actualRowVersion === expectedRowVersion) return false
+  if (unwrapped.actualRowVersion > expectedRowVersion + 1) return true
+  return unwrapped.actualStatus !== "canceled"
 }

@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 134
+	latestMigrationVersion   = 135
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -88,8 +88,10 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000132_platform_app_templates.down.sql":                     false,
 		"000133_decouple_ai_model_usages.up.sql":                     false,
 		"000133_decouple_ai_model_usages.down.sql":                   false,
-		"000134_ai_run_waiting_external.up.sql":                     false,
-		"000134_ai_run_waiting_external.down.sql":                   false,
+		"000134_ai_run_waiting_external.up.sql":                      false,
+		"000134_ai_run_waiting_external.down.sql":                    false,
+		"000135_ai_run_lease.up.sql":                                 false,
+		"000135_ai_run_lease.down.sql":                               false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -566,6 +568,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.runs", column: "max_output_tokens"},
 		{table: "ai.runs", column: "actor_session_id"},
 		{table: "ai.runs", column: "row_version"},
+		{table: "ai.runs", column: "wake_at"},
+		{table: "ai.runs", column: "lease_expires_at"},
 		{table: "ai.tool_calls", column: "input_mode"},
 		{table: "ai.tool_calls", column: "approval_decision"},
 		{table: "ai.tool_calls", column: "row_version"},
@@ -617,7 +621,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			t.Fatalf("fresh database contains obsolete %s.%s", obsolete.table, obsolete.column)
 		}
 	}
-	for _, column := range []string{"client_instance_id", "run_actor_grant_ciphertext", "lease_owner", "lease_expires_at", "heartbeat_at"} {
+	for _, column := range []string{"client_instance_id", "run_actor_grant_ciphertext", "lease_owner", "heartbeat_at"} {
 		if db.Migrator().HasColumn("ai.runs", column) {
 			t.Fatalf("fresh database contains obsolete ai.runs.%s", column)
 		}

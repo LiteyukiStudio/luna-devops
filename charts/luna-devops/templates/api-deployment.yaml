@@ -87,6 +87,14 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.aiSecretName" . }}
                   key: {{ .Values.ai.internalSecretKey }}
+            {{- if .Values.ai.internalSecretPreviousKey }}
+            - name: AI_INTERNAL_SECRET_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.aiSecretName" . }}
+                  key: {{ .Values.ai.internalSecretPreviousKey }}
+                  optional: true
+            {{- end }}
             {{- end }}
             {{- if .Values.api.browserTrace.existingSecret }}
             - name: OTEL_EXPORTER_OTLP_TRACES_HEADERS

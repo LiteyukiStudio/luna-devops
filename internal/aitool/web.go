@@ -22,6 +22,7 @@ const (
 	webResponseLimit = 2 << 20
 	defaultTextLimit = 20_000
 	maxTextLimit     = 50_000
+	maxSnippetRunes  = 400
 	maxRedirects     = 5
 	maxWebProxies    = 16
 )
@@ -45,12 +46,23 @@ func (s *Service) webSearch(ctx context.Context, userID string, arguments map[st
 		return Result{}, ErrInvalidInput
 	}
 
-	searchURL := "https://html.duckduckgo.com/html/?q=" + url.QueryEscape(query)
+	endpoint := s.webSearchEndpoint
+	if endpoint == "" {
+		endpoint = defaultDuckDuckGoSearchEndpoint
+	}
+	separator := "?"
+	if strings.Contains(endpoint, "?") {
+		separator = "&"
+	}
+	searchURL := endpoint + separator + "q=" + url.QueryEscape(query)
 	response, finalURL, err := s.getWebResource(ctx, userID, searchURL)
 	if err != nil {
 		return Result{}, err
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return Result{}, fmt.Errorf("%w: search provider returned HTTP %d", ErrWebRequestFailed, response.StatusCode)
+	}
 
 	content, err := io.ReadAll(io.LimitReader(response.Body, webResponseLimit+1))
 	if err != nil {
@@ -60,6 +72,9 @@ func (s *Service) webSearch(ctx context.Context, userID string, arguments map[st
 		return Result{}, fmt.Errorf("%w: search response is too large", ErrWebContentRejected)
 	}
 	items := parseDuckDuckGoResults(content, finalURL, limit)
+	if len(items) == 0 && isDuckDuckGoChallengePage(content) {
+		return Result{}, fmt.Errorf("%w: search provider returned anti-bot challenge", ErrWebRequestFailed)
+	}
 	return Result{
 		Value: map[string]any{
 			"query":          query,
@@ -91,6 +106,9 @@ func (s *Service) fetchWebPage(ctx context.Context, userID string, arguments map
 		return Result{}, err
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return Result{}, fmt.Errorf("%w: remote server returned HTTP %d", ErrWebRequestFailed, response.StatusCode)
+	}
 
 	contentType := response.Header.Get("Content-Type")
 	mediaType, _, _ := mime.ParseMediaType(contentType)
@@ -305,20 +323,41 @@ func parseDuckDuckGoResults(content []byte, baseURL string, limit int) []webSear
 		return nil
 	}
 	items := make([]webSearchItem, 0, limit)
+	buildItem := func(anchor, snippetNode *html.Node) (webSearchItem, bool) {
+		href := htmlAttribute(anchor, "href")
+		resolved := resolveWebLink(baseURL, href)
+		if resolved != "" {
+			if decoded, redirected := decodeDuckDuckGoRedirect(resolved); redirected {
+				resolved = resolveWebLink(baseURL, decoded)
+			}
+		}
+		title := normalizeExtractedText(nodeText(anchor))
+		if title == "" || resolved == "" {
+			return webSearchItem{}, false
+		}
+		snippet := ""
+		if snippetNode != nil {
+			snippet = truncateRunes(normalizeExtractedText(nodeText(snippetNode)), maxSnippetRunes)
+		}
+		return webSearchItem{Title: title, URL: resolved, Snippet: snippet}, true
+	}
 	var walk func(*html.Node)
 	walk = func(node *html.Node) {
 		if len(items) >= limit {
 			return
 		}
-		if node.Type == html.ElementNode && node.Data == "a" && hasHTMLClass(node, "result__a") {
-			href := htmlAttribute(node, "href")
-			resolved := resolveWebLink(baseURL, href)
-			if decoded := decodeDuckDuckGoRedirect(resolved); decoded != "" {
-				resolved = decoded
+		if node.Type == html.ElementNode && (hasHTMLClass(node, "result") || hasHTMLClass(node, "results_links")) {
+			if anchor := findFirstElementByClass(node, "result__a"); anchor != nil {
+				snippetNode := findFirstElementByClass(node, "result__snippet")
+				if item, ok := buildItem(anchor, snippetNode); ok {
+					items = append(items, item)
+				}
+				return
 			}
-			title := normalizeExtractedText(nodeText(node))
-			if title != "" && resolved != "" {
-				items = append(items, webSearchItem{Title: title, URL: resolved})
+		}
+		if node.Type == html.ElementNode && node.Data == "a" && hasHTMLClass(node, "result__a") {
+			if item, ok := buildItem(node, nil); ok {
+				items = append(items, item)
 			}
 		}
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
@@ -330,6 +369,54 @@ func parseDuckDuckGoResults(content []byte, baseURL string, limit int) []webSear
 	}
 	walk(document)
 	return items
+}
+
+func findFirstElementByClass(root *html.Node, className string) *html.Node {
+	var found *html.Node
+	var walk func(*html.Node)
+	walk = func(current *html.Node) {
+		if found != nil {
+			return
+		}
+		if current.Type == html.ElementNode && hasHTMLClass(current, className) {
+			found = current
+			return
+		}
+		for child := current.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+			if found != nil {
+				return
+			}
+		}
+	}
+	walk(root)
+	return found
+}
+
+func isDuckDuckGoChallengePage(content []byte) bool {
+	lower := strings.ToLower(string(content))
+	for _, marker := range []string{
+		"anomaly-modal",
+		"challenge-form",
+		"cc=botnet",
+		"anomaly.js",
+		"g-recaptcha",
+		"h-captcha",
+		"cf-turnstile",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncateRunes(value string, maxRunes int) string {
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "…"
 }
 
 func extractHTMLDocument(content []byte, baseURL string) (string, string, []map[string]string) {
@@ -443,20 +530,24 @@ func webURLContainsCredentials(parsed *url.URL) bool {
 	return false
 }
 
-func decodeDuckDuckGoRedirect(raw string) string {
+func decodeDuckDuckGoRedirect(raw string) (string, bool) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return ""
+		return "", false
 	}
-	value := parsed.Query().Get("uddg")
+	query := parsed.Query()
+	if !query.Has("uddg") {
+		return "", false
+	}
+	value := strings.TrimSpace(query.Get("uddg"))
 	if value == "" {
-		return raw
+		return "", true
 	}
-	decoded, err := url.QueryUnescape(value)
-	if err != nil {
-		return raw
+	target, err := url.Parse(value)
+	if err != nil || !target.IsAbs() || (target.Scheme != "http" && target.Scheme != "https") {
+		return "", true
 	}
-	return decoded
+	return value, true
 }
 
 func normalizeExtractedText(value string) string {

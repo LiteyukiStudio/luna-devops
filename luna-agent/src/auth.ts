@@ -27,15 +27,31 @@ export class DevelopmentRequestVerifier implements RequestVerifier {
   }
 }
 
+export type BffHmacKeyMaterial = {
+  serviceToken: string
+  actorSigningKey: string
+}
+
 export class BffHmacRequestVerifier implements RequestVerifier {
-  constructor(private readonly serviceToken: string, private readonly actorSigningKey: string) {}
+  constructor(
+    private readonly serviceToken: string,
+    private readonly actorSigningKey: string,
+    private readonly previous?: BffHmacKeyMaterial,
+  ) {}
+
   async verify(headers: Record<string, string | string[] | undefined>): Promise<ActorContext> {
     const bearer = scalar(headers.authorization)?.replace(/^Bearer\s+/i, "")
     const encoded = scalar(headers["x-luna-actor-context"])
     const signature = scalar(headers["x-luna-actor-signature"])
-    if (!bearer || !encoded || !signature || !safeEqual(bearer, this.serviceToken)) throw new AuthError("ai.unauthorized")
-    const expected = `sha256=${createHmac("sha256", this.actorSigningKey).update(encoded).digest("hex")}`
-    if (!safeEqual(signature, expected)) throw new AuthError("ai.unauthorized")
+    if (!bearer || !encoded || !signature) throw new AuthError("ai.unauthorized")
+    const matchesKeyPair = (token: string, signingKey: string): boolean => {
+      if (!safeEqual(bearer, token)) return false
+      const expected = `sha256=${createHmac("sha256", signingKey).update(encoded).digest("hex")}`
+      return safeEqual(signature, expected)
+    }
+    const verified = matchesKeyPair(this.serviceToken, this.actorSigningKey)
+      || (this.previous !== undefined && matchesKeyPair(this.previous.serviceToken, this.previous.actorSigningKey))
+    if (!verified) throw new AuthError("ai.unauthorized")
     let raw: unknown
     try { raw = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) } catch { throw new AuthError("ai.actor_context_invalid") }
     const actor = actorSchema.parse(raw)

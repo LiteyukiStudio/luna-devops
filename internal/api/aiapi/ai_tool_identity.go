@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +29,7 @@ type aiToolExecutionBinding struct {
 	ConversationProjectID string `gorm:"column:conversation_project_id"`
 	OperationID           string `gorm:"column:operation_id"`
 	ToolStatus            string `gorm:"column:tool_status"`
+	InputMode             string `gorm:"column:input_mode"`
 	ApprovalDecision      string `gorm:"column:approval_decision"`
 }
 
@@ -73,7 +75,22 @@ func (h *Handler) aiToolExecutionIdentityMiddleware() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
-		if !aiRequestMatchesConversationProject(ctx, operation, binding.ConversationProjectID) {
+		user, validActor := h.resolveActiveAIPlatformUser(ctx, binding.OwnerUserID, binding.ActorSessionID)
+		if !validActor {
+			ctx.Abort()
+			return
+		}
+		if !h.aiAccessAllowed(user.Role) {
+			writeErrorCode(ctx, http.StatusForbidden, "ai.user_not_allowed", "AI assistant is restricted to platform administrators")
+			ctx.Abort()
+			return
+		}
+		if !aiOperationScopesAllowed(user.Role, operation.RequiredScopes) {
+			writeErrorCode(ctx, http.StatusForbidden, "ai.tool_permission_denied", "AI tool operation exceeds the user's authorized scopes")
+			ctx.Abort()
+			return
+		}
+		if !aiRequestMatchesConversationProjectWithMode(ctx, operation, binding.ConversationProjectID, binding.InputMode) {
 			writeErrorCode(ctx, http.StatusForbidden, "ai.project_scope_mismatch", "AI conversation project scope does not match the requested project")
 			ctx.Abort()
 			return
@@ -88,12 +105,38 @@ func (h *Handler) aiToolExecutionIdentityMiddleware() gin.HandlerFunc {
 		})
 		ctx.Request = ctx.Request.WithContext(requestContext)
 		ctx.Next()
-		success := ctx.Writer.Status() >= http.StatusOK && ctx.Writer.Status() < http.StatusMultipleChoices
-		h.auditWithContext(binding.OwnerUserID, "ai.tool.execute", operation.OperationID+":"+toolCallID, success, "AI service-bound platform operation executed", requestContext)
+		if ctx.Request.Method != http.MethodGet {
+			success := ctx.Writer.Status() >= http.StatusOK && ctx.Writer.Status() < http.StatusMultipleChoices
+			h.auditWithContext(binding.OwnerUserID, "ai.tool.execute", operation.OperationID+":"+toolCallID, success, "AI service-bound platform operation executed", requestContext)
+		}
 	}
 }
 
+func aiOperationScopesAllowed(role string, scopes []string) bool {
+	if len(scopes) == 0 {
+		return false
+	}
+	for _, rawScope := range scopes {
+		scope := strings.TrimSpace(rawScope)
+		if scope == "" {
+			return false
+		}
+		if scope == "web:read" {
+			continue
+		}
+		normalized := authz.NormalizeOAuthScope(scope)
+		if normalized == "" || normalized != scope || !authz.UserCanAuthorizeOAuthScope(role, normalized) {
+			return false
+		}
+	}
+	return true
+}
+
 func aiRequestMatchesConversationProject(ctx *gin.Context, operation aitool.OpenAPIOperation, conversationProjectID string) bool {
+	return aiRequestMatchesConversationProjectWithMode(ctx, operation, conversationProjectID, "")
+}
+
+func aiRequestMatchesConversationProjectWithMode(ctx *gin.Context, operation aitool.OpenAPIOperation, conversationProjectID, inputMode string) bool {
 	conversationProjectID = strings.TrimSpace(conversationProjectID)
 	if conversationProjectID == "" {
 		return true
@@ -102,40 +145,68 @@ func aiRequestMatchesConversationProject(ctx *gin.Context, operation aitool.Open
 	projectScoped := false
 	projectIDs := make([]string, 0, 2)
 	for _, parameter := range operation.Parameters {
-		if parameter.InputName != "projectId" && parameter.WireName != "projectId" {
+		isProjectID := parameter.InputName == "projectId" || parameter.WireName == "projectId"
+		isProjectIDs := parameter.InputName == "projectIds" || parameter.WireName == "projectIds"
+		if !isProjectID && !isProjectIDs {
 			continue
 		}
 		projectScoped = true
 		switch parameter.In {
 		case "path":
-			projectIDs = appendNonEmptyProjectID(projectIDs, ctx.Param(parameter.WireName))
+			trimmed := strings.TrimSpace(ctx.Param(parameter.WireName))
+			if trimmed == "" {
+				return false
+			}
+			projectIDs = append(projectIDs, trimmed)
 		case "query":
-			for _, value := range ctx.QueryArray(parameter.WireName) {
-				projectIDs = appendNonEmptyProjectID(projectIDs, value)
+			rawValues, exists := ctx.Request.URL.Query()[parameter.WireName]
+			if !exists {
+				continue
+			}
+			if len(rawValues) == 0 {
+				return false
+			}
+			for _, value := range rawValues {
+				if isProjectIDs {
+					parts := strings.Split(value, ",")
+					for _, part := range parts {
+						trimmed := strings.TrimSpace(part)
+						if trimmed == "" {
+							return false
+						}
+						projectIDs = append(projectIDs, trimmed)
+					}
+					continue
+				}
+				trimmed := strings.TrimSpace(value)
+				if trimmed == "" {
+					return false
+				}
+				projectIDs = append(projectIDs, trimmed)
 			}
 		}
 	}
 
 	properties, _ := operation.InputSchema["properties"].(map[string]any)
-	if _, exists := properties["projectId"]; exists {
+	bodySchema, _ := properties["body"].(map[string]any)
+	if schemaDeclaresProjectScope(bodySchema) {
 		projectScoped = true
-	}
-	if _, exists := properties["projectIds"]; exists {
-		projectScoped = true
-	}
-	if projectScoped && operation.RequestBody && ctx.Request.Body != nil {
-		const maxToolJSONBody = 8 << 20
-		raw, err := io.ReadAll(io.LimitReader(ctx.Request.Body, maxToolJSONBody+1))
-		ctx.Request.Body = io.NopCloser(bytes.NewReader(raw))
-		if err != nil || len(raw) > maxToolJSONBody {
-			return false
-		}
-		if len(bytes.TrimSpace(raw)) > 0 {
-			var body any
-			if json.Unmarshal(raw, &body) != nil {
+		if operation.RequestBody && ctx.Request.Body != nil {
+			const maxToolJSONBody = 8 << 20
+			raw, err := io.ReadAll(io.LimitReader(ctx.Request.Body, maxToolJSONBody+1))
+			ctx.Request.Body = io.NopCloser(bytes.NewReader(raw))
+			if err != nil || len(raw) > maxToolJSONBody {
 				return false
 			}
-			projectIDs = collectRequestProjectIDs(projectIDs, body)
+			if len(bytes.TrimSpace(raw)) > 0 {
+				var body any
+				if json.Unmarshal(raw, &body) != nil {
+					return false
+				}
+				if !collectSchemaScopedProjectIDs(bodySchema, body, &projectIDs) {
+					return false
+				}
+			}
 		}
 	}
 
@@ -143,7 +214,7 @@ func aiRequestMatchesConversationProject(ctx *gin.Context, operation aitool.Open
 		return true
 	}
 	if len(projectIDs) == 0 {
-		return false
+		return strings.EqualFold(strings.TrimSpace(inputMode), "verification") && strings.EqualFold(ctx.Request.Method, http.MethodGet)
 	}
 	for _, projectID := range projectIDs {
 		if projectID != conversationProjectID {
@@ -153,40 +224,257 @@ func aiRequestMatchesConversationProject(ctx *gin.Context, operation aitool.Open
 	return true
 }
 
-func collectRequestProjectIDs(projectIDs []string, value any) []string {
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, child := range typed {
-			switch key {
+func schemaDeclaresProjectScope(schema map[string]any) bool {
+	if len(schema) == 0 {
+		return false
+	}
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		for name, rawProp := range properties {
+			if name == "projectId" || name == "projectIds" {
+				return true
+			}
+			if propSchema, ok := rawProp.(map[string]any); ok && schemaDeclaresProjectScope(propSchema) {
+				return true
+			}
+		}
+	}
+	if itemsSchema, ok := schema["items"].(map[string]any); ok && schemaDeclaresProjectScope(itemsSchema) {
+		return true
+	}
+	for _, keyword := range []string{"allOf", "oneOf", "anyOf"} {
+		for _, branch := range schemaSubschemas(schema[keyword]) {
+			if schemaDeclaresProjectScope(branch) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func collectSchemaScopedProjectIDs(schema map[string]any, value any, out *[]string) bool {
+	if len(schema) == 0 || value == nil {
+		return true
+	}
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		objectValue, isObject := value.(map[string]any)
+		if !isObject {
+			return false
+		}
+		_, declaresProjectID := properties["projectId"]
+		_, declaresProjectIDs := properties["projectIds"]
+		if rawScopeSchema, declaresScope := properties["scope"]; declaresScope && (declaresProjectID || declaresProjectIDs) {
+			scopeCandidate, scopeExists, scopeAmbiguous := lookupJSONObjectField(objectValue, "scope")
+			if scopeAmbiguous {
+				return false
+			}
+			if !scopeExists {
+				if !schemaScopeOnlyAllowsProject(rawScopeSchema) {
+					return false
+				}
+			} else {
+				scopeText, ok := scopeCandidate.(string)
+				if !ok {
+					return false
+				}
+				normalizedScope := strings.ToLower(strings.TrimSpace(scopeText))
+				expectedProjectScope := "project"
+				if scopeSchema, ok := rawScopeSchema.(map[string]any); ok && schemaEnumContains(scopeSchema["enum"], "projects") {
+					expectedProjectScope = "projects"
+				}
+				if normalizedScope != expectedProjectScope {
+					return false
+				}
+			}
+		}
+		for name, rawProp := range properties {
+			switch name {
 			case "projectId":
-				if projectID, ok := child.(string); ok {
-					projectIDs = appendNonEmptyProjectID(projectIDs, projectID)
+				candidate, exists, ambiguous := lookupJSONObjectField(objectValue, "projectId")
+				if ambiguous {
+					return false
+				}
+				if exists {
+					text, ok := candidate.(string)
+					if !ok {
+						return false
+					}
+					trimmed := strings.TrimSpace(text)
+					if trimmed == "" {
+						return false
+					}
+					*out = append(*out, trimmed)
 				}
 			case "projectIds":
-				if values, ok := child.([]any); ok {
-					for _, candidate := range values {
-						if projectID, ok := candidate.(string); ok {
-							projectIDs = appendNonEmptyProjectID(projectIDs, projectID)
+				candidate, exists, ambiguous := lookupJSONObjectField(objectValue, "projectIds")
+				if ambiguous {
+					return false
+				}
+				if exists {
+					items, ok := candidate.([]any)
+					if !ok || len(items) == 0 {
+						return false
+					}
+					for _, elem := range items {
+						text, ok := elem.(string)
+						if !ok {
+							return false
 						}
+						trimmed := strings.TrimSpace(text)
+						if trimmed == "" {
+							return false
+						}
+						*out = append(*out, trimmed)
 					}
 				}
 			default:
-				projectIDs = collectRequestProjectIDs(projectIDs, child)
+				propSchema, ok := rawProp.(map[string]any)
+				if !ok || !schemaDeclaresProjectScope(propSchema) {
+					continue
+				}
+				child, exists, ambiguous := lookupJSONObjectField(objectValue, name)
+				if ambiguous {
+					return false
+				}
+				if exists {
+					if child == nil {
+						return false
+					}
+					if !collectSchemaScopedProjectIDs(propSchema, child, out) {
+						return false
+					}
+				}
+			}
+		}
+	}
+	if itemsSchema, ok := schema["items"].(map[string]any); ok && schemaDeclaresProjectScope(itemsSchema) {
+		arrayValue, isArray := value.([]any)
+		if !isArray {
+			return false
+		}
+		for _, elem := range arrayValue {
+			if elem == nil {
+				return false
+			}
+			if !collectSchemaScopedProjectIDs(itemsSchema, elem, out) {
+				return false
+			}
+		}
+	}
+	for _, branch := range schemaSubschemas(schema["allOf"]) {
+		if schemaDeclaresProjectScope(branch) && !collectSchemaScopedProjectIDs(branch, value, out) {
+			return false
+		}
+	}
+	for _, keyword := range []string{"oneOf", "anyOf"} {
+		for _, branch := range schemaSubschemas(schema[keyword]) {
+			if !schemaDeclaresProjectScope(branch) || !schemaMatchesValueKind(branch, value) {
+				continue
+			}
+			if !collectSchemaScopedProjectIDs(branch, value, out) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func lookupJSONObjectField(objectValue map[string]any, target string) (any, bool, bool) {
+	var matched any
+	count := 0
+	for key, val := range objectValue {
+		if strings.EqualFold(key, target) {
+			matched = val
+			count++
+			if count > 1 {
+				return nil, true, true
+			}
+		}
+	}
+	return matched, count == 1, false
+}
+
+func schemaScopeOnlyAllowsProject(raw any) bool {
+	schema, ok := raw.(map[string]any)
+	if !ok {
+		return false
+	}
+	switch values := schema["enum"].(type) {
+	case []string:
+		if len(values) == 0 {
+			return false
+		}
+		for _, item := range values {
+			normalized := strings.ToLower(strings.TrimSpace(item))
+			if normalized != "project" && normalized != "projects" {
+				return false
+			}
+		}
+		return true
+	case []any:
+		if len(values) == 0 {
+			return false
+		}
+		for _, item := range values {
+			text, ok := item.(string)
+			if !ok {
+				return false
+			}
+			normalized := strings.ToLower(strings.TrimSpace(text))
+			if normalized != "project" && normalized != "projects" {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func schemaEnumContains(rawEnum any, target string) bool {
+	switch values := rawEnum.(type) {
+	case []string:
+		for _, item := range values {
+			if strings.EqualFold(strings.TrimSpace(item), target) {
+				return true
 			}
 		}
 	case []any:
-		for _, child := range typed {
-			projectIDs = collectRequestProjectIDs(projectIDs, child)
+		for _, item := range values {
+			if text, ok := item.(string); ok && strings.EqualFold(strings.TrimSpace(text), target) {
+				return true
+			}
 		}
 	}
-	return projectIDs
+	return false
 }
 
-func appendNonEmptyProjectID(projectIDs []string, value string) []string {
-	if value = strings.TrimSpace(value); value != "" {
-		return append(projectIDs, value)
+func schemaMatchesValueKind(schema map[string]any, value any) bool {
+	if _, hasProps := schema["properties"].(map[string]any); hasProps {
+		_, isObject := value.(map[string]any)
+		return isObject
 	}
-	return projectIDs
+	if _, hasItems := schema["items"].(map[string]any); hasItems {
+		_, isArray := value.([]any)
+		return isArray
+	}
+	return true
+}
+
+func schemaSubschemas(raw any) []map[string]any {
+	switch typed := raw.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		result := make([]map[string]any, 0, len(typed))
+		for _, entry := range typed {
+			if branch, ok := entry.(map[string]any); ok {
+				result = append(result, branch)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func aiOperationForRequest(ctx *gin.Context) (aitool.OpenAPIOperation, bool) {
@@ -223,6 +511,7 @@ func (h *Handler) resolveAIToolExecutionBinding(ctx *gin.Context, runID, toolCal
 		       COALESCE(c.project_id, '') AS conversation_project_id,
 		       tc.operation_id,
 		       tc.status AS tool_status,
+		       COALESCE(tc.input_mode, '') AS input_mode,
 		       COALESCE(tc.approval_decision, '') AS approval_decision
 		FROM ai.runs AS r
 		JOIN ai.conversations AS c ON c.id = r.conversation_id
@@ -242,18 +531,39 @@ func (h *Handler) resolveAIToolExecutionBinding(ctx *gin.Context, runID, toolCal
 	return binding, true
 }
 
+func constantTimeTokenEqual(expected, actual string) bool {
+	return expected != "" && len(expected) == len(actual) && subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) == 1
+}
+
 func (h *Handler) requireAIAgentService(ctx *gin.Context) bool {
 	actual := strings.TrimSpace(strings.TrimPrefix(ctx.GetHeader("Authorization"), "Bearer "))
 	expected := strings.TrimSpace(h.host.AIAgentCallbackServiceToken())
+	previous := strings.TrimSpace(h.host.AIAgentPreviousCallbackServiceToken())
 	if expected == "" {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.agent_service_not_configured", "Agent service identity is not configured")
 		return false
 	}
-	if len(expected) != len(actual) || subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) != 1 {
+	if !constantTimeTokenEqual(expected, actual) && !constantTimeTokenEqual(previous, actual) {
 		writeErrorCode(ctx, http.StatusUnauthorized, "ai.agent_service_unauthorized", "Agent service identity is invalid")
 		return false
 	}
 	return true
+}
+
+func (h *Handler) resolveActiveAIPlatformUser(ctx *gin.Context, userID, sessionID string) (model.User, bool) {
+	now := time.Now()
+	var user model.User
+	if h.dbFor(ctx).First(&user, "id = ? and disabled = ?", userID, false).Error != nil {
+		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
+		return model.User{}, false
+	}
+	var session model.UserSession
+	if h.dbFor(ctx).First(&session, "id = ? and user_id = ? and expires_at > ?", sessionID, userID, now).Error != nil {
+		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
+		return model.User{}, false
+	}
+	h.host.SetCurrentUser(ctx, user)
+	return user, true
 }
 
 func (h *Handler) currentAIPlatformUser(ctx *gin.Context) (model.User, bool) {
@@ -261,17 +571,6 @@ func (h *Handler) currentAIPlatformUser(ctx *gin.Context) (model.User, bool) {
 	if !ok || actor.UserID == "" || actor.SessionID == "" {
 		return model.User{}, false
 	}
-	now := time.Now()
-	var user model.User
-	if h.dbFor(ctx).First(&user, "id = ? and disabled = ?", actor.UserID, false).Error != nil {
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
-		return model.User{}, true
-	}
-	var session model.UserSession
-	if h.dbFor(ctx).First(&session, "id = ? and user_id = ? and expires_at > ?", actor.SessionID, actor.UserID, now).Error != nil {
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
-		return model.User{}, true
-	}
-	h.host.SetCurrentUser(ctx, user)
+	user, _ := h.resolveActiveAIPlatformUser(ctx, actor.UserID, actor.SessionID)
 	return user, true
 }

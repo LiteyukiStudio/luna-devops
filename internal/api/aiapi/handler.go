@@ -53,6 +53,7 @@ type Host interface {
 	AIActorOverride(ctx *gin.Context) (aiagent.ActorContext, string, bool, bool)
 	FindProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool)
 	AIAgentCallbackServiceToken() string
+	AIAgentPreviousCallbackServiceToken() string
 	AIPlatformActor(ctx context.Context) (PlatformActor, bool)
 	WithAIPlatformActor(ctx context.Context, actor PlatformActor) context.Context
 	AIToolService() *aitool.Service

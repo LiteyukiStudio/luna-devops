@@ -10,8 +10,10 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 type billingPeriodFixture struct {
@@ -23,13 +25,35 @@ type billingPeriodFixture struct {
 
 func newBillingPeriodFixture(t *testing.T) billingPeriodFixture {
 	t.Helper()
-	db := authIntegrationDB(t)
-	if err := db.AutoMigrate(
-		&model.UserWallet{}, &model.BillingUsageRecord{}, &model.BillingLedgerEntry{},
-		&model.Application{}, &model.DeploymentTarget{}, &model.BuildRun{}, &model.GatewayRoute{},
-	); err != nil {
-		t.Fatalf("migrate billing period models: %v", err)
-	}
+	db := testdb.OpenDatabase(t, testdb.Options{
+		SchemaPrefix: "billing_period_test",
+		Migrate: func(db *gorm.DB) error {
+			if err := db.Exec(`
+CREATE SCHEMA ai;
+CREATE TABLE ai.model_usages (
+    id text PRIMARY KEY,
+    owner_user_id text NOT NULL,
+    status text NOT NULL DEFAULT 'reported',
+    settlement_status text NOT NULL DEFAULT 'pending',
+    prompt_tokens bigint NOT NULL DEFAULT 0,
+    completion_tokens bigint NOT NULL DEFAULT 0,
+    total_tokens bigint NOT NULL DEFAULT 0,
+    cached_prompt_tokens bigint,
+    cache_write_prompt_tokens bigint,
+    reasoning_completion_tokens bigint,
+    input_credits_per_million numeric(24,8) NOT NULL DEFAULT 0,
+    output_credits_per_million numeric(24,8) NOT NULL DEFAULT 0,
+    cached_input_credits_per_million numeric(24,8) NOT NULL DEFAULT 0
+)`).Error; err != nil {
+				return err
+			}
+			return db.AutoMigrate(
+				&model.User{}, &model.Project{}, &model.ProjectMember{},
+				&model.UserWallet{}, &model.BillingUsageRecord{}, &model.BillingLedgerEntry{},
+				&model.Application{}, &model.DeploymentTarget{}, &model.BuildRun{}, &model.GatewayRoute{},
+			)
+		},
+	})
 	fixture := billingPeriodFixture{
 		user:  model.User{ID: "usr_billing_period", Email: "billing-period@example.com", Name: "Billing period", Role: authz.PlatformRoleUser, Language: "zh-CN", Password: "hash"},
 		admin: model.User{ID: "usr_billing_admin", Email: "billing-admin@example.com", Name: "Billing admin", Role: authz.PlatformRoleAdmin, Language: "zh-CN", Password: "hash"},

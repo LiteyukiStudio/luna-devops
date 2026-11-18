@@ -15,7 +15,6 @@ import type {
 } from "../domain.js"
 import { createId } from "../id.js"
 import type { PayloadCipher } from "../payload-cipher.js"
-import { parseRemoteProviderConfig } from "../provider/config-client.js"
 import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, internalSpanOptions, withSpan } from "../telemetry.js"
 import {
@@ -23,16 +22,19 @@ import {
   RunCheckpointConflictError,
   selectOperationsWithExecutedProtection,
   type ConversationListOptions,
+  type InterruptRunOptions,
   type Repository,
   type OrphanedRunRecovery,
   type RecordReportedModelUsageInput,
   type ResolveWaitingExternalRunInput,
+  type RunLeaseRenewalOutcome,
   type TimelinePageOptions,
   type RunStreamBatch,
   type UpdateRunOptions,
 } from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
 import { AgentDatabase, type AgentDatabaseOptions, type AgentDb, type AgentTx } from "./database.js"
+import { activeRunningRunVersionFence } from "./run-fence.js"
 import {
   mapConversation,
   mapConversationSummary,
@@ -283,6 +285,7 @@ export class PostgresRepository implements Repository {
   async renameConversationByAssistant(id: string, title: string, runId?: string) {
     return this.db.transaction(async (tx) => {
       if (runId) {
+        await this.lockAndVerifyRunningRunVersion(tx, runId)
         const boundRun = (await tx.select({ id: runs.id }).from(runs)
           .where(and(eq(runs.id, runId), eq(runs.conversationId, id))))[0]
         if (!boundRun) throw new Error("ai.run_conversation_mismatch")
@@ -331,7 +334,7 @@ export class PostgresRepository implements Repository {
         const activeRunIds = activeRuns.map(run => run.id)
         const activeTurnIds = [...new Set(activeRuns.map(run => run.turnId))]
         await tx.update(runs)
-          .set({ status: "canceled", wakeAt: null, rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
+          .set({ status: "canceled", wakeAt: null, leaseExpiresAt: null, rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
           .where(inArray(runs.id, activeRunIds))
         await tx.update(turns)
           .set({ status: "canceled" })
@@ -464,6 +467,24 @@ export class PostgresRepository implements Repository {
     return row ? mapRun(row) : undefined
   }
 
+  async assertRunningRunVersion(runId: string, expectedRunVersion: number): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await this.lockAndVerifyRunningRunVersion(tx, runId, expectedRunVersion)
+    })
+  }
+
+  private async lockAndVerifyRunningRunVersion(tx: AgentTx, runId: string, expectedRunVersion?: number): Promise<void> {
+    const effective = expectedRunVersion ?? activeRunningRunVersionFence(runId)
+    if (effective === undefined) return
+    const current = (await tx.select({ status: runs.status, rowVersion: runs.rowVersion })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .for("update"))[0]
+    if (!current || current.status !== "running" || current.rowVersion !== effective) {
+      throw new RunStateConflictError(runId, "running", "running", current?.status, current?.rowVersion)
+    }
+  }
+
   async getRunToolState(runId: string) {
     const row = (await this.db.select({
       toolCatalogDigest: runs.toolCatalogDigest,
@@ -515,6 +536,7 @@ export class PostgresRepository implements Repository {
             batch.terminal?.from ?? "running",
             batch.terminal?.to ?? "running",
             run.status,
+            run.rowVersion,
           )
         }
         if (existingItems > 0 || existingEvents > 0) throw new Error("ai.stream_batch_partial_conflict")
@@ -583,6 +605,7 @@ export class PostgresRepository implements Repository {
           const row = (await tx.update(runs).set({
             status: batch.terminal.to,
             wakeAt: null,
+            leaseExpiresAt: null,
             rowVersion: sql`${runs.rowVersion} + 1`,
             completedAt: new Date(batch.terminal.completedAt),
             ...(batch.terminal.errorCode ? { errorCode: batch.terminal.errorCode } : {}),
@@ -618,6 +641,7 @@ export class PostgresRepository implements Repository {
   ) {
     const requested = [...new Set(operationIds)].filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
     return this.db.transaction(async (tx) => {
+      await this.lockAndVerifyRunningRunVersion(tx, runId)
       const row = (await tx.select({ selectedOperationIds: runs.selectedOperationIds })
         .from(runs).where(eq(runs.id, runId)).for("update"))[0]
       if (!row) throw new Error("ai.run_not_found")
@@ -646,15 +670,17 @@ export class PostgresRepository implements Repository {
     return rows.map(row => row.digest)
   }
 
-  async cancelRun(ownerUserId: string, id: string) {
+  async cancelRun(ownerUserId: string, id: string, expectedRowVersion?: number) {
     return this.db.transaction(async (tx) => {
+      const conditions = [
+        eq(runs.id, id),
+        eq(runs.ownerUserId, ownerUserId),
+        sql`${runs.status} not in ('completed', 'failed', 'canceled', 'expired', 'interrupted')`,
+        ...(expectedRowVersion !== undefined ? [eq(runs.rowVersion, expectedRowVersion)] : []),
+      ]
       const row = (await tx.update(runs)
-        .set({ status: "canceled", wakeAt: null, rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
-        .where(and(
-          eq(runs.id, id),
-          eq(runs.ownerUserId, ownerUserId),
-          sql`${runs.status} not in ('completed', 'failed', 'canceled', 'expired', 'interrupted')`,
-        ))
+        .set({ status: "canceled", wakeAt: null, leaseExpiresAt: null, rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
+        .where(and(...conditions))
         .returning())[0]
       if (!row) return undefined
       await tx.update(turns).set({ status: "canceled" }).where(eq(turns.id, row.turnId))
@@ -773,12 +799,13 @@ export class PostgresRepository implements Repository {
           `)).rows[0]
       if (!candidate || typeof candidate.id !== "string") return undefined
       const candidateCiphertext = candidate.execution_snapshot_ciphertext === null && executionSnapshot
-        ? this.encryptRunExecutionSnapshot(executionSnapshot)
+        ? this.encryptRunExecutionSnapshot(candidate.id, executionSnapshot)
         : null
       const raw = (await tx.execute<Record<string, unknown>>(sql`
         update ai.runs r
         set status = 'running',
             wake_at = null,
+            lease_expires_at = now() + interval '60 seconds',
             row_version = r.row_version + 1,
             started_at = coalesce(r.started_at, now()),
             tool_catalog_digest = case
@@ -794,12 +821,54 @@ export class PostgresRepository implements Repository {
       if (!raw) return undefined
       const row = driverRow(runs, raw) as RunRow
       const restoredSnapshot = row.executionSnapshotCiphertext
-        ? this.decryptRunExecutionSnapshot(row.executionSnapshotCiphertext)
+        ? this.decryptRunExecutionSnapshot(row.id, row.executionSnapshotCiphertext)
         : undefined
       await tx.update(turns).set({ status: "running" }).where(eq(turns.id, row.turnId))
       await this.appendEventWith(tx, row.id, "run.running", { state: "running", rowVersion: row.rowVersion })
       return mapClaimedRun(row, restoredSnapshot)
     }))
+  }
+
+  async renewRunLease(runId: string, expectedRowVersion: number, leaseMs: number): Promise<RunLeaseRenewalOutcome> {
+    const boundedLeaseMs = Math.max(1_000, Math.floor(leaseMs))
+    const result = await this.db.execute<{ id: string }>(sql`
+      update ai.runs
+      set lease_expires_at = now() + (${boundedLeaseMs}::bigint * interval '1 millisecond')
+      where id = ${runId}
+        and status = 'running'
+        and row_version = ${expectedRowVersion}
+        and lease_expires_at > now()
+      returning id
+    `)
+    if (result.rows.length === 1) return "renewed"
+    const current = (await this.db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)))[0]
+    return current?.status === "canceled" ? "canceled" : "lost"
+  }
+
+  async updateRunToolCatalogDigest(runId: string, toolCatalogDigest: string, expectedRowVersion?: number): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const current = (await tx.select({
+        rowVersion: runs.rowVersion,
+        executionSnapshotCiphertext: runs.executionSnapshotCiphertext,
+      }).from(runs).where(eq(runs.id, runId)).for("update"))[0]
+      if (!current || (expectedRowVersion !== undefined && current.rowVersion !== expectedRowVersion)) return
+      let nextCiphertext = current.executionSnapshotCiphertext
+      if (current.executionSnapshotCiphertext && this.runExecutionSnapshotCipher) {
+        const snapshot = this.decryptRunExecutionSnapshot(runId, current.executionSnapshotCiphertext)
+        nextCiphertext = this.encryptRunExecutionSnapshot(runId, {
+          runtimeSettings: snapshot.runtimeSettings,
+          toolCatalogDigest,
+        })
+      }
+      const conditions = [
+        eq(runs.id, runId),
+        ...(expectedRowVersion !== undefined ? [eq(runs.rowVersion, expectedRowVersion)] : []),
+      ]
+      await tx.update(runs).set({
+        toolCatalogDigest,
+        executionSnapshotCiphertext: nextCiphertext,
+      }).where(and(...conditions))
+    })
   }
 
   async claimDueWaitingExternalRuns(limit: number, leaseMs: number, now?: Date): Promise<Run[]> {
@@ -887,6 +956,7 @@ export class PostgresRepository implements Repository {
       const updated = (await tx.update(runs).set({
         status: "queued",
         wakeAt: null,
+        leaseExpiresAt: null,
         rowVersion: sql`${runs.rowVersion} + 1`,
       }).where(and(eq(runs.id, input.runId), eq(runs.status, "waiting_external")))
         .returning({ rowVersion: runs.rowVersion }))[0]
@@ -900,22 +970,26 @@ export class PostgresRepository implements Repository {
     }))
   }
 
-  private encryptRunExecutionSnapshot(snapshot: RunExecutionSnapshot): string {
+  private encryptRunExecutionSnapshot(runId: string, snapshot: RunExecutionSnapshot): string {
     if (!this.runExecutionSnapshotCipher) throw new Error("ai.run_execution_snapshot_key_unavailable")
-    return this.runExecutionSnapshotCipher.encrypt(JSON.stringify(snapshot))
+    const minimalPayload = {
+      runtimeSettings: runtimeSettingsSnapshot(snapshot.runtimeSettings),
+      ...(snapshot.toolCatalogDigest ? { toolCatalogDigest: snapshot.toolCatalogDigest } : {}),
+    }
+    return this.runExecutionSnapshotCipher.encrypt(JSON.stringify(minimalPayload), runId)
   }
 
-  private decryptRunExecutionSnapshot(ciphertext: string): RunExecutionSnapshot {
+  private decryptRunExecutionSnapshot(runId: string, ciphertext: string): RunExecutionSnapshot {
     if (!this.runExecutionSnapshotCipher) throw new Error("ai.run_execution_snapshot_key_unavailable")
     try {
-      const parsed: unknown = JSON.parse(this.runExecutionSnapshotCipher.decrypt(ciphertext))
+      const parsed: unknown = JSON.parse(this.runExecutionSnapshotCipher.decrypt(ciphertext, runId))
       if (!isRecord(parsed) || !isRuntimeSettings(parsed.runtimeSettings))
         throw new Error("ai.run_execution_snapshot_invalid")
       if (parsed.toolCatalogDigest !== undefined && typeof parsed.toolCatalogDigest !== "string")
         throw new Error("ai.run_execution_snapshot_invalid")
+      // 显式忽略历史存量行中可能存在的 providerConfig，防止旧 apiKey 或大体积 toolCatalog 驻留内存
       return Object.freeze({
         runtimeSettings: runtimeSettingsSnapshot(parsed.runtimeSettings),
-        ...(parsed.providerConfig === undefined ? {} : { providerConfig: parseRemoteProviderConfig(parsed.providerConfig) }),
         ...(typeof parsed.toolCatalogDigest === "string" ? { toolCatalogDigest: parsed.toolCatalogDigest } : {}),
       })
     }
@@ -925,13 +999,22 @@ export class PostgresRepository implements Repository {
     }
   }
 
-  async listRunningRuns() {
-    return this.db.select({ id: runs.id, rowVersion: runs.rowVersion }).from(runs).where(eq(runs.status, "running"))
+  async listRunningRuns(now?: Date) {
+    const reference = now
+      ? sql`${now.toISOString()}::timestamptz`
+      : sql`now()`
+    return this.db.select({ id: runs.id, rowVersion: runs.rowVersion })
+      .from(runs)
+      .where(and(
+        eq(runs.status, "running"),
+        sql`(${runs.leaseExpiresAt} is null or ${runs.leaseExpiresAt} <= ${reference})`,
+      ))
+      .orderBy(asc(runs.leaseExpiresAt), asc(runs.id))
   }
 
-  async interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean> {
+  async interruptOrphanedRun(runId: string, expectedRunVersion: number, options?: InterruptRunOptions): Promise<boolean> {
     return this.db.transaction(async (tx) => {
-      const row = await this.interruptRunningRow(tx, runId, expectedRunVersion)
+      const row = await this.interruptRunningRow(tx, runId, expectedRunVersion, options?.ignoreActiveLease === true)
       return row !== undefined
     })
   }
@@ -947,14 +1030,18 @@ export class PostgresRepository implements Repository {
         .where(eq(runCheckpoints.runId, runId))
         .for("update"))[0]
       if (!checkpoint || checkpoint.recoveries >= maxRecoveries) {
-        const interrupted = await this.interruptRunningRow(tx, runId, expectedRunVersion)
+        const interrupted = await this.interruptRunningRow(tx, runId, expectedRunVersion, false)
         return interrupted === undefined ? "skipped" : "interrupted"
       }
       const row = (await tx.update(runs).set({
         status: "queued",
+        leaseExpiresAt: null,
         rowVersion: sql`${runs.rowVersion} + 1`,
       }).where(and(
-        eq(runs.id, runId), eq(runs.status, "running"), eq(runs.rowVersion, expectedRunVersion),
+        eq(runs.id, runId),
+        eq(runs.status, "running"),
+        eq(runs.rowVersion, expectedRunVersion),
+        sql`(${runs.leaseExpiresAt} is null or ${runs.leaseExpiresAt} <= now())`,
       )).returning({ turnId: runs.turnId, rowVersion: runs.rowVersion }))[0]
       if (!row) return "skipped"
       await tx.update(turns).set({ status: "queued" }).where(eq(turns.id, row.turnId))
@@ -985,42 +1072,53 @@ export class PostgresRepository implements Repository {
    */
   async saveRunCheckpoint(runId: string, advance: RunCheckpointAdvance): Promise<RunCheckpoint> {
     const revision = advance.expectedRevision + 1
-    const row = (await this.db.insert(runCheckpoints).values({
-      runId,
-      revision,
-      phase: advance.phase,
-      modelStep: advance.modelStep,
-      toolCallCount: advance.toolCallCount,
-      state: advance.state,
-    })
-      .onConflictDoUpdate({
-        target: runCheckpoints.runId,
-        set: {
-          revision: sql`excluded.revision`,
-          phase: sql`excluded.phase`,
-          modelStep: sql`excluded.model_step`,
-          toolCallCount: sql`excluded.tool_call_count`,
-          state: sql`excluded.state`,
-          updatedAt: sql`now()`,
-        },
-        setWhere: sql`${runCheckpoints.revision} = excluded.revision - 1`,
+    return this.db.transaction(async (tx) => {
+      await this.lockAndVerifyRunningRunVersion(tx, runId, advance.expectedRunVersion)
+      const row = (await tx.insert(runCheckpoints).values({
+        runId,
+        revision,
+        phase: advance.phase,
+        modelStep: advance.modelStep,
+        toolCallCount: advance.toolCallCount,
+        state: advance.state,
       })
-      .returning())[0]
-    if (row) return mapRunCheckpoint(row)
-    const current = await this.loadRunCheckpoint(runId)
-    if (current && current.revision === revision) return current
-    throw new RunCheckpointConflictError(runId, advance.expectedRevision, current?.revision)
+        .onConflictDoUpdate({
+          target: runCheckpoints.runId,
+          set: {
+            revision: sql`excluded.revision`,
+            phase: sql`excluded.phase`,
+            modelStep: sql`excluded.model_step`,
+            toolCallCount: sql`excluded.tool_call_count`,
+            state: sql`excluded.state`,
+            updatedAt: sql`now()`,
+          },
+          setWhere: sql`${runCheckpoints.revision} = excluded.revision - 1`,
+        })
+        .returning())[0]
+      if (row) return mapRunCheckpoint(row)
+      const currentRow = (await tx.select().from(runCheckpoints).where(eq(runCheckpoints.runId, runId)))[0]
+      const current = currentRow ? mapRunCheckpoint(currentRow) : undefined
+      if (current && current.revision === revision) {
+        return current
+      }
+      throw new RunCheckpointConflictError(runId, advance.expectedRevision, current?.revision)
+    })
   }
 
-  private async interruptRunningRow(tx: AgentTx, runId: string, expectedRunVersion: number) {
+  private async interruptRunningRow(tx: AgentTx, runId: string, expectedRunVersion: number, ignoreActiveLease = false) {
+    const conditions = [
+      eq(runs.id, runId),
+      eq(runs.status, "running"),
+      eq(runs.rowVersion, expectedRunVersion),
+      ...(ignoreActiveLease ? [] : [sql`(${runs.leaseExpiresAt} is null or ${runs.leaseExpiresAt} <= now())`]),
+    ]
     const row = (await tx.update(runs).set({
       status: "interrupted",
+      leaseExpiresAt: null,
       rowVersion: sql`${runs.rowVersion} + 1`,
       completedAt: sql`now()`,
       errorCode: "ai.agent_restarted",
-    }).where(and(
-      eq(runs.id, runId), eq(runs.status, "running"), eq(runs.rowVersion, expectedRunVersion),
-    )).returning({ turnId: runs.turnId, rowVersion: runs.rowVersion }))[0]
+    }).where(and(...conditions)).returning({ turnId: runs.turnId, rowVersion: runs.rowVersion }))[0]
     if (!row) return undefined
     await tx.update(turns).set({ status: "interrupted" }).where(eq(turns.id, row.turnId))
     await this.appendEventWith(tx, runId, "run.interrupted", {
@@ -1281,6 +1379,14 @@ export class PostgresRepository implements Repository {
         : typeof fields.wakeAt === "string"
           ? { wakeAt: new Date(fields.wakeAt) }
           : {}
+      const leasePatch = to === "running"
+        ? { leaseExpiresAt: sql`now() + interval '60 seconds'` }
+        : { leaseExpiresAt: null }
+      const conditions = [
+        eq(runs.id, runId),
+        eq(runs.status, from),
+        ...(fields.expectedRowVersion !== undefined ? [eq(runs.rowVersion, fields.expectedRowVersion)] : []),
+      ]
       const row = (await tx.update(runs)
         .set({
           status: to,
@@ -1289,13 +1395,14 @@ export class PostgresRepository implements Repository {
           completedAt: sql`coalesce(${completedAt}::timestamptz, ${runs.completedAt})`,
           errorCode: sql`coalesce(${errorCode}, ${runs.errorCode})`,
           ...wakeAtPatch,
+          ...leasePatch,
         })
-        .where(and(eq(runs.id, runId), eq(runs.status, from)))
+        .where(and(...conditions))
         .returning())[0]
       if (!row) {
         // 条件更新未命中时读取权威当前状态后抛出冲突，禁止改成先查后改的竞态实现
-        const current = (await tx.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)))[0]
-        const conflict = new RunStateConflictError(runId, from, to, current?.status)
+        const current = (await tx.select({ status: runs.status, rowVersion: runs.rowVersion }).from(runs).where(eq(runs.id, runId)))[0]
+        const conflict = new RunStateConflictError(runId, from, to, current?.status, current?.rowVersion)
         span.setAttribute("luna.run.actual_status", conflict.actualStatus ?? "missing")
         throw conflict
       }
@@ -1311,11 +1418,22 @@ export class PostgresRepository implements Repository {
   }
 
   async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
+    if (activeRunningRunVersionFence(value.runId) !== undefined) {
+      return this.db.transaction(async (tx) => {
+        await this.lockAndVerifyRunningRunVersion(tx, value.runId)
+        return this.appendItemWith(tx, value)
+      })
+    }
     return this.appendItemWith(this.db, value)
   }
 
   async updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
-    return this.updateItemWith(this.db, itemId, status, content)
+    return this.db.transaction(async (tx) => {
+      const existing = (await tx.select({ runId: items.runId }).from(items).where(eq(items.id, itemId)))[0]
+      if (!existing) throw new Error("ai.item_not_found")
+      await this.lockAndVerifyRunningRunVersion(tx, existing.runId)
+      return this.updateItemWith(tx, itemId, status, content)
+    })
   }
 
   async appendItemWithEvent(
@@ -1324,6 +1442,7 @@ export class PostgresRepository implements Repository {
     eventData: Record<string, unknown> = {},
   ) {
     return this.db.transaction(async (tx) => {
+      await this.lockAndVerifyRunningRunVersion(tx, value.runId)
       const item = await this.appendItemWith(tx, value)
       const event = await this.appendEventWith(tx, item.runId, eventType, { ...eventData, item })
       return { item, event }
@@ -1338,6 +1457,9 @@ export class PostgresRepository implements Repository {
     eventData: Record<string, unknown> = {},
   ) {
     return this.db.transaction(async (tx) => {
+      const existing = (await tx.select({ runId: items.runId }).from(items).where(eq(items.id, itemId)))[0]
+      if (!existing) throw new Error("ai.item_not_found")
+      await this.lockAndVerifyRunningRunVersion(tx, existing.runId)
       const item = await this.updateItemWith(tx, itemId, status, content)
       const event = await this.appendEventWith(tx, item.runId, eventType, { ...eventData, item })
       return { item, event }
@@ -1353,6 +1475,7 @@ export class PostgresRepository implements Repository {
     eventData: Record<string, unknown> = {},
   ) {
     return this.db.transaction(async (tx) => {
+      await this.lockAndVerifyRunningRunVersion(tx, resultValue.runId)
       const item = await this.updateItemWith(tx, itemId, status, content)
       const resultItem = await this.appendItemWith(tx, resultValue)
       if (resultItem.runId !== item.runId || resultItem.turnId !== item.turnId)
@@ -1362,8 +1485,12 @@ export class PostgresRepository implements Repository {
     })
   }
 
-  async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
+  async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">, expectedRowVersion?: number) {
     await this.db.transaction(async (tx) => {
+      if (expectedRowVersion !== undefined) {
+        const current = (await tx.select({ rowVersion: runs.rowVersion }).from(runs).where(eq(runs.id, runId)).for("update"))[0]
+        if (!current || current.rowVersion !== expectedRowVersion) return
+      }
       const streaming = await tx.select().from(items)
         .where(and(eq(items.runId, runId), eq(items.status, "streaming")))
         .orderBy(asc(items.timelineIndex))
@@ -1381,7 +1508,15 @@ export class PostgresRepository implements Repository {
   }
 
   async appendEvent(runId: string, type: string, data: Record<string, unknown>) {
-    return withSpan("agent.repository.event.append", internalSpanOptions(), () => this.appendEventWith(this.db, runId, type, data))
+    return withSpan("agent.repository.event.append", internalSpanOptions(), async () => {
+      if (activeRunningRunVersionFence(runId) !== undefined) {
+        return this.db.transaction(async (tx) => {
+          await this.lockAndVerifyRunningRunVersion(tx, runId)
+          return this.appendEventWith(tx, runId, type, data)
+        })
+      }
+      return this.appendEventWith(this.db, runId, type, data)
+    })
   }
 
   async getEvents(ownerUserId: string, runId: string, after: number) {

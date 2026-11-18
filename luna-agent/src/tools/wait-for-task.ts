@@ -107,7 +107,7 @@ export class HttpLunaApiTaskStatusClient implements TaskStatusClient {
       }
       catch (error) {
         if (request.signal?.aborted) throw error
-        const outcome = timeoutSignal.aborted ? "timeout" : "network_error"
+        const outcome = timeoutSignal.aborted ? "timeout" : "failed"
         agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "task_status", outcome })
         recordSpanError(span, new Error("ai.progress.unavailable", { cause: error }))
         return { kind: "transient_error", errorCode: "ai.progress.unavailable" }

@@ -19,12 +19,11 @@ func (h *Handler) ExecuteAIFetchWebPage(ctx *gin.Context) {
 }
 
 func (h *Handler) executeAIWebTool(ctx *gin.Context, operationID string) {
-	actor, bound := h.host.AIPlatformActor(ctx.Request.Context())
-	if !bound {
+	if _, bound := h.host.AIPlatformActor(ctx.Request.Context()); !bound {
 		writeErrorCode(ctx, http.StatusForbidden, "ai.tool_service_identity_required", "AI web tools require an active service-bound ToolCall")
 		return
 	}
-	user, resolved := h.currentAIPlatformUser(ctx)
+	user, resolved := h.currentUser(ctx)
 	if !resolved || user.ID == "" {
 		return
 	}
@@ -42,7 +41,6 @@ func (h *Handler) executeAIWebTool(ctx *gin.Context, operationID string) {
 	result, err := tools.Execute(ctx.Request.Context(), aitool.Request{
 		OperationID: operationID,
 		UserID:      user.ID,
-		SessionID:   actor.SessionID,
 		Arguments:   arguments,
 	})
 	if err != nil {

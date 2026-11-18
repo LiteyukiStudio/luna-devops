@@ -675,7 +675,7 @@ func TestAIRouteContractContainsP0Endpoints(t *testing.T) {
 		"PATCH /api/v1/ai/conversations/:conversationId",
 		"GET /api/v1/ai/conversations/:conversationId/timeline",
 		"POST /api/v1/ai/conversations/:conversationId/turns",
-		"POST /api/v1/ai/turns/:turnId/runs",
+		"POST /api/v1/ai/conversations/:conversationId/tool-actions",
 		"GET /api/v1/ai/runs/:runId/events",
 		"POST /api/v1/ai/runs/:runId/cancel",
 	}

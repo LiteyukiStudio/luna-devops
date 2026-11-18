@@ -26,6 +26,7 @@
 | `AI_AGENT_BASE_URL` | 空 | 设置 API 访问 Agent 的地址；填写 HTTP(S) URL。 |
 | `AI_AGENT_TIMEOUT` | `10s` | 限制 API 对 Agent 的非流式请求时长；填写 Go duration（如 `10s` 或 `1m`），SSE 不受此项限制。 |
 | `AI_INTERNAL_SECRET`<sup>3</sup> | 空 | 鉴权 API 与 Agent 的内部请求；填写至少 32 字节的密钥。 |
+| `AI_INTERNAL_SECRET_PREVIOUS`<sup>3</sup> | 空 | 在滚动轮换内部密钥期间同时验签旧版 Agent 回调凭证；填写至少 32 字节的旧密钥，平时留空，轮换完成后清空并重启。 |
 
 1. 说明：生产环境必须设置 `SECRET_ENCRYPTION_KEY`；更换后已有加密凭据将无法读取。
 2. 说明：这些配置只在数据库从未存在用户时创建首个管理员；已有有效管理员时不会覆盖账号或密码，已有用户但没有有效管理员时 API 会拒绝启动并要求先恢复管理员。
