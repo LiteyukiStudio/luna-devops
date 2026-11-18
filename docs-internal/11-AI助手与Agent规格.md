@@ -13,7 +13,7 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 汇总分散在多个页面中的状态、事件和日志。
 - 把用户带到正确页面、Tab 或资源详情。
 - 为表单预填安全的非密钥参数，由用户确认后保存。
-- 在用户批准当前高风险 ToolCall 后才执行受控的平台操作；每个新 ToolCall 都按当前参数单独决策。
+- 按平台三级工具审批策略（`L0` 只读自动、`L1` 可逆常规非生产变更支持本会话同操作记忆、`L2` 高危与生产变更逐次参数绑定批准）受控执行平台操作。
 - 保留可恢复的会话和执行记录，刷新页面不丢失诊断进度。
 
 核心原则：**助手代表当前用户工作，不拥有超出当前用户的权限。**
@@ -53,16 +53,19 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 
 ## 3. 执行与工具治理
 
-- Agent Loop：补充上下文 → 模型判断 → 工具调用（经 Schema 与审批校验）→ 结果回灌 → 直至
-  最终答复或明确终态（批准/补充输入/取消/超时/上限）。
-- 工具只有 `requiresApproval` 一个审批字段。普通工具直接执行；高风险工具支持拒绝或批准本次，
-  不保存跨 ToolCall 的永久豁免。拒绝只终结当前 ToolCall，让模型继续。
+- Agent Loop：补充上下文 → 模型判断 → 工具调用（经 Schema 与分级审批校验）→ 结果回灌 → 直至
+  最终答复或明确终态（批准/补充输入/后台任务等待/取消/超时/上限）。
+- 工具审批采用 `L0 / L1 / L2` 三级策略：
+  - `L0`（纯只读与发现工具，`requiresApproval=false`）：自动执行，不打断用户，也不写危险操作审计噪音；
+  - `L1`（可逆常规非生产写操作）：支持“拒绝”“批准本次（`approve`）”与“批准并在本会话记住（`approve_and_remember`）”。会话级记忆保存在 `ai.conversation_tool_approvals`（随会话删除级联清理），与 `ai.tool_calls` 状态转换原子绑定；同一会话后续同 `operationId` 非生产调用以 `approval_decision='remembered'` 自动放行，一旦目标涉及 `stage=prod` 或服务端返回 `428 ai.approval_required` 则立即升级为 `L2` 逐次审批；
+  - `L2`（删除、含 `sensitivePaths` 的凭据写入、任意脚本 Hook、发布/回滚/取消发布、网关路由、集群/RBAC/计费/系统配置及所有 `stage=prod` 变更）：强制逐次展示完整脱敏参数并绑定当次 `approve`，严禁会话记忆豁免。拒绝只终结当前 ToolCall，让模型继续。
+- 异步长任务（如构建 `build_run`、发布 `release`）采用双模式：
+  - 默认单步触发：平台写工具返回已受理 ID 与初始状态后立即回灌模型，模型生成 `present_card`（`template: live_task`，绑定 `live_progress`）并正常 `completed` 收口本轮，交由前端实时订阅进度；
+  - 多步串联编排或失败自动排障：模型显式调用内置工具 `wait_for_task`，执行器将 Run 置为 `waiting_external` 并写入指数退避 `wake_at` 立即释放执行槽位；到达终态（含 `succeeded` / `failed` / `canceled`）或超时后写回工具结果并将 Run 置回 `queued` 唤醒模型继续。
 - 取消 Run 时先把 PostgreSQL 终态推进为 `canceled`，并向当前模型请求和正在执行的平台工具 HTTP 请求
   传播 `AbortSignal`。外部系统已经提交的副作用无法由断开 HTTP 连接回滚，因此取消只保证 Run 终态
   不被迟到结果覆盖；业务副作用仍必须通过对应工具约定的权威回读确认。
-- queued Run 通过 `FOR UPDATE SKIP LOCKED` 原子更新为 running，并用 PostgreSQL `row_version` 约束
-  本次执行的终态提交，迟到写入不能覆盖已变化的 Run。单副本进程正常停止时把正在执行的 Run 收敛为
-  `interrupted`；启动时只处理上次进程遗留的 running Run，不从 Provider 或工具调用栈中间恢复执行。
+- queued Run 通过 `FOR UPDATE SKIP LOCKED` 原子抢占为 `running` 并写入 `lease_expires_at` 租约，执行期间后台续租（提交暂停或终态前立即停表），所有状态、工具与流式写入均受 `row_version` 乐观围栏保护；若续租发现 `row_version` 漂移（失租），旧执行器仅本地中止退出，绝不无围栏改写新执行器接管的 Run。租约过期且带有效 `ai.run_checkpoints` 的孤儿 Run 由对账重新入队恢复（上限 3 次），其余置为 `interrupted`。
 - 卡片时间线保留真实事件顺序。`placement: turn_end` 只在渲染层把单张、阻塞后续流程的交互表单
   投影到本轮末尾；默认使用 `inline`。多卡片、展示卡、进度卡或一轮出现多个末尾卡片时保持事件原位。
 
@@ -103,8 +106,7 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   维护重复白名单、执行路由或权限 fallback。
 - 部署配置的 `clusterId` 为空表示平台默认集群：只有存在多个候选且必须由用户决定时才用
   `listRuntimeClusters` 的真实结果询问，禁止无候选凭空问“选择哪个集群”。
-- 模型未来只使用 `present_card`、`request_input`、`request_choice` 三个通用交互工具；回复完成后
-  不再额外调用模型预测下一步。
+- 模型只使用各自拥有独立裁剪输入 Schema 的 `present_card`、`request_input`、`request_choice` 三个通用交互工具（服务端统一校验收敛为 `InteractionCardGroup` v1）；回复完成后不再额外调用模型预测下一步。
 - 运行时密钥只能通过 `updateDeploymentTargetRuntimeSecrets` 或
   `updateProjectRuntimeConfigSetRuntimeSecrets` 处理：请求使用 `items[]`，每项必须声明
   `valueMode: secret` 和 `operation: set | generate | clear`。`set` 的非空 `value` 可由普通模型工具
@@ -120,38 +122,18 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 ## 4. 记忆与上下文
 
 - 首版只提供会话内短期记忆，不自动建立跨会话长期记忆。
-- 上下文先放稳定的核心系统提示，再把本轮目标命中的 Skill/参考以独立、较后的 system message
-  加入，然后组装滚动摘要、近期完整原文和当前工具结果。新会话不做本地 Token 预检，直接
-  请求 Provider。未压缩历史超过 32 轮时压缩较旧内容并保留最近 16 轮；Provider 明确返回结构化
-  上下文超限错误时再压缩一次并以新的 attempt 重试。没有可压缩历史时返回
-  `ai.model_context_insufficient`。字节上限只用于传输与内存保护，不生成 Token 数据；鉴权、额度、
-  Provider 不可用和用量契约错误不允许被 fallback 掩盖。
+- 上下文固定以确定性的核心系统提示（含常驻交互与站内导航规则及领域工作流索引）开头以保护上游 Prompt Cache 前缀，随后组装结构化滚动摘要、近期完整轮次原文与当前轮工具消息（含按需调用的 `load_skill` 领域规程）。
+- **全链路严禁本地按字节数、字符数或固定比例猜测 Token 数**。每次发起模型调用前仅依据最近一次模型响应返回的权威 `usage.totalTokens` 判定水位：当 `lastUsage.totalTokens > model.maxContextTokens - reserveTokens`（或上游明确返回结构化上下文超限错误）时触发 `Compaction` 生成结构化摘要推进切点，同时保留近期完整轮次原文；无可压缩历史时返回 `ai.model_context_insufficient`。物理字节上限仅用于用户输入防 DoS（`maximumTurnInputBytes`）、内存流缓冲（`InMemoryRunStreamBus`）与 OTLP 属性保护，绝不参与上下文截断或计费推导。
 - 禁止进入上下文与记忆：Secret、Token、Cookie、Authorization、kubeconfig、Registry 密码、
-  Git Access Token、完整终端历史、未脱敏的第三方响应与日志。
+  Git Access Token、完整终端历史、未脱敏的第三方响应与日志。工具入参密文与运行执行快照使用 AES-256-GCM（绑定主键 AAD，支持 `AI_INTERNAL_SECRET_PREVIOUS` 平滑轮换）加密存储，快照不落盘明文 `apiKey` 或全量工具目录。
 
-### 4.1 模型能力、用量预留与结算
+### 4.1 模型能力、权威 Usage 门禁与异步流水结算
 
 - 模型目录的最大上下文、最大单次输出和 Prompt/Completion/缓存 Prompt 三类价格由 `internal/aimodel`
   统一校验；Run 创建时保存模型身份、能力与价格快照，后续管理变更不影响历史 Run。
-- Run 不设置累计 Token 或 Credits 预算。每次实际 Provider attempt 调用前在 `ai.model_credit_holds`
-  原子创建独立 hold，只保存模型硬上限与价格快照推导的最大信用风险，不保存或推导实际 Token。
-  SDK/HTTP 模型客户端不自动重试；上层因结构化上下文错误重试时，每次都创建新 attempt 和 hold。
-- `ai.model_usages` 只能由严格校验通过的 Provider 官方 `usage` 创建：`prompt_tokens`、
-  `completion_tokens`、`total_tokens`、可选 cached/cache-write Prompt 和 reasoning Completion 明细。缺失、
-  类型/范围/关系非法或调用结果不可知时，hold 进入 `reconciliation_required`，不写入可结算 usage。
-  明确被 Provider 拒绝或未发送的请求可释放 hold；过期且无法确定结果的 hold 进入对账，不会复制风险上限
-  伪造 Token。
-- Provider 官方用量超过 hold 假设时保留原值，hold/usage 进入 `hold_deficit` /
-  `reconciliation_required`。Worker 只选取 `reported + pending` 且 hold 为 `usage_recorded` 的记录结算。普通
-  Prompt 从官方关系扣除 cached/cache-write 子集，Completion 已包含 reasoning，不重复扣费。AI 费用
-  只属于发起用户个人钱包，
-  `project_id` 始终为空。钱包普通 debit 和负 adjustment 都要扣除未结束 hold。
-- 全链路锁序为 wallet → Run → hold（无 Run 的结算/普通扣费为 wallet → hold）。Run 锁只用于
-  attempt 顺序、归属与模型快照一致性，不承载累计预算。
-- 用户单轮文本固定为 128 KiB UTF-8；Web/API 原始 JSON 信封最多 1 MiB，Agent 内部
-  信封最多 2 MiB，后者只为 API 注入的 Run、页面上下文和模型快照留出有界余量。工具结果、
-  保留轮次和历史/摘要/续跑负载字节上限同样是 Agent 内置不变量；平台数据库、环境变量与动态配置
-  API 均不存储或下发 Token 输入/摘要预算。
+- 上游 Provider 请求固定开启 `include_usage: true`，忽略流式中间或尾随 `usage: null` 帧，兼容 OpenAI/DeepSeek 与 Claude/Gemini 网关口径归一化为 `{ input, output, cacheRead, cacheWrite, totalTokens }`。只要完成出口缺少合法官方 `usage`，立即抛出 `ai.provider_usage_unavailable` 终止请求并向前端透传明确提示，绝不静默放行或本地估算。
+- 计费与模型调用链解耦，不设 `ai.model_credit_holds` 事前锁表预冻结：创建 Turn 入口无锁校验用户钱包可用余额 `> 0`（`balance_credits - pending_spend > 0`）；每步模型调用凭官方 `usage` 直接写入不可变 `ai.model_usages`（状态 `pending`，与会话物理删除解耦保留账本）；后台 Worker 按用户单事务聚合批量实扣。AI 费用只归属发起用户个人钱包，`project_id` 始终为空。
+- 用户单轮文本固定为 128 KiB UTF-8；Web/API 原始 JSON 信封最多 1 MiB，Agent 内部信封最多 2 MiB。
 
 ### 4.2 Provider 协议方言与思维链回传
 
@@ -161,13 +143,8 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   新开始的 Run（Run 在 claim 时冻结快照），配置版本变化会写一条 `agent.provider_config.updated`。
 - 协议消息的 `reasoning` 字段保存该轮推理原文，只有需要回传思维链的方言写入请求；OpenAI 口径从
   构造上不产生该字段，也不会把响应里的 `reasoning_content` 当作协议字段解释。
-- DeepSeek 思考模式默认开启，携带 `tools` 的请求必须回传每一轮 assistant 的完整
-  `reasoning_content`（含没有工具调用的轮次），缺失即 400。同一 Run 内存续跑直接携带模型原文，
-  审批或进程中断后的恢复从已脱敏的思考条目重建；网关不回传推理原文时发送固定非空占位（部分网关
-  的 DTO 会把空串当缺省丢弃），不把正文伪装成思维链。上游拒绝原因以脱敏截断的形式写入
-  `provider.error.message` 日志字段。
-- 推理原文与正文、工具结果一样受历史/续跑字节预算约束，并计入 `gen_ai.output.messages` 的
-  reasoning 部分；不重复进入输入消息的遥测内容。
+- DeepSeek 思考模式下，仅对当前未结束轮次（最后一条 `user` 消息之后）的 `assistant` 工具子步骤回传原样 `reasoning_content`，已完成的历史轮次不回传推理文本以保护上下文窗口与缓存命中；网关在当前轮子步骤未回传推理原文时回填单空格 `" "`（穿透部分代理 DTO 的 `omitempty` 空串丢弃），绝不伪造中文占位或把正文冒充思维链。上游拒绝原因以脱敏截断形式写入 `provider.error.message` 日志字段。
+- 推理原文计入 `gen_ai.output.messages` 的 reasoning 部分；高敏内容采集（`AI_OBSERVABILITY_CAPTURE_CONTENT=true`）入口叠加工具 `sensitivePaths` 遮罩与常见凭据特征脱敏。
 
 ## 5. 安全与 Prompt Injection 防护
 
@@ -205,19 +182,15 @@ Agent 只有在结构化状态、事件和受控日志不足以形成诊断证�
   使用合计上限并返回截断标志。
 - 需要修改部署、配置、网关或运行态资源时使用对应业务工具，不通过命令执行绕过批准、审计和幂等。
 
-## 8. 运行时与 Skill 覆盖
+## 8. 渐进式领域 Skill 与高频诊断聚合
 
-Agent 通过 Skill 引导完成平台工作流。Skill 以公开使用文档、控制台主要页面和业务 API 的高频
-用户旅程为覆盖口径，一个工作流需同时具备"发现目标 → 收集参数 → 真实操作（缺工具时明确阻塞）→
-处理单次批准/冲突/异步 → 权威回读 → 给出终态结论"才计为已覆盖。
+Agent 采用“常驻核心交互与站内导航规则 + 按业务域按需加载领域 Skill（内置 `load_skill` 工具）”的两层架构：
+- 常驻层（`luna-devops-interaction`、`luna-devops-navigation`）固定在系统提示前缀中，保证多步工具调用与跨轮对话的 Prompt Cache 前缀稳定，仅维护通用安全边界、卡片/路由契约与 6 大业务域索引（`workspace-iam`、`source-registry-build`、`application-deployment`、`runtime-volumes`、`gateway-topology`、`diagnostics-governance`）。
+- 领域层通过 `load_skill` 在当前 Run 内按需加载 1–3 个业务域规程并自动去重；排障场景优先调用只读诊断聚合工具（`getProjectDiagnostics`、`getDeploymentTargetDiagnostics`）一次性获取实时状态、近期异常构建/发布、异常 Pod、告警事件与网关路由状态，再沿交付链首个异常边界下钻具体日志。
 
-Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，
-明确报告"尚未执行"。
+Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，明确报告"尚未执行"。
 
-变更工具目录、Schema、Scope 或审批要求时，至少验证完整目录分页、覆盖全部可用 operation 的中英文
-检索矩阵、相似读写操作边界、Run 内自动加载与 16 项 LRU、精确详情缓存、目录热更新隔离、未加载
-工具不可见、集中排除原因、普通与高危工具、拒绝/单次批准、跨用户/Session/项目空间
-隔离，以及一条真实副作用和权威回读。检索词不得进入普通遥测属性、日志字段或 Metric label。
+变更工具目录、Schema、Scope 或审批分级时，至少验证完整目录分页、覆盖全部可用 operation 的中英文检索矩阵、相似读写操作边界、Run 内自动加载与 16 项 LRU、精确详情缓存、目录热更新隔离、未加载工具不可见、集中排除原因、`L0/L1/L2` 三级审批与会话级记忆隔离、跨用户/Session/项目空间隔离，以及真实副作用和权威回读。检索词不得进入普通遥测属性、日志字段或 Metric label。
 
 ## 9. 参考与事实源
 

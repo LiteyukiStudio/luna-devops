@@ -18,6 +18,7 @@ import {
 } from "../telemetry.js"
 import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToolOperationId } from "../tools/business-card-tools.js"
 import { internalToolOperationIds } from "../tools/internal-operation-ids.js"
+import { loadDomainSkills, loadSkillInput } from "../tools/skill-loader.js"
 import { getToolDetailsInput } from "../tools/tool-details.js"
 import {
   DEFAULT_SAME_OPERATION_SOFT_WARN_THRESHOLD,
@@ -70,6 +71,7 @@ export type ToolStepState = {
   providerArgumentRepairAttempts: Map<string, number>
   searchedToolQueries: Map<string, ModelToolSearchResult>
   detailedToolRequests: Map<string, ModelToolDetailsResult>
+  loadedSkillIds: Set<string>
 }
 
 export type ToolBatchResult =
@@ -142,6 +144,7 @@ export class ToolStepRunner {
       providerArgumentRepairAttempts: restoredArgumentRepairAttempts(checkpoint),
       searchedToolQueries: restoredInternalToolResults(executionInput.toolInteractions, "search_tools"),
       detailedToolRequests: restoredInternalToolResults(executionInput.toolInteractions, "get_tool_details"),
+      loadedSkillIds: reconstructedLoadedSkillIds(executionInput.toolInteractions),
     }
   }
 
@@ -169,6 +172,7 @@ export class ToolStepRunner {
     let platformToolCalled = false
     let toolDetailsCalled = false
     let searchToolsCalled = false
+    let skillLoadCalled = false
     let businessCardCalled = false
     let hasInteractiveCard = false
     let cardRepairExhaustedInBatch = false
@@ -661,6 +665,76 @@ export class ToolStepRunner {
         })
         continue
       }
+      if (toolCall.operationId === "load_skill") {
+        skillLoadCalled = true
+        const readCallCount = bumpInternalReadCount("load_skill")
+        const parsedSkill = loadSkillInput.safeParse(toolCall.arguments)
+        if (!parsedSkill.success) {
+          const errorCode = "ai.tool_arguments_invalid"
+          const issues = parsedSkill.error.issues.map(issue => ({ path: issue.path, code: issue.code }))
+          await this.internalTools.recordToolCall(
+            run.id,
+            run.turnId,
+            "load_skill",
+            toolCall.arguments,
+            "failed",
+            { issues },
+            errorCode,
+            toolCall.id,
+            undefined,
+            batchId,
+          )
+          recoverableToolError = true
+          commitCallResult(toolCall, {
+            status: "failed",
+            errorCode,
+            retryable: true,
+            issues,
+            guidance: withSameOperationSoftWarning(
+              "请传入 1 至 3 个已注册领域 skillIds（workspace-iam、source-registry-build、application-deployment、runtime-volumes、gateway-topology、diagnostics-governance）。",
+              "load_skill",
+              readCallCount,
+            ),
+          })
+          continue
+        }
+        const skillArgs = parsedSkill.data
+        const loadStartedAt = performance.now()
+        const skillResult = await this.traceInternalTool(
+          "load_skill",
+          run.id,
+          skillArgs,
+          async () => loadDomainSkills(skillArgs.skillIds, state.loadedSkillIds),
+          toolCall.id,
+        )
+        for (const id of skillResult.loadedSkillIds) {
+          state.loadedSkillIds.add(id)
+        }
+        await this.internalTools.recordToolCall(
+          run.id,
+          run.turnId,
+          "load_skill",
+          skillArgs,
+          "succeeded",
+          skillResult,
+          undefined,
+          toolCall.id,
+          performance.now() - loadStartedAt,
+          batchId,
+        )
+        commitCallResult(toolCall, {
+          status: "succeeded",
+          ...skillResult,
+          guidance: withSameOperationSoftWarning(
+            skillResult.cacheHit
+              ? "请求的领域工作流已在本轮加载过，请直接结合已有规程调用具体平台工具推进执行，不要重复加载。"
+              : "领域工作流规程已加载。下一步请按规程检索或直接调用对应的平台工具推进目标；加载技能本身不代表任何平台操作已执行。",
+            "load_skill",
+            readCallCount,
+          ),
+        })
+        continue
+      }
       if (toolCall.operationId === "search_docs" || toolCall.operationId === "list_docs" || toolCall.operationId === "read_doc") {
         const readCallCount = bumpInternalReadCount(toolCall.operationId)
         const docsResult = await this.runDocsTool(run, toolCall, batchId)
@@ -790,9 +864,9 @@ export class ToolStepRunner {
         ...(spinWarning ? { guidance: spinWarning } : {}),
       })
     }
-    if (!platformToolCalled && businessCardCalled && hasInteractiveCard && !recoverableToolError && !cardRepairExhaustedInBatch && !toolDetailsCalled && !searchToolsCalled)
+    if (!platformToolCalled && businessCardCalled && hasInteractiveCard && !recoverableToolError && !cardRepairExhaustedInBatch && !toolDetailsCalled && !searchToolsCalled && !skillLoadCalled)
       return { kind: "complete" }
-    if (recoverableToolError || cardRepairExhaustedInBatch || toolDetailsCalled || searchToolsCalled)
+    if (recoverableToolError || cardRepairExhaustedInBatch || toolDetailsCalled || searchToolsCalled || skillLoadCalled)
       return { kind: "continue" }
     if (!platformToolCalled && businessCardCalled)
       return { kind: "continue" }
@@ -1026,10 +1100,26 @@ function toPendingToolCalls(calls: Array<ModelToolCall & { id: string }>): RunPe
 const internalReadToolOperationIds = new Set([
   "search_tools",
   "get_tool_details",
+  "load_skill",
   "search_docs",
   "list_docs",
   "read_doc",
 ])
+
+function reconstructedLoadedSkillIds(interactions: RunExecutionInput["toolInteractions"]): Set<string> {
+  const loaded = new Set<string>()
+  for (const item of interactions) {
+    if (item.type !== "tool_call" || item.content.operationId !== "load_skill" || item.content.status !== "succeeded") continue
+    const result = item.content.result
+    if (!result || typeof result !== "object") continue
+    const ids = (result as Record<string, unknown>).loadedSkillIds
+    if (!Array.isArray(ids)) continue
+    for (const id of ids) {
+      if (typeof id === "string" && id) loaded.add(id)
+    }
+  }
+  return loaded
+}
 
 function reconstructedExecutedOperationIds(interactions: RunExecutionInput["toolInteractions"]): Set<string> {
   const executed = new Set<string>()

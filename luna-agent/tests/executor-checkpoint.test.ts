@@ -435,6 +435,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
       providerArgumentRepairAttempts: new Map(),
       searchedToolQueries: new Map(),
       detailedToolRequests: new Map(),
+      loadedSkillIds: new Set(),
     }
     await toolStep.recoverInterruptedBatch(runId, state)
     const eventCount = (await repository.getEvents(owner, runId, 0)).length

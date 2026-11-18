@@ -31,6 +31,31 @@ func (h *Handlers) observeGatewayRouteStatuses(ctx context.Context, routes []mod
 	})
 }
 
+// observeGatewayRouteDiagnostics 实时读取 HTTPRoute 状态、TLS 证书状态并计算 AccessURL，
+// 不执行外部 CNAME DNS 网络探测，供项目与部署诊断聚合接口使用。
+func (h *Handlers) observeGatewayRouteDiagnostics(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return h.observeGatewayRoutesWith(ctx, routes, func(ctx context.Context, route model.GatewayRoute) model.GatewayRoute {
+		probeCtx, cancel := context.WithTimeout(ctx, gatewayObservationTimeout)
+		defer cancel()
+		if withURL, err := h.gatewayRouteWithAccessURL(route, probeCtx); err == nil {
+			route.AccessURL = withURL.AccessURL
+		}
+		route, probe, observed := h.observeGatewayRouteStatus(probeCtx, route)
+		if !observed {
+			return route
+		}
+		if probe == nil {
+			route.CertificateStatus = gatewayRouteCertificateFallback(route)
+			return route
+		}
+		if strings.TrimSpace(route.AccessURL) == "" {
+			route.AccessURL = gatewayRouteAccessURL(route, h.gatewayPublicScheme(probe.cluster), h.gatewayPublicPort(probe.cluster))
+		}
+		observeGatewayRouteCertificate(probeCtx, probe.client, probe.cluster, probe.namespace, probe.resourceName, &route)
+		return route
+	})
+}
+
 func (h *Handlers) observeGatewayRoutesWith(ctx context.Context, routes []model.GatewayRoute, observe func(context.Context, model.GatewayRoute) model.GatewayRoute) []model.GatewayRoute {
 	const concurrency = 6
 	result := append([]model.GatewayRoute(nil), routes...)

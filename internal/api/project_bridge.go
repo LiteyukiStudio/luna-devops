@@ -45,6 +45,10 @@ func (host projectHost) ObserveGatewayRouteStatuses(ctx context.Context, routes 
 	return host.handlers.domains.gateway.ObserveGatewayRouteStatuses(ctx, routes)
 }
 
+func (host projectHost) ObserveGatewayRouteDiagnostics(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return host.handlers.domains.gateway.ObserveGatewayRouteDiagnostics(ctx, routes)
+}
+
 func (h *Handlers) authorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool) {
 	return h.domains.project.AuthorizeProject(ctx, action)
 }

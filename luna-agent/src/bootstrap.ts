@@ -21,6 +21,7 @@ import { businessCardTools } from "./tools/business-card-tools.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 import { searchToolsTool } from "./tools/tool-search.js"
 import { getToolDetailsTool } from "./tools/tool-details.js"
+import { loadSkillTool } from "./tools/skill-loader.js"
 import { HttpLunaApiTaskStatusClient, waitForTaskTool } from "./tools/wait-for-task.js"
 import { InMemoryRunStreamBus } from "./run-stream-bus.js"
 import { runtimeSettingsFromRemote } from "./runtime-settings.js"
@@ -129,6 +130,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
             ...retrievedTools,
             searchToolsTool,
             getToolDetailsTool,
+            loadSkillTool,
             searchDocsTool,
             listDocsTool,
             readDocTool,

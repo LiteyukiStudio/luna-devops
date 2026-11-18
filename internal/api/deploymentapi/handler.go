@@ -72,6 +72,7 @@ type Host interface {
 	DeploymentTargetRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference runtimeapi.DeploymentTargetRuntimeTerminalAuthorizationReference) bool
 	FindProject(ctx *gin.Context) (model.Project, bool)
 	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
+	ObserveGatewayRouteDiagnostics(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute
 }
 
 type Handler struct {

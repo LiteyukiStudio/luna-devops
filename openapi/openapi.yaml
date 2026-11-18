@@ -2321,6 +2321,34 @@ paths:
               schema: { $ref: "#/components/schemas/ProjectOverview" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /api/v1/projects/{projectId}/diagnostics:
+    get:
+      operationId: getProjectDiagnostics
+      x-luna-cli:
+        requiredScopes: ["project:read", "build:read", "deployment:read", "gateway:read"]
+      tags: [Projects]
+      summary: Get project space delivery and gateway diagnostic summary
+      description: >-
+        Returns a no-store point-in-time read-only diagnostic aggregation for one project space,
+        combining application count, active or recently failed builds and releases, and live
+        gateway access route readiness with unhealthy route details.
+      x-luna-agent:
+        purpose: { zh: 一次性读取项目空间交付与访问入口诊断汇总：应用数量、进行中或近期失败的构建与发布摘要、访问入口实时就绪统计及未就绪路由列表。, en: Read a single-call project delivery and gateway diagnostic summary including active or failed builds and releases, live route readiness, and unhealthy routes. }
+        aliases: { zh: [项目诊断概览, 项目健康检查, 排查项目异常, 查看项目失败构建与发布], en: [project diagnostics, project health summary, diagnose project issues] }
+        avoidWhen: { zh: 已定位到具体异常部署目标时应直接调用 getDeploymentTargetDiagnostics，需要全部分页历史时使用对应列表工具。, en: Use getDeploymentTargetDiagnostics once a specific deployment target is identified, or list tools when full paginated history is required. }
+        preconditions: { zh: [提供真实 projectId], en: [Provide an authoritative projectId] }
+        successEvidence: { zh: 返回统计窗口内的异常构建、异常发布与未就绪网关路由汇总；accessRoutes.summary.status 为 unavailable 时必须如实说明网关观测不可达，不得当作 0 个异常或 0 个就绪。, en: Returns windowed build/release issues and unhealthy gateway routes; report accessRoutes.summary.status=unavailable as unobservable rather than zero ready routes. }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Live project diagnostic summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectDiagnostics" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/projects/{projectId}/pin:
     put:
       operationId: pinProject
@@ -3737,6 +3765,37 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DeploymentTargetEventPage" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/diagnostics:
+    get:
+      operationId: getDeploymentTargetDiagnostics
+      x-luna-cli:
+        requiredScopes: ["deployment:read", "gateway:read"]
+      tags: [Deployments]
+      summary: Get live diagnostic snapshot of a deployment target
+      description: >-
+        Returns a no-store point-in-time read-only diagnostic snapshot of one deployment target,
+        combining workload replica observation, prioritized runtime pod statuses, recent Warning
+        and Normal Kubernetes events, latest release history, and live-observed gateway routes
+        without exposing environment values or secrets.
+      x-luna-agent:
+        purpose: { zh: 一次性聚合读取单个部署目标的实时诊断快照：工作负载副本观测、异常优先的运行 Pod 列表、Warning 优先的 Kubernetes 事件、最近发布记录及绑定网关路由状态。, en: Aggregate live workload observation, prioritized runtime pods, Warning-first Kubernetes events, recent releases, and bound gateway routes for one deployment target in a single call. }
+        aliases: { zh: [部署诊断快照, 排查部署异常, 查看服务为什么挂了, 诊断部署目标状态], en: [deployment target diagnostics, diagnose deployment failure, inspect service health] }
+        avoidWhen: { zh: 需要读取具体容器标准输出或崩溃遗言正文时调用 getDeploymentTargetRuntimeLogs。, en: Use getDeploymentTargetRuntimeLogs when container stdout/stderr log text is needed. }
+        preconditions: { zh: [提供真实 projectId、applicationId 和 targetId], en: [Provide authoritative projectId, applicationId, and targetId] }
+        successEvidence: { zh: 返回工作负载状态、Pod 与事件观测（status=unavailable 时如实报告集群不可达）、最近发布记录及网关路由状态。, en: Returns workload observation, pod/event observations (reporting status=unavailable honestly), recent releases, and gateway route statuses. }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "200":
+          description: Live deployment target diagnostic snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTargetDiagnostics" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -12877,6 +12936,84 @@ components:
           description: Stable reason when status is not ready.
         observedAt: { type: string, format: date-time }
       required: [status, total, observedAt]
+    ProjectDiagnostics:
+      type: object
+      additionalProperties: false
+      required: [windowDays, applications, builds, releases, accessRoutes]
+      properties:
+        windowDays: { type: integer, minimum: 1 }
+        applications: { type: integer, format: int64, minimum: 0 }
+        builds:
+          type: object
+          additionalProperties: false
+          required: [activeCount, failedCount, recentIssues]
+          properties:
+            activeCount: { type: integer, format: int64, minimum: 0 }
+            failedCount: { type: integer, format: int64, minimum: 0 }
+            recentIssues:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, applicationId, deploymentTargetId, status, triggerType, createdAt]
+                properties:
+                  id: { type: string }
+                  applicationId: { type: string }
+                  deploymentTargetId: { type: string }
+                  status: { type: string }
+                  failureCode: { type: string }
+                  triggerType: { type: string }
+                  sourceBranch: { type: string }
+                  sourceCommit: { type: string }
+                  createdAt: { type: string, format: date-time }
+                  finishedAt: { type: string, format: date-time }
+        releases:
+          type: object
+          additionalProperties: false
+          required: [activeCount, failedCount, recentIssues]
+          properties:
+            activeCount: { type: integer, format: int64, minimum: 0 }
+            failedCount: { type: integer, format: int64, minimum: 0 }
+            recentIssues:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, applicationId, deploymentTargetId, imageRef, type, status, createdAt]
+                properties:
+                  id: { type: string }
+                  applicationId: { type: string }
+                  deploymentTargetId: { type: string }
+                  imageRef: { type: string }
+                  type: { type: string }
+                  status: { type: string }
+                  failureCode: { type: string }
+                  message: { type: string }
+                  createdAt: { type: string, format: date-time }
+                  finishedAt: { type: string, format: date-time }
+        accessRoutes:
+          type: object
+          additionalProperties: false
+          required: [summary, unhealthyItems]
+          properties:
+            summary: { $ref: "#/components/schemas/ProjectOverviewAccessRoutes" }
+            unhealthyItems:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, applicationId, deploymentTargetId, host, path, tlsMode, status]
+                properties:
+                  id: { type: string }
+                  applicationId: { type: string }
+                  deploymentTargetId: { type: string }
+                  host: { type: string }
+                  path: { type: string }
+                  tlsMode: { type: string }
+                  status: { type: string }
+                  observationCode: { type: string }
+                  certificateStatus: { type: string }
+                  accessUrl: { type: string }
     DashboardOverview:
       type: object
       properties:
@@ -16401,6 +16538,89 @@ components:
         status: { type: string, enum: [ready, unavailable] }
         observationCode: { type: string }
         observedAt: { type: string, format: date-time }
+    DeploymentTargetDiagnostics:
+      type: object
+      additionalProperties: false
+      required: [target, pods, events, recentReleases, accessRoutes]
+      properties:
+        target:
+          type: object
+          additionalProperties: false
+          required: [id, projectId, applicationId, name, stage, workloadType, enabled, configuredReplicas, desiredReplicas, readyReplicas, availableReplicas, updatedReplicas, status]
+          properties:
+            id: { type: string }
+            projectId: { type: string }
+            applicationId: { type: string }
+            name: { type: string }
+            stage: { type: string }
+            workloadType: { type: string }
+            enabled: { type: boolean }
+            effectiveClusterId: { type: string }
+            imageRef: { type: string }
+            configuredReplicas: { type: integer, minimum: 0 }
+            desiredReplicas: { type: integer, format: int32, minimum: 0 }
+            readyReplicas: { type: integer, format: int32, minimum: 0 }
+            availableReplicas: { type: integer, format: int32, minimum: 0 }
+            updatedReplicas: { type: integer, format: int32, minimum: 0 }
+            status: { type: string }
+            observationCode: { type: string }
+            observedAt: { type: string, format: date-time }
+        pods:
+          type: object
+          additionalProperties: false
+          required: [status, observationCode, observedAt, total, unhealthyCount, items]
+          properties:
+            status: { type: string, enum: [ready, not-configured, unavailable] }
+            observationCode: { type: string }
+            observedAt: { type: string, format: date-time }
+            total: { type: integer, minimum: 0 }
+            unhealthyCount: { type: integer, minimum: 0 }
+            items: { type: array, items: { $ref: "#/components/schemas/DeploymentTargetRuntimePod" } }
+        events:
+          type: object
+          additionalProperties: false
+          required: [status, observationCode, observedAt, total, warningCount, items]
+          properties:
+            status: { type: string, enum: [ready, not-configured, unavailable] }
+            observationCode: { type: string }
+            observedAt: { type: string, format: date-time }
+            total: { type: integer, minimum: 0 }
+            warningCount: { type: integer, minimum: 0 }
+            items: { type: array, items: { $ref: "#/components/schemas/DeploymentTargetEvent" } }
+        recentReleases:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, revision, type, imageRef, status, createdAt]
+            properties:
+              id: { type: string }
+              revision: { type: integer, minimum: 1 }
+              type: { type: string }
+              imageRef: { type: string }
+              status: { type: string }
+              failureCode: { type: string }
+              message: { type: string }
+              createdAt: { type: string, format: date-time }
+              startedAt: { type: string, format: date-time }
+              finishedAt: { type: string, format: date-time }
+        accessRoutes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, host, path, servicePort, tlsMode, enabled, status]
+            properties:
+              id: { type: string }
+              host: { type: string }
+              path: { type: string }
+              servicePort: { type: integer, minimum: 1 }
+              tlsMode: { type: string }
+              enabled: { type: boolean }
+              status: { type: string }
+              observationCode: { type: string }
+              certificateStatus: { type: string }
+              accessUrl: { type: string }
     RuntimePodLogsResult:
       type: object
       additionalProperties: false

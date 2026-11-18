@@ -13,9 +13,7 @@
 - 基线为当前已合入实现；未合入 PR #20 的补偿改动不在记录范围内。
 - 本文件不是 API 契约。字段、错误码和迁移以代码与生成物为准。
 
-当前 Phase 4 分支与主分支修订方案存在设计偏差：本分支保留写后权威验证和 `waiting_external`，
-异步工具须确认外部终态后才允许模型结束；13 号方案 §5.3、§8.5、§14 则要求受理后回模型。
-本次合并保留已有实现；该偏差尚未收敛，不能据此宣称符合修订方案的全部验收要求。
+现行代码已完成全链路瘦身重构（Step 1–7），早期阶段关于“强制写后轮询阻断 `completionBlockers`”的设计偏差已彻底收敛为“单步 `live_task` 实时卡片收口 + 多步显式 `wait_for_task`（`waiting_external` + `wake_at`）持久化挂起唤醒”，详见文末第 12 节。第 3–11 节保留为各历史阶段的演进记录。
 
 ## 2. 事实源清单
 
@@ -519,3 +517,21 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
   当前构建与发布链路主要使用确定性 API 替身验证控制流，不代表外部平台交付完成。
 - PostgreSQL 幂等集成测试在未配置数据库时会跳过；真实外部平台 E2E、迁移重放和完整发布门禁
   不能以当前单元与集成测试结果代替。
+
+## 12. 全链路瘦身重构与收官变更记录（Step 1–7）
+
+状态：已合入当前主线，取代第 11 节中的强制阻塞轮询（`verification` / `completionBlockers`）、字节比例伪预算及 `model_credit_holds` 预冻结机制。
+
+1. **权威 Usage 门禁与零本地 Token 估算**：
+   - Provider 出口强制校验上游官方 `usage` 并归一化为 `{ input, output, cacheRead, cacheWrite, totalTokens }`，缺失立即抛 `ai.provider_usage_unavailable` 透传前端提示；
+   - 删除所有按字节数/字符比例裁剪历史与工具载荷的代码，仅依据 `lastUsage.totalTokens > model.maxContextTokens - reserveTokens` 触发 `Compaction` 摘要压缩。
+2. **事后异步流水计费与删会话解耦**：
+   - 移除 `ai.model_credit_holds` 事前锁表预冻结状态机；Turn 入口无锁校验可用余额 `> 0`，每步模型调用落不可变 `ai.model_usages`（解耦会话级联删除），由后台 Worker 聚合结算。
+3. **异步长任务双模式、卡片瘦身与 Run 租约围栏**：
+   - 淘汰自动拦截异步操作死等的 `ToolVerificationRunner` 与 `completionBlockers`；默认单步触发返回受理 ID 后由模型发 `present_card(template: live_task)` 正常结束本轮，多步串联显式调用 `wait_for_task` 写入 `waiting_external` + `wake_at` 释放槽位，终态（含失败/超时）唤醒模型继续执行或排障；
+   - `present_card`、`request_input`、`request_choice` 拆分为各自独立精简输入 Schema；`/tool-actions` 与 `/approvals` 统一走异步入队执行；
+   - `ai.runs` 引入 `lease_expires_at` 续租与全链路 `row_version` 围栏，终态/暂停提交前停表，失租仅本地中止退出；`PayloadCipher` 绑定主键 AAD 并支持 `AI_INTERNAL_SECRET_PREVIOUS` 密钥轮换。
+4. **工具目录归一化、三级 `ToolPolicy` 与渐进式领域 Skill**：
+   - 修复 OpenAPI `summary` 假中文兜底、27 个 Tag 中文词表、CJK 检索分词与 `allOf` / `if-then-else` / `nullable` / `sensitivePaths` 转换；
+   - 落地 `L0`（只读自动）、`L1`（可逆常规非生产变更支持当前会话 `ai.conversation_tool_approvals` 原子记忆授权）、`L2`（删除、敏感凭据、脚本 Hook、发布/网关及 `stage=prod` 逐次参数绑定审批）；
+   - 常驻系统提示收敛核心交互/站内路由规范与 6 大领域索引，新增内置 `load_skill` 按需加载领域工作流并跨恢复去重，配套新增 `getProjectDiagnostics` 与 `getDeploymentTargetDiagnostics` 高密度只读诊断聚合工具。

@@ -9,6 +9,7 @@ export const internalToolOperationIds = new Set<string>([
   "rename_conversation",
   "navigate_to_route",
   "wait_for_task",
+  "load_skill",
   "get_tool_details",
   "search_tools",
   "search_docs",

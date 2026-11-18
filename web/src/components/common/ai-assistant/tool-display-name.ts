@@ -50,6 +50,8 @@ const resourceAliases: Record<string, string> = {
   dashboard: 'dashboard',
   projects: 'projects',
   project: 'project',
+  projectOverview: 'projectOverview',
+  projectDiagnostics: 'projectDiagnostics',
   projectPins: 'projectPins',
   projectMembers: 'projectMembers',
   projectMember: 'projectMember',
@@ -72,6 +74,7 @@ const resourceAliases: Record<string, string> = {
   deploymentTarget: 'deploymentTarget',
   deploymentTargetData: 'deploymentData',
   deploymentTargetMetrics: 'deploymentMetrics',
+  deploymentTargetDiagnostics: 'deploymentDiagnostics',
   releases: 'releases',
   release: 'release',
   releaseLogs: 'releaseLogs',
@@ -193,6 +196,7 @@ const exactNames: Record<string, string> = {
   navigate_to_route: 'navigateToRoute',
   rename_conversation: 'renameConversation',
   wait_for_task: 'waitForTask',
+  load_skill: 'loadSkill',
 }
 
 export function toolDisplayName(t: TFunction, operationId: string): string {

@@ -45,3 +45,7 @@ func (h *Handler) EnqueueGatewayApply(ctx context.Context, route model.GatewayRo
 func (h *Handler) ObserveGatewayRouteStatuses(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
 	return h.observeGatewayRouteStatuses(ctx, routes)
 }
+
+func (h *Handler) ObserveGatewayRouteDiagnostics(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return h.observeGatewayRouteDiagnostics(ctx, routes)
+}

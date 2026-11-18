@@ -25,7 +25,7 @@ checkpoint 和独立的终态提交模块。后续整改遵循以下结论：
    内容过滤会改变控制流。
 5. **checkpoint 保持当前粒度**：模型步、工具批次、等待和终态四类边界已持久化；不再扩展到模型调用
    内部或外部 HTTP 调用级别。
-6. **不让 Run 等待长耗时异步任务**：异步提交以“已受理 + 资源引用”回到模型，终态由资源页面和通知跟踪。
+6. **异步长任务双模式解耦内存协程死等**：单步异步提交返回“已受理 + 资源引用”回到模型并由 `live_task` 实时卡片收口本轮；仅多步串联工作流由模型显式调用 `wait_for_task` 写入 `waiting_external` + `wake_at` 持久化挂起唤醒，绝不在内存协程中阻塞等待。
 7. **统一 Run Budget**：所有预算由同一结构约束，耗尽语义和错误码一致。
 8. Langfuse 或 OpenTelemetry 只负责观测，不参与控制流；是否引入具体框架在 Phase 4 后再评估。
 
@@ -83,9 +83,9 @@ OpenAI Agents SDK 的 Runner 以“没有 tool call 的输出”作为 final out
 两层状态各司其职：
 
 - `ai.runs.status`：生命周期，`queued → running → completed | failed | canceled | interrupted`，
-  可恢复中断为 `waiting_approval`、`waiting_input`；
+  可恢复中断为 `waiting_approval`、`waiting_input`、`waiting_external`（`wait_for_task` 定时唤醒）；
 - `ai.run_checkpoints.phase`：控制流位置，`model`、`tool_execution`、`awaiting_input`、
-  `awaiting_approval`、`finalizing`，由 `graph.ts` 校验合法转换。
+  `awaiting_approval`、`waiting_external`、`finalizing`，由 `graph.ts` 校验合法转换。
 
 `completed` 只表示模型给出合法 final 且没有挂起的工具调用或中断，不表示业务成功。
 
@@ -224,11 +224,15 @@ model → request_input / request_choice → awaiting_input + waiting_input
 
 工具缺必填参数已走该路径；交互卡片仍直接 `completed`，Phase 4 统一到此流程。
 
-### 8.5 异步操作
+### 8.5 异步操作（单步实时卡片 + 多步持久化等待）
 
 ```text
-model → submit operation → accepted（资源引用 + 当前状态）→ model
-→ 可选：调用只读状态工具 → final（如实描述当前状态）→ completed
+单步触发（默认）：
+model → submit operation → accepted（资源引用 + 当前状态）→ model → present_card(live_task) → final → completed
+
+多步串联（显式调用 wait_for_task）：
+model → submit operation → accepted → model → wait_for_task → waiting_external(wake_at)
+→ 外部终态/超时唤醒 → queued → claim → 工具结果回灌 → model → 下一步执行或日志排障
 ```
 
 ### 8.6 模型协议错误
@@ -245,10 +249,10 @@ content_filter      → ai.model_output_filtered
 
 | 工具类别 | 示例 | 默认后续 |
 | --- | --- | --- |
-| 发现 | `search_tools`, `get_tool_details` | 回模型 |
-| 只读事实 | 项目、部署、Pod、日志查询 | 回模型 |
-| 同步写操作 | 保存配置、重启、删除 | 回模型；API 响应即权威结果 |
-| 异步提交 | 构建、部署、证书申请 | 回模型；结果为 `accepted` |
+| 发现与技能 | `search_tools`, `get_tool_details`, `load_skill` | 回模型 |
+| 只读事实与诊断聚合 | `getProjectDiagnostics`, `getDeploymentTargetDiagnostics`, 列表/详情/日志查询 | 回模型 |
+| 同步写操作 | 保存配置、重启、删除（按 `L1/L2` 审批策略放行） | 回模型；API 响应即权威结果 |
+| 异步提交与等待 | 构建、发布提交；串联时调用 `wait_for_task` | 提交回模型；`wait_for_task` 进入 `waiting_external` |
 | 交互 | `request_input`, `request_choice` | `awaiting_input` 中断 |
 | 呈现 | `present_card`, `navigate_to_route` | 回模型 |
 
@@ -350,7 +354,7 @@ Phase 0–3 的必测场景已在 14 号文档登记回归位置，后续改动�
 
 - **不在 Runtime 判定业务完成**：Runtime 无法知道用户“要求执行”了哪些写操作，强行判定只会重新依赖
   模型文字；也不为每个写 operation 维护“写 → 验证读”的映射。
-- **不让 Run 等待长耗时异步任务**：构建、部署、证书终态由资源页面和通知跟踪，不引入 `waiting_external`。
+- **不在内存协程中阻塞轮询长耗时异步任务**：淘汰执行器自动拦截写/异步工具死等的旧机制；单步触发通过 `live_task` 卡片交由前端实时订阅，串联依赖统一使用 `wait_for_task` 持久化挂起（`waiting_external` + `wake_at`）释放并发槽位。
 - **不扩展 checkpoint 粒度**：不做模型调用内部或外部 HTTP 调用级 checkpoint；多副本部署前不放宽
   “单副本启动恢复”的前提。
 - 不为区分“计划文字”和“最终答复”增加确认次数、隐藏 nudge 或候选回答。若评测显示该行为频繁，

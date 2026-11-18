@@ -21,6 +21,10 @@ import (
 
 type deploymentHost struct{ domainHost }
 
+func (host deploymentHost) ObserveGatewayRouteDiagnostics(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return host.handlers.domains.gateway.ObserveGatewayRouteDiagnostics(ctx, routes)
+}
+
 func (host deploymentHost) MutateDeploymentTargetRuntimeSecrets(ctx *gin.Context, user model.User, project model.Project, application model.Application, target model.DeploymentTarget) {
 	var input runtimeapi.RuntimeSecretMutationRequest
 	if !transportapi.BindJSON(ctx, &input) {

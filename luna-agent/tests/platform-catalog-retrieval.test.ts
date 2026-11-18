@@ -7,6 +7,7 @@ import { ToolArgumentsInvalidError } from "../src/tools/argument-validator.js"
 import { businessCardTools } from "../src/tools/business-card-tools.js"
 import { renameConversationTool } from "../src/tools/conversation-title.js"
 import { getToolDetailsTool } from "../src/tools/tool-details.js"
+import { loadSkillTool } from "../src/tools/skill-loader.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
 import { navigateToRouteTool } from "../src/tools/ui-route.js"
 
@@ -340,6 +341,7 @@ describe("real PlatformCatalog retrieval", () => {
       ...platformCatalog.all().map(operation => operation.operationId),
       searchToolsTool.operationId,
       getToolDetailsTool.operationId,
+      loadSkillTool.operationId,
       navigateToRouteTool.operationId,
       renameConversationTool.operationId,
       ...businessCardTools.map(tool => tool.operationId),
@@ -350,6 +352,21 @@ describe("real PlatformCatalog retrieval", () => {
       .flatMap(file => [...readFileSync(file, "utf8").matchAll(/`([A-Za-z][A-Za-z0-9_]+)`/g)].map(match => match[1]!))
       .filter((operationId, index, values) => operationLike.test(operationId) && !known.has(operationId) && values.indexOf(operationId) === index)
     expect(missing).toEqual([])
+  })
+
+  it("retrieves getProjectDiagnostics and getDeploymentTargetDiagnostics as L0 auto read tools in Chinese diagnostic queries", () => {
+    const projectDiag = platformCatalog.get("getProjectDiagnostics")
+    const targetDiag = platformCatalog.get("getDeploymentTargetDiagnostics")
+    expect(projectDiag.approvalTier).toBe("L0")
+    expect(projectDiag.requiresApproval).toBe(false)
+    expect(targetDiag.approvalTier).toBe("L0")
+    expect(targetDiag.requiresApproval).toBe(false)
+
+    const projectHits = platformCatalog.search({ query: "排查项目异常失败构建与发布", pageSize: 5 })
+    expect(projectHits.items.map(item => item.operationId)).toContain("getProjectDiagnostics")
+
+    const targetHits = platformCatalog.search({ query: "查看部署诊断快照排查服务为什么挂了", pageSize: 5 })
+    expect(targetHits.items.map(item => item.operationId)).toContain("getDeploymentTargetDiagnostics")
   })
 })
 

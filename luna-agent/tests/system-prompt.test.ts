@@ -44,6 +44,34 @@ describe("versioned system prompt", () => {
       expect(prompt).toContain(rule)
   })
 
+  it("indexes progressive domain skills via load_skill and removes legacy conflicting instructions", () => {
+    const prompt = systemPromptFor("system-v4")
+
+    expect(prompt).toContain("load_skill")
+    for (const skillId of [
+      "workspace-iam",
+      "source-registry-build",
+      "application-deployment",
+      "runtime-volumes",
+      "gateway-topology",
+      "diagnostics-governance",
+    ]) {
+      expect(prompt).toContain(skillId)
+    }
+    for (const approvalRule of ["L0", "L1", "L2", "stage=prod"]) {
+      expect(prompt).toContain(approvalRule)
+    }
+    for (const removedConflict of [
+      "mode: presentation",
+      "mode: interactive",
+      "快捷选项",
+      "[标签](/已注册路径)",
+      "写后验收工具",
+    ]) {
+      expect(prompt).not.toContain(removedConflict)
+    }
+  })
+
   it("rejects obsolete prompt versions", () => {
     expect(() => systemPromptFor("system-v3" as never)).toThrow("ai.prompt_version_unavailable")
   })
