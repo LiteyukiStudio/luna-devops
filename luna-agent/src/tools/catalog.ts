@@ -247,21 +247,20 @@ function searchFields(operation: ToolOperation): Record<string, WeightedLexicalF
     name: { text: operation.name, weight: 6 },
     aliasesZh: { text: operation.aliases.zh.join("\n"), weight: 9 },
     aliasesEn: { text: operation.aliases.en.join("\n"), weight: 7 },
-    purpose: { text: `${operation.purpose.zh}\n${operation.purpose.en}`, weight: 6 },
+    purpose: { text: [operation.purpose.zh, operation.purpose.en].filter(Boolean).join("\n"), weight: 6 },
     summary: { text: operation.summary, weight: 4 },
     category: { text: operation.category, weight: 3 },
     tags: { text: operation.tags.join("\n"), weight: 3 },
     parameters: { text: parameters.join("\n"), weight: 4 },
     inputSchema: { text: input.join("\n"), weight: 2.5 },
     outputSchema: { text: output.join("\n"), weight: 2.5 },
-    avoidWhen: { text: `${operation.avoidWhen.zh}\n${operation.avoidWhen.en}`, weight: 1.5 },
     preconditions: { text: [...operation.preconditions.zh, ...operation.preconditions.en].join("\n"), weight: 2 },
-    successEvidence: { text: `${operation.successEvidence.zh}\n${operation.successEvidence.en}`, weight: 3 },
+    successEvidence: { text: [operation.successEvidence.zh, operation.successEvidence.en].filter(Boolean).join("\n"), weight: 3 },
   }
 }
 
 function toSemanticDetails(operation: ToolOperation): ToolSemanticDetails {
-  const properties = objectProperties(operation.inputSchema)
+  const properties = collectObjectProperties(operation.inputSchema)
   const required = new Set(Array.isArray(operation.inputSchema.required) ? operation.inputSchema.required.filter((item): item is string => typeof item === "string") : [])
   return {
     ...toSummary(operation),
@@ -272,7 +271,7 @@ function toSemanticDetails(operation: ToolOperation): ToolSemanticDetails {
       required: required.has(name),
       ...(typeof schema.description === "string" && schema.description.trim() ? { description: schema.description.trim() } : {}),
     })),
-    outputFields: Object.entries(objectProperties(operation.outputSchema)).slice(0, 20).map(([name, schema]) => ({
+    outputFields: Object.entries(collectObjectProperties(operation.outputSchema)).slice(0, 20).map(([name, schema]) => ({
       name,
       ...(typeof schema.description === "string" && schema.description.trim() ? { description: schema.description.trim() } : {}),
     })),
@@ -293,7 +292,28 @@ function schemaTerms(schema: Record<string, unknown>, prefix = "", depth = 0): s
   }
   if (schema.items && typeof schema.items === "object" && !Array.isArray(schema.items))
     output.push(...schemaTerms(schema.items as Record<string, unknown>, `${prefix}[]`, depth + 1))
+  for (const combinator of ["oneOf", "anyOf", "allOf"] as const) {
+    if (!Array.isArray(schema[combinator])) continue
+    for (const branch of schema[combinator] as unknown[]) {
+      if (branch && typeof branch === "object" && !Array.isArray(branch))
+        output.push(...schemaTerms(branch as Record<string, unknown>, prefix, depth + 1))
+    }
+  }
   return output
+}
+
+function collectObjectProperties(schema: Record<string, unknown>, depth = 0): Record<string, Record<string, unknown>> {
+  if (depth > 4) return {}
+  const merged: Record<string, Record<string, unknown>> = {}
+  for (const combinator of ["allOf", "oneOf", "anyOf"] as const) {
+    if (!Array.isArray(schema[combinator])) continue
+    for (const branch of schema[combinator] as unknown[]) {
+      if (branch && typeof branch === "object" && !Array.isArray(branch))
+        Object.assign(merged, collectObjectProperties(branch as Record<string, unknown>, depth + 1))
+    }
+  }
+  Object.assign(merged, objectProperties(schema))
+  return merged
 }
 
 function objectProperties(schema: Record<string, unknown>): Record<string, Record<string, unknown>> {

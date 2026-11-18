@@ -235,9 +235,6 @@ func catalogOperation(document openAPIDocument, scopeResolver *openapiscope.Reso
 	}
 	aliases := operationAliases(operationID, tags, extension)
 	purpose := localizedText(extension["purpose"])
-	if purpose.ZH == "" {
-		purpose.ZH = fmt.Sprintf("用于调用 %s 对应的平台能力。", operationID)
-	}
 	if purpose.EN == "" {
 		purpose.EN = summary
 	}
@@ -472,20 +469,33 @@ var agentDisabledOperations = map[string]string{
 }
 
 var agentTagAliasesZH = map[string][]string{
-	"Applications":  {"应用", "应用服务"},
-	"Billing":       {"账单", "费用", "额度"},
-	"Builds":        {"构建", "构建任务"},
-	"Dashboard":     {"仪表盘", "看板", "平台概览"},
-	"Deployments":   {"部署", "部署目标"},
-	"Gateway":       {"网关", "域名", "路由"},
-	"Notifications": {"通知", "通知渠道", "消息渠道"},
-	"Projects":      {"项目空间", "项目"},
-	"Registries":    {"镜像仓库", "镜像"},
-	"Releases":      {"发布", "版本"},
-	"Runtime":       {"运行时", "集群"},
-	"Users":         {"用户", "平台用户", "账号"},
-	"Volumes":       {"项目数据卷", "持久卷", "存储卷"},
-	"Web":           {"网络搜索", "互联网", "网页", "公开资料"},
+	"AccessTokens":      {"访问令牌", "个人令牌", "API 令牌"},
+	"AppTemplates":      {"应用模板", "应用市场", "模板安装"},
+	"Applications":      {"应用", "应用服务"},
+	"Auth":              {"认证", "登录配置", "单点登录", "身份提供商", "OIDC"},
+	"Billing":           {"账单", "费用", "额度"},
+	"Builds":            {"构建", "构建任务"},
+	"Configs":           {"运行时配置集", "共享配置", "环境变量集", "配置模板"},
+	"Dashboard":         {"仪表盘", "看板", "平台概览"},
+	"DataRetention":     {"数据保留", "保留策略", "历史清理", "过期清理"},
+	"Deployments":       {"部署", "部署目标"},
+	"Events":            {"平台事件", "事件流", "操作动态"},
+	"Gateway":           {"网关", "域名", "路由"},
+	"Git":               {"代码仓库", "Git 仓库", "代码源", "分支", "Webhook"},
+	"Inbox":             {"站内信", "收件箱", "消息中心", "未读消息"},
+	"Notifications":     {"通知", "通知渠道", "消息渠道"},
+	"OAuthApplications": {"OAuth 应用", "第三方授权", "OAuth 客户端"},
+	"Projects":          {"项目空间", "项目"},
+	"Registries":        {"镜像仓库", "镜像"},
+	"Releases":          {"发布", "版本"},
+	"Runtime":           {"运行时", "集群"},
+	"Settings":          {"平台设置", "系统配置", "全局配置"},
+	"System":            {"系统状态", "系统信息", "平台版本"},
+	"Telemetry":         {"遥测", "可观测性", "链路追踪", "指标监控"},
+	"Topology":          {"服务拓扑", "拓扑图", "服务依赖", "拓扑连线"},
+	"Users":             {"用户", "平台用户", "账号"},
+	"Volumes":           {"项目数据卷", "持久卷", "存储卷"},
+	"Web":               {"网络搜索", "互联网", "网页", "公开资料"},
 }
 
 func operationAliases(operationID string, tags []string, extension map[string]any) OperationAliases {
@@ -578,21 +588,114 @@ func resolveOpenAPIResponse(document openAPIDocument, raw any) map[string]any {
 	return value
 }
 
+var openAPIScalarSchemaKeys = []string{
+	"type", "format", "description", "const", "pattern", "minimum", "maximum",
+	"exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+	"minLength", "maxLength", "minItems", "maxItems", "uniqueItems",
+	"minProperties", "maxProperties", "default",
+	"writeOnly", "readOnly", "x-luna-sensitive",
+}
+
+func resolveOpenAPISchemaRef(document openAPIDocument, schema map[string]any) map[string]any {
+	ref := stringValue(schema["$ref"])
+	if !strings.HasPrefix(ref, "#/components/schemas/") {
+		return schema
+	}
+	target := mapValue(document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")])
+	if len(schema) == 1 {
+		return target
+	}
+	merged := make(map[string]any, len(target)+len(schema))
+	for key, value := range target {
+		merged[key] = value
+	}
+	for key, value := range schema {
+		if key == "$ref" {
+			continue
+		}
+		merged[key] = value
+	}
+	return merged
+}
+
 func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, depth int) map[string]any {
+	return normalizeOpenAPISchemaWithMode(document, schema, depth, false)
+}
+
+func normalizeOpenAPISchemaWithMode(document openAPIDocument, schema map[string]any, depth int, isConstraint bool) map[string]any {
 	if depth > 8 || len(schema) == 0 {
+		if isConstraint {
+			return map[string]any{}
+		}
 		return map[string]any{"type": "object"}
 	}
-	if ref := stringValue(schema["$ref"]); strings.HasPrefix(ref, "#/components/schemas/") {
-		schema = mapValue(document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")])
+	schema = resolveOpenAPISchemaRef(document, schema)
+	if len(schema) == 0 {
+		if isConstraint {
+			return map[string]any{}
+		}
+		return map[string]any{"type": "object"}
 	}
+
 	result := map[string]any{}
-	for _, key := range []string{
-		"type", "format", "description", "const", "pattern", "minimum", "maximum",
-		"exclusiveMinimum", "exclusiveMaximum", "multipleOf",
-		"minLength", "maxLength", "minItems", "maxItems", "uniqueItems",
-		"minProperties", "maxProperties", "default",
-		"writeOnly", "readOnly", "x-luna-sensitive",
-	} {
+	mergedProperties := map[string]any{}
+	mergedRequired := make([]string, 0)
+	remainingAllOf := make([]any, 0)
+
+	if values := arrayValue(schema["allOf"]); len(values) > 0 {
+		for _, rawValue := range values {
+			rawBranch := resolveOpenAPISchemaRef(document, mapValue(rawValue))
+			if isPureConstraintBranch(rawBranch) {
+				if normalized := normalizeOpenAPISchemaWithMode(document, rawBranch, depth+1, true); len(normalized) > 0 {
+					remainingAllOf = append(remainingAllOf, normalized)
+				}
+				continue
+			}
+			branch := normalizeOpenAPISchemaWithMode(document, rawBranch, depth+1, isConstraint)
+			for _, key := range openAPIScalarSchemaKeys {
+				if value, ok := branch[key]; ok {
+					if (key == "writeOnly" || key == "x-luna-sensitive") && boolValue(result[key]) {
+						continue
+					}
+					result[key] = value
+				}
+			}
+			if enum := arrayValue(branch["enum"]); len(enum) > 0 {
+				result["enum"] = enum
+			}
+			if items := mapValue(branch["items"]); len(items) > 0 {
+				result["items"] = items
+			}
+			if additionalProperties, exists := branch["additionalProperties"]; exists {
+				if boolVal, isBool := additionalProperties.(bool); !isBool || boolVal {
+					result["additionalProperties"] = additionalProperties
+				}
+			}
+			for name, property := range mapValue(branch["properties"]) {
+				mergedProperties[name] = property
+			}
+			mergedRequired = append(mergedRequired, stringArray(branch["required"])...)
+			if nestedAllOf := arrayValue(branch["allOf"]); len(nestedAllOf) > 0 {
+				remainingAllOf = append(remainingAllOf, nestedAllOf...)
+			}
+			conditionalGroup := map[string]any{}
+			for _, conditional := range []string{"if", "then", "else"} {
+				if sub, exists := branch[conditional]; exists {
+					conditionalGroup[conditional] = sub
+				}
+			}
+			if len(conditionalGroup) > 0 {
+				remainingAllOf = append(remainingAllOf, conditionalGroup)
+			}
+			for _, combinator := range []string{"oneOf", "anyOf", "not"} {
+				if sub, exists := branch[combinator]; exists {
+					remainingAllOf = append(remainingAllOf, map[string]any{combinator: sub})
+				}
+			}
+		}
+	}
+
+	for _, key := range openAPIScalarSchemaKeys {
 		if value, ok := schema[key]; ok {
 			result[key] = value
 		}
@@ -600,41 +703,133 @@ func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, dep
 	if enum := arrayValue(schema["enum"]); len(enum) > 0 {
 		result["enum"] = enum
 	}
-	if required := stringArray(schema["required"]); len(required) > 0 {
-		result["required"] = required
+	mergedRequired = append(mergedRequired, stringArray(schema["required"])...)
+	if len(mergedRequired) > 0 {
+		result["required"] = uniqueStrings(mergedRequired)
 	}
-	if properties := mapValue(schema["properties"]); len(properties) > 0 {
-		normalized := map[string]any{}
-		for name, property := range properties {
-			normalized[name] = normalizeOpenAPISchema(document, mapValue(property), depth+1)
+	for name, property := range mapValue(schema["properties"]) {
+		mergedProperties[name] = normalizeOpenAPISchemaWithMode(document, mapValue(property), depth+1, isConstraint)
+	}
+	if len(mergedProperties) > 0 {
+		if _, hasType := result["type"]; !hasType && !isConstraint {
+			result["type"] = "object"
 		}
-		result["properties"] = normalized
-		result["additionalProperties"] = false
+		result["properties"] = mergedProperties
+		if !isConstraint {
+			if _, hasExplicitAdditional := result["additionalProperties"]; !hasExplicitAdditional {
+				result["additionalProperties"] = false
+			}
+		}
 	}
 	if additionalProperties, exists := schema["additionalProperties"]; exists {
 		switch value := additionalProperties.(type) {
 		case bool:
 			result["additionalProperties"] = value
 		case map[string]any:
-			result["additionalProperties"] = normalizeOpenAPISchema(document, value, depth+1)
+			result["additionalProperties"] = normalizeOpenAPISchemaWithMode(document, value, depth+1, isConstraint)
 		}
 	}
 	if items := mapValue(schema["items"]); len(items) > 0 {
-		result["items"] = normalizeOpenAPISchema(document, items, depth+1)
+		result["items"] = normalizeOpenAPISchemaWithMode(document, items, depth+1, isConstraint)
 	}
-	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+	branchConstraint := isConstraint || len(mergedProperties) > 0
+	for _, key := range []string{"oneOf", "anyOf"} {
 		if values := arrayValue(schema[key]); len(values) > 0 {
 			normalized := make([]any, 0, len(values))
 			for _, value := range values {
-				normalized = append(normalized, normalizeOpenAPISchema(document, mapValue(value), depth+1))
+				if sub := normalizeOpenAPISchemaWithMode(document, mapValue(value), depth+1, branchConstraint); len(sub) > 0 {
+					normalized = append(normalized, sub)
+				}
 			}
-			result[key] = normalized
+			if len(normalized) > 0 {
+				result[key] = normalized
+			}
 		}
 	}
-	if len(result) == 0 {
+	for _, key := range []string{"if", "then", "else", "not"} {
+		if sub := mapValue(schema[key]); len(sub) > 0 {
+			if normalized := normalizeOpenAPISchemaWithMode(document, sub, depth+1, true); len(normalized) > 0 {
+				result[key] = normalized
+			}
+		}
+	}
+	if len(remainingAllOf) > 0 {
+		result["allOf"] = remainingAllOf
+	}
+	if boolValue(schema["nullable"]) {
+		applyNullableSchema(result)
+	}
+	if len(result) == 0 && !isConstraint {
 		result["type"] = "object"
 	}
 	return result
+}
+
+func isPureConstraintBranch(schema map[string]any) bool {
+	if len(mapValue(schema["properties"])) > 0 || stringValue(schema["type"]) != "" || len(stringArray(schema["type"])) > 0 {
+		return false
+	}
+	if _, hasItems := schema["items"]; hasItems {
+		return false
+	}
+	if _, hasAdditional := schema["additionalProperties"]; hasAdditional {
+		return false
+	}
+	for _, key := range []string{"if", "then", "else", "not", "oneOf", "anyOf"} {
+		if _, exists := schema[key]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func applyNullableSchema(result map[string]any) {
+	if enumValues, ok := result["enum"].([]any); ok && len(enumValues) > 0 {
+		hasNull := false
+		for _, item := range enumValues {
+			if item == nil {
+				hasNull = true
+				break
+			}
+		}
+		if !hasNull {
+			result["enum"] = append(append([]any(nil), enumValues...), nil)
+		}
+	}
+	switch typed := result["type"].(type) {
+	case string:
+		if typed != "" && typed != "null" {
+			result["type"] = []any{typed, "null"}
+		} else if typed == "" {
+			result["type"] = "null"
+		}
+	case []any:
+		for _, item := range typed {
+			if item == "null" {
+				return
+			}
+		}
+		result["type"] = append(append([]any(nil), typed...), "null")
+	case nil:
+		if anyOf, ok := result["anyOf"].([]any); ok {
+			result["anyOf"] = append(append([]any(nil), anyOf...), map[string]any{"type": "null"})
+			return
+		}
+		if oneOf, ok := result["oneOf"].([]any); ok {
+			result["oneOf"] = append(append([]any(nil), oneOf...), map[string]any{"type": "null"})
+			return
+		}
+		if len(result) == 0 {
+			result["type"] = []any{"object", "null"}
+			return
+		}
+		branchCopy := make(map[string]any, len(result))
+		for key, value := range result {
+			branchCopy[key] = value
+			delete(result, key)
+		}
+		result["anyOf"] = []any{branchCopy, map[string]any{"type": "null"}}
+	}
 }
 
 func schemaSensitivePaths(schema map[string]any, prefix string) []string {
@@ -651,12 +846,29 @@ func schemaSensitivePaths(schema map[string]any, prefix string) []string {
 		}
 		paths = append(paths, schemaSensitivePaths(mapValue(property), path)...)
 	}
+	if additional := mapValue(schema["additionalProperties"]); len(additional) > 0 {
+		path := prefix + ".*"
+		if prefix == "" {
+			path = "*"
+		}
+		paths = append(paths, schemaSensitivePaths(additional, path)...)
+	}
 	if items := mapValue(schema["items"]); len(items) > 0 {
 		path := prefix + ".*"
 		if prefix == "" {
 			path = "*"
 		}
 		paths = append(paths, schemaSensitivePaths(items, path)...)
+	}
+	for _, combinator := range []string{"oneOf", "anyOf", "allOf"} {
+		for _, branch := range arrayValue(schema[combinator]) {
+			paths = append(paths, schemaSensitivePaths(mapValue(branch), prefix)...)
+		}
+	}
+	for _, conditional := range []string{"then", "else"} {
+		if branch := mapValue(schema[conditional]); len(branch) > 0 {
+			paths = append(paths, schemaSensitivePaths(branch, prefix)...)
+		}
 	}
 	return uniqueStrings(paths)
 }
@@ -682,6 +894,15 @@ func boolValue(value any) bool {
 }
 
 func stringArray(value any) []string {
+	if typed, ok := value.([]string); ok {
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := strings.TrimSpace(item); text != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	}
 	values := arrayValue(value)
 	result := make([]string, 0, len(values))
 	for _, item := range values {

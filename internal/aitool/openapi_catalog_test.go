@@ -99,8 +99,11 @@ func TestPlatformCatalogDefaultsToRegularOpenAPIOperations(t *testing.T) {
 		if len(operation.RequiredScopes) == 0 {
 			t.Fatalf("operation %s has no stable scope", operation.OperationID)
 		}
-		if strings.TrimSpace(operation.Purpose.ZH) == "" {
-			t.Fatalf("operation %s has no Chinese-first purpose", operation.OperationID)
+		if strings.TrimSpace(operation.Purpose.EN) == "" {
+			t.Fatalf("operation %s has no fallback English purpose", operation.OperationID)
+		}
+		if strings.Contains(operation.Purpose.ZH, "用于调用 ") {
+			t.Fatalf("operation %s leaked template Chinese purpose %q", operation.OperationID, operation.Purpose.ZH)
 		}
 		if operation.InputSchema["type"] != "object" || operation.InputSchema["additionalProperties"] != false {
 			t.Fatalf("operation %s has unsafe input schema: %#v", operation.OperationID, operation.InputSchema)
@@ -645,5 +648,142 @@ func TestNetworkShareWritesRequireApproval(t *testing.T) {
 		if !operation.RequiresApproval {
 			t.Errorf("%s must require approval", operationID)
 		}
+	}
+}
+
+func TestEveryCatalogTagCarriesChineseAliases(t *testing.T) {
+	operations, err := PlatformCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range operations {
+		for _, tag := range operation.Tags {
+			if len(agentTagAliasesZH[tag]) == 0 {
+				t.Errorf("operation %s tag %q has no Chinese tag aliases in agentTagAliasesZH", operation.OperationID, tag)
+			}
+		}
+	}
+}
+
+func TestOpenAPISchemaNormalizerMergesAllOfPreservesConditionalsNullableAndSensitiveCombinators(t *testing.T) {
+	edgeOp, ok := PlatformOperation("createProjectTopologyEdge")
+	if !ok {
+		t.Fatal("missing createProjectTopologyEdge")
+	}
+	edgeBody := mapValue(mapValue(edgeOp.InputSchema["properties"])["body"])
+	edgeProperties := mapValue(edgeBody["properties"])
+	if _, hasSource := edgeProperties["sourceApplicationId"]; !hasSource {
+		t.Fatalf("TopologyEdgeInput lost ServiceBindingInput properties: %#v", edgeBody)
+	}
+	if _, hasRelation := edgeProperties["relationType"]; !hasRelation {
+		t.Fatalf("TopologyEdgeInput lost relationType property: %#v", edgeBody)
+	}
+	if edgeBody["additionalProperties"] != false {
+		t.Fatalf("TopologyEdgeInput merged body must keep additionalProperties=false: %#v", edgeBody)
+	}
+	if !reflect.DeepEqual(edgeBody["required"], []string{"sourceApplicationId", "targetApplicationId"}) {
+		t.Fatalf("TopologyEdgeInput merged required = %#v, want [sourceApplicationId targetApplicationId]", edgeBody["required"])
+	}
+	if _, hasConflictingAllOf := edgeBody["allOf"]; hasConflictingAllOf {
+		t.Fatalf("TopologyEdgeInput retained conflicting allOf branches: %#v", edgeBody["allOf"])
+	}
+
+	catalog, err := buildPlatformCatalog([]byte(`
+openapi: 3.1.0
+components:
+  schemas:
+    ScopedModeBase:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [scoped, global]
+        scopedIds:
+          type: array
+          items: { type: string }
+      if:
+        properties:
+          mode: { const: scoped }
+        required: [mode]
+      then:
+        required: [scopedIds]
+paths:
+  /api/v1/projects/{projectId}/secret-variants:
+    post:
+      operationId: configureSecretVariant
+      tags: [Configs]
+      summary: Configure secret variant
+      x-luna-cli:
+        requiredScopes: ["project:write"]
+      x-luna-agent:
+        effect: write
+        requiresApproval: true
+        verification:
+          - { operationId: configureSecretVariant, family: resource, singleton: true }
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ScopedModeBase"
+                - type: object
+                  properties:
+                    expiresAt:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    secretHeaders:
+                      type: object
+                      additionalProperties:
+                        type: string
+                        x-luna-sensitive: true
+                    authVariant:
+                      oneOf:
+                        - type: object
+                          properties:
+                            bearerToken:
+                              type: string
+                              writeOnly: true
+                        - type: object
+                          properties:
+                            publicNote:
+                              type: string
+      responses:
+        "200": { description: OK }
+`))
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("build synthetic catalog = %#v, err = %v", catalog, err)
+	}
+	op := catalog[0]
+	wantSensitive := []string{"body.authVariant.bearerToken", "body.secretHeaders.*"}
+	if !reflect.DeepEqual(op.SensitivePaths, wantSensitive) {
+		t.Fatalf("sensitivePaths = %#v, want %#v", op.SensitivePaths, wantSensitive)
+	}
+	body := mapValue(mapValue(op.InputSchema["properties"])["body"])
+	if !reflect.DeepEqual(body["required"], []string{"mode"}) {
+		t.Fatalf("merged allOf required = %#v, want [mode]", body["required"])
+	}
+	expiresAt := mapValue(mapValue(body["properties"])["expiresAt"])
+	if !reflect.DeepEqual(expiresAt["type"], []any{"string", "null"}) {
+		t.Fatalf("nullable expiresAt type = %#v, want [string null]", expiresAt["type"])
+	}
+	allOf := arrayValue(body["allOf"])
+	if len(allOf) != 1 {
+		t.Fatalf("conditional allOf = %#v, want 1 grouped if/then item", allOf)
+	}
+	grouped := mapValue(allOf[0])
+	if _, hasThen := grouped["then"]; !hasThen {
+		t.Fatalf("grouped conditional allOf item lost adjacent then: %#v", grouped)
+	}
+	ifBranch := mapValue(grouped["if"])
+	if _, hasAdditional := ifBranch["additionalProperties"]; hasAdditional {
+		t.Fatalf("if constraint must not inject additionalProperties=false: %#v", ifBranch)
 	}
 }

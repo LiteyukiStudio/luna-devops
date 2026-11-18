@@ -56,4 +56,32 @@ describe("simple BM25 tool retrieval", () => {
     expect(first.items[0]?.operationId).toBe("inspectProjectVolume7")
     expect(second.items).toEqual(first.items)
   })
+
+  it("avoids single-character CJK noise collisions and redacts terminal wildcard sensitivePaths", async () => {
+    const tokenizer = new UnicodeLexicalTokenizer()
+    const tokens = tokenizer.tokenize("在项目空间中的扩容数据卷并设置服务拓扑连线")
+    expect(tokens).toContain("扩容")
+    expect(tokens).toContain("数据")
+    expect(tokens).toContain("拓扑")
+    expect(tokens).toContain("连线")
+    expect(tokens).not.toContain("在")
+    expect(tokens).not.toContain("中")
+    expect(tokens).not.toContain("的")
+    expect(tokens).not.toContain("并")
+
+    const { redactSensitivePaths } = await import("../src/redaction.js")
+    expect(redactSensitivePaths({
+      body: {
+        secretHeaders: { "X-Api-Key": "secret-1", Authorization: "Bearer abc" },
+        tokens: ["tok-1", "tok-2"],
+        publicName: "keep-me",
+      },
+    }, ["body.secretHeaders.*", "body.tokens.*"])).toEqual({
+      body: {
+        secretHeaders: { "X-Api-Key": "[REDACTED]", Authorization: "[REDACTED]" },
+        tokens: ["[REDACTED]", "[REDACTED]"],
+        publicName: "keep-me",
+      },
+    })
+  })
 })

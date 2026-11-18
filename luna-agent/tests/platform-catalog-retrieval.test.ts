@@ -256,6 +256,85 @@ describe("real PlatformCatalog retrieval", () => {
       .toMatchObject({ items: [], total: 0, totalPages: 0 })
   })
 
+  it("uses real OpenAPI summary instead of template Chinese fallback when purpose.zh is omitted", () => {
+    const topologyCreate = platformCatalog.get("createProjectTopologyEdge")
+    expect(topologyCreate.purpose.zh).toBe("")
+    const [modelTool] = platformCatalog.modelTools(["createProjectTopologyEdge"])
+    expect(modelTool?.description).toContain(topologyCreate.summary)
+    expect(modelTool?.description).not.toContain("对应的平台能力")
+  })
+
+  it("validates merged allOf TopologyEdgeInput and conditional if/then NotificationRuleFilter schemas", () => {
+    const createEdge = platformCatalog.get("createProjectTopologyEdge")
+    const validEdge = {
+      projectId: "prj_1",
+      body: {
+        sourceApplicationId: "app_web",
+        targetApplicationId: "app_db",
+        relationType: "depends_on",
+      },
+    }
+    expect(validateArguments(createEdge.inputSchema, validEdge)).toEqual(validEdge)
+    expect(() => validateArguments(createEdge.inputSchema, {
+      projectId: "prj_1",
+      body: {
+        sourceApplicationId: "app_web",
+        relationType: "depends_on",
+      },
+    })).toThrow("ai.tool_arguments_invalid")
+    expect(() => validateArguments(createEdge.inputSchema, {
+      ...validEdge,
+      body: { ...validEdge.body, undeclaredField: true },
+    })).toThrow("ai.tool_arguments_invalid")
+
+    const createRule = platformCatalog.get("createNotificationRule")
+    const validScopedRule = {
+      body: {
+        name: "构建失败提醒",
+        eventTypes: ["build.failed"],
+        channelIds: ["nch_1"],
+        filter: {
+          scope: "projects",
+          projectIds: ["prj_1"],
+          severities: ["warning"],
+        },
+      },
+    }
+    expect(validateArguments(createRule.inputSchema, validScopedRule)).toEqual(validScopedRule)
+    expect(() => validateArguments(createRule.inputSchema, {
+      body: {
+        ...validScopedRule.body,
+        filter: { scope: "projects", severities: ["warning"] },
+      },
+    })).toThrow("ai.tool_arguments_invalid")
+    expect(() => validateArguments(createRule.inputSchema, {
+      body: {
+        ...validScopedRule.body,
+        filter: { scope: "all", projectIds: ["prj_1"] },
+      },
+    })).toThrow("ai.tool_arguments_invalid")
+  })
+
+  it("discovers operations across newly aliased Chinese domain tags", () => {
+    const cases: Array<[string, string]> = [
+      ["创建服务拓扑连线", "Topology"],
+      ["查看数据保留策略", "DataRetention"],
+      ["查看访问令牌列表", "AccessTokens"],
+      ["查看代码仓库列表", "Git"],
+      ["查看平台事件流", "Events"],
+      ["查看运行时配置集", "Configs"],
+      ["搜索应用市场模板", "AppTemplates"],
+      ["查看单点登录身份提供商", "Auth"],
+      ["查看第三方授权 OAuth 应用", "OAuthApplications"],
+      ["查看平台设置", "Settings"],
+      ["查看系统状态", "System"],
+    ]
+    for (const [query, expectedTag] of cases) {
+      const topTags = platformCatalog.search({ query, pageSize: 8 }).items.flatMap(item => item.tags)
+      expect(topTags, query).toContain(expectedTag)
+    }
+  })
+
   it("keeps every platform operation named by a Skill available in the real catalog", () => {
     const known = new Set([
       ...platformCatalog.all().map(operation => operation.operationId),

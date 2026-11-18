@@ -37,6 +37,17 @@ function maskPath(value: unknown, segments: string[], index: number): void {
   const segment = segments[index]
   if (!segment) return
   if (segment === "*") {
+    if (index === segments.length - 1) {
+      if (Array.isArray(value)) {
+        for (let itemIndex = 0; itemIndex < value.length; itemIndex += 1)
+          value[itemIndex] = "[REDACTED]"
+        return
+      }
+      const wildcardRecord = value as Record<string, unknown>
+      for (const key of Object.keys(wildcardRecord))
+        wildcardRecord[key] = "[REDACTED]"
+      return
+    }
     for (const item of Array.isArray(value) ? value : Object.values(value))
       maskPath(item, segments, index + 1)
     return
