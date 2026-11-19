@@ -32,7 +32,7 @@ Describe the goal directly, such as “check why this application is unreachable
 
 ## Start using it
 
-An administrator must configure an OpenAI `chat/completions`-compatible Provider, enabled models, access scope, and personal-wallet billing under **Global Settings → AI Assistant**. Once enabled, a **Luna Assistant** button appears in the upper-right corner of the top bar.
+An administrator must configure an OpenAI `chat/completions`-compatible Provider, enabled models, access scope, and personal-wallet billing under **Global Settings → AI Assistant**. Once enabled, a **Luna AI** button appears in the upper-right corner of the top bar.
 
 On desktop devices the assistant opens as a panel docked on the right side of the workspace; select the button again or close the panel to hide it, and use **Expand to full screen** in the panel header to switch to the full assistant page. Phones, narrow screens, and touch devices open the full assistant page directly. On mobile, the conversation list is also a full page: Back first returns to the chat, then to the workspace where you entered the assistant. Entering the mobile page does not open the keyboard automatically; tap the composer when you are ready to type, and the composer remains visible while the keyboard is open.
 

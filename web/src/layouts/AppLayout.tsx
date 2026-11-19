@@ -523,7 +523,7 @@ function AIAssistantTopbarButton() {
   return (
     <Button
       aria-pressed={open}
-      className={cn('h-8 shrink-0 gap-1.5 px-2.5', open && 'border-primary-border bg-primary-subtle text-primary-text hover:bg-primary-subtle-hover')}
+      className={cn('h-8 w-8 shrink-0 gap-1.5 px-0 sm:w-auto sm:px-2.5', open && 'border-primary-border bg-primary-subtle text-primary-text hover:bg-primary-subtle-hover')}
       data-ai-assistant-trigger
       size="sm"
       title={t('aiAssistant.open')}
@@ -542,7 +542,7 @@ function AIAssistantTopbarButton() {
         })
       }}
     >
-      <Sparkles aria-hidden="true" className="size-4 text-primary-text" />
+      <Sparkles aria-hidden="true" className="size-4 sm:text-primary-text" />
       <span className="max-sm:sr-only">{t('aiAssistantNav')}</span>
     </Button>
   )

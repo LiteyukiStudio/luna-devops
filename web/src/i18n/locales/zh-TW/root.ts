@@ -3,7 +3,7 @@ const root = {
   dashboard: '看板',
   projects: '專案空間',
   events: '事件',
-  aiAssistantNav: 'Luna 助手',
+  aiAssistantNav: 'Luna AI',
   applications: '應用',
   codeRepositories: '程式碼倉庫',
   appTemplates: '應用市場',

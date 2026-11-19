@@ -32,7 +32,7 @@ export function InboxTrigger() {
   }, [queryClient])
 
   const button = (
-    <Button aria-label={count > 99 ? t('inbox.unreadCountOverflow') : count > 0 ? t('inbox.unreadCount', { count }) : t('inbox.open')} className="relative size-8 data-[state=open]:bg-muted" size="icon" variant="outline">
+    <Button aria-label={count > 99 ? t('inbox.unreadCountOverflow') : count > 0 ? t('inbox.unreadCount', { count }) : t('inbox.open')} className="relative size-8 shrink-0 data-[state=open]:bg-muted" size="icon" variant="outline">
       <Bell aria-hidden="true" className="size-4" />
       {count > 0 && (
         <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[0.625rem] font-semibold leading-none text-white ring-2 ring-background">

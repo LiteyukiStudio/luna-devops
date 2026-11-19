@@ -1,6 +1,6 @@
 const aiAssistant = {
   aiAssistant: {
-    open: '開啟 Luna 助手',
+    open: '開啟 Luna AI',
     title: 'Luna 助手',
     expand: '展開為全螢幕',
     collapse: '收合到側邊面板',

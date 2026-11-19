@@ -505,7 +505,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
     <>
       <Button
         aria-keyshortcuts="Meta+K Control+K"
-        className="h-8 shrink-0 gap-2 px-2 text-muted-foreground sm:w-48 sm:justify-start sm:px-3"
+        className="h-8 w-8 shrink-0 gap-2 px-0 sm:w-48 sm:justify-start sm:px-3 sm:text-muted-foreground"
         size="sm"
         type="button"
         variant="outline"

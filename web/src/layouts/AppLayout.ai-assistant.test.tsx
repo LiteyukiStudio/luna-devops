@@ -125,15 +125,17 @@ describe('app layout ai assistant route', () => {
     const user = userEvent.setup()
     const { rerenderApp } = renderAppLayout('/dashboard')
 
-    const trigger = screen.getByRole('button', { name: i18next.t('aiAssistantNav') })
+    const trigger = screen.getByRole('button', { name: 'Luna AI' })
     expect(trigger).toHaveAttribute('aria-pressed', 'false')
+    expect(trigger).toHaveAttribute('title', i18next.t('aiAssistant.open'))
+    expect(trigger).toHaveClass('h-8', 'w-8', 'px-0', 'sm:w-auto', 'sm:px-2.5')
     expect(document.querySelector('nav [data-ai-assistant-trigger], [data-slot="sidebar"] [data-ai-assistant-trigger]')).not.toBeInTheDocument()
     await user.click(trigger)
     expect(assistantMocks.runtime.openAssistant).toHaveBeenCalledOnce()
 
     assistantMocks.runtime.open = true
     rerenderApp()
-    const pressedTrigger = screen.getByRole('button', { name: i18next.t('aiAssistantNav') })
+    const pressedTrigger = screen.getByRole('button', { name: 'Luna AI' })
     expect(pressedTrigger).toHaveAttribute('aria-pressed', 'true')
     await user.click(pressedTrigger)
     expect(assistantMocks.runtime.closeAssistant).toHaveBeenCalledOnce()

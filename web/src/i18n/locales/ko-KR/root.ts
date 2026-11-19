@@ -3,7 +3,7 @@ const root = {
   dashboard: '대시보드',
   projects: '프로젝트 스페이스',
   events: '이벤트',
-  aiAssistantNav: 'Luna 어시스턴트',
+  aiAssistantNav: 'Luna AI',
   applications: '애플리케이션',
   codeRepositories: '코드 리포지토리',
   appTemplates: '앱 마켓',

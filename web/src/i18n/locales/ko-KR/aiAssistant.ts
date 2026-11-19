@@ -1,6 +1,6 @@
 const aiAssistant = {
   aiAssistant: {
-    open: 'Luna 어시스턴트 열기',
+    open: 'Luna AI 열기',
     title: 'Luna 어시스턴트',
     expand: '전체 화면으로 확장',
     collapse: '사이드 패널로 축소',
