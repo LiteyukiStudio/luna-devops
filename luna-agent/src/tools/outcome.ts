@@ -12,9 +12,9 @@ export type ToolOutcome =
       verificationRequired: boolean
       verification?: RunToolVerification
     }
-  | { kind: "failed"; effect: ToolEffect; errorCode: string; retryable: boolean; result?: unknown }
-  | { kind: "awaiting_approval"; effect: ToolEffect; toolCallId: string }
-  | { kind: "awaiting_input"; effect: ToolEffect; fields: string[] }
+  | { kind: "failed", effect: ToolEffect, errorCode: string, retryable: boolean, result?: unknown }
+  | { kind: "awaiting_approval", effect: ToolEffect, toolCallId: string }
+  | { kind: "awaiting_input", effect: ToolEffect, fields: string[] }
   | {
       kind: "running"
       effect: "async"
@@ -22,7 +22,7 @@ export type ToolOutcome =
       externalOperationId?: string
       verification: RunToolVerification
     }
-  | { kind: "canceled"; effect: ToolEffect; result?: unknown }
+  | { kind: "canceled", effect: ToolEffect, result?: unknown }
 
 export function toolEffect(operation: ToolOperation): ToolEffect {
   if (operation.effect) return operation.effect
@@ -50,17 +50,11 @@ export function toolOutcome(
   if (call.status !== "succeeded")
     return { kind: "failed", effect, errorCode: "ai.tool_outcome_unknown", retryable: false }
 
-  if (effect === "discovery")
+  if (effect === "discovery" || effect === "read" || effect === "interactive" || effect === "presentation")
     return { kind: "succeeded", effect, result: call.result, verificationRequired: false }
-  if (effect === "read")
-    return { kind: "succeeded", effect, result: call.result, verificationRequired: false }
-  if (effect === "execute" && operation.operationId === "execReleaseRuntimeCommand" && recordValue(call.result).exitCode !== 0)
+  if (effect === "execute" && operation.operationId === "runtime_exec_command" && recordValue(call.result).exitCode !== 0)
     return { kind: "failed", effect, errorCode: "ai.tool_execution_failed", retryable: false, result: call.result }
   if (effect === "execute")
-    return { kind: "succeeded", effect, result: call.result, verificationRequired: false }
-  if (effect === "interactive")
-    return { kind: "succeeded", effect, result: call.result, verificationRequired: false }
-  if (effect === "presentation")
     return { kind: "succeeded", effect, result: call.result, verificationRequired: false }
 
   const verification = verificationForCall(operation, call, resolveOperation)
@@ -90,16 +84,20 @@ export function verificationForCall(
   call: ToolCallRecord,
   resolveOperation?: (operationId: string) => ToolOperation | undefined,
 ): RunToolVerification | undefined {
-  const verification = operation.verification?.find(rule =>
-    !rule.whenResultHas || hasResultField(call.result, rule.whenResultHas))
+  const verification = operation.verification?.find(rule => matchesVerificationRule(rule, call))
   if (!verification) return undefined
   const result = recordValue(call.result)
   if (verification.family === "resource")
     return resourceVerificationForCall(verification, call, resolveOperation)
-  const body = recordValue(call.arguments.body)
+
   if (verification.family === "project_order") {
-    const expected = body.projectIds
+    const expected = Array.isArray(result.projectIds)
+      ? result.projectIds
+      : Array.isArray(call.arguments.projects)
+        ? call.arguments.projects
+        : recordValue(call.arguments.body).projectIds
     if (!Array.isArray(expected) || expected.length === 0) return undefined
+    const pageSize = boundedReadPageSize(resolveOperation?.(verification.operationId))
     return {
       runId: call.runId,
       sourceToolCallId: call.id,
@@ -107,14 +105,17 @@ export function verificationForCall(
       operationId: verification.operationId,
       family: verification.family,
       expectation: "present",
-      arguments: { page: 1, pageSize: 100 },
+      arguments: { sortBy: "dashboardOrder", sortOrder: "asc", page: 1, pageSize },
       externalOperationId: call.id,
       attempts: 0,
       expected,
     }
   }
+
   if (verification.family === "billing_rate_rules") {
-    const expected = body.rules
+    const expected = Array.isArray(call.arguments.rules)
+      ? call.arguments.rules
+      : recordValue(call.arguments.body).rules
     if (!Array.isArray(expected) || expected.length === 0) return undefined
     return {
       runId: call.runId,
@@ -123,67 +124,53 @@ export function verificationForCall(
       operationId: verification.operationId,
       family: verification.family,
       expectation: "present",
-      arguments: {},
+      arguments: { ...(verification.staticArguments ?? {}) },
       externalOperationId: call.id,
       attempts: 0,
       expected,
     }
   }
-  const projectId = stringValue(call.arguments.projectId)
+
+  const project = resolveProjectLocator(result, call.arguments)
   const nestedRelease = recordValue(result.release)
   const nestedApplication = recordValue(result.application)
   const nestedDeploymentTarget = recordValue(result.deploymentTarget)
   const externalOperationId = externalOperationIdFor(verification, result, call.arguments, nestedRelease, nestedApplication, nestedDeploymentTarget)
-  const applicationId = stringValue(call.arguments.applicationId)
-    ?? stringValue(result.applicationId)
+  const application = stringValue(result.applicationId)
+    ?? stringValue(result.primaryApplicationId)
     ?? stringValue(nestedApplication.id)
     ?? stringValue(nestedDeploymentTarget.applicationId)
-  if (!projectId || !externalOperationId) return undefined
+    ?? stringValue(call.arguments.application)
+    ?? stringValue(call.arguments.applicationId)
+  if (!project || !externalOperationId) return undefined
 
   let argumentsValue: Record<string, unknown>
   switch (verification.family) {
     case "build_run":
-      argumentsValue = { projectId, runId: externalOperationId }
+      argumentsValue = { project, buildRunId: externalOperationId }
       break
     case "release":
-      argumentsValue = { projectId, releaseId: externalOperationId }
+      argumentsValue = { project, releaseId: externalOperationId }
       break
     case "gateway_route":
-      argumentsValue = { projectId, routeId: externalOperationId }
+      argumentsValue = { project, route: externalOperationId }
       break
     case "application":
-      argumentsValue = { projectId, applicationId: externalOperationId }
+      argumentsValue = { project, application: externalOperationId }
       break
     case "deployment_target": {
-      if (!applicationId) return undefined
-      const stage = stringValue(result.stage) ?? stringValue(recordValue(call.arguments.body).stage)
+      if (!application) return undefined
       argumentsValue = {
-        projectId,
-        applicationId,
-        ...(stage ? { stage } : {}),
-        page: 1,
-        pageSize: 100,
+        project,
+        application,
+        target: externalOperationId,
       }
-      break
-    }
-    case "runtime_secrets": {
-      const targetId = stringValue(result.id) ?? stringValue(call.arguments.targetId)
-      if (!applicationId || !targetId) return undefined
-      argumentsValue = { projectId, applicationId, targetId }
-      break
-    }
-    case "runtime_config_secrets": {
-      const setId = stringValue(call.arguments.setId) ?? stringValue(result.id)
-      if (!setId) return undefined
-      argumentsValue = { projectId, setId }
       break
     }
     default:
       return undefined
   }
-  const secretMutations = ["runtime_secrets", "runtime_config_secrets"].includes(verification.family)
-    ? runtimeSecretMutations(call.arguments)
-    : undefined
+  const secretMutations = extractSecretMutations(call.arguments)
   return {
     runId: call.runId,
     sourceToolCallId: call.id,
@@ -191,11 +178,11 @@ export function verificationForCall(
     operationId: verification.operationId,
     family: verification.family,
     expectation: verification.expect ?? "present",
-    arguments: argumentsValue,
+    arguments: { ...(verification.staticArguments ?? {}), ...argumentsValue },
     externalOperationId,
     attempts: 0,
-    ...(secretMutations?.requiredKeys.length ? { requiredKeys: secretMutations.requiredKeys } : {}),
-    ...(secretMutations?.absentKeys.length ? { absentKeys: secretMutations.absentKeys } : {}),
+    ...(secretMutations.requiredKeys.length ? { requiredKeys: secretMutations.requiredKeys } : {}),
+    ...(secretMutations.absentKeys.length ? { absentKeys: secretMutations.absentKeys } : {}),
   }
 }
 
@@ -206,14 +193,18 @@ function resourceVerificationForCall(
 ): RunToolVerification | undefined {
   const readOperation = resolveOperation?.(rule.operationId)
   if (!readOperation) return undefined
-  const externalOperationId = rule.singleton ? call.id : expressionValue(rule.idFrom, call)
+  const externalOperationId = rule.singleton ? call.id : (expressionValue(rule.idFrom, call) ?? stringValue(recordValue(call.result).id))
   if (!externalOperationId) return undefined
   const readIdArgument = rule.readIdArgument
-  const body = recordValue(call.arguments.body)
   const result = recordValue(call.result)
   const properties = recordValue(readOperation.inputSchema.properties)
-  const argumentsValue: Record<string, unknown> = {}
+  const argumentsValue: Record<string, unknown> = {
+    ...(rule.staticArguments ?? {}),
+  }
+  const maxPageSize = boundedReadPageSize(readOperation)
+
   for (const name of Object.keys(properties)) {
+    if (name in argumentsValue) continue
     if (name === readIdArgument) {
       argumentsValue[name] = externalOperationId
       continue
@@ -223,23 +214,22 @@ function resourceVerificationForCall(
       continue
     }
     if (name === "pageSize") {
-      argumentsValue[name] = 100
+      argumentsValue[name] = maxPageSize
       continue
     }
-    const value = primitiveValue(call.arguments[name])
-      ?? primitiveValue(body[name])
-      ?? primitiveValue(result[name])
-      ?? (name === "projectId"
-        ? singleStringArrayElement(call.arguments.projectIds)
-          ?? singleStringArrayElement(body.projectIds)
-          ?? singleStringArrayElement(result.projectIds)
-        : undefined)
+    if (name === "project") {
+      const proj = resolveProjectLocator(result, call.arguments)
+      if (proj !== undefined) argumentsValue[name] = proj
+      continue
+    }
+    const value = primitiveValue(call.arguments[name]) ?? primitiveValue(result[name])
     if (value !== undefined) argumentsValue[name] = value
   }
   const required = Array.isArray(readOperation.inputSchema.required)
     ? readOperation.inputSchema.required.filter((name): name is string => typeof name === "string")
     : []
   if (required.some(name => argumentsValue[name] === undefined)) return undefined
+  const secretMutations = extractSecretMutations(call.arguments)
   return {
     runId: call.runId,
     sourceToolCallId: call.id,
@@ -250,9 +240,12 @@ function resourceVerificationForCall(
     arguments: argumentsValue,
     externalOperationId,
     attempts: 0,
+    ...(secretMutations.requiredKeys.length ? { requiredKeys: secretMutations.requiredKeys } : {}),
+    ...(secretMutations.absentKeys.length ? { absentKeys: secretMutations.absentKeys } : {}),
     resource: {
       singleton: rule.singleton === true,
       collection: rule.collection === true,
+      ...(rule.collectionPath ? { collectionPath: rule.collectionPath } : {}),
       targetField: rule.targetField ?? "id",
       ...(rule.statusField ? { statusField: rule.statusField } : {}),
       ...(rule.pendingStatuses?.length ? { pendingStatuses: rule.pendingStatuses } : {}),
@@ -262,6 +255,41 @@ function resourceVerificationForCall(
   }
 }
 
+function matchesVerificationRule(rule: ToolVerificationRule, call: ToolCallRecord): boolean {
+  if (rule.whenResultHas && !hasResultField(call.result, rule.whenResultHas)) {
+    return false
+  }
+  if (rule.whenArgumentEquals) {
+    for (const [key, expected] of Object.entries(rule.whenArgumentEquals)) {
+      if (nestedFieldValue(call.arguments, key) !== expected) return false
+    }
+  }
+  if (rule.whenResultEquals) {
+    for (const [key, expected] of Object.entries(rule.whenResultEquals)) {
+      if (nestedFieldValue(call.result, key) !== expected) return false
+    }
+  }
+  return true
+}
+
+function resolveProjectLocator(result: Record<string, unknown>, args: Record<string, unknown>): string | undefined {
+  return stringValue(result.projectId)
+    ?? stringValue(args.project)
+    ?? stringValue(args.projectId)
+    ?? firstStringElement(result.projectIds)
+    ?? firstStringElement(args.addProjects)
+    ?? firstStringElement(args.projects)
+}
+
+function boundedReadPageSize(readOperation: ToolOperation | undefined): number {
+  const properties = readOperation ? recordValue(readOperation.inputSchema.properties) : {}
+  const pageSizeProp = recordValue(properties.pageSize)
+  const maxVal = typeof pageSizeProp.maximum === "number" && Number.isFinite(pageSizeProp.maximum)
+    ? Math.floor(pageSizeProp.maximum)
+    : 50
+  return Math.max(1, Math.min(50, maxVal))
+}
+
 function expressionValue(expression: string | undefined, call: ToolCallRecord): string | undefined {
   if (!expression) return undefined
   const value = expression.split(".").reduce<unknown>((current, segment) => {
@@ -269,6 +297,15 @@ function expressionValue(expression: string | undefined, call: ToolCallRecord): 
     return record[segment]
   }, { result: call.result, argument: call.arguments })
   return stringValue(value)
+}
+
+function nestedFieldValue(source: unknown, path: string): unknown {
+  let current = source
+  for (const segment of path.split(".").filter(Boolean)) {
+    const record = recordValue(current)
+    current = record[segment]
+  }
+  return current
 }
 
 function primitiveValue(value: unknown): string | number | boolean | undefined {
@@ -286,38 +323,65 @@ function externalOperationIdFor(
   nestedDeploymentTarget: Record<string, unknown>,
 ): string | undefined {
   if (verification.family === "application")
-    return stringValue(nestedApplication.id)
+    return stringValue(result.applicationId)
+      ?? stringValue(result.primaryApplicationId)
+      ?? stringValue(nestedApplication.id)
       ?? stringValue(result.id)
-      ?? stringValue(result.applicationId)
+      ?? stringValue(argumentsValue.application)
       ?? stringValue(argumentsValue.applicationId)
   if (verification.family === "deployment_target")
-    return stringValue(nestedDeploymentTarget.id)
+    return stringValue(result.deploymentTargetId)
+      ?? stringValue(result.primaryDeploymentTargetId)
+      ?? stringValue(nestedDeploymentTarget.id)
       ?? stringValue(result.id)
+      ?? stringValue(argumentsValue.target)
       ?? stringValue(argumentsValue.targetId)
-  if (verification.family === "runtime_secrets")
-    return stringValue(result.id) ?? stringValue(argumentsValue.targetId)
-  if (verification.family === "runtime_config_secrets")
-    return stringValue(result.id) ?? stringValue(argumentsValue.setId)
   if (verification.family === "build_run")
-    return stringValue(result.id)
+    return stringValue(result.buildRunId)
+      ?? stringValue(result.id)
+      ?? stringValue(argumentsValue.buildRunId)
       ?? stringValue(argumentsValue.runId)
-  return stringValue(result.id)
+  if (verification.family === "gateway_route")
+    return stringValue(result.routeId)
+      ?? stringValue(result.id)
+      ?? stringValue(argumentsValue.route)
+      ?? stringValue(argumentsValue.routeId)
+  return stringValue(result.releaseId)
+    ?? stringValue(result.primaryReleaseId)
     ?? stringValue(nestedRelease.id)
-    ?? stringValue(result.releaseId)
-    ?? (verification.family === "gateway_route" ? stringValue(argumentsValue.routeId) : undefined)
+    ?? stringValue(result.id)
+    ?? stringValue(argumentsValue.releaseId)
 }
 
-function runtimeSecretMutations(argumentsValue: Record<string, unknown>): { requiredKeys: string[], absentKeys: string[] } {
-  const items = recordValue(argumentsValue.body).items
+function extractSecretMutations(argumentsValue: Record<string, unknown>): { requiredKeys: string[], absentKeys: string[] } {
   const required = new Set<string>()
   const absent = new Set<string>()
-  for (const value of Array.isArray(items) ? items : []) {
-    const item = recordValue(value)
-    if (stringValue(item.valueMode) !== "secret") continue
-    const key = stringValue(item.key)
-    if (!key) continue
-    if (stringValue(item.operation) === "clear") absent.add(key)
-    else if (["set", "generate"].includes(stringValue(item.operation) ?? "")) required.add(key)
+
+  const actions = argumentsValue.secretActions ?? argumentsValue.secrets
+  if (Array.isArray(actions)) {
+    for (const raw of actions) {
+      const item = recordValue(raw)
+      const key = stringValue(item.key)
+      if (!key) continue
+      const op = stringValue(item.operation) ?? stringValue(item.action)
+      if (op === "clear" || op === "delete" || op === "remove") absent.add(key)
+      else if (op === "set" || op === "generate" || item.value !== undefined) required.add(key)
+    }
+  }
+  for (const mapKey of ["upsertSecrets", "secretValues", "secretConfigs"] as const) {
+    const dict = recordValue(argumentsValue[mapKey])
+    for (const key of Object.keys(dict)) {
+      if (key.trim()) required.add(key.trim())
+    }
+  }
+  for (const arrKey of ["removeSecretKeys", "clearSecretKeys"] as const) {
+    const arr = argumentsValue[arrKey]
+    if (Array.isArray(arr)) {
+      for (const k of arr) {
+        const s = stringValue(k)
+        if (s) absent.add(s)
+      }
+    }
   }
   return { requiredKeys: [...required], absentKeys: [...absent] }
 }
@@ -346,8 +410,11 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
-function singleStringArrayElement(value: unknown): string | undefined {
+function firstStringElement(value: unknown): string | undefined {
   if (!Array.isArray(value)) return undefined
-  const items = [...new Set(value.map(item => stringValue(item)).filter((item): item is string => Boolean(item)))]
-  return items.length === 1 ? items[0] : undefined
+  for (const item of value) {
+    const s = stringValue(item)
+    if (s) return s
+  }
+  return undefined
 }

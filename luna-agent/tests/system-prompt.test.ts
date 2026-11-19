@@ -55,6 +55,7 @@ describe("versioned system prompt", () => {
       "runtime-volumes",
       "gateway-topology",
       "diagnostics-governance",
+      "platform-admin",
     ]) {
       expect(prompt).toContain(skillId)
     }

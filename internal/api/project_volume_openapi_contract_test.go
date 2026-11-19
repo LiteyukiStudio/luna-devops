@@ -7,32 +7,35 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 )
 
-func TestProjectVolumeOperationsAreDerivedFromOpenAPI(t *testing.T) {
+func TestProjectVolumeOperationsAreDerivedFromFacadeCatalog(t *testing.T) {
+	catalogByID := map[string]aitool.CatalogOperation{}
+	for _, op := range DefaultAIToolCatalog() {
+		catalogByID[op.OperationID] = op
+	}
 	tests := map[string]struct {
 		scope            string
 		requiresApproval bool
 	}{
-		"listProjectVolumes":              {scope: "volume:read"},
-		"getProjectVolume":                {scope: "volume:read"},
-		"listProjectVolumeStorageClasses": {scope: "volume:read"},
-		"createProjectVolume":             {scope: "volume:write", requiresApproval: true},
-		"updateProjectVolume":             {scope: "volume:write", requiresApproval: true},
-		"previewProjectVolumeDeletion":    {scope: "volume:delete", requiresApproval: true},
-		"deleteProjectVolume":             {scope: "volume:delete", requiresApproval: true},
-		"retryProjectVolumeOperation":     {scope: "volume:read", requiresApproval: true},
-		"createVolumeExport":              {scope: "volume:export", requiresApproval: true},
+		"runtime_list_volumes":           {scope: "volume:read"},
+		"runtime_get_volume":             {scope: "volume:read"},
+		"runtime_create_volume":          {scope: "volume:write", requiresApproval: true},
+		"runtime_update_volume":          {scope: "volume:write", requiresApproval: true},
+		"runtime_retry_volume_operation": {scope: "volume:read", requiresApproval: true},
+		"runtime_delete_volume":          {scope: "volume:delete", requiresApproval: true},
+		"runtime_create_volume_export":   {scope: "volume:export", requiresApproval: true},
+		"runtime_cancel_volume_transfer": {scope: "volume:read", requiresApproval: true},
 	}
 	for operationID, test := range tests {
-		operation, ok := aitool.PlatformOperation(operationID)
+		operation, ok := catalogByID[operationID]
 		if !ok {
-			t.Fatalf("regular volume operation %s is missing from Agent catalog", operationID)
+			t.Fatalf("volume facade operation %s is missing from DefaultAIToolCatalog", operationID)
 		}
 		if !reflect.DeepEqual(operation.RequiredScopes, []string{test.scope}) || operation.RequiresApproval != test.requiresApproval {
 			t.Fatalf("%s Agent policy = %#v", operationID, operation)
 		}
 	}
 	for _, operationID := range []string{"retryVolumeTransfer", "createVolumeImport"} {
-		if _, ok := aitool.PlatformOperation(operationID); ok {
+		if _, ok := catalogByID[operationID]; ok {
 			t.Fatalf("explicitly disabled or protocol volume operation entered Agent catalog: %s", operationID)
 		}
 	}
@@ -158,6 +161,10 @@ func TestVolumeUploadOpenAPIUsesSingleDirectStreamContract(t *testing.T) {
 }
 
 func TestVolumeByteTransferProtocolIsNotExposedToAgent(t *testing.T) {
+	catalogByID := map[string]aitool.CatalogOperation{}
+	for _, op := range DefaultAIToolCatalog() {
+		catalogByID[op.OperationID] = op
+	}
 	for _, operationID := range []string{
 		"createVolumeImport",
 		"uploadVolumeImportContent",
@@ -165,7 +172,7 @@ func TestVolumeByteTransferProtocolIsNotExposedToAgent(t *testing.T) {
 		"downloadVolumeTransferContent",
 		"downloadVolumeTransferManifest",
 	} {
-		if operation, ok := aitool.PlatformOperation(operationID); ok {
+		if operation, ok := catalogByID[operationID]; ok {
 			t.Fatalf("protocol operation %s leaked into Agent catalog: %#v", operationID, operation)
 		}
 	}

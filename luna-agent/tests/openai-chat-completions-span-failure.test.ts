@@ -129,7 +129,7 @@ describe("OpenAI Chat Completions spans", () => {
     })
   })
 
-  it("applies catalog sensitive paths only to captured model content", async () => {
+  it("enforces outbound catalog sensitive paths redaction on assistant history and captured telemetry while preserving inbound tool arguments", async () => {
     const rawCommand = "kubectl get pods --namespace telemetry-private"
     const operationId = "executeRuntimeCommand"
     const argumentsValue = { body: { command: rawCommand, container: "api" } }
@@ -194,7 +194,8 @@ describe("OpenAI Chat Completions spans", () => {
 
     const rawRequestBody = fetchMock.mock.calls[0]?.[1]?.body
     expect(typeof rawRequestBody).toBe("string")
-    expect(rawRequestBody).toContain(rawCommand)
+    expect(rawRequestBody).not.toContain(rawCommand)
+    expect(rawRequestBody).toContain("[REDACTED]")
     expect(rawRequestBody).not.toContain("sensitivePaths")
     expect(result.toolCalls?.[0]?.arguments).toEqual(argumentsValue)
     expect(argumentsValue.body.command).toBe(rawCommand)

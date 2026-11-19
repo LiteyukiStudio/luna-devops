@@ -44,6 +44,7 @@ type Host interface {
 	RequirePlatformAdmin(ctx *gin.Context) bool
 	ResolveListVisibility(ctx *gin.Context, user model.User) (projectservice.ListVisibility, bool)
 	ApplyScopedResourceListVisibility(ctx *gin.Context, query *gorm.DB, resourceType string, user model.User, projectID string, visibility projectservice.ListVisibility) (*gorm.DB, bool)
+	ApplyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string, ctx context.Context) *gorm.DB
 	NormalizeScopedOwnerWithProjects(ctx *gin.Context, user model.User, scope, ownerRef string, projectIDs []string, globalError string) (string, string, []string, bool)
 	NormalizeCredentialScopeWithinParent(ctx *gin.Context, user model.User, scope string, projectIDs []string, parentScope string, parentProjectIDs []string, globalError string) (string, string, []string, bool)
 	CanManageScopedResourceByID(ctx *gin.Context, user model.User, scope, ownerRef, resourceType, resourceID, errorMessage string) bool
@@ -52,7 +53,10 @@ type Host interface {
 	ReplaceScopedResourceProjectBindings(tx *gorm.DB, resourceType, resourceID string, projectIDs, defaultProjectIDs []string) error
 	ScopedResourceProjectIDs(resourceType, resourceID string, ctx context.Context) []string
 	ScopedResourceProjectIDMap(resourceType string, resourceIDs []string, ctx context.Context) map[string][]string
+	FindProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	WriteProjectAuthorizationError(ctx *gin.Context, err error)
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	SecretStore() secret.Store
@@ -103,6 +107,18 @@ func (h *Handler) resolveListVisibility(ctx *gin.Context, user model.User) (proj
 }
 func (h *Handler) applyScopedResourceListVisibility(ctx *gin.Context, query *gorm.DB, resourceType string, user model.User, projectID string, visibility projectservice.ListVisibility) (*gorm.DB, bool) {
 	return h.host.ApplyScopedResourceListVisibility(ctx, query, resourceType, user, projectID, visibility)
+}
+func (h *Handler) applyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string, ctx context.Context) *gorm.DB {
+	return h.host.ApplyScopedResourceVisibilityForProject(query, resourceType, user, projectID, ctx)
+}
+func (h *Handler) findProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool) {
+	return h.host.FindProjectForCurrentUserByID(ctx, projectID)
+}
+func (h *Handler) authorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectByID(ctx, projectID, action)
+}
+func (h *Handler) authorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectRef(ctx, projectRef, action)
 }
 func (h *Handler) normalizeScopedOwnerWithProjects(ctx *gin.Context, user model.User, scope, ownerRef string, projectIDs []string, globalError string) (string, string, []string, bool) {
 	return h.host.NormalizeScopedOwnerWithProjects(ctx, user, scope, ownerRef, projectIDs, globalError)

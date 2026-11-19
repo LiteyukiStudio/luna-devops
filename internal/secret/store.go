@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -99,6 +100,18 @@ func (c Codec) Available() bool {
 	return len(c.key) == 32
 }
 
+// DeriveKey derives a deterministic 32-byte domain-separated subkey from the
+// master encryption key without exposing the raw key material.
+func (c Codec) DeriveKey(purpose string) []byte {
+	purpose = strings.TrimSpace(purpose)
+	if !c.Available() || purpose == "" {
+		return nil
+	}
+	mac := hmac.New(sha256.New, c.key)
+	_, _ = mac.Write([]byte(purpose))
+	return mac.Sum(nil)
+}
+
 func (c Codec) Encrypt(secret string) string {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
@@ -174,6 +187,10 @@ func (s Store) WithDB(db *gorm.DB) Store {
 
 func (s Store) Available() bool {
 	return s.codec.Available()
+}
+
+func (s Store) DeriveKey(purpose string) []byte {
+	return s.codec.DeriveKey(purpose)
 }
 
 func (s Store) Encrypt(plaintext string) string {

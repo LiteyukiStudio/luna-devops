@@ -45,7 +45,7 @@ paths:
     get:
       operationId: getApiMeta
       tags: [Health]
-      summary: Get API version and CLI capability metadata
+      summary: Get API version and capability metadata
       responses:
         "200":
           description: Public API compatibility and feature metadata.
@@ -53,7 +53,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [apiVersion, serverVersion, openapiDigest, minimumCliVersion, features]
+                required: [apiVersion, serverVersion, openapiDigest, features]
                 properties:
                   apiVersion: { type: string, example: v1 }
                   serverVersion: { type: string, example: 0.1.0 }
@@ -61,13 +61,12 @@ paths:
                     type: string
                     description: Exact OpenAPI snapshot digest for diagnostics and cache invalidation, not a compatibility version.
                     example: "sha256:0123456789abcdef"
-                  minimumCliVersion: { type: string, example: 0.1.0 }
                   features:
                     type: object
-                    required: [accessToken, deviceCode, oauthAuthorization, openapiOperations]
+                    required: [accessToken, mcp, oauthAuthorization, openapiOperations]
                     properties:
                       accessToken: { type: boolean }
-                      deviceCode: { type: boolean }
+                      mcp: { type: boolean }
                       oauthAuthorization: { type: boolean }
                       openapiOperations: { type: boolean }
 
@@ -79,7 +78,7 @@ paths:
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
-        exclusionReason: OAuth discovery is consumed by the CLI authentication adapter.
+        exclusionReason: OAuth 2.0 authorization server metadata discovery endpoint.
       responses:
         "200":
           description: OAuth 2.0 authorization server metadata.
@@ -88,86 +87,106 @@ paths:
               schema:
                 $ref: "#/components/schemas/OAuthAuthorizationServerMetadata"
 
-  /api/v1/oauth/device/authorization:
-    post:
-      operationId: startOAuthDeviceAuthorization
-      tags: [Auth]
-      summary: Start an OAuth Device Authorization Grant
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        exclusionReason: Device authorization is exposed through `luna login`.
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: "#/components/schemas/OAuthDeviceAuthorizationInput"
-      responses:
-        "200":
-          description: Device and user codes for the browser verification flow.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/OAuthDeviceAuthorizationResponse"
-        "400":
-          description: OAuth protocol error.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
-
-  /api/v1/oauth/device/verification:
+  /.well-known/oauth-protected-resource:
     get:
-      operationId: getOAuthDeviceVerification
+      operationId: getOAuthProtectedResourceMetadata
       tags: [Auth]
-      summary: Inspect a pending OAuth device authorization
+      summary: Get OAuth protected resource metadata for MCP
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
-        exclusionReason: Browser-only Device Code verification endpoint.
-      parameters:
-        - name: user_code
-          in: query
-          required: true
-          schema: { type: string }
+        exclusionReason: RFC 9728 OAuth protected resource discovery endpoint for MCP clients.
       responses:
         "200":
-          description: Pending device authorization visible to the signed-in user.
+          description: OAuth 2.0 protected resource metadata for the Luna DevOps MCP server.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OAuthDeviceVerification"
-        "400":
-          description: Invalid, expired, or consumed user code.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-    post:
-      operationId: decideOAuthDeviceVerification
+                $ref: "#/components/schemas/OAuthProtectedResourceMetadata"
+
+  /.well-known/oauth-protected-resource/api/v1/mcp:
+    get:
+      operationId: getMCPOAuthProtectedResourceMetadata
       tags: [Auth]
-      summary: Approve or deny an OAuth device authorization
+      summary: Get path-scoped OAuth protected resource metadata for MCP
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
-        exclusionReason: Browser-only Device Code verification endpoint.
+        exclusionReason: RFC 9728 path-scoped protected resource discovery endpoint for MCP clients.
+      responses:
+        "200":
+          description: OAuth 2.0 protected resource metadata for `/api/v1/mcp`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthProtectedResourceMetadata"
+
+  /api/v1/mcp:
+    post:
+      operationId: postMCPStreamableHTTP
+      tags: [AI Assistant]
+      summary: Execute a Streamable HTTP MCP JSON-RPC request or notification
+      x-luna-mcp:
+        perToolScopeEnforcement: true
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Streamable HTTP Model Context Protocol JSON-RPC transport endpoint.
+      security:
+        - BearerToken: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/OAuthDeviceVerificationDecisionInput"
+              type: object
+              additionalProperties: true
       responses:
         "200":
-          description: Device authorization decision accepted.
+          description: JSON-RPC 2.0 response payload.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OAuthDeviceVerificationResult"
-        "400":
-          description: Invalid, expired, or consumed user code.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
+                type: object
+                additionalProperties: true
+        "202":
+          description: JSON-RPC 2.0 notification accepted.
+        "401":
+          description: Missing, invalid, expired, or revoked Bearer token.
+    get:
+      operationId: getMCPStreamableHTTP
+      tags: [AI Assistant]
+      summary: Streamable HTTP MCP GET probe
+      x-luna-mcp:
+        perToolScopeEnforcement: true
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Streamable HTTP Model Context Protocol transport endpoint.
+      security:
+        - BearerToken: []
+      responses:
+        "405":
+          description: Server-initiated standalone SSE stream is not enabled on this endpoint.
+        "401":
+          description: Missing, invalid, expired, or revoked Bearer token.
+    delete:
+      operationId: deleteMCPStreamableHTTPSession
+      tags: [AI Assistant]
+      summary: Terminate a Streamable HTTP MCP session
+      x-luna-mcp:
+        perToolScopeEnforcement: true
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Streamable HTTP Model Context Protocol session termination endpoint.
+      security:
+        - BearerToken: []
+      responses:
+        "204":
+          description: Session terminated.
+        "401":
+          description: Missing, invalid, expired, or revoked Bearer token.
 
   /api/v1/oauth/token:
     post:
@@ -177,7 +196,7 @@ paths:
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
-        exclusionReason: OAuth token exchange is consumed by the CLI authentication adapter.
+        exclusionReason: OAuth 2.0 token exchange endpoint.
       requestBody:
         required: true
         content:
@@ -982,7 +1001,7 @@ paths:
         classification: protocol-adapter
         hidden: true
         exclusionReason: Low-level terminal preflight consumed by the explicit CLI runtime-terminal protocol adapter.
-      description: Normal HTTP preflight used before opening the Pod terminal WebSocket. Browser callers use their current session cookie and Luna CLI uses its OAuth bearer token; personal access tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, interactive subject, cluster, and Pod. The WebSocket consumes the ticket atomically, repeats authorization checks before upgrading, and continuously revalidates identity, role, Pod identity, and platform ownership.
+      description: Normal HTTP preflight used before opening the Pod terminal WebSocket. Browser callers use their current session cookie; bearer tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, interactive subject, cluster, and Pod. The WebSocket consumes the ticket atomically, repeats authorization checks before upgrading, and continuously revalidates identity, role, Pod identity, and platform ownership.
       security:
         - SessionCookie: []
         - BearerToken: []
@@ -1012,7 +1031,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "401":
-          description: Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked.
+          description: Browser session is missing, invalid, expired, or revoked.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3886,7 +3905,7 @@ paths:
         classification: protocol-adapter
         hidden: true
         exclusionReason: Low-level terminal preflight consumed by the explicit CLI deployment-terminal protocol adapter.
-      description: Normal HTTP preflight used before opening the deployment-target terminal WebSocket. Browser callers use their current session cookie and Luna CLI uses its OAuth bearer token; personal access tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, interactive subject, project, application, deployment target, cluster, and namespace. The WebSocket consumes the ticket atomically, repeats authorization checks before upgrading, and continuously revalidates identity, membership, role, resource state, and Web Console policy.
+      description: Normal HTTP preflight used before opening the deployment-target terminal WebSocket. Browser callers use their current session cookie; bearer tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, interactive subject, project, application, deployment target, cluster, and namespace. The WebSocket consumes the ticket atomically, repeats authorization checks before upgrading, and continuously revalidates identity, membership, role, resource state, and Web Console policy.
       security:
         - SessionCookie: []
         - BearerToken: []
@@ -3911,7 +3930,7 @@ paths:
               schema: { $ref: "#/components/schemas/RuntimeTerminalAuthorization" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401":
-          description: Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked.
+          description: Browser session is missing, invalid, expired, or revoked.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -4002,7 +4021,7 @@ paths:
         classification: protocol-adapter
         hidden: true
         exclusionReason: Low-level terminal preflight consumed by the explicit CLI release-terminal protocol adapter.
-      description: Normal HTTP preflight used before opening the release terminal WebSocket. Browser callers use their current session cookie and Luna CLI uses its OAuth bearer token; personal access tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, interactive subject, project, release, deployment target, cluster, and namespace. The WebSocket consumes the ticket atomically, repeats authorization checks before upgrading, and continuously revalidates identity, membership, role, resource state, and Web Console policy.
+      description: Normal HTTP preflight used before opening the release terminal WebSocket. Browser callers use their current session cookie; bearer tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, interactive subject, project, release, deployment target, cluster, and namespace. The WebSocket consumes the ticket atomically, repeats authorization checks before upgrading, and continuously revalidates identity, membership, role, resource state, and Web Console policy.
       security:
         - SessionCookie: []
         - BearerToken: []
@@ -4026,7 +4045,7 @@ paths:
               schema: { $ref: "#/components/schemas/RuntimeTerminalAuthorization" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401":
-          description: Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked.
+          description: Browser session is missing, invalid, expired, or revoked.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -11107,6 +11126,83 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AIProviderInternalConfig" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /internal/v1/ai/tools/preview:
+    post:
+      operationId: previewInternalAITool
+      tags: [AI Assistant Internal]
+      summary: Perform zero-trust RBAC/sandbox validation, dry-run conflict checks, and sign an L2 preview lock token
+      security: [{ AIAgentServiceToken: [] }]
+      parameters:
+        - { name: X-Luna-AI-Run-ID, in: header, required: true, schema: { type: string } }
+        - { name: X-Luna-AI-Tool-Call-ID, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [toolName, arguments]
+              properties:
+                toolName: { type: string }
+                arguments: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Validated approval preview diff and signed HMAC preview lock.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [approvalPreview, previewLock]
+                properties:
+                  approvalPreview: { type: object, additionalProperties: true }
+                  previewLock: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /internal/v1/ai/tools/execute:
+    post:
+      operationId: executeInternalAITool
+      tags: [AI Assistant Internal]
+      summary: Execute a registered AI domain facade tool under DB-verified Run/ToolCall, approval, and preview lock bindings
+      security: [{ AIAgentServiceToken: [] }]
+      parameters:
+        - { name: X-Luna-AI-Run-ID, in: header, required: true, schema: { type: string } }
+        - { name: X-Luna-AI-Tool-Call-ID, in: header, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string } }
+        - { name: X-Luna-AI-Preview-Lock, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [toolName, arguments]
+              properties:
+                toolName: { type: string }
+                arguments: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Structured domain tool execution result.
+          headers:
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "428": { description: Approval or preview lock required, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /internal/v1/ai/runs/{runId}/tasks/{projectId}/{taskType}/{taskId}:
     get:
       operationId: getInternalAITaskStatus
@@ -12044,9 +12140,10 @@ components:
     AIPlatformToolCatalogOperation:
       type: object
       additionalProperties: false
-      required: [operationId, name, summary, category, tags, aliases, purpose, avoidWhen, preconditions, successEvidence, approvalTier, requiresApproval, idempotent, method, path, requiredScopes, inputSchema, outputSchema, parameters, requestBody, requestRequired]
+      required: [operationId, domain, name, summary, category, tags, aliases, purpose, avoidWhen, preconditions, successEvidence, adminOnly, approvalTier, requiresApproval, idempotent, requiredScopes, inputSchema, outputSchema, effect]
       properties:
         operationId: { type: string }
+        domain: { type: string, enum: [delivery, build, runtime, network, workspace, ops, admin] }
         name: { type: string }
         summary: { type: string }
         category: { type: string }
@@ -12062,6 +12159,8 @@ components:
         avoidWhen: { $ref: "#/components/schemas/AIAgentLocalizedText" }
         preconditions: { $ref: "#/components/schemas/AIAgentLocalizedList" }
         successEvidence: { $ref: "#/components/schemas/AIAgentLocalizedText" }
+        adminOnly: { type: boolean }
+        globalSessionOnly: { type: boolean }
         approvalTier: { type: string, enum: [L0, L1, L2] }
         requiresApproval: { type: boolean }
         idempotent: { type: boolean }
@@ -12076,20 +12175,24 @@ components:
         verification:
           type: array
           minItems: 1
-          maxItems: 4
+          maxItems: 6
           items:
             type: object
             additionalProperties: false
             required: [operationId, family]
             properties:
               operationId: { type: string }
-              family: { type: string, enum: [build_run, release, gateway_route, application, deployment_target, runtime_secrets, runtime_config_secrets, project_order, billing_rate_rules, resource] }
+              family: { type: string, enum: [build_run, release, gateway_route, application, deployment_target, project_order, billing_rate_rules, resource] }
               expect: { type: string, enum: [present, absent, canceled] }
               whenResultHas: { type: string }
+              whenArgumentEquals: { type: object, additionalProperties: true }
+              whenResultEquals: { type: object, additionalProperties: true }
               idFrom: { type: string }
               readIdArgument: { type: string }
               singleton: { type: boolean }
               collection: { type: boolean }
+              collectionPath: { type: string }
+              staticArguments: { type: object, additionalProperties: true }
               targetField: { type: string }
               statusField: { type: string }
               pendingStatuses: { type: array, items: { type: string }, maxItems: 20 }
@@ -12660,12 +12763,6 @@ components:
         refresh_token: { type: string, readOnly: true, x-luna-sensitive: true }
         scope: { type: string }
       required: [access_token, token_type]
-    OAuthDeviceAuthorizationInput:
-      type: object
-      additionalProperties: false
-      required: [client_id]
-      properties:
-        client_id: { type: string }
     OAuthTokenInput:
       type: object
       required: [grant_type]
@@ -12675,14 +12772,12 @@ components:
           enum:
             - authorization_code
             - refresh_token
-            - urn:ietf:params:oauth:grant-type:device_code
         client_id: { type: string }
         client_secret: { type: string, writeOnly: true, x-luna-sensitive: true }
         code: { type: string, writeOnly: true, x-luna-sensitive: true }
         code_verifier: { type: string, writeOnly: true, x-luna-sensitive: true }
         redirect_uri: { type: string, format: uri }
         refresh_token: { type: string, writeOnly: true, x-luna-sensitive: true }
-        device_code: { type: string, writeOnly: true, x-luna-sensitive: true }
       allOf:
         - if:
             properties:
@@ -12694,11 +12789,6 @@ components:
               grant_type: { const: refresh_token }
           then:
             required: [refresh_token]
-        - if:
-            properties:
-              grant_type: { const: "urn:ietf:params:oauth:grant-type:device_code" }
-          then:
-            required: [device_code]
     OAuthTokenRevocationInput:
       type: object
       required: [token]
@@ -12715,7 +12805,6 @@ components:
       required:
         - issuer
         - authorization_endpoint
-        - device_authorization_endpoint
         - token_endpoint
         - revocation_endpoint
         - response_types_supported
@@ -12725,9 +12814,11 @@ components:
       properties:
         issuer: { type: string, format: uri }
         authorization_endpoint: { type: string, format: uri }
-        device_authorization_endpoint: { type: string, format: uri }
         token_endpoint: { type: string, format: uri }
         revocation_endpoint: { type: string, format: uri }
+        scopes_supported:
+          type: array
+          items: { type: string }
         response_types_supported:
           type: array
           items: { type: string }
@@ -12740,39 +12831,25 @@ components:
         code_challenge_methods_supported:
           type: array
           items: { type: string }
-    OAuthDeviceAuthorizationResponse:
+    OAuthProtectedResourceMetadata:
       type: object
       additionalProperties: false
-      required: [device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval]
+      required:
+        - resource
+        - authorization_servers
+        - bearer_methods_supported
       properties:
-        device_code: { type: string, readOnly: true, x-luna-sensitive: true }
-        user_code: { type: string }
-        verification_uri: { type: string, format: uri }
-        verification_uri_complete: { type: string, format: uri }
-        expires_in: { type: integer, format: int64, minimum: 1 }
-        interval: { type: integer, minimum: 1 }
-    OAuthDeviceVerification:
-      type: object
-      additionalProperties: false
-      required: [application, userCode, expiresAt]
-      properties:
-        application: { $ref: "#/components/schemas/OAuthApplication" }
-        userCode: { type: string }
-        expiresAt: { type: string, format: date-time }
-    OAuthDeviceVerificationDecisionInput:
-      type: object
-      required: [userCode]
-      properties:
-        userCode: { type: string }
-        approved:
-          type: boolean
-          description: Approves the request when true; omission or false denies it.
-    OAuthDeviceVerificationResult:
-      type: object
-      additionalProperties: false
-      required: [status]
-      properties:
-        status: { type: string, enum: [approved, denied] }
+        resource: { type: string, format: uri }
+        authorization_servers:
+          type: array
+          items: { type: string, format: uri }
+        bearer_methods_supported:
+          type: array
+          items: { type: string }
+        scopes_supported:
+          type: array
+          items: { type: string }
+        resource_documentation: { type: string, format: uri }
     OAuthProtocolError:
       type: object
       additionalProperties: false

@@ -218,6 +218,10 @@ func (h *Handler) AuthorizeProjectByID(ctx *gin.Context, projectID string, actio
 	return h.authorizeProjectByID(ctx, projectID, action)
 }
 
+func (h *Handler) AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return h.authorizeProjectRef(ctx, projectRef, action)
+}
+
 func (h *Handler) ProjectActionAllowed(ctx context.Context, subject authz.ProjectSubject, projectID string, action authz.Action) (bool, error) {
 	return h.projectActionAllowed(ctx, subject, projectID, action)
 }

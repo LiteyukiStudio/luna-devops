@@ -52,10 +52,6 @@ func ProxyRouteKeys() []string {
 	return keys
 }
 
-func (h *Handler) AIToolExecutionIdentityMiddleware() gin.HandlerFunc {
-	return h.aiToolExecutionIdentityMiddleware()
-}
-
 func (h *Handler) ReadAIBody(ctx *gin.Context) ([]byte, bool) { return h.readAIBody(ctx) }
 
 func (h *Handler) CopyAIResponse(ctx *gin.Context, response *aiagent.Response, fallbackStatus int, errorCode string) {

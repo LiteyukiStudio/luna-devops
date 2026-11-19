@@ -130,6 +130,10 @@ func (h *Handler) GetInboxMessage(ctx *gin.Context) {
 		WriteInboxError(ctx, err)
 		return
 	}
+	if message.ArchivedAt != nil {
+		WriteInboxError(ctx, inbox.ErrNotFound)
+		return
+	}
 	response, err := h.inboxMessageResponse(ctx.Request.Context(), user.ID, message)
 	if err != nil {
 		WriteInboxError(ctx, err)

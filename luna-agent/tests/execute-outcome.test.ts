@@ -10,7 +10,7 @@ import { testExecutor } from "./support/run-executor.js"
 import { TestRepository } from "./support/test-repository.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 
-const operation = testToolOperation("execReleaseRuntimeCommand", { method: "POST", effect: "execute", idempotent: false })
+const operation = testToolOperation("runtime_exec_command", { method: "POST", effect: "execute", idempotent: false })
 
 const provider: ModelProvider = {
   async *stream() { yield { type: "message_delta", delta: "unexpected model call" }; throw new Error("unexpected model call") },

@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/api"
 )
 
 func main() {
-	operations, err := aitool.PlatformCatalog()
-	if err != nil {
-		fail(err)
-	}
+	operations := api.DefaultAIToolCatalog()
 	if err := json.NewEncoder(os.Stdout).Encode(operations); err != nil {
 		fail(err)
 	}

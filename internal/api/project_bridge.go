@@ -57,6 +57,10 @@ func (h *Handlers) authorizeProjectByID(ctx *gin.Context, projectID string, acti
 	return h.domains.project.AuthorizeProjectByID(ctx, projectID, action)
 }
 
+func (h *Handlers) authorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return h.domains.project.AuthorizeProjectRef(ctx, projectRef, action)
+}
+
 func (h *Handlers) projectActionAllowed(ctx context.Context, subject authz.ProjectSubject, projectID string, action authz.Action) (bool, error) {
 	return h.domains.project.ProjectActionAllowed(ctx, subject, projectID, action)
 }

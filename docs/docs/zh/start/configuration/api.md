@@ -31,7 +31,7 @@
 1. 说明：生产环境必须设置 `SECRET_ENCRYPTION_KEY`；更换后已有加密凭据将无法读取。
 2. 说明：这些配置只在数据库从未存在用户时创建首个管理员；已有有效管理员时不会覆盖账号或密码，已有用户但没有有效管理员时 API 会拒绝启动并要求先恢复管理员。
 3. 说明：API 与 Agent 必须使用同一个 `AI_INTERNAL_SECRET`。
-4. 说明：启用 Helm Chart 的 Ingress 时必须设置对应的 `app.trustedProxyCidrs`；优先填写 API 实际看到的专用 Ingress/反向代理来源及可信转发链代理出口，只有网络隔离能阻止其他 Pod 直连 API 时才可填写整段 Pod CIDR。不要填写客户端网段；API 会拒绝 `0.0.0.0/0` 和 `::/0`。直连请求按 socket 对端限流，只有实际对端属于可信代理 CIDR 时才采用转发客户端 IP。公共 CLI 的 device start、device-code polling、authorization-code、refresh 和 revoke 分别使用独立来源桶。
+4. 说明：启用 Helm Chart 的 Ingress 时必须设置对应的 `app.trustedProxyCidrs`；优先填写 API 实际看到的专用 Ingress/反向代理来源及可信转发链代理出口，只有网络隔离能阻止其他 Pod 直连 API 时才可填写整段 Pod CIDR。不要填写客户端网段；API 会拒绝 `0.0.0.0/0` 和 `::/0`。直连请求按 socket 对端限流，只有实际对端属于可信代理 CIDR 时才采用转发客户端 IP。OAuth 的 authorization-code、refresh 和 revoke 分别使用独立来源桶。
 
 ## 高级配置
 

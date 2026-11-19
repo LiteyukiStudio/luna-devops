@@ -5,6 +5,7 @@ import (
 	"time"
 
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
@@ -19,6 +20,8 @@ type Host interface {
 	CurrentUser(ctx *gin.Context) (model.User, bool)
 	RequestAllowsScope(ctx *gin.Context, required string) bool
 	AIConversationProjectID(ctx *gin.Context) string
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	ResolveListVisibility(ctx *gin.Context, user model.User) (projectservice.ListVisibility, bool)
 	ProjectIDsForUser(ctx context.Context, userID string) []string
 	EnsurePlatformSystemProject(user model.User, ctx context.Context) (model.Project, error)

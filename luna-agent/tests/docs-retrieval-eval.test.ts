@@ -13,7 +13,8 @@ const zhQuestions: Array<[string, string]> = [
   ["应用市场安装模板", "zh/use/app-marketplace"],
   ["发布失败怎么排查", "zh/use/diagnostics"],
   ["怎么配置通知 Webhook", "zh/use/notifications"],
-  ["Luna CLI 怎么安装", "zh/use/cli/installation"],
+  ["怎么接入 MCP Server", "zh/use/mcp/index"],
+  ["配套 Skills 怎么加载", "zh/use/mcp/skills"],
   ["首次登录管理员账号", "zh/start/first-login"],
   ["目标镜像模板支持哪些变量", "zh/reference/image-templates"],
   ["镜像 tag 模板怎么写提交哈希", "zh/reference/image-templates"],
@@ -29,6 +30,7 @@ const enQuestions: Array<[string, string]> = [
   ["Which variables can the image repository template use", "en/reference/image-templates"],
   ["build args format", "en/reference/build-variables"],
   ["How do I roll back a release", "en/use/workflow/build-and-release"],
+  ["How do I connect an MCP client", "en/use/mcp/index"],
 ]
 
 describe("bundled docs retrieval regression", () => {

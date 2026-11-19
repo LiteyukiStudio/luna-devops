@@ -22,8 +22,8 @@ func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user mo
 	binding, ok := h.currentInteractiveAuthorizationBinding(ctx, user)
 	if !ok {
 		if requestUsesBearerToken(ctx) {
-			h.auditWithContext(user.ID, "runtime_terminal.session_required", "runtime_terminal", false, "personal access tokens cannot authorize a terminal", ctx.Request.Context())
-			writeErrorCode(ctx, http.StatusForbidden, "runtime.terminal_session_required", "个人令牌不能用于终端，请使用浏览器会话或 Luna CLI OAuth 登录")
+			h.auditWithContext(user.ID, "runtime_terminal.session_required", "runtime_terminal", false, "bearer tokens cannot authorize a terminal", ctx.Request.Context())
+			writeErrorCode(ctx, http.StatusForbidden, "runtime.terminal_session_required", "访问令牌不能用于交互式终端，请使用浏览器会话登录")
 		} else {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
 		}
@@ -46,38 +46,27 @@ func requireRuntimeTerminalTicketForBearer(ctx *gin.Context, ticket string) bool
 }
 
 func (h *Handlers) currentInteractiveAuthorizationBinding(ctx *gin.Context, user model.User) (runtimeTerminalAuthorizationBinding, bool) {
+	if requestUsesBearerToken(ctx) {
+		return runtimeTerminalAuthorizationBinding{}, false
+	}
 	subject, ok := h.currentInteractiveSubject(ctx, user)
 	if !ok {
 		return runtimeTerminalAuthorizationBinding{}, false
 	}
-	binding := runtimeTerminalAuthorizationBinding{UserID: user.ID, SubjectID: subject}
-	if requestUsesBearerToken(ctx) {
-		token, tokenOK := currentAccessTokenFromContext(ctx)
-		if !tokenOK || token.UserID != user.ID || token.OAuthGrantID == "" || token.OAuthFamilyID == "" {
-			return runtimeTerminalAuthorizationBinding{}, false
-		}
-		binding = continuousAuthorizationBindingForAccessToken(user.ID, token)
-		binding.Deadline = time.Now().Add(time.Hour)
-		if token.ExpiresAt != nil && token.ExpiresAt.Before(binding.Deadline) {
-			binding.Deadline = *token.ExpiresAt
-		}
-	} else {
-		session, sessionOK := h.currentSessionFromCookie(ctx)
-		if !sessionOK || session.UserID != user.ID || session.ID != subject {
-			return runtimeTerminalAuthorizationBinding{}, false
-		}
-		binding.Deadline = session.ExpiresAt
+	session, sessionOK := h.currentSessionFromCookie(ctx)
+	if !sessionOK || session.UserID != user.ID || session.ID != subject {
+		return runtimeTerminalAuthorizationBinding{}, false
 	}
-	return binding, true
+	return runtimeTerminalAuthorizationBinding{
+		UserID:    user.ID,
+		SubjectID: subject,
+		Deadline:  session.ExpiresAt,
+	}, true
 }
 
 func (h *Handlers) currentInteractiveSubject(ctx *gin.Context, user model.User) (string, bool) {
 	if requestUsesBearerToken(ctx) {
-		token, ok := currentAccessTokenFromContext(ctx)
-		if !ok || token.UserID != user.ID || token.Source != "oauth" || token.OAuthApplicationID != lunaCLIApplicationID || token.OAuthGrantID == "" || token.OAuthFamilyID == "" {
-			return "", false
-		}
-		return oauthAccessTokenSubject(token.ID), true
+		return "", false
 	}
 	session, ok := h.currentSessionFromCookie(ctx)
 	if !ok || session.UserID != user.ID {

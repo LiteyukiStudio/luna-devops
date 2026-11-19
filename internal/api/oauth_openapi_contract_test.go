@@ -41,11 +41,8 @@ func TestOAuthOpenAPITracksRuntimeTransportDTOs(t *testing.T) {
 		fieldTag    string
 	}{
 		{name: "metadata response", path: "/.well-known/oauth-authorization-server", method: "get", status: "200", runtimeType: reflect.TypeOf(oauthAuthorizationServerMetadataResponse{}), mode: oauthTransportOutput},
-		{name: "device authorization input", path: "/api/v1/oauth/device/authorization", method: "post", request: true, contentType: "application/x-www-form-urlencoded", runtimeType: reflect.TypeOf(oauthDeviceAuthorizationInput{}), mode: oauthTransportInput, fieldTag: "form"},
-		{name: "device authorization response", path: "/api/v1/oauth/device/authorization", method: "post", status: "200", runtimeType: reflect.TypeOf(oauthDeviceAuthorizationResponse{}), mode: oauthTransportOutput},
-		{name: "device verification response", path: "/api/v1/oauth/device/verification", method: "get", status: "200", runtimeType: reflect.TypeOf(oauthDeviceVerificationResponse{}), mode: oauthTransportOutput},
-		{name: "device decision input", path: "/api/v1/oauth/device/verification", method: "post", request: true, contentType: "application/json", runtimeType: reflect.TypeOf(oauthDeviceVerificationInput{}), mode: oauthTransportInput},
-		{name: "device decision response", path: "/api/v1/oauth/device/verification", method: "post", status: "200", runtimeType: reflect.TypeOf(oauthDeviceVerificationResult{}), mode: oauthTransportOutput},
+		{name: "protected resource metadata response", path: "/.well-known/oauth-protected-resource", method: "get", status: "200", runtimeType: reflect.TypeOf(oauthProtectedResourceMetadataResponse{}), mode: oauthTransportOutput},
+		{name: "mcp protected resource metadata response", path: "/.well-known/oauth-protected-resource/api/v1/mcp", method: "get", status: "200", runtimeType: reflect.TypeOf(oauthProtectedResourceMetadataResponse{}), mode: oauthTransportOutput},
 		{name: "token input", path: "/api/v1/oauth/token", method: "post", request: true, contentType: "application/x-www-form-urlencoded", runtimeType: reflect.TypeOf(oauthTokenInput{}), mode: oauthTransportInput, fieldTag: "form"},
 		{name: "token response", path: "/api/v1/oauth/token", method: "post", status: "200", runtimeType: reflect.TypeOf(oauthTokenResponse{}), mode: oauthTransportOutput},
 		{name: "token revocation input", path: "/api/v1/oauth/revoke", method: "post", request: true, contentType: "application/x-www-form-urlencoded", runtimeType: reflect.TypeOf(oauthTokenRevocationInput{}), mode: oauthTransportInput, fieldTag: "form"},

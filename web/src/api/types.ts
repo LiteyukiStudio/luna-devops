@@ -2231,21 +2231,6 @@ export interface OAuthAuthorizationDecisionResponse {
   redirectUrl: string
 }
 
-export interface OAuthDeviceVerification {
-  application: OAuthApplication
-  userCode: string
-  expiresAt: string
-}
-
-export interface OAuthDeviceVerificationDecision {
-  approved: boolean
-  userCode: string
-}
-
-export interface OAuthDeviceVerificationResult {
-  status: 'approved' | 'denied'
-}
-
 export interface BillingSummary {
   /** platform_total sums every wallet and carries no balanceStatus. */
   balanceScope: 'account' | 'platform_total'

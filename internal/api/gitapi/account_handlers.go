@@ -455,14 +455,47 @@ func (h *Handlers) refreshGitAccountForUser(ctx *gin.Context, user model.User, a
 		writeErrorCode(ctx, http.StatusBadRequest, "git.token_refresh_failed", "git token refresh failed")
 		return account, false
 	}
-	account.AccessTokenRef = h.secrets.StoreContext(ctx.Request.Context(), token.AccessToken, account.UserID, "git_account:"+account.ID+":access")
-	if token.RefreshToken != "" {
-		account.RefreshTokenRef = h.secrets.StoreContext(ctx.Request.Context(), token.RefreshToken, account.UserID, "git_account:"+account.ID+":refresh")
-	}
-	if !token.Expiry.IsZero() {
-		account.ExpiresAt = &token.Expiry
-	}
-	if err := h.dbFor(ctx).Save(&account).Error; err != nil {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.GitAccount
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", account.ID).Error; err != nil {
+			return err
+		}
+		if h.secrets.Available() {
+			accessResource := "git_account:" + locked.ID + ":access"
+			newAccessRef, storeErr := h.secrets.StoreContextWithDB(ctx.Request.Context(), tx, token.AccessToken, locked.UserID, accessResource)
+			if storeErr != nil {
+				return storeErr
+			}
+			if strings.TrimSpace(locked.AccessTokenRef) != "" && locked.AccessTokenRef != newAccessRef {
+				if delErr := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, locked.AccessTokenRef, accessResource); delErr != nil {
+					return delErr
+				}
+			}
+			locked.AccessTokenRef = newAccessRef
+			if token.RefreshToken != "" {
+				refreshResource := "git_account:" + locked.ID + ":refresh"
+				newRefreshRef, refreshStoreErr := h.secrets.StoreContextWithDB(ctx.Request.Context(), tx, token.RefreshToken, locked.UserID, refreshResource)
+				if refreshStoreErr != nil {
+					return refreshStoreErr
+				}
+				if strings.TrimSpace(locked.RefreshTokenRef) != "" && locked.RefreshTokenRef != newRefreshRef {
+					if delErr := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, locked.RefreshTokenRef, refreshResource); delErr != nil {
+						return delErr
+					}
+				}
+				locked.RefreshTokenRef = newRefreshRef
+			}
+		}
+		if !token.Expiry.IsZero() {
+			expiry := token.Expiry
+			locked.ExpiresAt = &expiry
+		}
+		if saveErr := tx.Save(&locked).Error; saveErr != nil {
+			return saveErr
+		}
+		account = locked
+		return nil
+	}); err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "git.token_refresh_failed", "git token refresh failed")
 		return account, false
 	}

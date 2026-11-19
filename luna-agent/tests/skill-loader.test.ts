@@ -13,8 +13,9 @@ import { testToolOperation } from "./support/tool-catalog.js"
 const reportedUsage = { status: "reported" as const, value: { inputTokens: 20, outputTokens: 10, totalTokens: 30 } }
 
 describe("progressive domain skills", () => {
-  it("loads all 6 domain skills with Run-scoped deduplication and partial cache hits", () => {
+  it("loads all 7 domain skills with Run-scoped deduplication and partial cache hits", () => {
     const index = listDomainSkills()
+    expect(index).toHaveLength(7)
     expect(index.map(item => item.skillId)).toEqual([...domainSkillIds])
     for (const item of index) {
       expect(item.description.length).toBeGreaterThan(8)
@@ -25,7 +26,7 @@ describe("progressive domain skills", () => {
     expect(first.cacheHit).toBe(false)
     expect(first.loadedSkillIds).toEqual(["diagnostics-governance", "runtime-volumes"])
     expect(first.alreadyLoadedSkillIds).toEqual([])
-    expect(first.items[0]?.instructions).toContain("getProjectDiagnostics")
+    expect(first.items[0]?.instructions).toContain("runtime_get_target_diagnostics")
     expect(first.items[1]?.instructions).toContain("unavailable")
     for (const id of first.loadedSkillIds) loadedSet.add(id)
 
@@ -41,7 +42,7 @@ describe("progressive domain skills", () => {
     expect(mixed.loadedSkillIds).toEqual(["gateway-topology"])
     expect(mixed.alreadyLoadedSkillIds).toEqual(["diagnostics-governance"])
     expect(mixed.items.find(item => item.skillId === "diagnostics-governance")?.instructions).toBeUndefined()
-    expect(mixed.items.find(item => item.skillId === "gateway-topology")?.instructions).toContain("GatewayRoute")
+    expect(mixed.items.find(item => item.skillId === "gateway-topology")?.instructions).toContain("network_list_gateway_routes")
   })
 
   it("executes load_skill inside RunExecutor, continues to the next model step, and preserves loadedSkillIds across approval resume", async () => {

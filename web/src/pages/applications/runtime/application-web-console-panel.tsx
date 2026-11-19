@@ -2,8 +2,6 @@ import type { Release } from '@/api'
 import { LoaderCircle, RotateCw } from 'lucide-react'
 import { lazy, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { apiBaseOrigin } from '@/api'
-import { CliCommandSnippet } from '@/components/common/cli-command-snippet'
 import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -93,19 +91,6 @@ export function ApplicationWebConsolePanel({
               )}
         </div>
       </ViewerToolbar>
-      <div className="shrink-0 border-b border-border bg-surface-subtle px-4 py-2">
-        <CliCommandSnippet
-          spec={{
-            command: 'deployment.exec',
-            server: apiBaseOrigin(),
-            projectId,
-            applicationId: release.applicationId,
-            targetId: release.deploymentTargetId,
-            pod,
-            container,
-          }}
-        />
-      </div>
       <div className="min-h-0 flex-1 bg-terminal">
         <LazyLoadBoundary
           fallback={<TerminalPlaceholder icon={<LoaderCircle className="motion-safe:animate-spin" />} label={t('common.loading')} />}

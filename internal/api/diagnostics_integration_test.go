@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/api/aiapi"
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
@@ -159,25 +160,31 @@ func TestDiagnosticsEndpointsEnforceScopesNoStoreAndAIToolIdentityPostgres(t *te
 	).Error; err != nil {
 		t.Fatalf("insert ai run: %v", err)
 	}
+	diagArgs := `{"project":"` + project.ID + `","application":"` + app.ID + `","target":"` + target.ID + `"}`
+	diagHash, err := aitool.CanonicalJSONHash([]byte(diagArgs))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec(
-		`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES ('aitool_diag_l0', ?, 'getDeploymentTargetDiagnostics', 'running', '{}'::jsonb, 'model')`,
-		runID,
+		`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, arguments_hash, input_mode) VALUES ('aitool_diag_l0', ?, 'runtime_get_target_diagnostics', 'running', ?::jsonb, ?, 'model')`,
+		runID, diagArgs, diagHash,
 	).Error; err != nil {
 		t.Fatalf("insert ai tool_call: %v", err)
 	}
 
 	aiTargetReq := httptest.NewRequest(
-		http.MethodGet,
-		"/api/v1/projects/"+project.ID+"/applications/"+app.ID+"/deployment-targets/"+target.ID+"/diagnostics",
-		nil,
+		http.MethodPost,
+		"/internal/v1/ai/tools/execute",
+		strings.NewReader(`{"toolName":"runtime_get_target_diagnostics","arguments":`+diagArgs+`}`),
 	)
 	aiTargetReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	aiTargetReq.Header.Set("Content-Type", "application/json")
 	aiTargetReq.Header.Set(aiapi.RunIDHeader, runID)
 	aiTargetReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_diag_l0")
 	aiTargetRec := httptest.NewRecorder()
 	router.ServeHTTP(aiTargetRec, aiTargetReq)
 	if aiTargetRec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for L0 AI getDeploymentTargetDiagnostics without approval, got %d: %s", aiTargetRec.Code, aiTargetRec.Body.String())
+		t.Fatalf("expected 200 for L0 AI runtime_get_target_diagnostics without approval, got %d: %s", aiTargetRec.Code, aiTargetRec.Body.String())
 	}
 	if cc := aiTargetRec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
 		t.Fatalf("expected Cache-Control: no-store on target diagnostics, got %q", cc)
@@ -204,14 +211,17 @@ func TestDiagnosticsEndpointsEnforceScopesNoStoreAndAIToolIdentityPostgres(t *te
 	}
 
 	// Cross-project request in project-bound conversation must be rejected with 403 ai.project_scope_mismatch
+	crossArgs := `{"project":"` + otherProject.ID + `","includeDiagnostics":true}`
+	crossHash, _ := aitool.CanonicalJSONHash([]byte(crossArgs))
 	if err := db.Exec(
-		`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES ('aitool_diag_cross', ?, 'getProjectDiagnostics', 'running', '{}'::jsonb, 'model')`,
-		runID,
+		`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, arguments_hash, input_mode) VALUES ('aitool_diag_cross', ?, 'workspace_get_project', 'running', ?::jsonb, ?, 'model')`,
+		runID, crossArgs, crossHash,
 	).Error; err != nil {
 		t.Fatalf("insert cross-project ai tool_call: %v", err)
 	}
-	crossReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+otherProject.ID+"/diagnostics", nil)
+	crossReq := httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", strings.NewReader(`{"toolName":"workspace_get_project","arguments":`+crossArgs+`}`))
 	crossReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	crossReq.Header.Set("Content-Type", "application/json")
 	crossReq.Header.Set(aiapi.RunIDHeader, runID)
 	crossReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_diag_cross")
 	crossRec := httptest.NewRecorder()

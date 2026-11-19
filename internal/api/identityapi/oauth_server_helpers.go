@@ -21,16 +21,9 @@ import (
 const (
 	oauthAuthorizationCodeTTL = 5 * time.Minute
 	oauthRefreshTokenTTL      = 365 * 24 * time.Hour
-	oauthDeviceCodeTTL        = 10 * time.Minute
-	oauthDevicePollInterval   = 5 * time.Second
 	oauthCredentialRateLimit  = 30
 	oauthIPRateLimit          = 300
 	oauthRateLimitWindow      = time.Minute
-
-	oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
-	lunaCLIApplicationID     = "oapp_luna_cli"
-	lunaCLIClientID          = "luna-cli"
-	lunaCLIFullAccessScope   = "*"
 )
 
 var allowedOAuthAccessTokenLifetimeDays = map[int]bool{0: true, 1: true, 7: true, 30: true, 90: true}
@@ -196,7 +189,7 @@ func bindOAuthForm(ctx *gin.Context, value any) bool {
 
 func (h *Handlers) authenticateOAuthTokenClient(
 	ctx *gin.Context,
-	allowPublic bool,
+	_ bool,
 	flow oauthClientAttemptFlow,
 	formClientID string,
 	formClientSecret string,
@@ -214,9 +207,6 @@ func (h *Handlers) authenticateOAuthTokenClient(
 	if clientID == "" || h.dbFor(ctx).First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
 		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 		return oauthClientAuthentication{}, false
-	}
-	if allowPublic && application.ID == lunaCLIApplicationID && application.ClientID == lunaCLIClientID && clientSecret == "" && !basicOK {
-		return oauthClientAuthentication{applicationID: application.ID, clientID: application.ClientID, public: true}, true
 	}
 	clientSecretHash := hashToken(clientSecret)
 	if clientSecret == "" || subtle.ConstantTimeCompare([]byte(application.ClientSecretHash), []byte(clientSecretHash)) != 1 {
@@ -236,28 +226,9 @@ func userCanAuthorizeOAuthScope(user model.User, scopeText string) bool {
 	return authz.UserCanAuthorizeOAuthScope(user.Role, scopeText)
 }
 
-func isLunaCLIApplication(application model.OAuthApplication) bool {
-	return application.ID == lunaCLIApplicationID && application.ClientID == lunaCLIClientID
-}
-
-func normalizeOAuthScopeForApplication(application model.OAuthApplication, scopeText string) string {
-	if isLunaCLIApplication(application) && strings.TrimSpace(scopeText) == lunaCLIFullAccessScope {
-		return lunaCLIFullAccessScope
-	}
-	return normalizeOAuthScope(scopeText)
-}
-
-// allowOAuthClientAttempt is the unauthenticated device-start limiter. Token,
-// refresh, and revoke client authentication must use allowOAuthTokenClientAttempt.
-func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bool {
-	return h.allowOAuthClientAttemptForFlow(ctx, clientID, oauthClientAttemptDeviceStart, "")
-}
-
 type oauthClientAttemptFlow string
 
 const (
-	oauthClientAttemptDeviceStart       oauthClientAttemptFlow = "device_start"
-	oauthClientAttemptDeviceCode        oauthClientAttemptFlow = "device_code"
 	oauthClientAttemptAuthorizationCode oauthClientAttemptFlow = "authorization_code"
 	oauthClientAttemptRefresh           oauthClientAttemptFlow = "refresh"
 	oauthClientAttemptRevoke            oauthClientAttemptFlow = "revoke"
@@ -266,8 +237,6 @@ const (
 
 func oauthClientAttemptFlowForGrantType(grantType string) oauthClientAttemptFlow {
 	switch grantType {
-	case oauthDeviceCodeGrantType:
-		return oauthClientAttemptDeviceCode
 	case "authorization_code":
 		return oauthClientAttemptAuthorizationCode
 	case "refresh_token":
@@ -281,7 +250,7 @@ func (h *Handlers) allowOAuthTokenClientAttempt(ctx *gin.Context, clientID strin
 	return h.allowOAuthClientAttemptForFlow(ctx, clientID, flow, credential)
 }
 
-func (h *Handlers) allowOAuthClientAttemptForFlow(ctx *gin.Context, clientID string, flow oauthClientAttemptFlow, credential string) bool {
+func (h *Handlers) allowOAuthClientAttemptForFlow(ctx *gin.Context, clientID string, _ oauthClientAttemptFlow, _ string) bool {
 	if h.rateLimiter == nil {
 		h.rateLimiter = newRateLimiter()
 	}
@@ -295,31 +264,10 @@ func (h *Handlers) allowOAuthClientAttemptForFlow(ctx *gin.Context, clientID str
 		subject string
 		limit   int
 	}
-	publicClient := strings.TrimSpace(clientID) == lunaCLIClientID
-	attempts := make([]oauthRateLimitAttempt, 0, 2)
 	sourceIP := h.oauthClientSourceIP(ctx)
-	if !publicClient {
-		attempts = append(attempts,
-			oauthRateLimitAttempt{subject: "oauth_client_ip:" + sourceIP, limit: ipLimit},
-			oauthRateLimitAttempt{subject: "oauth_client_id:" + hashToken(strings.TrimSpace(clientID)), limit: credentialLimit},
-		)
-	} else if flow == oauthClientAttemptDeviceStart {
-		attempts = append(attempts, oauthRateLimitAttempt{subject: "oauth_public_device_start_ip:" + sourceIP, limit: ipLimit})
-	} else {
-		flowKey := string(flow)
-		if flowKey == "" {
-			flowKey = string(oauthClientAttemptUnsupported)
-		}
-		attempts = append(attempts, oauthRateLimitAttempt{
-			subject: "oauth_public_" + flowKey + "_ip:" + sourceIP,
-			limit:   ipLimit,
-		})
-		if credential = strings.TrimSpace(credential); credential != "" {
-			attempts = append(attempts, oauthRateLimitAttempt{
-				subject: "oauth_public_" + flowKey + "_credential:" + hashToken(credential),
-				limit:   credentialLimit,
-			})
-		}
+	attempts := []oauthRateLimitAttempt{
+		{subject: "oauth_client_ip:" + sourceIP, limit: ipLimit},
+		{subject: "oauth_client_id:" + hashToken(strings.TrimSpace(clientID)), limit: credentialLimit},
 	}
 	for _, attempt := range attempts {
 		allowed, err := h.rateLimiter.Allow(ctx.Request.Context(), attempt.subject, attempt.limit, oauthRateLimitWindow)
@@ -363,34 +311,9 @@ func ipInCIDRs(ip net.IP, cidrs []string) bool {
 	return false
 }
 
-func (h *Handlers) allowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID string) bool {
-	if h.rateLimiter == nil {
-		h.rateLimiter = newRateLimiter()
-	}
-	limit := 30
-	if h.mode == "development" {
-		limit = developmentRateLimit
-	}
-	subjects := []string{
-		"oauth_device_verify_ip:" + ctx.ClientIP(),
-		"oauth_device_verify_user:" + hashToken(strings.TrimSpace(userID)),
-	}
-	for _, subject := range subjects {
-		allowed, err := h.rateLimiter.Allow(ctx.Request.Context(), subject, limit, time.Minute)
-		if allowed {
-			continue
-		}
-		if err != nil && h.mode == "development" {
-			continue
-		}
-		ctx.Header("Retry-After", "60")
-		writeErrorCode(ctx, http.StatusTooManyRequests, "oauth.device.rate_limited", "Device verification is temporarily rate limited")
-		return false
-	}
-	return true
-}
-
 func writeOAuthRateLimitError(ctx *gin.Context, code, description string) {
 	ctx.Header("Retry-After", "60")
 	oauthError(ctx, http.StatusTooManyRequests, code, description)
 }
+
+const errOAuthInvalidScope oauthSentinelError = "invalid OAuth scope"

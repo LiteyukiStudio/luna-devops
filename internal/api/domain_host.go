@@ -67,6 +67,10 @@ func (host domainHost) AuthorizeProjectByID(ctx *gin.Context, projectID string, 
 	return host.handlers.authorizeProjectByID(ctx, projectID, action)
 }
 
+func (host domainHost) AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return host.handlers.authorizeProjectRef(ctx, projectRef, action)
+}
+
 func (host domainHost) RequirePlatformAdmin(ctx *gin.Context) bool {
 	return host.handlers.requirePlatformAdmin(ctx)
 }

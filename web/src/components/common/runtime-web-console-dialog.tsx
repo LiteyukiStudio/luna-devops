@@ -30,7 +30,6 @@ interface RuntimeWebConsoleDialogProps {
   open: boolean
   resourceKey: string
   resourceLabel: string
-  toolbar?: (context: { container: string }) => ReactNode
   title: string
   onOpenChange: (open: boolean) => void
 }
@@ -48,7 +47,6 @@ export function RuntimeWebConsoleDialog({
   open,
   resourceKey,
   resourceLabel,
-  toolbar,
   title,
   onOpenChange,
 }: RuntimeWebConsoleDialogProps) {
@@ -115,11 +113,6 @@ export function RuntimeWebConsoleDialog({
           </div>
         </ViewerToolbar>
         <DialogDescription className="sr-only">{description}</DialogDescription>
-        {toolbar && (
-          <div className="shrink-0 border-b border-border bg-surface-subtle px-4 py-2">
-            {toolbar({ container })}
-          </div>
-        )}
         <div className={cn('bg-terminal', fullscreen && 'min-h-0 flex-1')}>
           <LazyLoadBoundary
             fallback={(

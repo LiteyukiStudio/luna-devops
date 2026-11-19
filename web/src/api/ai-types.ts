@@ -17,6 +17,24 @@ export type AIRunStatus = AISelectedRunTransport['status']
 export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'running' | 'succeeded' | 'failed' | 'rejected' | 'canceled' | 'skipped'
 export type AIToolApprovalTier = 'L0' | 'L1' | 'L2'
 
+export interface AIApprovalPreviewChange {
+  field: string
+  before?: unknown
+  after?: unknown
+  action?: string
+}
+
+export interface AIApprovalPreview {
+  summary: string
+  targetResource?: string
+  targetId?: string
+  projectId?: string
+  changes?: AIApprovalPreviewChange[]
+  sensitiveKeys?: string[]
+  impact?: string[]
+  warnings?: string[]
+}
+
 export interface AIToolDisplayResult {
   summaryKey: string
   summaryParams?: Record<string, string | number | boolean>
@@ -61,6 +79,7 @@ export type AITimelineItem = Omit<AITimelineItemTransport, 'toolCall'> & {
     status?: AIToolStatus
     approvalTier?: AIToolApprovalTier
     approvalRememberable?: boolean
+    approvalPreview?: AIApprovalPreview
     arguments?: Record<string, unknown>
     result?: AIToolDisplayResult
     uiActions?: AIUIAction[]

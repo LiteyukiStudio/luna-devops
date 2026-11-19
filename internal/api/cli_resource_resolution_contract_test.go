@@ -10,22 +10,30 @@ import (
 func TestCLIResourceExactFiltersStayInOpenAPIAndPlatformCatalog(t *testing.T) {
 	document := readOpenAPIDocument(t, filepath.Join(apiRepositoryRoot(t), "openapi", "openapi.yaml"))
 	tests := []struct {
-		path        string
-		operationID string
-		parameter   string
-		scope       string
-		maximum     float64
+		path          string
+		operationID   string
+		parameter     string
+		scope         string
+		maximum       float64
+		facadeToolID  string
+		facadeLocator string
 	}{
-		{path: "/api/v1/projects", operationID: "listProjects", parameter: "identifier", scope: "project:read", maximum: 22},
-		{path: "/api/v1/projects/{projectId}/applications", operationID: "listApplications", parameter: "identifier", scope: "application:read", maximum: 22},
-		{path: "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets", operationID: "listDeploymentTargets", parameter: "stage", scope: "deployment:read", maximum: 12},
+		{
+			path: "/api/v1/projects", operationID: "listProjects", parameter: "identifier", scope: "project:read", maximum: 22,
+			facadeToolID: "workspace_list_projects", facadeLocator: "identifier",
+		},
+		{
+			path: "/api/v1/projects/{projectId}/applications", operationID: "listApplications", parameter: "identifier", scope: "application:read", maximum: 22,
+			facadeToolID: "delivery_get_application", facadeLocator: "application",
+		},
+		{
+			path: "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets", operationID: "listDeploymentTargets", parameter: "stage", scope: "deployment:read", maximum: 12,
+			facadeToolID: "delivery_get_target", facadeLocator: "target",
+		},
 	}
 
-	catalog, err := aitool.PlatformCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	byOperationID := make(map[string]aitool.OpenAPIOperation, len(catalog))
+	catalog := DefaultAIToolCatalog()
+	byOperationID := make(map[string]aitool.CatalogOperation, len(catalog))
 	for _, operation := range catalog {
 		byOperationID[operation.OperationID] = operation
 	}
@@ -45,15 +53,15 @@ func TestCLIResourceExactFiltersStayInOpenAPIAndPlatformCatalog(t *testing.T) {
 				t.Fatalf("%s.%s pattern = %#v", test.operationID, test.parameter, schema["pattern"])
 			}
 
-			catalogOperation, ok := byOperationID[test.operationID]
+			catalogOperation, ok := byOperationID[test.facadeToolID]
 			if !ok {
-				t.Fatalf("%s is missing from PlatformCatalog", test.operationID)
+				t.Fatalf("%s is missing from DefaultAIToolCatalog", test.facadeToolID)
 			}
 			if len(catalogOperation.RequiredScopes) != 1 || catalogOperation.RequiredScopes[0] != test.scope {
-				t.Fatalf("%s scopes = %v, want [%s]", test.operationID, catalogOperation.RequiredScopes, test.scope)
+				t.Fatalf("%s scopes = %v, want [%s]", test.facadeToolID, catalogOperation.RequiredScopes, test.scope)
 			}
-			if _, ok := catalogOperation.InputSchema["properties"].(map[string]any)[test.parameter]; !ok {
-				t.Fatalf("%s PlatformCatalog input is missing %q", test.operationID, test.parameter)
+			if _, ok := catalogOperation.InputSchema["properties"].(map[string]any)[test.facadeLocator]; !ok {
+				t.Fatalf("%s catalog input is missing %q", test.facadeToolID, test.facadeLocator)
 			}
 		})
 	}

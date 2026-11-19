@@ -5,7 +5,7 @@
 为事实源。
 
 已完成方案、旧原型和一次性验收记录不在本目录长期归档，可从 Git 历史追溯。不要重新建立
-`legacy/`，也不要复制工作流、脚本、OpenAPI 或 CLI 帮助中已经可以自动核对的事实。
+`legacy/`，也不要复制工作流、脚本、OpenAPI 或工具注册表中已经可以自动核对的事实。
 
 ## 核心文档
 
@@ -26,4 +26,4 @@
 - AI 编码代理约束：[`AGENTS.md`](../AGENTS.md)
 - 人类贡献者入口：[`CONTRIBUTING.md`](../CONTRIBUTING.md)
 - 计划与验收状态：[`TODO.md`](../TODO.md)
-- Luna CLI 独立仓库：[LiteyukiStudio/luna-cli](https://github.com/LiteyukiStudio/luna-cli)
+- 统一领域 Skills 目录：[`skills/`](../skills)

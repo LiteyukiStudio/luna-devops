@@ -158,12 +158,8 @@ func (h *Handlers) ListMyOAuthGrants(ctx *gin.Context) {
 		if err := h.dbFor(ctx).First(&application, "id = ?", grant.ApplicationID).Error; err != nil {
 			continue
 		}
-		scope := grant.Scope
-		if isLunaCLIApplication(application) {
-			scope = ""
-		}
 		items = append(items, oauthGrantResponse{
-			ID: grant.ID, Application: oauthApplicationToResponse(application), Scope: scope,
+			ID: grant.ID, Application: oauthApplicationToResponse(application), Scope: grant.Scope,
 			CreatedAt: grant.CreatedAt, UpdatedAt: grant.UpdatedAt,
 		})
 	}

@@ -66,23 +66,3 @@ type OAuthRefreshToken struct {
 }
 
 func (OAuthRefreshToken) TableName() string { return "oauth_refresh_tokens" }
-
-type OAuthDeviceAuthorization struct {
-	ID              string     `gorm:"primaryKey" json:"id"`
-	ApplicationID   string     `gorm:"index;not null" json:"applicationId"`
-	GrantID         *string    `gorm:"index" json:"grantId,omitempty"`
-	UserID          *string    `gorm:"index" json:"userId,omitempty"`
-	DeviceCodeHash  string     `gorm:"uniqueIndex;not null" json:"-"`
-	UserCodeHash    string     `gorm:"uniqueIndex;not null" json:"-"`
-	Status          string     `gorm:"index;not null" json:"status"`
-	IntervalSeconds int        `gorm:"not null" json:"intervalSeconds"`
-	LastPolledAt    *time.Time `json:"lastPolledAt,omitempty"`
-	ExpiresAt       time.Time  `gorm:"index;not null" json:"expiresAt"`
-	ApprovedAt      *time.Time `json:"approvedAt,omitempty"`
-	DeniedAt        *time.Time `json:"deniedAt,omitempty"`
-	ConsumedAt      *time.Time `gorm:"index" json:"consumedAt,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
-}
-
-func (OAuthDeviceAuthorization) TableName() string { return "oauth_device_authorizations" }

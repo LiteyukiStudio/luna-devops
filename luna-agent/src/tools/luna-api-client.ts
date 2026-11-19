@@ -3,17 +3,28 @@ import { trace } from "@opentelemetry/api"
 import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 
+export type ToolPreviewRequest = {
+  runId: string
+  toolCallId: string
+  operation: ToolOperation
+  arguments: Record<string, unknown>
+  signal?: AbortSignal
+}
+
 export type ToolExecutionRequest = {
   runId: string
   toolCallId: string
   idempotencyKey: string
   operation: ToolOperation
   arguments: Record<string, unknown>
+  previewLock?: string
   signal?: AbortSignal
 }
+
 export type ToolExecutionResult = { status: number, body: unknown, requestId?: string }
 
 export interface LunaApiToolClient {
+  preview?(request: ToolPreviewRequest): Promise<ToolExecutionResult>
   execute(request: ToolExecutionRequest): Promise<ToolExecutionResult>
 }
 
@@ -31,6 +42,54 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     private readonly serviceToken: string,
     private readonly retryCount: number | (() => number) = 5,
   ) {}
+
+  async preview(request: ToolPreviewRequest): Promise<ToolExecutionResult> {
+    const startedAt = performance.now()
+    return withSpan("luna_api.tool.preview", clientSpanOptions({
+      "server.address": new URL(this.baseUrl).hostname,
+      "luna.run.id": request.runId,
+      "luna.tool.name": request.operation.operationId,
+      "luna.tool_call.id": request.toolCallId,
+    }), async (span) => {
+      const url = new URL("/internal/v1/ai/tools/preview", this.baseUrl)
+      const init: RequestInit = {
+        method: "POST",
+        headers: {
+          "authorization": `Bearer ${this.serviceToken}`,
+          "x-luna-ai-run-id": request.runId,
+          "x-luna-ai-tool-call-id": request.toolCallId,
+          "content-type": "application/json",
+        },
+        ...(request.signal ? { signal: request.signal } : {}),
+        body: JSON.stringify({
+          toolName: request.operation.operationId,
+          arguments: request.arguments,
+        }),
+      }
+      let response: Response
+      try {
+        response = await this.fetchWithRetry(url, init, "tool_preview", request.signal, true)
+      }
+      catch (error) {
+        if (request.signal?.aborted) throw error
+        throw new UnknownToolOutcomeError(error)
+      }
+      const requestId = response.headers.get("x-request-id")
+      span.setAttribute("http.response.status_code", response.status)
+      let body: unknown
+      try {
+        body = await responseJSON(response)
+      }
+      catch (error) {
+        agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_preview", outcome: "invalid_response" })
+        throw new UnknownToolOutcomeError(error)
+      }
+      agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_preview", outcome: response.ok ? "success" : String(response.status) })
+      span.setAttribute("luna.external.duration_ms", performance.now() - startedAt)
+      return { status: response.status, body, ...(requestId ? { requestId } : {}) }
+    })
+  }
+
   async execute(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
     const startedAt = performance.now()
     return withSpan("luna_api.tool.execute", clientSpanOptions({
@@ -38,41 +97,45 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
       "luna.run.id": request.runId,
       "luna.tool.name": request.operation.operationId,
       "luna.tool_call.id": request.toolCallId,
-    }), async span => {
-    const transport = buildToolRequest(request.operation, request.arguments, this.baseUrl)
-    const init: RequestInit = {
-      method: request.operation.method,
-      headers: {
-        ...transport.headers,
-        authorization: `Bearer ${this.serviceToken}`,
-        "x-luna-ai-run-id": request.runId, "x-luna-ai-tool-call-id": request.toolCallId,
-        "idempotency-key": request.idempotencyKey,
-        ...(transport.body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(request.signal ? { signal: request.signal } : {}),
-      ...(transport.body === undefined ? {} : { body: JSON.stringify(transport.body) }),
-    }
-    let response: Response
-    try {
-      response = await this.fetchWithRetry(transport.url, init, "tool_execute", request.signal, request.operation.idempotent)
-    }
-    catch (error) {
-      if (request.signal?.aborted) throw error
-      throw new UnknownToolOutcomeError(error)
-    }
-    const requestId = response.headers.get("x-request-id")
-    span.setAttribute("http.response.status_code", response.status)
-    let body: unknown
-    try {
-      body = await responseJSON(response)
-    }
-    catch (error) {
-      agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: "invalid_response" })
-      throw new UnknownToolOutcomeError(error)
-    }
-    agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: response.ok ? "success" : String(response.status) })
-    span.setAttribute("luna.external.duration_ms", performance.now() - startedAt)
-    return { status: response.status, body, ...(requestId ? { requestId } : {}) }
+    }), async (span) => {
+      const url = new URL("/internal/v1/ai/tools/execute", this.baseUrl)
+      const init: RequestInit = {
+        method: "POST",
+        headers: {
+          "authorization": `Bearer ${this.serviceToken}`,
+          "x-luna-ai-run-id": request.runId,
+          "x-luna-ai-tool-call-id": request.toolCallId,
+          "idempotency-key": request.idempotencyKey,
+          ...(request.previewLock ? { "x-luna-ai-preview-lock": request.previewLock } : {}),
+          "content-type": "application/json",
+        },
+        ...(request.signal ? { signal: request.signal } : {}),
+        body: JSON.stringify({
+          toolName: request.operation.operationId,
+          arguments: request.arguments,
+        }),
+      }
+      let response: Response
+      try {
+        response = await this.fetchWithRetry(url, init, "tool_execute", request.signal, request.operation.idempotent)
+      }
+      catch (error) {
+        if (request.signal?.aborted) throw error
+        throw new UnknownToolOutcomeError(error)
+      }
+      const requestId = response.headers.get("x-request-id")
+      span.setAttribute("http.response.status_code", response.status)
+      let body: unknown
+      try {
+        body = await responseJSON(response)
+      }
+      catch (error) {
+        agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: "invalid_response" })
+        throw new UnknownToolOutcomeError(error)
+      }
+      agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: response.ok ? "success" : String(response.status) })
+      span.setAttribute("luna.external.duration_ms", performance.now() - startedAt)
+      return { status: response.status, body, ...(requestId ? { requestId } : {}) }
     })
   }
 
@@ -115,92 +178,8 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
   }
 }
 
-type TransportParameter = {
-  inputName: string
-  wireName: string
-  in: "path" | "query" | "header"
-  required: boolean
-}
-
-type TransportOperation = ToolOperation & {
-  parameters?: TransportParameter[]
-  requestBody?: boolean
-  requestRequired?: boolean
-  requestType?: string
-}
-
-export function buildToolRequest(operation: ToolOperation, input: Record<string, unknown>, baseUrl: string): { url: URL, body?: Record<string, unknown>, headers?: Record<string, string> } {
-  const transport = operation as TransportOperation
-  const consumed = new Set<string>()
-  const headers: Record<string, string> = {}
-  let pathname = transport.path
-  const url = new URL(pathname, baseUrl)
-  for (const parameter of transport.parameters ?? []) {
-    const value = input[parameter.inputName]
-    if (value === undefined || value === null) {
-      if (parameter.required) throw new Error("ai.tool_arguments_invalid")
-      continue
-    }
-    consumed.add(parameter.inputName)
-    if (parameter.in === "path") {
-      const marker = `{${parameter.wireName}}`
-      if (!pathname.includes(marker)) throw new Error("ai.tool_catalog_invalid")
-      pathname = pathname.replaceAll(marker, encodeURIComponent(pathParameterValue(value)))
-      continue
-    }
-    if (parameter.in === "header") {
-      const headerName = allowedToolHeader(parameter.wireName)
-      headers[headerName] = pathParameterValue(value)
-      continue
-    }
-    appendQueryValue(url.searchParams, parameter.wireName, value)
-  }
-  if (/\{[^}]+\}/.test(pathname)) throw new Error("ai.tool_arguments_invalid")
-  url.pathname = pathname
-
-  const remaining = Object.fromEntries(Object.entries(input).filter(([key]) => !consumed.has(key)))
-  if (transport.requestBody === true) {
-    const explicitBody = remaining.body
-    if (isRecord(explicitBody) && Object.keys(remaining).length === 1)
-      return { url, body: explicitBody, ...(Object.keys(headers).length ? { headers } : {}) }
-    return { url, body: remaining, ...(Object.keys(headers).length ? { headers } : {}) }
-  }
-  if ((transport.parameters?.length ?? 0) === 0) {
-    for (const [key, value] of Object.entries(input)) appendQueryValue(url.searchParams, key, value)
-  }
-  return { url, ...(Object.keys(headers).length ? { headers } : {}) }
-}
-
-function allowedToolHeader(name: string): string {
-  if (name.toLowerCase() === "if-match") return "if-match"
-  throw new Error("ai.tool_catalog_invalid")
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
 function isFetchTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")
-}
-
-function pathParameterValue(value: unknown): string {
-  if (typeof value === "string") return value
-  if (typeof value === "number" || typeof value === "bigint") return value.toString()
-  if (typeof value === "boolean") return value ? "true" : "false"
-  throw new Error("ai.tool_arguments_invalid")
-}
-
-function appendQueryValue(query: URLSearchParams, name: string, value: unknown): void {
-  if (Array.isArray(value)) {
-    for (const item of value) appendQueryValue(query, name, item)
-    return
-  }
-  if (typeof value === "object" && value !== null) {
-    query.append(name, JSON.stringify(value))
-    return
-  }
-  query.append(name, String(value))
 }
 
 async function responseJSON(response: Response): Promise<unknown> {
@@ -219,7 +198,24 @@ async function responseJSON(response: Response): Promise<unknown> {
 
 export class DeterministicLunaApiClient implements LunaApiToolClient {
   readonly calls: ToolExecutionRequest[] = []
-  constructor(private readonly handler: (request: ToolExecutionRequest) => ToolExecutionResult | Promise<ToolExecutionResult>) {}
+  readonly previews: ToolPreviewRequest[] = []
+  constructor(
+    private readonly handler: (request: ToolExecutionRequest) => ToolExecutionResult | Promise<ToolExecutionResult>,
+    private readonly previewHandler?: (request: ToolPreviewRequest) => ToolExecutionResult | Promise<ToolExecutionResult>,
+  ) {}
+
+  async preview(request: ToolPreviewRequest): Promise<ToolExecutionResult> {
+    this.previews.push(request)
+    if (this.previewHandler) return this.previewHandler(request)
+    return {
+      status: 200,
+      body: {
+        approvalPreview: { summary: `Preview ${request.operation.operationId}` },
+        previewLock: `ailock_test_${request.toolCallId}`,
+      },
+    }
+  }
+
   async execute(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
     this.calls.push(request)
     return this.handler(request)

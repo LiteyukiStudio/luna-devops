@@ -42,6 +42,7 @@ type Host interface {
 	RequirePlatformAdmin(ctx *gin.Context) bool
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
 	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	EnsureProjectCanMutate(ctx *gin.Context, project model.Project) bool
 	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
 	ProjectIDsForUser(ctx context.Context, userID string) []string

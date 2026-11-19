@@ -65,7 +65,29 @@ func (host aiHost) WithAIPlatformActor(ctx context.Context, actor aiapi.Platform
 		UserID: actor.UserID, SessionID: actor.SessionID, ProjectID: actor.ProjectID,
 	})
 }
-func (host aiHost) AIToolService() *aitool.Service { return host.handlers.aiTools }
+func (host aiHost) AIToolService() *aitool.Service   { return host.handlers.aiTools }
+func (host aiHost) AIToolRegistry() *aitool.Registry { return host.handlers.aiToolRegistry }
+func (host aiHost) AuthenticateMCPBearerToken(ctx *gin.Context) (model.User, model.AccessToken, bool) {
+	return host.handlers.domains.identity.AuthenticateMCPBearerToken(ctx)
+}
+func (host aiHost) ExternalBaseURL(ctx *gin.Context) string {
+	return host.handlers.externalBaseURL(ctx)
+}
+func (host aiHost) MCPPreviewSigningSecret() []byte {
+	if derived := host.handlers.secrets.DeriveKey("luna-mcp-preview-lock:v1"); len(derived) == 32 {
+		return derived
+	}
+	if len(host.handlers.mcpFallbackSigningSecret) > 0 {
+		return host.handlers.mcpFallbackSigningSecret
+	}
+	return []byte("luna-mcp-ephemeral-test-secret-v1")
+}
+func (host aiHost) AppVersion() string {
+	if host.handlers.config.AppVersion != "" {
+		return host.handlers.config.AppVersion
+	}
+	return "0.1.0"
+}
 func (host aiHost) MonitorProjectAuthorization(ctx *gin.Context, streamCtx context.Context, user model.User, projectID string, action authz.Action, revoke func()) (<-chan struct{}, bool) {
 	binding, ok := host.handlers.requireContinuousAuthorizationBinding(ctx, user)
 	if !ok {

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
@@ -24,18 +24,15 @@ type oauthFamilyTestFixture struct {
 	router       http.Handler
 	user         model.User
 	application  model.OAuthApplication
+	clientSecret string
+	redirectURI  string
 	sessionToken string
 }
 
-type issuedOAuthDeviceFamily struct {
+type issuedOAuthCodeFamily struct {
 	tokens       oauthTokenResponse
 	accessToken  model.AccessToken
 	refreshToken model.OAuthRefreshToken
-}
-
-type pendingOAuthDeviceAuthorization struct {
-	deviceCode string
-	userCode   string
 }
 
 type pendingOAuthAuthorizationCode struct {
@@ -46,38 +43,34 @@ type pendingOAuthAuthorizationCode struct {
 	code         string
 }
 
-const lunaCLITestFullAccessScope = "*"
-
-func TestConcurrentOAuthDeviceExchangesShareGrantAndSeparateFamilies(t *testing.T) {
+func TestConcurrentOAuthCodeExchangesShareGrantAndSeparateFamilies(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	first := startOAuthDeviceAuthorization(t, fixture)
-	second := startOAuthDeviceAuthorization(t, fixture)
-	approveOAuthDeviceAuthorization(t, fixture, first.userCode)
-	approveOAuthDeviceAuthorization(t, fixture, second.userCode)
+	first := startFixtureAuthorizationCode(t, fixture, "user:read")
+	second := startFixtureAuthorizationCode(t, fixture, "user:read")
 
 	start := make(chan struct{})
 	responses := make(chan *httptest.ResponseRecorder, 2)
 	var workers sync.WaitGroup
-	for _, deviceCode := range []string{first.deviceCode, second.deviceCode} {
+	for _, pending := range []pendingOAuthAuthorizationCode{first, second} {
 		workers.Add(1)
-		go func() {
+		go func(p pendingOAuthAuthorizationCode) {
 			defer workers.Done()
 			<-start
-			responses <- exchangeOAuthDeviceAuthorization(fixture, deviceCode)
-		}()
+			responses <- exchangeOAuthAuthorizationCode(fixture, p)
+		}(pending)
 	}
 	close(start)
 	workers.Wait()
 	close(responses)
 	for response := range responses {
 		if response.Code != http.StatusOK {
-			t.Fatalf("concurrent device exchange = %d %s", response.Code, response.Body.String())
+			t.Fatalf("concurrent code exchange = %d %s", response.Code, response.Body.String())
 		}
 	}
 
 	var grantCount int64
 	if err := fixture.db.Model(&model.OAuthGrant{}).
-		Where("application_id = ? and user_id = ? and revoked_at is null", lunaCLIApplicationID, fixture.user.ID).
+		Where("application_id = ? and user_id = ? and revoked_at is null", fixture.application.ID, fixture.user.ID).
 		Count(&grantCount).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +79,7 @@ func TestConcurrentOAuthDeviceExchangesShareGrantAndSeparateFamilies(t *testing.
 	}
 	var families []string
 	if err := fixture.db.Model(&model.AccessToken{}).
-		Where("oauth_application_id = ? and user_id = ?", lunaCLIApplicationID, fixture.user.ID).
+		Where("oauth_application_id = ? and user_id = ?", fixture.application.ID, fixture.user.ID).
 		Distinct("oauth_family_id").Pluck("oauth_family_id", &families).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -95,48 +88,15 @@ func TestConcurrentOAuthDeviceExchangesShareGrantAndSeparateFamilies(t *testing.
 	}
 }
 
-func TestExpiredOAuthDeviceAuthorizationLeavesExistingGrantAndTokenActive(t *testing.T) {
-	fixture := newOAuthFamilyTestFixture(t)
-	first := issueOAuthDeviceFamily(t, fixture)
-	pending := startOAuthDeviceAuthorization(t, fixture)
-	approveOAuthDeviceAuthorization(t, fixture, pending.userCode)
-
-	var authorization model.OAuthDeviceAuthorization
-	if err := fixture.db.First(&authorization, "device_code_hash = ?", transportapi.HashToken(pending.deviceCode)).Error; err != nil {
-		t.Fatal(err)
-	}
-	if authorization.GrantID != nil {
-		t.Fatalf("approval touched grant %q before exchange", *authorization.GrantID)
-	}
-	if err := fixture.db.Model(&authorization).Update("expires_at", time.Now().Add(-time.Second)).Error; err != nil {
-		t.Fatal(err)
-	}
-	exchange := exchangeOAuthDeviceAuthorization(fixture, pending.deviceCode)
-	if exchange.Code != http.StatusBadRequest || jsonString(t, exchange.Body.Bytes(), "error") != "expired_token" {
-		t.Fatalf("expired device exchange = %d %s", exchange.Code, exchange.Body.String())
-	}
-
-	var grant model.OAuthGrant
-	if err := fixture.db.First(&grant, "id = ?", first.accessToken.OAuthGrantID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if grant.Scope != lunaCLITestFullAccessScope || grant.RevokedAt != nil {
-		t.Fatalf("expired authorization changed existing grant: %#v", grant)
-	}
-	currentUser := performBearerRequest(fixture.router, http.MethodGet, "/api/v1/users/me", first.tokens.AccessToken, "")
-	if currentUser.Code != http.StatusOK {
-		t.Fatalf("old access token after expired expansion = %d %s", currentUser.Code, currentUser.Body.String())
-	}
-}
-
 func TestOAuthRefreshReplayRevokesOnlyCompromisedFamily(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	compromised := issueOAuthDeviceFamily(t, fixture)
-	unrelated := issueOAuthDeviceFamily(t, fixture)
+	compromised := issueOAuthCodeFamily(t, fixture)
+	unrelated := issueOAuthCodeFamily(t, fixture)
 	rotated := refreshOAuthFamily(t, fixture, compromised.tokens.RefreshToken)
 
 	replay := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/token", url.Values{
-		"client_id":     {lunaCLIClientID},
+		"client_id":     {fixture.application.ClientID},
+		"client_secret": {fixture.clientSecret},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {compromised.tokens.RefreshToken},
 	})
@@ -160,12 +120,13 @@ func TestOAuthRefreshReplayRevokesOnlyCompromisedFamily(t *testing.T) {
 
 func TestOAuthTokenRevocationRevokesOnlyCurrentFamily(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	revoked := issueOAuthDeviceFamily(t, fixture)
-	unrelated := issueOAuthDeviceFamily(t, fixture)
+	revoked := issueOAuthCodeFamily(t, fixture)
+	unrelated := issueOAuthCodeFamily(t, fixture)
 
 	revoke := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/revoke", url.Values{
-		"client_id": {lunaCLIClientID},
-		"token":     {revoked.tokens.AccessToken},
+		"client_id":     {fixture.application.ClientID},
+		"client_secret": {fixture.clientSecret},
+		"token":         {revoked.tokens.AccessToken},
 	})
 	if revoke.Code != http.StatusOK {
 		t.Fatalf("revoke OAuth family = %d %s", revoke.Code, revoke.Body.String())
@@ -174,7 +135,8 @@ func TestOAuthTokenRevocationRevokesOnlyCurrentFamily(t *testing.T) {
 		t.Fatalf("revoked family access remains valid = %d %s", current.Code, current.Body.String())
 	}
 	if refresh := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/token", url.Values{
-		"client_id":     {lunaCLIClientID},
+		"client_id":     {fixture.application.ClientID},
+		"client_secret": {fixture.clientSecret},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {revoked.tokens.RefreshToken},
 	}); refresh.Code != http.StatusBadRequest || jsonString(t, refresh.Body.Bytes(), "error") != "invalid_grant" {
@@ -197,11 +159,11 @@ func TestOAuthTokenRevocationRevokesOnlyCurrentFamily(t *testing.T) {
 func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 	tests := []struct {
 		name   string
-		revoke func(*gorm.DB, issuedOAuthDeviceFamily) error
+		revoke func(*gorm.DB, oauthFamilyTestFixture, issuedOAuthCodeFamily) error
 	}{
 		{
 			name: "family",
-			revoke: func(db *gorm.DB, issued issuedOAuthDeviceFamily) error {
+			revoke: func(db *gorm.DB, _ oauthFamilyTestFixture, issued issuedOAuthCodeFamily) error {
 				return db.Transaction(func(tx *gorm.DB) error {
 					return revokeOAuthFamily(tx, issued.accessToken.OAuthGrantID, issued.accessToken.OAuthFamilyID, time.Now())
 				})
@@ -209,7 +171,7 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 		},
 		{
 			name: "grant",
-			revoke: func(db *gorm.DB, issued issuedOAuthDeviceFamily) error {
+			revoke: func(db *gorm.DB, _ oauthFamilyTestFixture, issued issuedOAuthCodeFamily) error {
 				return db.Transaction(func(tx *gorm.DB) error {
 					return revokeOAuthGrant(tx, issued.accessToken.OAuthGrantID, time.Now())
 				})
@@ -217,9 +179,9 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 		},
 		{
 			name: "application",
-			revoke: func(db *gorm.DB, _ issuedOAuthDeviceFamily) error {
+			revoke: func(db *gorm.DB, fixture oauthFamilyTestFixture, _ issuedOAuthCodeFamily) error {
 				return db.Transaction(func(tx *gorm.DB) error {
-					return revokeOAuthApplication(tx, lunaCLIApplicationID, time.Now())
+					return revokeOAuthApplication(tx, fixture.application.ID, time.Now())
 				})
 			},
 		},
@@ -227,7 +189,7 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newOAuthFamilyTestFixture(t)
-			issued := issueOAuthDeviceFamily(t, fixture)
+			issued := issueOAuthCodeFamily(t, fixture)
 			accessCreated := make(chan struct{})
 			releaseCreate := make(chan struct{})
 			var createBarrier sync.Once
@@ -251,7 +213,8 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 			refreshDone := make(chan *httptest.ResponseRecorder, 1)
 			go func() {
 				refreshDone <- performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/token", url.Values{
-					"client_id":     {lunaCLIClientID},
+					"client_id":     {fixture.application.ClientID},
+					"client_secret": {fixture.clientSecret},
 					"grant_type":    {"refresh_token"},
 					"refresh_token": {issued.tokens.RefreshToken},
 				})
@@ -266,7 +229,7 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 			revokeDone := make(chan error, 1)
 			go func() {
 				close(revokeStarted)
-				revokeDone <- test.revoke(fixture.db, issued)
+				revokeDone <- test.revoke(fixture.db, fixture, issued)
 			}()
 			<-revokeStarted
 			select {
@@ -316,18 +279,16 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 	}
 }
 
-func TestOAuthGrantRevocationInvalidatesApprovedPendingArtifacts(t *testing.T) {
+func TestOAuthGrantRevocationInvalidatesApprovedPendingAuthorizationCodes(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	issued := issueOAuthDeviceFamily(t, fixture)
-	pendingDevice := startOAuthDeviceAuthorization(t, fixture)
-	approveOAuthDeviceAuthorization(t, fixture, pendingDevice.userCode)
+	issued := issueOAuthCodeFamily(t, fixture)
 
 	verifier := strings.Repeat("p", 64)
 	digest := sha256.Sum256([]byte(verifier))
 	plainCode := "lyo_code_pending_" + transportapi.RandomHex(8)
 	pendingCode := model.OAuthAuthorizationCode{
-		ID: "ocod_pending_" + transportapi.RandomHex(4), ApplicationID: lunaCLIApplicationID, UserID: fixture.user.ID,
-		CodeHash: transportapi.HashToken(plainCode), RedirectURI: "https://client.example.com/callback", Scope: "user:read",
+		ID: "ocod_pending_" + transportapi.RandomHex(4), ApplicationID: fixture.application.ID, UserID: fixture.user.ID,
+		CodeHash: transportapi.HashToken(plainCode), RedirectURI: fixture.redirectURI, Scope: "user:read",
 		CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:]), CodeChallengeMethod: "S256",
 		ExpiresAt: time.Now().Add(time.Minute), CreatedAt: time.Now(),
 	}
@@ -352,17 +313,11 @@ func TestOAuthGrantRevocationInvalidatesApprovedPendingArtifacts(t *testing.T) {
 	if storedCode.ConsumedAt == nil {
 		t.Fatal("grant revoke left approved authorization code pending")
 	}
-	var storedDevice model.OAuthDeviceAuthorization
-	if err := fixture.db.First(&storedDevice, "device_code_hash = ?", transportapi.HashToken(pendingDevice.deviceCode)).Error; err != nil {
-		t.Fatal(err)
-	}
-	if storedDevice.ConsumedAt == nil || storedDevice.Status != "denied" {
-		t.Fatalf("grant revoke left approved device consent pending: %#v", storedDevice)
-	}
 	if _, err := exchangeOAuthAuthorizationCodeValue(
 		fixture.db,
 		oauthClientAuthentication{
-			applicationID: fixture.application.ID, clientID: fixture.application.ClientID,
+			applicationID:    fixture.application.ID,
+			clientID:         fixture.application.ClientID,
 			clientSecretHash: fixture.application.ClientSecretHash,
 		},
 		plainCode,
@@ -372,15 +327,11 @@ func TestOAuthGrantRevocationInvalidatesApprovedPendingArtifacts(t *testing.T) {
 	); err == nil {
 		t.Fatal("authorization code exchanged after its consent grant was revoked")
 	}
-	deviceExchange := exchangeOAuthDeviceAuthorization(fixture, pendingDevice.deviceCode)
-	if deviceExchange.Code != http.StatusBadRequest || jsonString(t, deviceExchange.Body.Bytes(), "error") != "invalid_grant" {
-		t.Fatalf("device exchange after grant revoke = %d %s", deviceExchange.Code, deviceExchange.Body.String())
-	}
 }
 
 func TestOAuthFreshConsentAfterGrantRevocationCreatesNewGrant(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	first := issueOAuthDeviceFamily(t, fixture)
+	first := issueOAuthCodeFamily(t, fixture)
 	revoke := performCookieJSONRequest(
 		fixture.router,
 		http.MethodDelete,
@@ -391,64 +342,13 @@ func TestOAuthFreshConsentAfterGrantRevocationCreatesNewGrant(t *testing.T) {
 	if revoke.Code != http.StatusNoContent {
 		t.Fatalf("revoke initial grant = %d %s", revoke.Code, revoke.Body.String())
 	}
-	second := issueOAuthDeviceFamily(t, fixture)
+	time.Sleep(5 * time.Millisecond)
+	second := issueOAuthCodeFamily(t, fixture)
 	if second.accessToken.OAuthGrantID == first.accessToken.OAuthGrantID {
 		t.Fatalf("fresh consent reused revoked grant %q", first.accessToken.OAuthGrantID)
 	}
 	if second.accessToken.OAuthFamilyID == "" {
 		t.Fatal("fresh consent did not issue a token family")
-	}
-}
-
-func TestOAuthPendingDeviceExchangeRevalidatesAuthority(t *testing.T) {
-	tests := []struct {
-		name       string
-		mutate     func(*gorm.DB, model.User) error
-		wantStatus int
-	}{
-		{
-			name: "application revoked",
-			mutate: func(db *gorm.DB, _ model.User) error {
-				return db.Transaction(func(tx *gorm.DB) error {
-					now := time.Now()
-					if err := tx.Model(&model.OAuthApplication{}).Where("id = ?", lunaCLIApplicationID).Update("revoked_at", now).Error; err != nil {
-						return err
-					}
-					return revokeOAuthApplication(tx, lunaCLIApplicationID, now)
-				})
-			},
-			wantStatus: http.StatusUnauthorized,
-		},
-		{
-			name: "user disabled",
-			mutate: func(db *gorm.DB, user model.User) error {
-				return db.Model(&model.User{}).Where("id = ?", user.ID).Update("disabled", true).Error
-			},
-			wantStatus: http.StatusBadRequest,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			fixture := newOAuthFamilyTestFixture(t)
-			pending := startOAuthDeviceAuthorization(t, fixture)
-			approveOAuthDeviceAuthorization(t, fixture, pending.userCode)
-			if err := test.mutate(fixture.db, fixture.user); err != nil {
-				t.Fatal(err)
-			}
-			exchange := exchangeOAuthDeviceAuthorization(fixture, pending.deviceCode)
-			if exchange.Code != test.wantStatus {
-				t.Fatalf("exchange after authority change = %d %s, want %d", exchange.Code, exchange.Body.String(), test.wantStatus)
-			}
-			var activeGrants int64
-			if err := fixture.db.Model(&model.OAuthGrant{}).
-				Where("application_id = ? and user_id = ? and revoked_at is null", lunaCLIApplicationID, fixture.user.ID).
-				Count(&activeGrants).Error; err != nil {
-				t.Fatal(err)
-			}
-			if activeGrants != 0 {
-				t.Fatalf("authority change exchange created %d active grants", activeGrants)
-			}
-		})
 	}
 }
 
@@ -529,8 +429,8 @@ func TestOAuthPendingAuthorizationCodeExchangeRevalidatesAuthority(t *testing.T)
 
 func TestUserOAuthGrantRevocationRevokesAllFamilies(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	first := issueOAuthDeviceFamily(t, fixture)
-	second := issueOAuthDeviceFamily(t, fixture)
+	first := issueOAuthCodeFamily(t, fixture)
+	second := issueOAuthCodeFamily(t, fixture)
 
 	revoke := performCookieJSONRequest(
 		fixture.router,
@@ -559,7 +459,7 @@ func TestUserOAuthGrantRevocationRevokesAllFamilies(t *testing.T) {
 
 func TestOAuthTokenRevocationFailureReturnsServerErrorAndRollsBack(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	issued := issueOAuthDeviceFamily(t, fixture)
+	issued := issueOAuthCodeFamily(t, fixture)
 	callbackName := "test:oauth_family_revoke_failure"
 	if err := fixture.db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
 		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "AccessToken" {
@@ -571,8 +471,9 @@ func TestOAuthTokenRevocationFailureReturnsServerErrorAndRollsBack(t *testing.T)
 	t.Cleanup(func() { _ = fixture.db.Callback().Update().Remove(callbackName) })
 
 	revoke := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/revoke", url.Values{
-		"client_id": {lunaCLIClientID},
-		"token":     {issued.tokens.RefreshToken},
+		"client_id":     {fixture.application.ClientID},
+		"client_secret": {fixture.clientSecret},
+		"token":         {issued.tokens.RefreshToken},
 	})
 	if revoke.Code != http.StatusInternalServerError || jsonString(t, revoke.Body.Bytes(), "error") != "server_error" {
 		t.Fatalf("failed token revocation = %d %s", revoke.Code, revoke.Body.String())
@@ -688,23 +589,74 @@ func newOAuthFamilyTestFixture(t *testing.T) oauthFamilyTestFixture {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	clientSecret := "oauth-family-client-secret-" + suffix
+	redirectURI := "https://client.example.com/callback"
 	application := model.OAuthApplication{
-		ID: lunaCLIApplicationID, Name: "Luna CLI", ClientID: lunaCLIClientID, RedirectURIs: "", AllowedScopes: "*", AccessTokenLifetimeDays: 30,
-		ClientSecretHash: transportapi.HashToken("oauth-family-client-secret-" + suffix),
+		ID:                      "oapp_family_" + suffix,
+		Name:                    "Family Test App",
+		ClientID:                "family-client-" + suffix,
+		RedirectURIs:            encodeStringList([]string{redirectURI}),
+		AllowedScopes:           "user:read,project:read",
+		AccessTokenLifetimeDays: 30,
+		ClientSecretHash:        transportapi.HashToken(clientSecret),
 	}
 	if err := db.Create(&application).Error; err != nil {
 		t.Fatal(err)
 	}
-	return oauthFamilyTestFixture{db: db, router: NewRouter(db, mustTestConfig(t)), user: user, application: application, sessionToken: sessionToken}
+	return oauthFamilyTestFixture{
+		db:           db,
+		router:       NewRouter(db, mustTestConfig(t)),
+		user:         user,
+		application:  application,
+		clientSecret: clientSecret,
+		redirectURI:  redirectURI,
+		sessionToken: sessionToken,
+	}
 }
 
-func issueOAuthDeviceFamily(t *testing.T, fixture oauthFamilyTestFixture) issuedOAuthDeviceFamily {
+func startFixtureAuthorizationCode(t *testing.T, fixture oauthFamilyTestFixture, scope string) pendingOAuthAuthorizationCode {
 	t.Helper()
-	pending := startOAuthDeviceAuthorization(t, fixture)
-	approveOAuthDeviceAuthorization(t, fixture, pending.userCode)
-	exchange := exchangeOAuthDeviceAuthorization(fixture, pending.deviceCode)
+	verifier := strings.Repeat("f", 64)
+	digest := sha256.Sum256([]byte(verifier))
+	input := oauthAuthorizationDecisionInput{
+		Approved:            true,
+		ClientID:            fixture.application.ClientID,
+		RedirectURI:         fixture.redirectURI,
+		Scope:               scope,
+		CodeChallenge:       base64.RawURLEncoding.EncodeToString(digest[:]),
+		CodeChallengeMethod: "S256",
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := performCookieJSONRequest(fixture.router, http.MethodPost, "/api/v1/oauth/authorize", fixture.sessionToken, string(body))
+	if decision.Code != http.StatusOK {
+		t.Fatalf("authorization-code consent = %d %s", decision.Code, decision.Body.String())
+	}
+	redirectURL, err := url.Parse(jsonString(t, decision.Body.Bytes(), "redirectUrl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := redirectURL.Query().Get("code")
+	if code == "" {
+		t.Fatal("authorization-code consent returned no code")
+	}
+	return pendingOAuthAuthorizationCode{
+		application:  fixture.application,
+		clientSecret: fixture.clientSecret,
+		redirectURI:  fixture.redirectURI,
+		verifier:     verifier,
+		code:         code,
+	}
+}
+
+func issueOAuthCodeFamily(t *testing.T, fixture oauthFamilyTestFixture) issuedOAuthCodeFamily {
+	t.Helper()
+	pending := startFixtureAuthorizationCode(t, fixture, "user:read")
+	exchange := exchangeOAuthAuthorizationCode(fixture, pending)
 	if exchange.Code != http.StatusOK {
-		t.Fatalf("device token exchange = %d %s", exchange.Code, exchange.Body.String())
+		t.Fatalf("code token exchange = %d %s", exchange.Code, exchange.Body.String())
 	}
 	var tokens oauthTokenResponse
 	if err := json.Unmarshal(exchange.Body.Bytes(), &tokens); err != nil {
@@ -718,50 +670,7 @@ func issueOAuthDeviceFamily(t *testing.T, fixture oauthFamilyTestFixture) issued
 	if err := fixture.db.First(&refreshToken, "token_hash = ?", transportapi.HashToken(tokens.RefreshToken)).Error; err != nil {
 		t.Fatal(err)
 	}
-	if tokens.Scope != "" {
-		t.Fatalf("CLI token response exposed internal scope %q", tokens.Scope)
-	}
-	if accessToken.Scope != lunaCLITestFullAccessScope || refreshToken.Scope != lunaCLITestFullAccessScope {
-		t.Fatalf("stored CLI token scopes: access=%q refresh=%q", accessToken.Scope, refreshToken.Scope)
-	}
-	return issuedOAuthDeviceFamily{tokens: tokens, accessToken: accessToken, refreshToken: refreshToken}
-}
-
-func startOAuthDeviceAuthorization(t *testing.T, fixture oauthFamilyTestFixture) pendingOAuthDeviceAuthorization {
-	t.Helper()
-	start := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/device/authorization", url.Values{
-		"client_id": {lunaCLIClientID},
-	})
-	if start.Code != http.StatusOK {
-		t.Fatalf("start device authorization = %d %s", start.Code, start.Body.String())
-	}
-	var pending struct {
-		DeviceCode string `json:"device_code"`
-		UserCode   string `json:"user_code"`
-	}
-	if err := json.Unmarshal(start.Body.Bytes(), &pending); err != nil {
-		t.Fatal(err)
-	}
-	return pendingOAuthDeviceAuthorization{deviceCode: pending.DeviceCode, userCode: pending.UserCode}
-}
-
-func approveOAuthDeviceAuthorization(t *testing.T, fixture oauthFamilyTestFixture, userCode string) {
-	t.Helper()
-	verify := performCookieJSONRequest(fixture.router, http.MethodPost, "/api/v1/oauth/device/verification", fixture.sessionToken, `{
-		"approved": true,
-		"userCode": "`+userCode+`"
-	}`)
-	if verify.Code != http.StatusOK {
-		t.Fatalf("approve device authorization = %d %s", verify.Code, verify.Body.String())
-	}
-}
-
-func exchangeOAuthDeviceAuthorization(fixture oauthFamilyTestFixture, deviceCode string) *httptest.ResponseRecorder {
-	return performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/token", url.Values{
-		"client_id":   {lunaCLIClientID},
-		"grant_type":  {oauthDeviceCodeGrantType},
-		"device_code": {deviceCode},
-	})
+	return issuedOAuthCodeFamily{tokens: tokens, accessToken: accessToken, refreshToken: refreshToken}
 }
 
 func startOAuthAuthorizationCode(t *testing.T, fixture oauthFamilyTestFixture, scope string) pendingOAuthAuthorizationCode {
@@ -818,7 +727,8 @@ func exchangeOAuthAuthorizationCode(fixture oauthFamilyTestFixture, pending pend
 func refreshOAuthFamily(t *testing.T, fixture oauthFamilyTestFixture, refreshToken string) oauthTokenResponse {
 	t.Helper()
 	response := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/token", url.Values{
-		"client_id":     {lunaCLIClientID},
+		"client_id":     {fixture.application.ClientID},
+		"client_secret": {fixture.clientSecret},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
 	})
@@ -830,4 +740,22 @@ func refreshOAuthFamily(t *testing.T, fixture oauthFamilyTestFixture, refreshTok
 		t.Fatal(err)
 	}
 	return tokens
+}
+
+func performFormRequest(router http.Handler, method, path string, form url.Values) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func performCookieJSONRequest(router http.Handler, method, path, sessionToken, body string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "https://devops.example.com")
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	router.ServeHTTP(recorder, request)
+	return recorder
 }

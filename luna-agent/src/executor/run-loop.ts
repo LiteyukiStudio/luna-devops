@@ -1,7 +1,7 @@
 import type { DocsKnowledge } from "../knowledge/docs-knowledge.js"
 import type { Span } from "@opentelemetry/api"
 import type { ClaimedRun, RunCheckpointState } from "../domain.js"
-import { genAIInputMessages } from "../genai-semconv.js"
+import { genAIInputMessages, redactToolArgumentsForOperation } from "../genai-semconv.js"
 import type { ModelRuntime } from "../model-runtime.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
 import type { RemoteProviderConfig } from "../provider/config-client.js"
@@ -291,7 +291,7 @@ export class RunLoop {
             calls: remainingPendingCalls.map(call => ({
               id: call.id,
               operationId: call.operationId,
-              arguments: call.arguments,
+              arguments: call.arguments ?? {},
               ...(call.argumentError ? { argumentError: call.argumentError } : {}),
             })),
             ...(checkpoint.state.pendingBatchId ? { batchId: checkpoint.state.pendingBatchId } : {}),
@@ -651,7 +651,11 @@ export class RunLoop {
         if (!alreadyInMessages) {
           const outcome = await this.tools.outcome(call.id)
           const reasoning = reasoningByToolCallItemId(executionInput.toolInteractions).get(itemId)
-          const toolCall = { id: effectiveCallId, operationId: call.operationId, arguments: call.arguments }
+          const toolCall = {
+            id: effectiveCallId,
+            operationId: call.operationId,
+            arguments: redactToolArgumentsForOperation(call.operationId, call.arguments),
+          }
           toolState.continuationMessages.push({
             role: "assistant",
             content: "",

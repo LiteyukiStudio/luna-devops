@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"log/slog"
 	"time"
 
@@ -38,6 +39,8 @@ type Handlers struct {
 	aiDeploymentEnabled             bool
 	aiActorResolver                 func(*gin.Context) (aiagent.ActorContext, string, bool)
 	aiTools                         *aitool.Service
+	aiToolRegistry                  *aitool.Registry
+	mcpFallbackSigningSecret        []byte
 	inbox                           inboxService
 	inboxDecision                   inboxDecisionHandler
 	volumes                         *volume.Service
@@ -85,10 +88,13 @@ func NewHandlers(db *gorm.DB, cfg Config) *Handlers {
 
 func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 	redisOptions := cfg.RedisOptions()
+	fallbackKey := make([]byte, 32)
+	_, _ = rand.Read(fallbackKey)
 	handlers := &Handlers{
 		db: db, config: cfg, configs: newConfigCache(db), mode: cfg.Mode, rateLimiter: newRateLimiterWithRedis(redisOptions),
 		oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db),
 		volumeTransferMaxBytes: cfg.VolumeTransferMaxBytes, volumeTransferEnabled: cfg.VolumeTransferEnabled(),
+		mcpFallbackSigningSecret: fallbackKey,
 	}
 	if cfg.RedisAddr != "" {
 		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
@@ -125,6 +131,7 @@ func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 		aitool.WithWebPolicyProvider(handlers.aiWebEgressPolicyForUser),
 		aitool.WithWebProxyProvider(handlers.aiWebProxyPoolForUser),
 	)
+	handlers.aiToolRegistry = aitool.NewRegistry()
 	handlers.inbox = inbox.NewService(db)
 	handlers.inboxDecision = handlers.decideInboxAction
 	handlers.domains = newDomainHandlers(handlers)

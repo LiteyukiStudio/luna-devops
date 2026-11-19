@@ -64,13 +64,20 @@ func TestAIProjectListVisibilityDirectExecutionPostgres(t *testing.T) {
 	if !projectItemsContain(allItems, related.ID) || !projectItemsContain(allItems, unrelated.ID) {
 		t.Fatalf("all visibility items = %#v", allItems)
 	}
-	boundItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"visibility": "all", "page": 1, "pageSize": 20}, related.ID)
+
+	// Single-project conversation restricts workspace_list_projects to the bound project,
+	// and rejects visibility=all with 403 ai.project_scope_mismatch.
+	boundItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"page": 1, "pageSize": 20}, related.ID)
 	if !projectItemsContain(boundItems, related.ID) || projectItemsContain(boundItems, unrelated.ID) {
 		t.Fatalf("project-bound visibility items = %#v", boundItems)
 	}
+	rec := executeFacadeGatewayRaw(t, db, router, admin, session, related.ID, "bound_all", "workspace_list_projects", map[string]any{"visibility": "all"}, "", "")
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "ai.project_scope_mismatch") {
+		t.Fatalf("expected 403 ai.project_scope_mismatch for visibility=all in project conversation, got %d %s", rec.Code, rec.Body.String())
+	}
 }
 
-func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testing.T) {
+func TestAIProjectVolumePreviewExecuteAndReadbackPostgres(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("REDIS_ADDR", "")
 	t.Setenv(aiagent.InternalSecretEnvironment, "ai-project-volume-integration-secret-01")
@@ -95,14 +102,13 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	handlers := NewHandlers(db, mustTestConfig(t))
 	tasks := &volumeTaskEnqueuerStub{}
 	handlers.volumes = volume.NewGormService(db, volumeOperationDispatcher{tasks: tasks})
-	// The readback deliberately exercises the public unavailable observation
-	// contract without requiring a test Kubernetes credential.
 	handlers.volumeClusters = nil
+	handlers.aiToolRegistry = aitool.NewRegistry()
 	handlers.domains = newDomainHandlers(handlers)
+
 	router := gin.New()
-	router.Use(handlers.domains.ai.AIToolExecutionIdentityMiddleware())
-	router.POST("/api/v1/projects/:projectId/volumes", handlers.domains.volume.CreateProjectVolume)
-	router.GET("/api/v1/projects/:projectId/volumes/:volumeId", handlers.domains.volume.GetProjectVolume)
+	router.POST("/internal/v1/ai/tools/preview", handlers.domains.ai.PreviewAIToolInternal)
+	router.POST("/internal/v1/ai/tools/execute", handlers.domains.ai.ExecuteAIToolInternal)
 
 	keys := mustTestAIKeys(t)
 	runID := "airun_ai_volume"
@@ -118,37 +124,68 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	if err := db.Exec(`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id) VALUES (?, ?, ?, ?, 1, 'running', 'system-v4', 'test', ?)`, runID, user.ID, conversationID, turnID, session.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	createArguments := `{"projectId":"` + project.ID + `","displayName":"agent-smoke","clusterId":"` + cluster.ID + `","capacity":"1Gi","storageClassName":"standard","accessMode":"ReadWriteOnce","volumeMode":"Filesystem","source":{"type":"blank"}}`
-	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode, approval_decision) VALUES (?, ?, 'createProjectVolume', 'running', ?::jsonb, 'model', 'approve')`, createToolCallID, runID, createArguments).Error; err != nil {
+	createArgs := `{"project":"ai-volume","displayName":"agent-smoke","cluster":"AI Volume Cluster","sourceType":"blank","capacity":"1Gi","storageClassName":"standard","accessMode":"ReadWriteOnce","volumeMode":"Filesystem"}`
+	argsHash, err := aitool.CanonicalJSONHash([]byte(createArgs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, arguments_hash, input_mode) VALUES (?, ?, 'runtime_create_volume', 'proposed', ?::jsonb, ?, 'model')`, createToolCallID, runID, createArgs, argsHash).Error; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM ai.conversations WHERE id = ?`, conversationID).Error })
 
-	createRequest := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/volumes", bytes.NewBufferString(`{"displayName":"agent-smoke","clusterId":"`+cluster.ID+`","capacity":"1Gi","storageClassName":"standard","accessMode":"ReadWriteOnce","volumeMode":"Filesystem","source":{"type":"blank"}}`))
+	previewBody := `{"toolName":"runtime_create_volume","arguments":` + createArgs + `}`
+	previewReq := httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/preview", bytes.NewBufferString(previewBody))
+	previewReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	previewReq.Header.Set("Content-Type", "application/json")
+	previewReq.Header.Set(aiapi.RunIDHeader, runID)
+	previewReq.Header.Set(aiapi.ToolCallIDHeader, createToolCallID)
+	previewRec := httptest.NewRecorder()
+	router.ServeHTTP(previewRec, previewReq)
+	if previewRec.Code != http.StatusOK {
+		t.Fatalf("preview volume = %d %s", previewRec.Code, previewRec.Body.String())
+	}
+	var previewRes struct {
+		PreviewLock string `json:"previewLock"`
+	}
+	if err := json.Unmarshal(previewRec.Body.Bytes(), &previewRes); err != nil || previewRes.PreviewLock == "" {
+		t.Fatalf("decode preview lock: %v %s", err, previewRec.Body.String())
+	}
+
+	if err := db.Exec(`UPDATE ai.tool_calls SET status = 'running', approval_decision = 'approve', preview_lock = ? WHERE id = ?`, previewRes.PreviewLock, createToolCallID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	createRequest := httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", bytes.NewBufferString(previewBody))
 	createRequest.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	createRequest.Header.Set("Content-Type", "application/json")
 	createRequest.Header.Set("Idempotency-Key", createToolCallID)
 	createRequest.Header.Set(aiapi.RunIDHeader, runID)
 	createRequest.Header.Set(aiapi.ToolCallIDHeader, createToolCallID)
+	createRequest.Header.Set("X-Luna-AI-Preview-Lock", previewRes.PreviewLock)
 	createRecorder := httptest.NewRecorder()
 	router.ServeHTTP(createRecorder, createRequest)
-	if createRecorder.Code != http.StatusAccepted {
+	if createRecorder.Code != http.StatusOK {
 		t.Fatalf("create volume = %d %s", createRecorder.Code, createRecorder.Body.String())
 	}
-	var created projectVolumeResponse
+	var created map[string]any
 	if err := json.Unmarshal(createRecorder.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	if created.ID == "" || tasks.provision.VolumeID != created.ID || tasks.provision.ProjectID != project.ID {
+	createdID, _ := created["id"].(string)
+	if createdID == "" || created["projectId"] != project.ID || tasks.provision.VolumeID != createdID || tasks.provision.ProjectID != project.ID {
 		t.Fatalf("created volume = %#v, task = %#v", created, tasks.provision)
 	}
 
 	getToolCallID := "aitool_ai_volume_get"
-	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES (?, ?, 'getProjectVolume', 'running', ?::jsonb, 'model')`, getToolCallID, runID, `{"projectId":"`+project.ID+`","volumeId":"`+created.ID+`"}`).Error; err != nil {
+	getArgs := `{"project":"` + project.ID + `","volume":"agent-smoke"}`
+	getHash, _ := aitool.CanonicalJSONHash([]byte(getArgs))
+	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, arguments_hash, input_mode) VALUES (?, ?, 'runtime_get_volume', 'running', ?::jsonb, ?, 'verification')`, getToolCallID, runID, getArgs, getHash).Error; err != nil {
 		t.Fatal(err)
 	}
-	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project.ID+"/volumes/"+created.ID, nil)
+	getRequest := httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", bytes.NewBufferString(`{"toolName":"runtime_get_volume","arguments":`+getArgs+`}`))
 	getRequest.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	getRequest.Header.Set("Content-Type", "application/json")
 	getRequest.Header.Set(aiapi.RunIDHeader, runID)
 	getRequest.Header.Set(aiapi.ToolCallIDHeader, getToolCallID)
 	getRecorder := httptest.NewRecorder()
@@ -156,11 +193,12 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	if getRecorder.Code != http.StatusOK {
 		t.Fatalf("read volume = %d %s", getRecorder.Code, getRecorder.Body.String())
 	}
-	var readback projectVolumeDetailResponse
+	var readback map[string]any
 	if err := json.Unmarshal(getRecorder.Body.Bytes(), &readback); err != nil {
 		t.Fatal(err)
 	}
-	if readback.ID != created.ID || readback.ProjectID != project.ID || readback.DisplayName != "agent-smoke" || readback.Observation.Status != "unavailable" {
+	obs, _ := readback["observation"].(map[string]any)
+	if readback["id"] != createdID || readback["projectId"] != project.ID || readback["displayName"] != "agent-smoke" || obs["status"] != "unavailable" {
 		t.Fatalf("authoritative readback = %#v", readback)
 	}
 	if getRecorder.Header().Get("Cache-Control") != "no-store" {
@@ -193,15 +231,19 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	handlers.aiTools = aitool.NewService(aitool.WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		return security.AdminEgressPolicy(), nil
 	}))
+	handlers.aiToolRegistry = aitool.NewRegistry()
+	handlers.domains = newDomainHandlers(handlers)
+
 	router := gin.New()
-	router.Use(handlers.domains.ai.AIToolExecutionIdentityMiddleware())
-	router.POST("/api/v1/ai-tools/fetch-web-page", handlers.domains.ai.ExecuteAIFetchWebPage)
+	router.POST("/internal/v1/ai/tools/execute", handlers.domains.ai.ExecuteAIToolInternal)
 
 	keys := mustTestAIKeys(t)
 	conversationID := "aicnv_ai_web"
 	turnID := "aitrn_ai_web"
 	runID := "airun_ai_web"
 	toolCallID := "aitool_ai_web_fetch"
+	webArgs := `{"url":"` + target.URL + `","maxCharacters":2000}`
+	webHash, _ := aitool.CanonicalJSONHash([]byte(webArgs))
 	if err := db.Exec(`INSERT INTO ai.conversations (id, owner_user_id, title, status) VALUES (?, ?, 'web test', 'active')`, conversationID, user.ID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -211,12 +253,12 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	if err := db.Exec(`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id) VALUES (?, ?, ?, ?, 1, 'running', 'system-v4', 'test', ?)`, runID, user.ID, conversationID, turnID, session.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES (?, ?, 'fetchWebPage', 'running', ?::jsonb, 'model')`, toolCallID, runID, `{"body":{"url":"`+target.URL+`"}}`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, arguments_hash, input_mode) VALUES (?, ?, 'ops_web_fetch', 'running', ?::jsonb, ?, 'model')`, toolCallID, runID, webArgs, webHash).Error; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM ai.conversations WHERE id = ?`, conversationID).Error })
 
-	execute := httptest.NewRequest(http.MethodPost, "/api/v1/ai-tools/fetch-web-page", bytes.NewBufferString(`{"url":"`+target.URL+`","maxCharacters":2000}`))
+	execute := httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", bytes.NewBufferString(`{"toolName":"ops_web_fetch","arguments":`+webArgs+`}`))
 	execute.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	execute.Header.Set("Content-Type", "application/json")
 	execute.Header.Set(aiapi.RunIDHeader, runID)
@@ -224,23 +266,25 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, execute)
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("fetch web page = %d %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("ops_web_fetch = %d %s", recorder.Code, recorder.Body.String())
 	}
-	var response struct {
-		Data map[string]any `json:"data"`
-	}
+	var response map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Data["title"] != "Luna Tool Test" || !strings.Contains(fmt.Sprint(response.Data["content"]), "authoritative public page") {
-		t.Fatalf("web page response = %#v", response.Data)
+	dataMap := response
+	if nested, ok := response["data"].(map[string]any); ok {
+		dataMap = nested
+	}
+	if dataMap["title"] != "Luna Tool Test" || !strings.Contains(fmt.Sprint(dataMap["content"]), "authoritative public page") {
+		t.Fatalf("web page response = %#v", response)
 	}
 
-	unbound := httptest.NewRequest(http.MethodPost, "/api/v1/ai-tools/fetch-web-page", bytes.NewBufferString(`{"url":"`+target.URL+`"}`))
+	unbound := httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", bytes.NewBufferString(`{"toolName":"ops_web_fetch","arguments":`+webArgs+`}`))
 	unbound.Header.Set("Content-Type", "application/json")
 	unboundRecorder := httptest.NewRecorder()
 	router.ServeHTTP(unboundRecorder, unbound)
-	if unboundRecorder.Code != http.StatusForbidden {
+	if unboundRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("unbound web request = %d %s", unboundRecorder.Code, unboundRecorder.Body.String())
 	}
 }
@@ -300,32 +344,34 @@ func TestAITaskStatusInternalWaitingExternalAndZeroAuditPostgres(t *testing.T) {
 
 	router := NewRouter(db, mustTestConfig(t))
 
-	// 1) waiting_external Run 所属用户具有项目权限时正常返回状态快照，且严禁写 AuditLog
-	req := httptest.NewRequest(http.MethodGet, "/internal/v1/ai/runs/airun_wait_1/tasks/"+allowedProject.ID+"/build_run/"+buildRun.ID, nil)
-	req.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for waiting_external task status, got %d %s", rec.Code, rec.Body.String())
-	}
-	if gotCC := rec.Header().Get("Cache-Control"); gotCC != "no-store" {
-		t.Fatalf("Cache-Control = %q, want no-store", gotCC)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode task status response: %v", err)
-	}
-	if payload["taskStatus"] != "failed" || payload["terminal"] != true || payload["failureCode"] != "build.dockerfile_step_failed" {
-		t.Fatalf("unexpected task status payload: %#v", payload)
+	// 1) Supports both canonical project ID and dual-mode project identifier, with zero AuditLogs
+	for _, projRef := range []string{allowedProject.ID, allowedProject.Identifier} {
+		req := httptest.NewRequest(http.MethodGet, "/internal/v1/ai/runs/airun_wait_1/tasks/"+projRef+"/build_run/"+buildRun.ID, nil)
+		req.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for waiting_external task status (%s), got %d %s", projRef, rec.Code, rec.Body.String())
+		}
+		if gotCC := rec.Header().Get("Cache-Control"); gotCC != "no-store" {
+			t.Fatalf("Cache-Control = %q, want no-store", gotCC)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode task status response: %v", err)
+		}
+		if payload["taskStatus"] != "failed" || payload["terminal"] != true || payload["failureCode"] != "build.dockerfile_step_failed" {
+			t.Fatalf("unexpected task status payload: %#v", payload)
+		}
 	}
 
-	// 2) 越权访问其他项目空间立即 403
+	// 2) Cross-project poll is immediately blocked by sandbox-first check (403 ai.project_scope_mismatch)
 	forbiddenReq := httptest.NewRequest(http.MethodGet, "/internal/v1/ai/runs/airun_wait_1/tasks/"+forbiddenProject.ID+"/build_run/"+otherBuild.ID, nil)
 	forbiddenReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	forbiddenRec := httptest.NewRecorder()
 	router.ServeHTTP(forbiddenRec, forbiddenReq)
-	if forbiddenRec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for cross-project task poll, got %d %s", forbiddenRec.Code, forbiddenRec.Body.String())
+	if forbiddenRec.Code != http.StatusForbidden || !strings.Contains(forbiddenRec.Body.String(), "ai.project_scope_mismatch") {
+		t.Fatalf("expected 403 ai.project_scope_mismatch for cross-project task poll, got %d %s", forbiddenRec.Code, forbiddenRec.Body.String())
 	}
 
 	var auditAfter int64
@@ -339,24 +385,51 @@ func TestAITaskStatusInternalWaitingExternalAndZeroAuditPostgres(t *testing.T) {
 
 func executeAIProjectList(t *testing.T, db *gorm.DB, router http.Handler, user model.User, session model.UserSession, arguments map[string]any, conversationProjectID string) []any {
 	t.Helper()
-	keys := mustTestAIKeys(t)
 	visibility := "default"
 	if value, exists := arguments["visibility"]; exists {
 		visibility = fmt.Sprint(value)
 	}
 	suffix := fmt.Sprintf("%s_%s", visibility, strings.TrimPrefix(conversationProjectID, "prj_ai_scope_"))
-	runID := "airun_scope_" + suffix
-	toolCallID := "aitool_scope_" + suffix
-	conversationID := "aicnv_scope_" + suffix
-	turnID := "aitrn_scope_" + suffix
+	rec := executeFacadeGatewayRaw(t, db, router, user, session, conversationProjectID, suffix, "workspace_list_projects", arguments, "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace_list_projects = %d %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Items []any `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode tool response: %v", err)
+	}
+	return response.Items
+}
+
+func executeFacadeGatewayRaw(
+	t *testing.T,
+	db *gorm.DB,
+	router http.Handler,
+	user model.User,
+	session model.UserSession,
+	conversationProjectID string,
+	suffix string,
+	toolName string,
+	arguments map[string]any,
+	approvalDecision string,
+	previewLock string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	keys := mustTestAIKeys(t)
+	runID := "airun_gw_" + suffix
+	toolCallID := "aitool_gw_" + suffix
+	conversationID := "aicnv_gw_" + suffix
+	turnID := "aitrn_gw_" + suffix
 	var projectID any
 	if conversationProjectID != "" {
 		projectID = conversationProjectID
 	}
-	if err := db.Exec(`INSERT INTO ai.conversations (id, owner_user_id, title, status, project_id) VALUES (?, ?, 'scope test', 'active', ?)`, conversationID, user.ID, projectID).Error; err != nil {
+	if err := db.Exec(`INSERT INTO ai.conversations (id, owner_user_id, title, status, project_id) VALUES (?, ?, 'gateway test', 'active', ?)`, conversationID, user.ID, projectID).Error; err != nil {
 		t.Fatalf("seed AI conversation: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id) VALUES (?, ?, 1, 'running', 'list projects', ?)`, turnID, conversationID, runID).Error; err != nil {
+	if err := db.Exec(`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id) VALUES (?, ?, 1, 'running', 'run tool', ?)`, turnID, conversationID, runID).Error; err != nil {
 		t.Fatalf("seed AI turn: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id) VALUES (?, ?, ?, ?, 1, 'running', 'system-v4', 'test', ?)`, runID, user.ID, conversationID, turnID, session.ID).Error; err != nil {
@@ -366,32 +439,37 @@ func executeAIProjectList(t *testing.T, db *gorm.DB, router http.Handler, user m
 	if err != nil {
 		t.Fatalf("encode AI ToolCall arguments: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES (?, ?, 'listProjects', 'running', ?::jsonb, 'model')`, toolCallID, runID, string(argumentJSON)).Error; err != nil {
+	argsHash, err := aitool.CanonicalJSONHash(argumentJSON)
+	if err != nil {
+		t.Fatalf("hash AI ToolCall arguments: %v", err)
+	}
+	var approvalVal any
+	if approvalDecision != "" {
+		approvalVal = approvalDecision
+	}
+	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, arguments_hash, input_mode, approval_decision, preview_lock) VALUES (?, ?, ?, 'running', ?::jsonb, ?, 'model', ?, ?)`, toolCallID, runID, toolName, string(argumentJSON), argsHash, approvalVal, previewLock).Error; err != nil {
 		t.Fatalf("seed AI ToolCall: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM ai.conversations WHERE id = ?`, conversationID).Error })
 
-	query := url.Values{"page": {"1"}, "pageSize": {"20"}}
-	if value, exists := arguments["visibility"]; exists {
-		query.Set("visibility", fmt.Sprint(value))
+	body, err := json.Marshal(map[string]any{
+		"toolName":  toolName,
+		"arguments": json.RawMessage(argumentJSON),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	target := "/api/v1/projects?" + query.Encode()
-	execute := httptest.NewRequest(http.MethodGet, target, nil)
-	execute.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	execute.Header.Set(aiapi.RunIDHeader, runID)
-	execute.Header.Set(aiapi.ToolCallIDHeader, toolCallID)
-	executeRecorder := httptest.NewRecorder()
-	router.ServeHTTP(executeRecorder, execute)
-	if executeRecorder.Code != http.StatusOK {
-		t.Fatalf("tool execution = %d %s", executeRecorder.Code, executeRecorder.Body.String())
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(aiapi.RunIDHeader, runID)
+	req.Header.Set(aiapi.ToolCallIDHeader, toolCallID)
+	if previewLock != "" {
+		req.Header.Set("X-Luna-AI-Preview-Lock", previewLock)
 	}
-	var response struct {
-		Items []any `json:"items"`
-	}
-	if err := json.Unmarshal(executeRecorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode tool response: %v", err)
-	}
-	return response.Items
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
 }
 
 func projectItemsContain(items []any, projectID string) bool {
@@ -433,13 +511,12 @@ func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
 	handlers.aiTools = aitool.NewService(aitool.WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		return security.AdminEgressPolicy(), nil
 	}))
+	handlers.aiToolRegistry = aitool.NewRegistry()
 	handlers.domains = newDomainHandlers(handlers)
+
 	router := gin.New()
-	router.Use(handlers.domains.ai.AIToolExecutionIdentityMiddleware())
-	router.GET("/api/v1/data-retention/catalog", handlers.domains.platform.ListDataRetentionCatalog)
-	router.POST("/api/v1/ai-tools/fetch-web-page", handlers.domains.ai.ExecuteAIFetchWebPage)
-	router.GET("/api/v1/projects/:projectId", handlers.domains.project.GetProject)
-	router.POST("/api/v1/build/variable-sets", handlers.domains.build.CreateBuildVariableSet)
+	router.POST("/internal/v1/ai/tools/preview", handlers.domains.ai.PreviewAIToolInternal)
+	router.POST("/internal/v1/ai/tools/execute", handlers.domains.ai.ExecuteAIToolInternal)
 
 	conversationID := "aicnv_ai_norm"
 	turnID := "aitrn_ai_norm"
@@ -454,151 +531,102 @@ func TestAIToolExecutionIdentityScopeNestedBodyAndAuditPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seedToolCall := func(id, operationID, approval string) {
+	callTool := func(endpoint, id, toolName, argsJSON, status, approval, lock string) *httptest.ResponseRecorder {
 		t.Helper()
+		hash, err := aitool.CanonicalJSONHash([]byte(argsJSON))
+		if err != nil {
+			t.Fatalf("hash %s: %v", id, err)
+		}
 		var approvalValue any
 		if approval != "" {
 			approvalValue = approval
 		}
-		if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode, approval_decision) VALUES (?, ?, ?, 'running', '{}'::jsonb, 'model', ?)`, id, runID, operationID, approvalValue).Error; err != nil {
+		if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, arguments_hash, input_mode, approval_decision, preview_lock) VALUES (?, ?, ?, ?, ?::jsonb, ?, 'model', ?, ?) ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, approval_decision = EXCLUDED.approval_decision, preview_lock = EXCLUDED.preview_lock`, id, runID, toolName, status, argsJSON, hash, approvalValue, lock).Error; err != nil {
 			t.Fatalf("seed tool_call %s: %v", id, err)
 		}
+		req := httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(`{"toolName":"`+toolName+`","arguments":`+argsJSON+`}`))
+		req.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(aiapi.RunIDHeader, runID)
+		req.Header.Set(aiapi.ToolCallIDHeader, id)
+		if lock != "" {
+			req.Header.Set("X-Luna-AI-Preview-Lock", lock)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
 	}
 
-	// 1) Normal user calling admin-only scope tool -> 403 ai.tool_permission_denied
-	seedToolCall("aitool_admin_scope", "listDataRetentionCatalog", "")
-	adminReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-retention/catalog", nil)
-	adminReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	adminReq.Header.Set(aiapi.RunIDHeader, runID)
-	adminReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_admin_scope")
-	adminRec := httptest.NewRecorder()
-	router.ServeHTTP(adminRec, adminReq)
+	// 1) Normal user calling admin-only tool -> 403 ai.tool_permission_denied
+	adminRec := callTool("/internal/v1/ai/tools/execute", "aitool_admin_scope", "admin_preview_data_retention", `{}`, "running", "", "")
 	if adminRec.Code != http.StatusForbidden || !strings.Contains(adminRec.Body.String(), "ai.tool_permission_denied") {
 		t.Fatalf("expected 403 ai.tool_permission_denied, got %d %s", adminRec.Code, adminRec.Body.String())
 	}
 
-	// 2) Normal user calling web:read tool -> 200 OK AND writes AuditLog (POST)
+	// 2) Normal user calling web:read tool -> 200 OK AND writes AuditLog (effect=execute)
 	var auditBefore int64
 	if err := db.Model(&model.AuditLog{}).Where("action = ?", "ai.tool.execute").Count(&auditBefore).Error; err != nil {
 		t.Fatal(err)
 	}
-	seedToolCall("aitool_web_read", "fetchWebPage", "")
-	webReq := httptest.NewRequest(http.MethodPost, "/api/v1/ai-tools/fetch-web-page", bytes.NewBufferString(`{"url":"`+target.URL+`"}`))
-	webReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	webReq.Header.Set("Content-Type", "application/json")
-	webReq.Header.Set(aiapi.RunIDHeader, runID)
-	webReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_web_read")
-	webRec := httptest.NewRecorder()
-	router.ServeHTTP(webRec, webReq)
+	webRec := callTool("/internal/v1/ai/tools/execute", "aitool_web_read", "ops_web_fetch", `{"url":"`+target.URL+`"}`, "running", "", "")
 	if webRec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for web:read tool, got %d %s", webRec.Code, webRec.Body.String())
+		t.Fatalf("expected 200 for ops_web_fetch, got %d %s", webRec.Code, webRec.Body.String())
 	}
-	var auditAfterPost int64
-	if err := db.Model(&model.AuditLog{}).Where("action = ?", "ai.tool.execute").Count(&auditAfterPost).Error; err != nil {
+	var auditAfterWeb int64
+	if err := db.Model(&model.AuditLog{}).Where("action = ?", "ai.tool.execute").Count(&auditAfterWeb).Error; err != nil {
 		t.Fatal(err)
 	}
-	if auditAfterPost != auditBefore+1 {
-		t.Fatalf("POST tool call must write AuditLog: before=%d after=%d", auditBefore, auditAfterPost)
+	if auditAfterWeb != auditBefore+1 {
+		t.Fatalf("ops_web_fetch must write AuditLog: before=%d after=%d", auditBefore, auditAfterWeb)
 	}
 
-	// 3) Read-only GET tool call -> 200 OK AND must NOT write AuditLog
-	seedToolCall("aitool_get_proj", "getProject", "")
-	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+boundProject.ID, nil)
-	getReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	getReq.Header.Set(aiapi.RunIDHeader, runID)
-	getReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_get_proj")
-	getRec := httptest.NewRecorder()
-	router.ServeHTTP(getRec, getReq)
+	// 3) Read-only L0 tool call -> 200 OK AND must NOT write AuditLog
+	getRec := callTool("/internal/v1/ai/tools/execute", "aitool_get_proj", "workspace_get_project", `{"project":"ai-norm-bound"}`, "running", "", "")
 	if getRec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for getProject, got %d %s", getRec.Code, getRec.Body.String())
+		t.Fatalf("expected 200 for workspace_get_project, got %d %s", getRec.Code, getRec.Body.String())
 	}
 	var auditAfterGet int64
 	if err := db.Model(&model.AuditLog{}).Where("action = ?", "ai.tool.execute").Count(&auditAfterGet).Error; err != nil {
 		t.Fatal(err)
 	}
-	if auditAfterGet != auditAfterPost {
-		t.Fatalf("GET tool call must NOT write AuditLog: before=%d after=%d", auditAfterPost, auditAfterGet)
+	if auditAfterGet != auditAfterWeb {
+		t.Fatalf("L0 read tool call must NOT write AuditLog: before=%d after=%d", auditAfterWeb, auditAfterGet)
 	}
 
-	// 4) L1 remembered approval works when ai.conversation_tool_approvals row exists, while L2 createBuildVariableSet requires explicit approve
-	if err := db.Exec(`INSERT INTO ai.conversation_tool_approvals (conversation_id, operation_id, granted_by_tool_call_id) VALUES (?, 'triggerBuildRun', 'aitool_grant_1')`, conversationID).Error; err != nil {
-		t.Fatal(err)
-	}
-	seedToolCall("aitool_l2_forbid_remembered", "createBuildVariableSet", "remembered")
-	l2RememberedReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"ci-vars","scope":"project","projectIds":["`+boundProject.ID+`"],"variables":{"K":"V"},"enabled":true}`))
-	l2RememberedReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	l2RememberedReq.Header.Set("Content-Type", "application/json")
-	l2RememberedReq.Header.Set(aiapi.RunIDHeader, runID)
-	l2RememberedReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_l2_forbid_remembered")
-	l2RememberedRec := httptest.NewRecorder()
-	router.ServeHTTP(l2RememberedRec, l2RememberedReq)
+	// 4) L2 build_save_variable_set rejects remembered decision, succeeds with preview + approve, and allows nested user payload projectId
+	nestedBody := `{"name":"ci-vars","scope":"project","addProjects":["` + boundProject.ID + `"],"setVariables":[{"key":"FIREBASE_CONFIG","value":"{\"projectId\":\"` + otherProject.ID + `\"}"},{"key":"projectId","value":"` + otherProject.ID + `"}],"enabled":true}`
+	l2RememberedRec := callTool("/internal/v1/ai/tools/execute", "aitool_l2_forbid_remembered", "build_save_variable_set", nestedBody, "running", "remembered", "")
 	if l2RememberedRec.Code != http.StatusPreconditionRequired || !strings.Contains(l2RememberedRec.Body.String(), "ai.approval_required") {
-		t.Fatalf("expected 428 ai.approval_required for L2 createBuildVariableSet with remembered, got %d %s", l2RememberedRec.Code, l2RememberedRec.Body.String())
+		t.Fatalf("expected 428 ai.approval_required for L2 build_save_variable_set with remembered, got %d %s", l2RememberedRec.Code, l2RememberedRec.Body.String())
 	}
 
-	seedToolCall("aitool_nested_ok", "createBuildVariableSet", "approve")
-	nestedBody := `{"name":"ci-vars","scope":"project","projectIds":["` + boundProject.ID + `"],"variables":{"FIREBASE_CONFIG":"{\"projectId\":\"` + otherProject.ID + `\"}","projectId":"` + otherProject.ID + `"},"enabled":true}`
-	nestedReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(nestedBody))
-	nestedReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	nestedReq.Header.Set("Content-Type", "application/json")
-	nestedReq.Header.Set(aiapi.RunIDHeader, runID)
-	nestedReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_nested_ok")
-	nestedRec := httptest.NewRecorder()
-	router.ServeHTTP(nestedRec, nestedReq)
-	if nestedRec.Code == http.StatusForbidden && strings.Contains(nestedRec.Body.String(), "ai.project_scope_mismatch") {
-		t.Fatalf("nested projectId in user payload falsely triggered ai.project_scope_mismatch: %d %s", nestedRec.Code, nestedRec.Body.String())
+	prevRec := callTool("/internal/v1/ai/tools/preview", "aitool_nested_ok", "build_save_variable_set", nestedBody, "proposed", "", "")
+	if prevRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from build_save_variable_set preview, got %d %s", prevRec.Code, prevRec.Body.String())
 	}
-	if nestedRec.Code != http.StatusCreated {
-		t.Fatalf("expected 201 for createBuildVariableSet with nested dict, got %d %s", nestedRec.Code, nestedRec.Body.String())
+	var prevRes struct {
+		PreviewLock string `json:"previewLock"`
 	}
-
-	// 5) Top-level body.projectIds mismatch or omitted (e.g. scope=global/user) -> 403 ai.project_scope_mismatch
-	seedToolCall("aitool_top_mismatch", "createBuildVariableSet", "approve")
-	mismatchReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"bad-vars","scope":"project","projectIds":["`+otherProject.ID+`"]}`))
-	mismatchReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	mismatchReq.Header.Set("Content-Type", "application/json")
-	mismatchReq.Header.Set(aiapi.RunIDHeader, runID)
-	mismatchReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_top_mismatch")
-	mismatchRec := httptest.NewRecorder()
-	router.ServeHTTP(mismatchRec, mismatchReq)
-	if mismatchRec.Code != http.StatusForbidden || !strings.Contains(mismatchRec.Body.String(), "ai.project_scope_mismatch") {
-		t.Fatalf("expected 403 ai.project_scope_mismatch, got %d %s", mismatchRec.Code, mismatchRec.Body.String())
+	if err := json.Unmarshal(prevRec.Body.Bytes(), &prevRes); err != nil || prevRes.PreviewLock == "" {
+		t.Fatalf("decode preview lock: %v %s", err, prevRec.Body.String())
+	}
+	nestedRec := callTool("/internal/v1/ai/tools/execute", "aitool_nested_ok", "build_save_variable_set", nestedBody, "running", "approve", prevRes.PreviewLock)
+	if nestedRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for build_save_variable_set with nested dict, got %d %s", nestedRec.Code, nestedRec.Body.String())
 	}
 
-	seedToolCall("aitool_global_bypass", "createBuildVariableSet", "approve")
-	globalReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"user-vars","scope":"user","projectId":"`+boundProject.ID+`"}`))
-	globalReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	globalReq.Header.Set("Content-Type", "application/json")
-	globalReq.Header.Set(aiapi.RunIDHeader, runID)
-	globalReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_global_bypass")
-	globalRec := httptest.NewRecorder()
-	router.ServeHTTP(globalRec, globalReq)
-	if globalRec.Code != http.StatusForbidden || !strings.Contains(globalRec.Body.String(), "ai.project_scope_mismatch") {
-		t.Fatalf("expected 403 ai.project_scope_mismatch when omitting projectIds in project conversation, got %d %s", globalRec.Code, globalRec.Body.String())
-	}
-
-	seedToolCall("aitool_forged_scope", "createBuildVariableSet", "approve")
-	forgedScopeReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"user-forged","scope":"user","projectIds":["`+boundProject.ID+`"]}`))
-	forgedScopeReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	forgedScopeReq.Header.Set("Content-Type", "application/json")
-	forgedScopeReq.Header.Set(aiapi.RunIDHeader, runID)
-	forgedScopeReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_forged_scope")
-	forgedScopeRec := httptest.NewRecorder()
-	router.ServeHTTP(forgedScopeRec, forgedScopeReq)
-	if forgedScopeRec.Code != http.StatusForbidden || !strings.Contains(forgedScopeRec.Body.String(), "ai.project_scope_mismatch") {
-		t.Fatalf("expected 403 ai.project_scope_mismatch when scope=user carries forged projectIds, got %d %s", forgedScopeRec.Code, forgedScopeRec.Body.String())
-	}
-
-	seedToolCall("aitool_case_smuggle", "createBuildVariableSet", "approve")
-	caseSmuggleReq := httptest.NewRequest(http.MethodPost, "/api/v1/build/variable-sets", bytes.NewBufferString(`{"name":"case-smuggle","scope":"project","projectIds":["`+boundProject.ID+`"],"ProjectIds":["`+otherProject.ID+`"]}`))
-	caseSmuggleReq.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	caseSmuggleReq.Header.Set("Content-Type", "application/json")
-	caseSmuggleReq.Header.Set(aiapi.RunIDHeader, runID)
-	caseSmuggleReq.Header.Set(aiapi.ToolCallIDHeader, "aitool_case_smuggle")
-	caseSmuggleRec := httptest.NewRecorder()
-	router.ServeHTTP(caseSmuggleRec, caseSmuggleReq)
-	if caseSmuggleRec.Code != http.StatusForbidden || !strings.Contains(caseSmuggleRec.Body.String(), "ai.project_scope_mismatch") {
-		t.Fatalf("expected 403 ai.project_scope_mismatch on case-variant ProjectIds smuggling, got %d %s", caseSmuggleRec.Code, caseSmuggleRec.Body.String())
+	// 5) Sandbox blocks mismatched addProjects, scope=global, and case-smuggled AddProjects
+	for name, badBody := range map[string]string{
+		"mismatched_add": `{"name":"bad-vars","scope":"project","addProjects":["` + otherProject.ID + `"],"setVariables":[{"key":"K","value":"V"}]}`,
+		"global_scope":   `{"name":"global-vars","scope":"global","setVariables":[{"key":"K","value":"V"}]}`,
+		"case_smuggle":   `{"name":"smuggle-vars","scope":"project","addProjects":["` + boundProject.ID + `"],"AddProjects":["` + otherProject.ID + `"],"setVariables":[{"key":"K","value":"V"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := callTool("/internal/v1/ai/tools/preview", "aitool_bad_"+name, "build_save_variable_set", badBody, "proposed", "", "")
+			if r.Code != http.StatusForbidden || !strings.Contains(r.Body.String(), "ai.project_scope_mismatch") {
+				t.Fatalf("case %s expected 403 ai.project_scope_mismatch, got %d %s", name, r.Code, r.Body.String())
+			}
+		})
 	}
 }
 

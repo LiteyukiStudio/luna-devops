@@ -57,7 +57,14 @@ type Host interface {
 	AIPlatformActor(ctx context.Context) (PlatformActor, bool)
 	WithAIPlatformActor(ctx context.Context, actor PlatformActor) context.Context
 	AIToolService() *aitool.Service
+	AIToolRegistry() *aitool.Registry
+	AuthenticateMCPBearerToken(ctx *gin.Context) (model.User, model.AccessToken, bool)
+	ExternalBaseURL(ctx *gin.Context) string
+	MCPPreviewSigningSecret() []byte
+	AppVersion() string
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	MonitorProjectAuthorization(ctx *gin.Context, streamCtx context.Context, user model.User, projectID string, action authz.Action, revoke func()) (<-chan struct{}, bool)
 	WriteContinuousAuthorizationRevoked(ctx *gin.Context)
 }

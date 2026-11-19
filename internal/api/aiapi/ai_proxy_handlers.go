@@ -169,6 +169,9 @@ func (h *Handler) attachAIModelSnapshot(ctx *gin.Context, userID string, body []
 
 func (h *Handler) aiActorFromSession(ctx *gin.Context) (aiagent.ActorContext, string, bool) {
 	if actor, role, ok, configured := h.host.AIActorOverride(ctx); configured {
+		if actor.PlatformRole == "" {
+			actor.PlatformRole = role
+		}
 		return actor, role, ok
 	}
 	session, ok := h.host.CurrentSessionFromCookie(ctx)
@@ -182,7 +185,7 @@ func (h *Handler) aiActorFromSession(ctx *gin.Context) (aiagent.ActorContext, st
 		return aiagent.ActorContext{}, "", false
 	}
 	return aiagent.ActorContext{
-		UserID: user.ID, SessionID: session.ID, Locale: normalizedAILocale(user.Language),
+		UserID: user.ID, SessionID: session.ID, PlatformRole: user.Role, Locale: normalizedAILocale(user.Language),
 		RequestID: id.New("req"), SessionExpiresAt: session.ExpiresAt.Unix(),
 	}, user.Role, true
 }

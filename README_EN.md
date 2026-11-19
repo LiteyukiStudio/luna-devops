@@ -63,7 +63,7 @@ Repository
 | Frontend | Vite, React, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query |
 | Forms and UX | React Hook Form, Zod, i18next, react-i18next, Sonner |
 | Delivery | Docker Compose, Helm, Kubernetes Job, BuildKit, Gateway API |
-| CLI | TypeScript, Commander, Zod, i18next, npm / pnpm, Bun |
+| MCP / Skills | Streamable HTTP MCP Server (`/api/v1/mcp`), unified domain `SKILL.md` |
 | Tooling | pnpm, uv, golang-migrate, OpenAPI |
 
 ## Quick Start
@@ -105,20 +105,18 @@ The root `.env` is the single authoring entry for API, Worker, and Agent develop
 
 API, Worker, helper commands, and Agent default to `LOG_FORMAT=auto`: interactive terminals get readable console logs, while redirected output and containers get ANSI-free JSON. Use `LOG_LEVEL` to change verbosity or `LOG_COLOR=never` / `NO_COLOR` to disable color. OTel always receives structured records independently of terminal rendering.
 
-## Luna CLI
+## MCP & External AI Integration
 
-Luna CLI manages Luna DevOps from a terminal with human-readable output and
-JSON output for automation:
+Luna DevOps includes a native Streamable HTTP MCP Server at `/api/v1/mcp`. Connect Claude Code, Cursor, Antigravity, or other MCP clients using a Personal Access Token (`lyd_...`) or OAuth 2.0 (`authorization_code` + PKCE `S256`)—even on self-hosted instances where the built-in Web AI Assistant is disabled:
 
 ```bash
-npm install --global @liteyuki/luna-cli
-luna login
-luna project list
+claude mcp add --transport http luna-devops https://devops.example.com/api/v1/mcp \
+  --header "Authorization: Bearer <YOUR_PAT>"
 ```
 
-- [CLI documentation](https://luna-devops.liteyuki.org/en/use/cli/installation)
-- [CLI GitHub repository](https://github.com/LiteyukiStudio/luna-cli)
-- [Paired Agent Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
+- [MCP integration guide](https://luna-devops.liteyuki.org/en/use/mcp)
+- [Companion Skills guide](https://luna-devops.liteyuki.org/en/use/mcp/skills)
+- [Unified Skills directory](skills/luna-devops)
 
 ## Deployment
 
@@ -179,6 +177,7 @@ For the full list of API and Worker options, see [Configuration](docs/docs/en/st
 cmd/api                 API service entry point
 cmd/worker              Async Worker entry point
 luna-agent/             Independent AI Agent, orchestration graph, tool catalog, and durable runtime
+skills/                 Unified MCP and Agent domain Skills (SKILL.md)
 internal/               Backend domains, providers, services, and models
 migrations/             PostgreSQL migrations
 openapi/                OpenAPI definitions
@@ -188,9 +187,6 @@ docs/                   Rspress documentation site
 docs-internal/                  Internal engineering docs (standards, proposals, records)
 charts/luna-devops      Helm chart
 ```
-
-The optional local `/cli/` directory is ignored by Git and exists only for a
-standalone CLI checkout during integration development.
 
 ## Development
 

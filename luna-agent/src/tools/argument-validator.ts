@@ -28,12 +28,63 @@ export class ToolArgumentsInvalidError extends Error implements ToolArgumentsInv
 }
 
 export function validateToolArguments(schema: Record<string, unknown>, input: unknown): Record<string, unknown> {
+  const normalized = stripOptionalNulls(schema, input)
   const validate = compile(schema)
-  if (!validate(input))
+  if (!validate(normalized))
     throw new ToolArgumentsInvalidError(toIssues(validate.errors ?? []))
-  if (!input || typeof input !== "object" || Array.isArray(input))
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized))
     throw new ToolArgumentsInvalidError([{ path: "", code: "type", remediation: "请提供 JSON 对象。" }])
-  return input as Record<string, unknown>
+  return normalized as Record<string, unknown>
+}
+
+function stripOptionalNulls(schema: Record<string, unknown>, value: unknown, depth = 0): unknown {
+  if (depth > 8 || !value || typeof value !== "object" || Array.isArray(value)) return value
+  const properties = schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+    ? schema.properties as Record<string, unknown>
+    : undefined
+  if (!properties) return value
+  const required = new Set(Array.isArray(schema.required) ? schema.required.filter((k): k is string => typeof k === "string") : [])
+  const record = value as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  let changed = false
+  for (const [key, entry] of Object.entries(record)) {
+    const propSchema = properties[key] && typeof properties[key] === "object" && !Array.isArray(properties[key])
+      ? properties[key] as Record<string, unknown>
+      : undefined
+    if (entry === null && propSchema && !required.has(key) && !schemaExplicitlyAllowsNull(propSchema)) {
+      changed = true
+      continue
+    }
+    if (entry && typeof entry === "object" && propSchema) {
+      if (Array.isArray(entry) && propSchema.items && typeof propSchema.items === "object" && !Array.isArray(propSchema.items)) {
+        const itemSchema = propSchema.items as Record<string, unknown>
+        let arrayChanged = false
+        const nextArr = entry.map((item) => {
+          const nextItem = stripOptionalNulls(itemSchema, item, depth + 1)
+          if (nextItem !== item) arrayChanged = true
+          return nextItem
+        })
+        if (arrayChanged) changed = true
+        out[key] = arrayChanged ? nextArr : entry
+        continue
+      }
+      if (!Array.isArray(entry)) {
+        const nextObj = stripOptionalNulls(propSchema, entry, depth + 1)
+        if (nextObj !== entry) changed = true
+        out[key] = nextObj
+        continue
+      }
+    }
+    out[key] = entry
+  }
+  return changed ? out : value
+}
+
+function schemaExplicitlyAllowsNull(propSchema: Record<string, unknown>): boolean {
+  if (propSchema.type === "null") return true
+  if (Array.isArray(propSchema.type) && propSchema.type.includes("null")) return true
+  if (Array.isArray(propSchema.enum) && propSchema.enum.includes(null)) return true
+  return false
 }
 
 export function requiredInputFields(error: ToolArgumentsInvalidError): string[] | undefined {

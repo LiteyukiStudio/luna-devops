@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { z } from "zod"
 import type { ModelToolDefinition } from "../provider/provider.js"
 
@@ -9,6 +9,7 @@ export const domainSkillIds = [
   "runtime-volumes",
   "gateway-topology",
   "diagnostics-governance",
+  "platform-admin",
 ] as const
 
 export type DomainSkillId = (typeof domainSkillIds)[number]
@@ -30,7 +31,7 @@ const parsedSkills = loadBundledDomainSkills()
 
 export const loadSkillTool: ModelToolDefinition = {
   operationId: "load_skill",
-  description: "按需加载一到三个 Luna DevOps 业务领域的深度工作流规程（如项目空间与权限、代码源与构建、应用与部署、运行时与数据卷、访问入口与拓扑、跨领域排障与平台治理）。同一 Run 内已加载过的领域会自动去重返回缓存标记，不重复占用上下文。仅提供领域执行约束与诊断顺序，不执行平台操作，也不能覆盖系统安全不变量。",
+  description: "按需加载一到三个 Luna DevOps 业务领域的深度工作流规程（如项目空间与权限、代码源与构建、应用与部署、运行时与数据卷、访问入口与拓扑、跨领域诊断与运营、平台管理员全局治理）。同一 Run 内已加载过的领域会自动去重返回缓存标记，不重复占用上下文。仅提供领域执行约束与诊断顺序，不执行平台操作，也不能覆盖系统安全不变量。",
   inputSchema: jsonSchema(loadSkillInput),
 }
 
@@ -103,10 +104,16 @@ export function loadDomainSkills(
   }
 }
 
+function resolveDomainSkillURL(skillId: DomainSkillId): URL {
+  const containerPath = new URL(`../../skills/domains/${skillId}/SKILL.md`, import.meta.url)
+  if (existsSync(containerPath)) return containerPath
+  return new URL(`../../../skills/domains/${skillId}/SKILL.md`, import.meta.url)
+}
+
 function loadBundledDomainSkills(): ReadonlyMap<DomainSkillId, DomainSkillEntry> {
   const entries = new Map<DomainSkillId, DomainSkillEntry>()
   for (const skillId of domainSkillIds) {
-    const raw = readFileSync(new URL(`../../skills/domains/${skillId}/SKILL.md`, import.meta.url), "utf8").trim()
+    const raw = readFileSync(resolveDomainSkillURL(skillId), "utf8").trim()
     const parsed = parseSkillMarkdown(skillId, raw)
     entries.set(skillId, parsed)
   }

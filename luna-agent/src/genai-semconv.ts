@@ -32,6 +32,15 @@ export function registerToolCatalogSensitivePaths(entries: Iterable<readonly [st
   }
 }
 
+export function sensitivePathsForOperation(operationId: string): readonly string[] {
+  return registeredCatalogSensitivePaths.get(operationId) ?? []
+}
+
+export function redactToolArgumentsForOperation<T>(operationId: string, args: T, explicitPaths?: readonly string[]): T {
+  const paths = explicitPaths?.length ? explicitPaths : sensitivePathsForOperation(operationId)
+  return redact(redactSensitivePaths(args, paths))
+}
+
 type GenAITextPart = { type: "text", content: string }
 type GenAIReasoningPart = { type: "reasoning", content: string }
 type GenAIToolCallPart = { type: "tool_call", name: string, id?: string, arguments?: Record<string, unknown> }

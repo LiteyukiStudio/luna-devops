@@ -9,36 +9,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	apiVersion        = "v1"
-	minimumCLIVersion = "0.0.7"
-)
+const apiVersion = "v1"
 
 type apiMetaFeatures struct {
 	AccessToken        bool `json:"accessToken"`
-	DeviceCode         bool `json:"deviceCode"`
+	MCP                bool `json:"mcp"`
 	OAuthAuthorization bool `json:"oauthAuthorization"`
 	OpenAPIOperations  bool `json:"openapiOperations"`
 }
 
 type apiMetaResponse struct {
-	APIVersion        string          `json:"apiVersion"`
-	ServerVersion     string          `json:"serverVersion"`
-	OpenAPIDigest     string          `json:"openapiDigest"`
-	MinimumCLIVersion string          `json:"minimumCliVersion"`
-	Features          apiMetaFeatures `json:"features"`
+	APIVersion    string          `json:"apiVersion"`
+	ServerVersion string          `json:"serverVersion"`
+	OpenAPIDigest string          `json:"openapiDigest"`
+	Features      apiMetaFeatures `json:"features"`
 }
 
 func (h *Handler) GetAPIMeta(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, apiMetaResponse{
-		APIVersion:        apiVersion,
-		ServerVersion:     h.config().AppVersion,
-		OpenAPIDigest:     openAPIDigest(),
-		MinimumCLIVersion: minimumCLIVersion,
+		APIVersion:    apiVersion,
+		ServerVersion: h.config().AppVersion,
+		OpenAPIDigest: openAPIDigest(),
 		Features: apiMetaFeatures{
 			AccessToken:        true,
-			DeviceCode:         true,
+			MCP:                true,
 			OAuthAuthorization: true,
 			OpenAPIOperations:  true,
 		},

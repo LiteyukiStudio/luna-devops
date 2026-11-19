@@ -23,8 +23,7 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 独立 `luna-agent` 服务承载模型编排，与 `cmd/api`、`cmd/worker` 分离；当前产品阶段固定单副本，
   活动 Run 的短期增量经有界进程内流传输，已提交时间线和终态事实落 PostgreSQL。不承诺滚动发布期间
   的跨 Pod SSE、取消或执行连续性。
-- 平台能力以 OpenAPI 和既有 API 为唯一业务入口；MCP 不作为内部服务总线，仅保留为未来
-  连接外部工具的可选协议。
+- `luna-agent` 与 `cmd/api` 之间不把 MCP 作为内部服务总线，统一走内部零信任 HTTP 网关；同时 `cmd/api` 在 `/api/v1/mcp` 暴露原生 Streamable HTTP MCP Server，与内置 `luna-agent` 共享同一套 `internal/aitool` 领域门面注册表、随包公开文档知识库与根目录 `skills/`，供外部 IDE/CLI Agent 使用 PAT 或 OAuth 2.0（`authorization_code` + PKCE `S256`）直接接入（含未启用网页内置 AI 助手的实例）。
 - 编排采用显式 ModelRuntime + RunExecutor：ModelRuntime 只负责上下文编译、工具解析和 Provider 调用；RunExecutor 负责单 Run 循环、工具执行、审批、取消和调用上限。
 - PostgreSQL `ai` schema 保存 Run 接纳、用户输入、工具审批与结果、模型步骤终态、最终 Item、用量和
   Run 终态；模型输出中的正文与思考 delta 只进入当前 Agent 的有界内存流，不逐片写数据库。
@@ -71,8 +70,7 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 
 ### 3.1 工具目录下发与按需检索
 
-- 后端 OpenAPI 注册操作是平台工具唯一事实源。满足普通 JSON 业务操作结构的路由自动进入目录；
-  协议适配器、认证回调、凭据与计量入口由 `operationId -> reason` 集中禁用表排除。
+- 后端 `internal/aitool` 强类型领域门面注册表（Code-First `Spec[In, Out]`，7 大业务域共 166 个工具）是内置 `luna-agent` 与公开 `/api/v1/mcp` MCP Server 的唯一平台工具事实源；不直接 1:1 暴露公开 REST API。内置 Agent 工具调用统一经内部零信任网关 `POST /internal/v1/ai/tools/preview`（`L2` 只读预检与 HMAC `X-Luna-AI-Preview-Lock` 签发）与 `POST /internal/v1/ai/tools/execute` 执行，公开 MCP 网关则按 Bearer PAT / OAuth Scope 鉴权并通过 `preview_tool -> previewLock -> execute_tool` 共享同一套预检锁、领域 Handler/Service、RBAC 与 AuditLog。
 - 不存在 `x-luna-agent.allowed`、Agent 手写平台 fallback、手工 base operation 白名单、重复描述、
   predecessor/followup 图、JSON Pointer verifier 或 readback engine。
 - `search_tools` 的 query 可空；空查询只分页浏览完整轻量目录，非空查询使用带字段权重的 BM25F
@@ -80,44 +78,13 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   前置条件和成功回读排序。每次非空检索自动把前 5 个候选加入当前 Run，单次最多 8 个；结果不含
   Schema，模型可直接调用已经加入的操作，不必机械地再查详情。
 - `get_tool_details` 每次接收 1–8 个精确 operationId，只返回用途、禁用场景、前置条件、成功回读、
-  Scope、审批要求和参数语义等紧凑消歧信息；HTTP 方法、路由和完整输入/输出 Schema 只在执行器与
-  实际模型工具定义中使用，不进入详情结果。没有 embedding、多向量、RRF、reranker 或影子检索。
+  Scope、审批要求和参数语义等紧凑消歧信息；完整输入/输出 Schema 只在执行器与实际模型工具定义中使用，不进入详情结果。没有 embedding、多向量、RRF、reranker 或影子检索。
 - 每个 Run 持久化按最近使用排序的 `selectedOperationIds`，最多保留 16 个平台操作；检索、详情、
   实际调用、审批和输入恢复都会沿用同一集合，内部工具不计入。重复的相同检索或详情请求返回首次
   命中的缓存结果并明确 `cacheHit/duplicate`，不得伪装成空结果。淘汰只影响后续模型工具定义，
   不删除历史 ToolCall 或事件。
-- 单一 `RemoteConfigSnapshot` owner 负责拉取、验证并原子提交 Provider、运行参数和 Catalog；
-  `ManagedProvider` 只按已提交的 version/model 缓存构造后的客户端，不再自行刷新远端配置。Run 创建时
-  快照当前 Catalog digest；配置刷新先完整构建和校验新目录，再切换当前版本，并保留仍被活动 Run
-  引用的旧目录。新 Run 使用新 digest，旧 Run 始终使用原 digest；非法候选或短时断联不替换上一份
-  有效快照。
-- Catalog 必须从真实 OpenAPI operation 归一化 operationId、用途、标签、别名、审批要求、幂等性、
-  HTTP 路由、Scope、输入/输出 Schema、敏感路径和传输参数。目录只负责发现，最终权限仍由 Luna API
-  权威回读用户、Session、会话、项目空间、ToolCall 与审批状态后进入原 Handler/Service/RBAC。
-- OpenAPI path item 与 operation 两层的 parameters 必须按 `in + name` 合并，operation 层覆盖同名定义；
-  Agent 可调用 Handler 直接消费的 `Query`、分页、排序、搜索和布尔查询参数必须全部进入模型可见输入
-  Schema。契约测试需要从 Handler 源码反向核对这些字段，禁止依赖 Handler 宽松读取或模型重试掩盖
-  OpenAPI 漏项。
-- 应用市场工具使用两阶段契约：`listAppTemplates(query?, category?)` 只返回可检索摘要，选定真实
-  `templateId` 后调用 `getAppTemplate(templateId)` 获取安装参数。列表无匹配时返回空数组，不视为工具
-  失败；详情不得回显内部渲染字段，Secret 参数的默认值必须清空。
-- 普通 `/api/v1` JSON operation 自动纳入目录；OAuth/OIDC 回调、认证凭据、文件传输、SSE、
-  WebSocket 和其他特殊协议必须在集中 `operationId -> reason` deny map 中排除并测试。不得在 Agent
-  维护重复白名单、执行路由或权限 fallback。
-- 部署配置的 `clusterId` 为空表示平台默认集群：只有存在多个候选且必须由用户决定时才用
-  `listRuntimeClusters` 的真实结果询问，禁止无候选凭空问“选择哪个集群”。
-- 模型只使用各自拥有独立裁剪输入 Schema 的 `present_card`、`request_input`、`request_choice` 三个通用交互工具（服务端统一校验收敛为 `InteractionCardGroup` v1）；回复完成后不再额外调用模型预测下一步。
-- 运行时密钥只能通过 `updateDeploymentTargetRuntimeSecrets` 或
-  `updateProjectRuntimeConfigSetRuntimeSecrets` 处理：请求使用 `items[]`，每项必须声明
-  `valueMode: secret` 和 `operation: set | generate | clear`。`set` 的非空 `value` 可由普通模型工具
-  调用或用户可见安全表单触发的 Direct Tool Action 提交，空值表示不修改；`generate` 由平台后端
-  生成并直接写入 Secret Store，`clear` 只清除明确字段。`inputMode` 只记录调用来源，不得作为执行
-  门禁；聊天消息、最终回复和页面上下文仍不主动回显敏感值。成功结果仅返回键、`valueMode` 与
-  configured/generated/cleared 状态，不返回明文或 Secret 引用。部署目标和运行配置集的普通 `environmentVariables[]` 每项必须声明
-  `valueMode: public`；密钥语义字段名和带 URL 内嵌凭据的值作为纵深防御继续拒绝。
-- 模型不得为交互卡片中的 `secret` 或 `key_value.valueMode: secret` 字段提供 `defaultValue`、示例密钥或任何
-  预填明文；Web 对修复前持久化记录继续强制清空。用户没有主动输入时 Direct Tool Action 不
-  提交该字段，随机生成与清除分别使用后端 `generate` 和独立 `clear` 操作。
+- 单一 `RemoteConfigSnapshot` owner 负责拉取、验证并原子提交 Provider、运行参数和 Catalog；`ToolCatalogRegistry` 按 `adminOnly` 元数据维护 `tenant`（133 个）与 `admin`（166 个）两份确定性角色隔离快照及独立 `toolCatalogDigest`，执行器在 Claim 与恢复时实时回查用户角色并在降权时裁剪历史 `selectedOperationIds`。
+- 所有写工具采用纯增量 Patch 语义（未传或 `null` 视为保持现状），敏感字段通过独立字段声明 `writeOnly + x-luna-sensitive` 并在持久化、Checkpoint、事件流与模型出站全链路脱敏；`L2` 工具在进入 `awaiting_approval` 前统一调用 `preview` 拦截 `409` 冲突并向审批卡片输出 `before -> after` 对比摘要。
 
 ## 4. 记忆与上下文
 
@@ -184,8 +151,8 @@ Agent 只有在结构化状态、事件和受控日志不足以形成诊断证�
 
 ## 8. 渐进式领域 Skill 与高频诊断聚合
 
-Agent 采用“常驻核心交互与站内导航规则 + 按业务域按需加载领域 Skill（内置 `load_skill` 工具）”的两层架构：
-- 常驻层（`luna-devops-interaction`、`luna-devops-navigation`）固定在系统提示前缀中，保证多步工具调用与跨轮对话的 Prompt Cache 前缀稳定，仅维护通用安全边界、卡片/路由契约与 6 大业务域索引（`workspace-iam`、`source-registry-build`、`application-deployment`、`runtime-volumes`、`gateway-topology`、`diagnostics-governance`）。
+Agent 与 `/api/v1/mcp` 共享根目录单一事实源 `skills/`，内置 Agent 采用“常驻核心交互与站内导航规则 + 按业务域按需加载领域 Skill（内置 `load_skill` 工具）”的两层架构：
+- 常驻层（`luna-devops-interaction`、`luna-devops-navigation`）固定在系统提示前缀中，保证多步工具调用与跨轮对话的 Prompt Cache 前缀稳定，仅维护通用安全边界、卡片/路由契约与 7 大业务域索引（`workspace-iam`、`source-registry-build`、`application-deployment`、`runtime-volumes`、`gateway-topology`、`diagnostics-governance`、`platform-admin`）；外部 MCP 客户端则由 `skills/luna-devops/SKILL.md`（或 `luna://skills/*` 资源）承担统一入口路由。
 - 领域层通过 `load_skill` 在当前 Run 内按需加载 1–3 个业务域规程并自动去重；排障场景优先调用只读诊断聚合工具（`getProjectDiagnostics`、`getDeploymentTargetDiagnostics`）一次性获取实时状态、近期异常构建/发布、异常 Pod、告警事件与网关路由状态，再沿交付链首个异常边界下钻具体日志。
 
 Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，明确报告"尚未执行"。

@@ -16,7 +16,7 @@ The Redis password is optional. A long, random password is recommended; leaving 
 
 After installation, check the Release, workload, logs, and access method. A template does not configure every third-party integration, such as Grafana data sources, application database accounts, or external OAuth.
 
-The deployment stage must be `dev`, `test`, `staging`, or `prod`. The CLI exposes the stable `luna app-template install` command. Agent and CLI validation rejects values such as `default` or `qa` before sending the request and reports the allowed values. The platform fallback returns `deployment.stage_invalid`, the argument path, and `retryable: false`; automation must correct the argument instead of replaying it unchanged.
+The deployment stage must be `dev`, `test`, `staging`, or `prod`. AI Assistant and MCP tool validation rejects values such as `default` or `qa` before sending the request and reports the allowed values. The platform fallback returns `deployment.stage_invalid`, the argument path, and `retryable: false`; automation must correct the argument instead of replaying it unchanged.
 
 ## Volumes
 

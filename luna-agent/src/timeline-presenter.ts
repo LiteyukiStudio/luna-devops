@@ -1,6 +1,8 @@
 import type { Repository } from "./persistence/repository.js"
 import type { Run, RunEvent, TimelineItem } from "./domain.js"
 import { normalizeEventSequence } from "./event-sequence.js"
+import { redactToolArgumentsForOperation } from "./genai-semconv.js"
+import { redact } from "./redaction.js"
 import { decodeTimelineCursor, encodeTimelineCursor } from "./timeline-cursor.js"
 import type { optionUIActions } from "./tools/ui-options.js"
 import { toolVisibility } from "./tools/tool-presentation.js"
@@ -141,6 +143,9 @@ function presentItem(item: TimelineItem) {
   const approvalRememberable = typeof item.content.approvalRememberable === "boolean"
     ? item.content.approvalRememberable
     : undefined
+  const approvalPreview = item.content.approvalPreview && typeof item.content.approvalPreview === "object" && !Array.isArray(item.content.approvalPreview)
+    ? redact(item.content.approvalPreview as Record<string, unknown>)
+    : undefined
   return {
     ...base,
     toolCall: {
@@ -149,9 +154,10 @@ function presentItem(item: TimelineItem) {
       visibility: toolVisibility(operationId),
       callIndex: item.timelineIndex,
       status,
-      arguments: objectValue(item.content.arguments),
+      arguments: redactToolArgumentsForOperation(operationId, objectValue(item.content.arguments)),
       ...(approvalTier ? { approvalTier } : {}),
       ...(approvalRememberable !== undefined ? { approvalRememberable } : {}),
+      ...(approvalPreview ? { approvalPreview } : {}),
       ...(item.content.result !== undefined ? { result: presentToolResult(item.content.result, errorCode) } : {}),
       ...(Array.isArray(objectValue(item.content.result).uiActions)
         ? { uiActions: objectValue(item.content.result).uiActions as ReturnType<typeof optionUIActions> }

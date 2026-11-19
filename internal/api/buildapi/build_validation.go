@@ -81,6 +81,16 @@ func writeBuildRunRequestError(ctx *gin.Context, err error) {
 }
 
 func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, ctx context.Context) error {
+	return h.prepareBuildRunRequestWithOptions(user, run, false, ctx)
+}
+
+func (h *Handlers) prepareBuildRunRequestWithOptions(user model.User, run *model.BuildRun, preserveExplicitTargetTag bool, ctx context.Context) error {
+	isRetry := strings.EqualFold(strings.TrimSpace(run.TriggerType), "retry")
+	explicitTag := ""
+	if preserveExplicitTargetTag {
+		explicitTag = strings.TrimSpace(run.TargetTag)
+	}
+
 	var project model.Project
 	if err := h.dbWithContext(ctx).First(&project, "id = ?", run.ProjectID).Error; err != nil {
 		return buildRunBadRequest("项目空间不存在")
@@ -103,40 +113,48 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	if h.normalizeDeploymentSourceType(config.SourceType) != "repository" {
 		return buildRunBadRequest("镜像直部署配置不能触发构建")
 	}
-	if strings.TrimSpace(run.BuildVariableSetIDs) == "" {
-		run.BuildVariableSetIDs = strings.TrimSpace(config.BuildVariableSetIDs)
+	if !isRetry {
+		if strings.TrimSpace(run.BuildVariableSetIDs) == "" {
+			run.BuildVariableSetIDs = strings.TrimSpace(config.BuildVariableSetIDs)
+		}
+		run.BuildDefinitionMode = buildtemplate.DefinitionModeRepository
+		run.BuildTemplateID = ""
+		run.BuildTemplateVersion = ""
+		run.BuildTemplateValues = "{}"
+		run.BuildTemplateDockerfile = ""
+		run.BuildTemplateChecksum = ""
+		if strings.TrimSpace(config.BuildDefinitionMode) == buildtemplate.DefinitionModeTemplate {
+			definition, ok := buildtemplate.Find(config.BuildTemplateID, config.BuildTemplateVersion)
+			if !ok {
+				return buildRunBadRequest("部署配置引用的构建模板不存在")
+			}
+			values, normErr := buildtemplate.NormalizeValues(definition, config.BuildTemplateValues)
+			if normErr != nil {
+				return buildRunBadRequest(normErr.Error())
+			}
+			preview, renderErr := buildtemplate.Render(definition.ID, definition.Version, values)
+			if renderErr != nil {
+				return buildRunBadRequest(renderErr.Error())
+			}
+			run.BuildDefinitionMode = buildtemplate.DefinitionModeTemplate
+			run.BuildTemplateID = preview.TemplateID
+			run.BuildTemplateVersion = preview.Version
+			run.BuildTemplateValues = buildtemplate.EncodeValues(preview.Values)
+			run.BuildTemplateDockerfile = preview.Dockerfile
+			run.BuildTemplateChecksum = preview.Checksum
+		}
+		run.DockerfilePath = fallback(strings.TrimSpace(config.DockerfilePath), "Dockerfile")
+		run.BuildContext = fallback(strings.TrimSpace(config.BuildContext), ".")
+		run.BuildDirectory = strings.TrimSpace(config.BuildDirectory)
+		if strings.TrimSpace(run.BuildArgs) == "" {
+			run.BuildArgs = strings.TrimSpace(config.BuildArgs)
+		}
+		run.BuildEnvironmentID = strings.TrimSpace(config.BuildEnvironmentID)
+	} else {
+		run.BuildDefinitionMode = fallback(strings.TrimSpace(run.BuildDefinitionMode), buildtemplate.DefinitionModeRepository)
+		run.DockerfilePath = fallback(strings.TrimSpace(run.DockerfilePath), fallback(strings.TrimSpace(config.DockerfilePath), "Dockerfile"))
+		run.BuildContext = fallback(strings.TrimSpace(run.BuildContext), fallback(strings.TrimSpace(config.BuildContext), "."))
 	}
-	run.BuildDefinitionMode = buildtemplate.DefinitionModeRepository
-	run.BuildTemplateID = ""
-	run.BuildTemplateVersion = ""
-	run.BuildTemplateValues = "{}"
-	run.BuildTemplateDockerfile = ""
-	run.BuildTemplateChecksum = ""
-	if strings.TrimSpace(config.BuildDefinitionMode) == buildtemplate.DefinitionModeTemplate {
-		definition, ok := buildtemplate.Find(config.BuildTemplateID, config.BuildTemplateVersion)
-		if !ok {
-			return buildRunBadRequest("部署配置引用的构建模板不存在")
-		}
-		values, err := buildtemplate.NormalizeValues(definition, config.BuildTemplateValues)
-		if err != nil {
-			return buildRunBadRequest(err.Error())
-		}
-		preview, err := buildtemplate.Render(definition.ID, definition.Version, values)
-		if err != nil {
-			return buildRunBadRequest(err.Error())
-		}
-		run.BuildDefinitionMode = buildtemplate.DefinitionModeTemplate
-		run.BuildTemplateID = preview.TemplateID
-		run.BuildTemplateVersion = preview.Version
-		run.BuildTemplateValues = buildtemplate.EncodeValues(preview.Values)
-		run.BuildTemplateDockerfile = preview.Dockerfile
-		run.BuildTemplateChecksum = preview.Checksum
-	}
-	run.DockerfilePath = fallback(strings.TrimSpace(config.DockerfilePath), "Dockerfile")
-	run.BuildContext = fallback(strings.TrimSpace(config.BuildContext), ".")
-	run.BuildDirectory = strings.TrimSpace(config.BuildDirectory)
-	run.BuildArgs = strings.TrimSpace(config.BuildArgs)
-	run.BuildEnvironmentID = strings.TrimSpace(config.BuildEnvironmentID)
 	buildCPURequest, err := h.normalizeBuildResourceQuantityValue(firstNonEmpty(run.BuildCPURequest, config.BuildCPURequest), model.DefaultBuildCPURequest, "构建 CPU")
 	if err != nil {
 		return buildRunBadRequest(err.Error())
@@ -181,11 +199,14 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 			repositoryRef = buildTargetImageRepositoryForCredential(registry, credential, project, app, config)
 			run.TargetTag = buildTargetImageTagTemplateForCredential(credential)
 		}
-		repository, tag := splitTargetImageRef(repositoryRef)
-		run.TargetRepository = repository
+		repoPath, tag := splitTargetImageRef(repositoryRef)
+		run.TargetRepository = repoPath
 		if strings.TrimSpace(run.TargetTag) == "" {
 			run.TargetTag = tag
 		}
+	}
+	if explicitTag != "" {
+		run.TargetTag = explicitTag
 	}
 	run.TargetRepository = strings.Trim(strings.TrimSpace(run.TargetRepository), "/")
 	run.TargetTag = fallback(strings.TrimSpace(run.TargetTag), "latest")
@@ -200,8 +221,10 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	if claimed {
 		return buildRunPublicConflict(buildImageRepositoryClaimedCode, "目标镜像仓库已被其它项目空间使用")
 	}
-	if _, err := h.buildVariablesForRunByIDs(h.dbWithContext(ctx), user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), ctx); err != nil {
-		return buildRunBadRequest(err.Error())
+	if !isRetry {
+		if _, err := h.buildVariablesForRunByIDs(h.dbWithContext(ctx), user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), ctx); err != nil {
+			return buildRunBadRequest(err.Error())
+		}
 	}
 	if strings.TrimSpace(run.BuildVariablesSnapshot) == "" && strings.TrimSpace(run.BuildSecretRefsSnapshot) == "" {
 		snapshot, err := h.buildEnvironmentSnapshotForRun(h.dbWithContext(ctx), user, *run, ctx)

@@ -43,19 +43,24 @@ func (h *Handler) ListProjects(ctx *gin.Context) {
 		Table("projects").
 		Select("projects.*, project_members.dashboard_order, project_members.last_used_at, project_members.use_count").
 		Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ? and project_members.role in ?", user.ID, readPolicy.AllowedRoles).
-		Joins("left join project_pins on project_pins.project_id = projects.id and project_pins.user_id = project_members.user_id").
+		Joins("left join project_pins on project_pins.project_id = projects.id and project_pins.user_id = ?", user.ID).
 		Where("projects.deleted_at is null")
 	if projectID := h.host.AIConversationProjectID(ctx); projectID != "" {
 		baseQuery = baseQuery.Where("projects.id = ?", projectID)
-	}
-	if visibility == projectservice.ListVisibilityRelated {
+	} else if visibility == projectservice.ListVisibilityRelated {
 		baseQuery = baseQuery.Where("project_members.user_id = ?", user.ID)
 	}
 	baseQuery = applyExactProjectIdentifierFilter(ctx, baseQuery)
 	baseQuery = applySearch(ctx, baseQuery, "projects.name", "projects.identifier")
 
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{
-		"createdAt": "projects.updated_at", "name": "projects.name", "identifier": "projects.identifier",
+		"createdAt":      "projects.created_at",
+		"updatedAt":      "projects.updated_at",
+		"lastUsedAt":     "project_members.last_used_at",
+		"useCount":       "project_members.use_count",
+		"dashboardOrder": "project_members.dashboard_order",
+		"name":           "projects.name",
+		"identifier":     "projects.identifier",
 	}, "createdAt")
 	query := baseQuery.Session(&gorm.Session{})
 	var total int64
@@ -332,6 +337,11 @@ func (h *Handler) UpdateProjectOrder(ctx *gin.Context) {
 	}
 
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.ProjectMember{}).
+			Where("user_id = ? and project_id not in ?", user.ID, projectIDs).
+			Update("dashboard_order", 0).Error; err != nil {
+			return err
+		}
 		for index, projectID := range projectIDs {
 			if err := tx.Model(&model.ProjectMember{}).
 				Where("user_id = ? and project_id = ?", user.ID, projectID).
@@ -699,6 +709,10 @@ func projectListOrderClause(sortBy string, sortOrder string) string {
 	}
 
 	switch sortBy {
+	case "dashboardOrder":
+		return "case when coalesce(project_members.dashboard_order, 0) > 0 then 0 else 1 end asc, project_members.dashboard_order " + order + ", projects.created_at desc, projects.id asc"
+	case "lastUsedAt":
+		return "coalesce(project_members.last_used_at, projects.created_at) " + order + ", projects.created_at desc, projects.id asc"
 	case "useCount":
 		return "case when project_pins.id is null then 1 else 0 end asc, project_members.use_count " + order + ", coalesce(project_members.last_used_at, projects.created_at) desc, projects.created_at desc"
 	case "createdAt":

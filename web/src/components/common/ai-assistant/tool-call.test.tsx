@@ -374,4 +374,36 @@ describe('ai assistant tool status icon', () => {
     )
     expect(container.querySelector('[data-ai-wait-for-task-progress]')).toBeNull()
   })
+
+  it('renders L2 pre-approval diff preview, sensitive key names, and warnings', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container } = render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('awaiting_approval'),
+          operationId: 'delivery_configure_target_config',
+          approvalTier: 'L2',
+          approvalRememberable: false,
+          approvalPreview: {
+            summary: '更新 prod 环境配置（需重新发布生效）',
+            changes: [
+              { field: 'replicas', before: 2, after: 4, action: 'update' },
+            ],
+            sensitiveKeys: ['DATABASE_PASSWORD'],
+            impact: ['影响 1 个部署环境 (prod)'],
+            warnings: ['变更将在下次发布后下发 Kubernetes'],
+          },
+          arguments: { project: 'prj_1', application: 'api', target: 'prod' },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+
+    expect(container.querySelector('[data-ai-approval-preview-summary]')).toHaveTextContent('更新 prod 环境配置（需重新发布生效）')
+    expect(container.querySelector('[data-ai-approval-diff]')).toHaveTextContent('2 -> 4')
+    expect(container.querySelector('[data-ai-approval-sensitive-keys]')).toHaveTextContent('DATABASE_PASSWORD')
+    expect(container.querySelector('[data-ai-approval-impact]')).toHaveTextContent('影响 1 个部署环境 (prod)')
+    expect(container.querySelector('[data-ai-approval-warnings]')).toHaveTextContent('变更将在下次发布后下发 Kubernetes')
+  })
 })

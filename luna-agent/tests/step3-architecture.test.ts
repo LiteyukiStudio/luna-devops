@@ -422,7 +422,12 @@ describe("Step 3 基础架构改造回归验证", () => {
     })
     expect(actionRes.statusCode).toBe(202)
     const createdBody = actionRes.json<{ state: string, toolCallId: string }>()
-    expect(createdBody.state).toBe("waiting_approval")
+    expect(createdBody.state).toBe("queued")
+    expect(client.calls).toHaveLength(0)
+
+    await executor.runOnce()
+    expect((await repository.getRun(owner, runId))?.status).toBe("waiting_approval")
+    expect(client.previews).toHaveLength(1)
     expect(client.calls).toHaveLength(0)
 
     const rejectRes = await app.inject({
@@ -844,8 +849,9 @@ describe("Step 3 基础架构改造回归验证", () => {
       const approvalBodyB = approvalResB.json<{ runId: string, toolCallId: string, state: string }>()
       expect(approvalBodyB.runId).toBe(approvalBodyA.runId)
       expect(approvalBodyB.toolCallId).toBe(approvalBodyA.toolCallId)
-      expect(approvalBodyA.state).toBe("waiting_approval")
-      expect(approvalBodyB.state).toBe("waiting_approval")
+      await vi.waitFor(async () => {
+        expect((await repository.getRun(owner, approvalBodyA.runId))?.status).toBe("waiting_approval")
+      }, { timeout: 2_000 })
       expect(await tools.listByRun(approvalBodyA.runId)).toHaveLength(1)
 
       // 3) P1-1 审批分裂故障模拟：仅更新 ai.tool_calls 为 approve，但保留 ai.runs.status === "waiting_approval"

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/buildenv"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -267,9 +266,6 @@ func (h *Handlers) buildVariableSetAccessible(user model.User, projectID string,
 	case "user":
 		return set.OwnerRef == user.ID
 	case "project":
-		if user.Role == authz.PlatformRoleAdmin {
-			return true
-		}
 		for _, boundProjectID := range h.scopedResourceProjectIDs(scopedResourceBuildVariableSet, set.ID, ctx) {
 			if boundProjectID == projectID {
 				return true

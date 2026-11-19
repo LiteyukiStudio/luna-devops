@@ -20,12 +20,17 @@ type Host interface {
 	DBFor(ctx *gin.Context) *gorm.DB
 	DBWithContext(ctx context.Context) *gorm.DB
 	CurrentUser(ctx *gin.Context) (model.User, bool)
+	RequirePlatformAdmin(ctx *gin.Context) bool
+	FindProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	ResolveListVisibility(ctx *gin.Context, user model.User) (projectservice.ListVisibility, bool)
 	ApplyScopedResourceListVisibility(ctx *gin.Context, query *gorm.DB, resourceType string, user model.User, projectID string, visibility projectservice.ListVisibility) (*gorm.DB, bool)
 	NormalizeScopedOwnerWithProjects(ctx *gin.Context, user model.User, scope, ownerRef string, projectIDs []string, globalError string) (string, string, []string, bool)
 	CanManageScopedResourceByID(ctx *gin.Context, user model.User, scope, ownerRef, resourceType, resourceID, errorMessage string) bool
 	CanInspectScopedResourceConfigByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) (bool, error)
+	CanUseScopedResourceByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) bool
 	ReplaceScopedResourceProjectBindings(tx *gorm.DB, resourceType, resourceID string, projectIDs, defaultProjectIDs []string) error
 	ScopedResourceProjectIDs(resourceType, resourceID string, ctx context.Context) []string
 	ScopedResourceProjectIDMap(resourceType string, resourceIDs []string, ctx context.Context) map[string][]string
@@ -75,6 +80,22 @@ func (h *Handler) currentUser(ctx *gin.Context) (model.User, bool) {
 
 func (h *Handler) authorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool) {
 	return h.host.AuthorizeProject(ctx, action)
+}
+
+func (h *Handler) authorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectByID(ctx, projectID, action)
+}
+
+func (h *Handler) authorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectRef(ctx, projectRef, action)
+}
+
+func (h *Handler) findProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool) {
+	return h.host.FindProjectForCurrentUserByID(ctx, projectID)
+}
+
+func (h *Handler) canUseScopedResourceByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) bool {
+	return h.host.CanUseScopedResourceByID(user, scope, ownerRef, resourceType, resourceID, ctx)
 }
 
 func (h *Handler) resolveListVisibility(ctx *gin.Context, user model.User) (projectservice.ListVisibility, bool) {

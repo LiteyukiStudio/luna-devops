@@ -64,6 +64,9 @@ type Host interface {
 	DBWithContext(ctx context.Context) *gorm.DB
 	CurrentUser(ctx *gin.Context) (model.User, bool)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
+	RequirePlatformAdmin(ctx *gin.Context) bool
 	EnsureProjectCanMutate(ctx *gin.Context, project model.Project) bool
 	EnsureBillingAllowsDeployChange(ctx *gin.Context, projectID string) bool
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)

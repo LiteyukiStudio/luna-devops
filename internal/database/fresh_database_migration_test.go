@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 136
+	latestMigrationVersion   = 137
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -94,6 +94,10 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000135_ai_run_lease.down.sql":                               false,
 		"000136_ai_tool_approval_memory.up.sql":                      false,
 		"000136_ai_tool_approval_memory.down.sql":                    false,
+		"000137_ai_tool_preview_lock.up.sql":                         false,
+		"000137_ai_tool_preview_lock.down.sql":                       false,
+		"000138_drop_oauth_device_and_luna_cli.up.sql":               false,
+		"000138_drop_oauth_device_and_luna_cli.down.sql":             false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -578,6 +582,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.tool_calls", column: "execution_count"},
 		{table: "ai.tool_calls", column: "idempotency_key"},
 		{table: "ai.tool_calls", column: "verification_for_tool_call_id"},
+		{table: "ai.tool_calls", column: "preview_lock"},
+		{table: "ai.tool_calls", column: "approval_preview"},
 		{table: "ai.conversation_tool_approvals", column: "conversation_id"},
 		{table: "ai.conversation_tool_approvals", column: "operation_id"},
 		{table: "ai.conversation_tool_approvals", column: "granted_by_tool_call_id"},
@@ -834,16 +840,12 @@ func assertBaselineSeedData(t *testing.T, db *gorm.DB) {
 	if oauthApplicationCount != 1 {
 		t.Fatalf("built-in OAuth application count = %d, want 1", oauthApplicationCount)
 	}
-	var cliApplication struct {
-		ClientID                string
-		AllowedScopes           string
-		AccessTokenLifetimeDays int
+	var cliAppCount int64
+	if err := db.Table("oauth_applications").Where("id = ?", "oapp_luna_cli").Count(&cliAppCount).Error; err != nil {
+		t.Fatalf("check retired Luna CLI OAuth application: %v", err)
 	}
-	if err := db.Table("oauth_applications").Where("id = ?", "oapp_luna_cli").Take(&cliApplication).Error; err != nil {
-		t.Fatalf("read built-in Luna CLI OAuth application: %v", err)
-	}
-	if cliApplication.ClientID != "luna-cli" || cliApplication.AllowedScopes != "*" || cliApplication.AccessTokenLifetimeDays != 1 {
-		t.Fatalf("built-in Luna CLI OAuth application = %#v", cliApplication)
+	if cliAppCount != 0 {
+		t.Fatalf("retired oapp_luna_cli count = %d, want 0", cliAppCount)
 	}
 
 	var appConfigCount int64
@@ -972,7 +974,6 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 		&model.OAuthGrant{},
 		&model.OAuthAuthorizationCode{},
 		&model.OAuthRefreshToken{},
-		&model.OAuthDeviceAuthorization{},
 		&model.AuthProvider{},
 		&model.ExternalIdentity{},
 		&model.AuthAdmissionPolicy{},

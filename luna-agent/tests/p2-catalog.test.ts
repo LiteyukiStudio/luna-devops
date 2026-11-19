@@ -128,12 +128,23 @@ describe("ToolCatalog", () => {
 
   it.each([
     "name", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions",
-    "successEvidence", "requiresApproval", "inputSchema", "outputSchema", "requestBody", "requestRequired",
+    "successEvidence", "requiresApproval", "inputSchema", "outputSchema", "requiredScopes",
   ] as const)("rejects a catalog operation without authority-owned %s", (field) => {
     const invalid = structuredClone(testToolOperation("getProject"))
     Reflect.deleteProperty(invalid, field)
 
     expect(() => ToolCatalog.load([invalid])).toThrow()
+  })
+
+  it("isolates adminOnly operations from the tenant snapshot while retaining both digests", () => {
+    const catalog = ToolCatalog.load([
+      testToolOperation("workspace_list_projects", { adminOnly: false }),
+      testToolOperation("admin_list_ai_models", { adminOnly: true }),
+    ])
+    const tenant = catalog.withoutAdminOperations()
+    expect(catalog.all().map(item => item.operationId)).toEqual(["admin_list_ai_models", "workspace_list_projects"])
+    expect(tenant.all().map(item => item.operationId)).toEqual(["workspace_list_projects"])
+    expect(tenant.digest).not.toBe(catalog.digest)
   })
 
   it("normalizes only fields omitted by the Go catalog contract and freezes nested values", () => {

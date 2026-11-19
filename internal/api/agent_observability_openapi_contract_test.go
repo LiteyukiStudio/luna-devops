@@ -28,6 +28,11 @@ func TestAgentObservabilityCLIMetadataAndInternalAgentBoundary(t *testing.T) {
 		}
 	}
 
+	catalogByID := map[string]aitool.CatalogOperation{}
+	for _, op := range DefaultAIToolCatalog() {
+		catalogByID[op.OperationID] = op
+	}
+
 	visible := map[string]string{
 		"getAgentObservabilityOverview":   "agent-observability.overview",
 		"listAgentObservabilityTurns":     "agent-observability.turns",
@@ -45,9 +50,14 @@ func TestAgentObservabilityCLIMetadataAndInternalAgentBoundary(t *testing.T) {
 		if metadata["command"] != command || metadata["classification"] != "business-command" || metadata["risk"] != "low" || metadata["agentAllowed"] != true || !reflect.DeepEqual(scopes, []string{"agent-observability:read"}) {
 			t.Fatalf("%s CLI metadata = %#v", operationID, metadata)
 		}
-		if _, ok := aitool.PlatformOperation(operationID); ok {
-			t.Fatalf("platform-internal Agent catalog exposed cross-user operation %s", operationID)
+		if _, ok := catalogByID[operationID]; ok {
+			t.Fatalf("AI facade catalog exposed raw REST operation %s", operationID)
 		}
+	}
+
+	adminObs, ok := catalogByID["admin_inspect_agent_observability"]
+	if !ok || !adminObs.AdminOnly || !reflect.DeepEqual(adminObs.RequiredScopes, []string{"agent-observability:read"}) {
+		t.Fatalf("admin_inspect_agent_observability contract = %#v, ok=%v", adminObs, ok)
 	}
 
 	sourceTest := operations["testAgentObservabilitySource"]["x-luna-cli"].(map[string]any)
@@ -60,7 +70,7 @@ func TestAgentObservabilityCLIMetadataAndInternalAgentBoundary(t *testing.T) {
 		if metadata["hidden"] != true || metadata["agentAllowed"] != false {
 			t.Fatalf("legacy conversation operation %s must remain hidden: %#v", operationID, metadata)
 		}
-		if _, ok := aitool.PlatformOperation(operationID); ok {
+		if _, ok := catalogByID[operationID]; ok {
 			t.Fatalf("platform-internal Agent catalog exposed %s", operationID)
 		}
 	}

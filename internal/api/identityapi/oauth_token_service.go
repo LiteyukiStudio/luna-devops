@@ -30,18 +30,12 @@ func lockOAuthApplication(tx *gorm.DB, applicationID string, requireActive bool)
 	return application, nil
 }
 
-func lockOAuthClientApplication(tx *gorm.DB, authentication oauthClientAuthentication, allowPublic bool) (model.OAuthApplication, error) {
+func lockOAuthClientApplication(tx *gorm.DB, authentication oauthClientAuthentication, _ bool) (model.OAuthApplication, error) {
 	application, err := lockOAuthApplication(tx, authentication.applicationID, true)
 	if err != nil {
 		return model.OAuthApplication{}, err
 	}
-	if application.ClientID != authentication.clientID {
-		return model.OAuthApplication{}, errOAuthInvalidClient
-	}
-	if authentication.public {
-		if allowPublic && application.ID == lunaCLIApplicationID && application.ClientID == lunaCLIClientID {
-			return application, nil
-		}
+	if application.ClientID != authentication.clientID || authentication.public {
 		return model.OAuthApplication{}, errOAuthInvalidClient
 	}
 	if authentication.clientSecretHash == "" || subtle.ConstantTimeCompare(
@@ -53,8 +47,8 @@ func lockOAuthClientApplication(tx *gorm.DB, authentication oauthClientAuthentic
 	return application, nil
 }
 
-func lockOAuthExchangeUser(tx *gorm.DB, application model.OAuthApplication, userID, scope string) (model.User, error) {
-	scope = normalizeOAuthScopeForApplication(application, scope)
+func lockOAuthExchangeUser(tx *gorm.DB, _ model.OAuthApplication, userID, scope string) (model.User, error) {
+	scope = normalizeOAuthScope(scope)
 	if scope == "" {
 		return model.User{}, errOAuthInvalidScope
 	}
@@ -65,7 +59,7 @@ func lockOAuthExchangeUser(tx *gorm.DB, application model.OAuthApplication, user
 		}
 		return model.User{}, err
 	}
-	if user.Disabled || (!isLunaCLIApplication(application) && !userCanAuthorizeOAuthScope(user, scope)) {
+	if user.Disabled || !userCanAuthorizeOAuthScope(user, scope) {
 		return model.User{}, errOAuthInvalidGrant
 	}
 	return user, nil
@@ -76,7 +70,7 @@ func lockOAuthExchangeAuthority(tx *gorm.DB, applicationID, userID, scope string
 	if err != nil {
 		return model.OAuthApplication{}, model.User{}, err
 	}
-	scope = normalizeOAuthScopeForApplication(application, scope)
+	scope = normalizeOAuthScope(scope)
 	if scope == "" {
 		return model.OAuthApplication{}, model.User{}, errOAuthInvalidScope
 	}
@@ -96,10 +90,10 @@ func oauthApplicationAllowsScope(application model.OAuthApplication, scope strin
 }
 
 func ensureOAuthGrant(tx *gorm.DB, application model.OAuthApplication, user model.User, approvedScope string, consentedAt time.Time) (model.OAuthGrant, error) {
-	approvedScope = normalizeOAuthScopeForApplication(application, approvedScope)
+	approvedScope = normalizeOAuthScope(approvedScope)
 	if approvedScope == "" || application.ID == "" || user.ID == "" || consentedAt.IsZero() ||
 		!oauthApplicationAllowsScope(application, approvedScope) ||
-		(!isLunaCLIApplication(application) && !userCanAuthorizeOAuthScope(user, approvedScope)) {
+		!userCanAuthorizeOAuthScope(user, approvedScope) {
 		return model.OAuthGrant{}, errOAuthInvalidGrant
 	}
 	var revokedGrant model.OAuthGrant
@@ -167,52 +161,8 @@ func recordOAuthAuthorizationConsent(tx *gorm.DB, code *model.OAuthAuthorization
 	return tx.Create(code).Error
 }
 
-func decideOAuthDeviceConsent(tx *gorm.DB, authorizationID, userID string, approved bool) (model.OAuthDeviceAuthorization, error) {
-	var snapshot model.OAuthDeviceAuthorization
-	if err := tx.First(&snapshot, "id = ?", authorizationID).Error; err != nil {
-		return model.OAuthDeviceAuthorization{}, err
-	}
-	application, err := lockOAuthApplication(tx, snapshot.ApplicationID, true)
-	if err != nil {
-		return model.OAuthDeviceAuthorization{}, err
-	}
-	now := time.Now()
-	var authorization model.OAuthDeviceAuthorization
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
-		&authorization,
-		"id = ? and application_id = ?",
-		authorizationID,
-		application.ID,
-	).Error; err != nil {
-		return model.OAuthDeviceAuthorization{}, err
-	}
-	if authorization.Status != "pending" || !authorization.ExpiresAt.After(now) {
-		return model.OAuthDeviceAuthorization{}, errOAuthInvalidGrant
-	}
-	if !approved {
-		authorization.Status = "denied"
-		authorization.DeniedAt = &now
-		return authorization, tx.Model(&authorization).Updates(map[string]any{
-			"status": "denied", "denied_at": now, "updated_at": now,
-		}).Error
-	}
-	if !isLunaCLIApplication(application) {
-		return model.OAuthDeviceAuthorization{}, errOAuthInvalidGrant
-	}
-	user, err := lockOAuthExchangeUser(tx, application, userID, lunaCLIFullAccessScope)
-	if err != nil {
-		return model.OAuthDeviceAuthorization{}, err
-	}
-	authorization.UserID = &user.ID
-	authorization.Status = "approved"
-	authorization.ApprovedAt = &now
-	return authorization, tx.Model(&authorization).Updates(map[string]any{
-		"user_id": user.ID, "status": "approved", "approved_at": now, "updated_at": now,
-	}).Error
-}
-
 func issueOAuthTokens(tx *gorm.DB, application model.OAuthApplication, grant model.OAuthGrant, scope, familyID string, now time.Time) (oauthTokenResponse, error) {
-	scope = normalizeOAuthScopeForApplication(application, scope)
+	scope = normalizeOAuthScope(scope)
 	if scope == "" || familyID == "" || !oauthScopeSubset(scope, grant.Scope) || !oauthApplicationAllowsScope(application, scope) {
 		return oauthTokenResponse{}, errOAuthInvalidGrant
 	}
@@ -222,9 +172,10 @@ func issueOAuthTokens(tx *gorm.DB, application model.OAuthApplication, grant mod
 		TokenHash: hashToken(plainAccessToken), Source: "oauth", OAuthApplicationID: application.ID, OAuthGrantID: grant.ID,
 		OAuthFamilyID: familyID,
 	}
-	response := oauthTokenResponse{AccessToken: plainAccessToken, TokenType: "Bearer"}
-	if !isLunaCLIApplication(application) {
-		response.Scope = oauthScopeText(scope)
+	response := oauthTokenResponse{
+		AccessToken: plainAccessToken,
+		TokenType:   "Bearer",
+		Scope:       oauthScopeText(scope),
 	}
 	if application.AccessTokenLifetimeDays > 0 {
 		expiresAt := now.Add(time.Duration(application.AccessTokenLifetimeDays) * 24 * time.Hour)
@@ -251,25 +202,15 @@ func issueOAuthTokens(tx *gorm.DB, application model.OAuthApplication, grant mod
 }
 
 func invalidateOAuthPendingConsent(tx *gorm.DB, applicationID, userID string, now time.Time) error {
-	if err := tx.Model(&model.OAuthAuthorizationCode{}).
+	return tx.Model(&model.OAuthAuthorizationCode{}).
 		Where("application_id = ? and user_id = ? and consumed_at is null", applicationID, userID).
-		Update("consumed_at", now).Error; err != nil {
-		return err
-	}
-	return tx.Model(&model.OAuthDeviceAuthorization{}).
-		Where("application_id = ? and user_id = ? and consumed_at is null and status = ?", applicationID, userID, "approved").
-		Updates(map[string]any{"status": "denied", "denied_at": now, "consumed_at": now, "updated_at": now}).Error
+		Update("consumed_at", now).Error
 }
 
 func invalidateOAuthApplicationPendingConsent(tx *gorm.DB, applicationID string, now time.Time) error {
-	if err := tx.Model(&model.OAuthAuthorizationCode{}).
+	return tx.Model(&model.OAuthAuthorizationCode{}).
 		Where("application_id = ? and consumed_at is null", applicationID).
-		Update("consumed_at", now).Error; err != nil {
-		return err
-	}
-	return tx.Model(&model.OAuthDeviceAuthorization{}).
-		Where("application_id = ? and consumed_at is null", applicationID).
-		Updates(map[string]any{"status": "denied", "denied_at": now, "consumed_at": now, "updated_at": now}).Error
+		Update("consumed_at", now).Error
 }
 
 func revokeLockedOAuthFamily(tx *gorm.DB, grantID, familyID string, now time.Time) error {

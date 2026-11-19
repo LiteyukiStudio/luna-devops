@@ -1,3 +1,4 @@
+import type { ApprovalPreview } from "../../domain.js"
 import { index, integer, jsonb, primaryKey, text, timestamp } from "drizzle-orm/pg-core"
 import { aiSchema, conversations } from "./conversations.js"
 import { runs } from "./runs.js"
@@ -17,6 +18,8 @@ export const toolCalls = aiSchema.table("tool_calls", {
   executionCount: integer("execution_count").notNull().default(0),
   rowVersion: integer("row_version").notNull().default(1),
   approvalDecision: text("approval_decision").$type<"approve" | "approve_and_remember" | "remembered">(),
+  previewLock: text("preview_lock").notNull().default(""),
+  approvalPreview: jsonb("approval_preview").$type<ApprovalPreview>(),
   result: jsonb("result").$type<unknown>(),
   errorCode: text("error_code"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),

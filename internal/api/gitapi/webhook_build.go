@@ -60,6 +60,10 @@ func webhookBuildIdempotencyKey(bindingID, deliveryID, targetID string) string {
 // Rejections are recorded as platform events with stable codes.
 func (h *Handlers) enqueueBuildRunsForWebhook(ctx *gin.Context, binding model.RepositoryBinding, payload gitWebhookPushPayload, isPush bool, deliveryID string) webhookBuildTriggerResult {
 	result := webhookBuildTriggerResult{QueuedRunIDs: []string{}}
+	if !binding.WebhookEnabled {
+		result.IgnoredReason = "webhook_disabled"
+		return result
+	}
 	if !isPush {
 		result.IgnoredReason = "unsupported_event"
 		return result

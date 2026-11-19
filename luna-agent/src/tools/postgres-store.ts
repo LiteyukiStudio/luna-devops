@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
-import type { Run } from "../domain.js"
+import type { ApprovalPreview, Run } from "../domain.js"
+import { redactToolArgumentsForOperation } from "../genai-semconv.js"
 import type { PayloadCipher } from "../payload-cipher.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
 import { activeRunningRunFence, activeRunningRunVersionFence } from "../persistence/run-fence.js"
@@ -22,7 +23,7 @@ export class PostgresToolCallStore implements ToolCallStore {
       value.operationId,
       value.status,
       value.inputMode ?? "model",
-      JSON.stringify(redact(value.arguments)),
+      JSON.stringify(redactToolArgumentsForOperation(value.operationId, value.arguments)),
       this.argumentsCipher.encrypt(JSON.stringify(value.arguments), `${value.runId}:${value.id}`),
       value.argumentsHash,
       value.attempt,
@@ -31,12 +32,14 @@ export class PostgresToolCallStore implements ToolCallStore {
       value.result === undefined ? null : JSON.stringify(value.result),
       value.errorCode ?? null,
       value.executionCount,
+      value.previewLock ?? "",
+      value.approvalPreview === undefined ? null : JSON.stringify(redact(value.approvalPreview)),
     ]
     try {
       if (effectiveVersion === undefined) {
         await this.pool.query(
-          `insert into ai.tool_calls(id,idempotency_key,verification_for_tool_call_id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code,execution_count)
-           values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          `insert into ai.tool_calls(id,idempotency_key,verification_for_tool_call_id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code,execution_count,preview_lock,approval_preview)
+           values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
           params,
         )
         return
@@ -44,11 +47,11 @@ export class PostgresToolCallStore implements ToolCallStore {
       const inserted = await this.pool.query<{ id: string }>(
         `with active_run as (
            select id from ai.runs
-           where id = $4 and status = 'running' and row_version = $17
+           where id = $4 and status = 'running' and row_version = $19
            for update
          )
-         insert into ai.tool_calls(id,idempotency_key,verification_for_tool_call_id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code,execution_count)
-         select $1,$2,$3,active_run.id,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
+         insert into ai.tool_calls(id,idempotency_key,verification_for_tool_call_id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code,execution_count,preview_lock,approval_preview)
+         select $1,$2,$3,active_run.id,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
          from active_run
          returning id`,
         [...params, effectiveVersion],
@@ -95,13 +98,16 @@ export class PostgresToolCallStore implements ToolCallStore {
       patch.errorCode ?? null,
       patch.executionCount ?? null,
       patch.clearApprovalDecision === true,
+      patch.previewLock ?? null,
+      patch.approvalPreview === undefined ? null : JSON.stringify(redact(patch.approvalPreview)),
     ]
     if (effectiveVersion === undefined) {
       const row = (await this.pool.query<DbToolCall>(
         `with updated_call as (
            update ai.tool_calls set status=coalesce($3,status),row_version=coalesce($4,row_version),
            approval_decision=case when $9::boolean then null else coalesce($5,approval_decision) end,
-           result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),updated_at=now()
+           result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),
+           preview_lock=coalesce($10,preview_lock),approval_preview=coalesce($11,approval_preview),updated_at=now()
            where id=$1 and status=$2 returning *
          ),
          remembered_grant as (
@@ -122,13 +128,14 @@ export class PostgresToolCallStore implements ToolCallStore {
       `with active_run as (
          select r.id, r.conversation_id from ai.runs r
          join ai.tool_calls tc on tc.run_id = r.id
-         where tc.id = $1 and r.status = 'running' and r.row_version = $10
+         where tc.id = $1 and r.status = 'running' and r.row_version = $12
          for update of r
        ),
        updated_call as (
          update ai.tool_calls set status=coalesce($3,status),row_version=coalesce($4,row_version),
          approval_decision=case when $9::boolean then null else coalesce($5,approval_decision) end,
-         result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),updated_at=now()
+         result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),
+         preview_lock=coalesce($10,preview_lock),approval_preview=coalesce($11,approval_preview),updated_at=now()
          from active_run
          where ai.tool_calls.id=$1 and ai.tool_calls.status=$2 and ai.tool_calls.run_id=active_run.id
          returning ai.tool_calls.*
@@ -183,6 +190,7 @@ export class PostgresToolCallStore implements ToolCallStore {
     const approvalTier = rawTier === "L0" || rawTier === "L1" || rawTier === "L2" ? rawTier : undefined
     const rawRememberable = event.data.approvalRememberable ?? call.approvalRememberable ?? existingItem?.approvalRememberable
     const approvalRememberable = typeof rawRememberable === "boolean" ? rawRememberable : undefined
+    const approvalPreview = event.data.approvalPreview ?? call.approvalPreview ?? existingItem?.approvalPreview
     const content = {
         toolCallId: call.id,
         ...(modelCallId ? { modelCallId } : {}),
@@ -191,7 +199,8 @@ export class PostgresToolCallStore implements ToolCallStore {
         ...(call.verificationForToolCallId ? { verificationForToolCallId: call.verificationForToolCallId } : {}),
         ...(approvalTier ? { approvalTier } : {}),
         ...(approvalRememberable !== undefined ? { approvalRememberable } : {}),
-        arguments: redact(call.arguments), result: call.result, errorCode: call.errorCode,
+        ...(approvalPreview && typeof approvalPreview === "object" ? { approvalPreview: redact(approvalPreview) } : {}),
+        arguments: redactToolArgumentsForOperation(call.operationId, call.arguments), result: call.result, errorCode: call.errorCode,
         ...(call.approvalDecision ? { approvalDecision: call.approvalDecision } : {}),
         ...(typeof event.data.durationMs === "number" && Number.isFinite(event.data.durationMs)
           ? { durationMs: Math.max(0, Math.round(event.data.durationMs)) }
@@ -232,6 +241,8 @@ export class PostgresToolCallStore implements ToolCallStore {
       arguments: argumentsValue, argumentsHash: row.arguments_hash, attempt: row.attempt, rowVersion: row.row_version, executionCount: row.execution_count,
       ...(row.input_mode === "direct" || row.input_mode === "model" || row.input_mode === "verification" ? { inputMode: row.input_mode } : {}),
       ...(row.approval_decision ? { approvalDecision: row.approval_decision } : {}),
+      ...(row.preview_lock ? { previewLock: row.preview_lock } : {}),
+      ...(row.approval_preview ? { approvalPreview: row.approval_preview } : {}),
       ...(row.result !== null ? { result: row.result } : {}),
       ...(row.error_code ? { errorCode: row.error_code } : {}),
     }
@@ -260,6 +271,8 @@ type DbToolCall = {
   arguments_ciphertext: string | null;
   arguments_hash: string; attempt: number; row_version: number; execution_count: number;
   approval_decision: "approve" | "approve_and_remember" | "remembered" | null;
+  preview_lock?: string | null;
+  approval_preview?: ApprovalPreview | null;
   result: unknown; error_code: string | null
 }
 

@@ -5,5 +5,5 @@
   { "type": "file", "name": "notifications", "label": "通知" },
   { "type": "file", "name": "billing", "label": "账单与费用" },
   { "type": "file", "name": "diagnostics", "label": "状态与排障" },
-  { "type": "dir", "name": "cli", "label": "Luna CLI" }
+  { "type": "dir", "name": "mcp", "label": "MCP 接入" }
 ]

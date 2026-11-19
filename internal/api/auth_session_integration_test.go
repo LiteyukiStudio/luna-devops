@@ -316,7 +316,6 @@ func authIntegrationDB(t *testing.T) *gorm.DB {
 		&model.OAuthGrant{},
 		&model.OAuthAuthorizationCode{},
 		&model.OAuthRefreshToken{},
-		&model.OAuthDeviceAuthorization{},
 	); err != nil {
 		t.Fatalf("migrate integration schema: %v", err)
 	}

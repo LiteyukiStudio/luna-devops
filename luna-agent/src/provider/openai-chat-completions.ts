@@ -4,7 +4,14 @@ import { trace } from "@opentelemetry/api"
 import { z } from "zod"
 import { redact } from "../redaction.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
-import { genAIClientTokenUsageAttributes, genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
+import {
+  genAIClientTokenUsageAttributes,
+  genAIInputMessages,
+  genAIModelSpan,
+  genAIOutputMessages,
+  genAIToolDefinitions,
+  redactToolArgumentsForOperation,
+} from "../genai-semconv.js"
 import { agentMetrics, clientSpanOptions, errorDiagnostic, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
 import { mapProviderError, parseProviderErrorBody, ProviderRequestError, type ProviderFailureStage } from "./provider-error.js"
 import type {
@@ -273,14 +280,17 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
     })
   }
 
-  /** 方言可在此追加需要原样回传的字段；官方口径只输出标准 assistant 字段。 */
+  /** 方言可在此追加需要原样回传的字段；官方口径只输出标准 assistant 字段，并对历史工具入参执行出站脱敏硬门禁。 */
   protected assistantPayload(message: Extract<ModelRequest["messages"][number], { role: "assistant" }>, messageIndex: number): Record<string, unknown> {
     if (!message.toolCalls?.length) return { role: "assistant", content: message.content }
     return {
       role: "assistant", content: message.content || null,
       tool_calls: message.toolCalls.map((call, callIndex) => ({
         id: call.id ?? `call_${messageIndex}_${callIndex}`, type: "function",
-        function: { name: call.operationId, arguments: JSON.stringify(call.arguments) },
+        function: {
+          name: call.operationId,
+          arguments: JSON.stringify(redactToolArgumentsForOperation(call.operationId, call.arguments)),
+        },
       })),
     }
   }

@@ -190,7 +190,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     cancelRun: runId => executor.cancel(runId),
     cancelExecutingRun: runId => executor.cancelExecuting(runId),
     notifyRunQueued: () => executor.notifyWorkAvailable(),
-    toolCatalogDigest: () => catalogRegistry.digest(),
+    toolCatalogDigest: role => role ? catalogRegistry.digestForRole(role) : catalogRegistry.digest(),
     tools,
     remoteConfig,
     streamBus,

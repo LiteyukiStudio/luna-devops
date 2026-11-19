@@ -43,13 +43,13 @@
   内部架构、发布门禁、迁移历史或完成流水。
 - 配置说明必须同时交代用途、允许值/格式/范围和影响；安全、恢复与不可逆限制不能因精简而隐藏。
 - 删除功能、字段或兼容路径时，同步删除代码、测试、Schema、示例、导航和中英文现行文档，不保留纪念性说明。
-- OpenAPI、CLI help 和 Release 分别是 API、命令和版本事实源；不要在公开文档复制完整契约。
+- OpenAPI、`internal/aitool` 工具注册表和 Release 分别是公开 API、AI/MCP 工具和版本事实源；不要在公开文档复制完整契约。
 - 文档站变更至少执行 `pnpm --dir docs build`；导航或主要旅程变化还需浏览器验收。
 
 ## 5. 目录与技术栈
 
 - 仓库为模块化单体 monorepo：Go API/Worker 在根目录，React 管理台在 `web/`，Agent 在 `luna-agent/`，
-  文档站在 `docs/`，嵌套 CLI 在 `cli/luna-cli/`。
+  统一领域 Skills 在 `skills/`，文档站在 `docs/`。
 - 后端使用 Go、Gin、GORM、PostgreSQL、Redis/Asynq、golang-migrate、client-go 和 OpenAPI。
 - 前端使用 Vite、React、TypeScript、Tailwind、shadcn/ui、TanStack Query、React Hook Form、Zod、
   i18next 与 Sonner；包管理器只用 pnpm。Python 项目只用 uv。
@@ -65,10 +65,8 @@
 - 平台角色与项目角色复用 `internal/authz`、`web/src/lib/roles.ts` 和 OpenAPI 共享 schema，不散落字面量。
 - 数据库结构与一次性数据修复只由 `migrations/` 交付；启动路径不得 AutoMigrate、Force 或重复 backfill。
 - 实际危险操作必须写 AuditLog；权限由后端最终判断，前端隐藏按钮只改善体验。
-- 第一方 Luna CLI 登录权限始终等同当前用户的实时平台/项目权限，不接受、展示、持久化或预检用户可选 Scope。
-  PAT、第三方 OAuth 应用和 Agent 服务身份仍按服务端 Scope 限权。
-- 普通 Agent 平台工具以 OpenAPI operation 为唯一事实源；operation 变化必须同步真实路由、Schema、
-  `requiredScopes`、审批、敏感字段和用途说明，并验证 `internal/aitool.PlatformCatalog()`。
+- 公开 `/api/v1/mcp` Streamable HTTP MCP 网关仅接受 Bearer PAT 或第三方 OAuth 令牌（`authorization_code` + PKCE `S256`），与 Agent 服务身份一样按服务端 Scope 与实时平台/项目 RBAC 双重限权；MCP 侧 `L2` 写操作强制先经 `preview_tool` 签发参数绑定的 `previewLock`，再由 `execute_tool` 验锁执行。
+- 普通 Agent 与 `/api/v1/mcp` 平台工具以 Go `internal/aitool` 强类型领域门面注册表为唯一事实源（Agent 经内部 `/internal/v1/ai/tools/{preview,execute}` 零信任网关执行，不耦合公开 OpenAPI REST 路由）；工具变更必须同步 Schema、`requiredScopes`、`L0/L1/L2` 审批与 `L2` 预检锁、`sensitivePaths`、`verification` 回读规则和前端工具展示名。
 - 工具目录按 `search_tools` / `get_tool_details` 渐进加载；检索只做发现，不授权或执行。Agent Prompt、
   工具描述和配套 Skill 使用中文，并要求模型按用户当前语言回复。
 

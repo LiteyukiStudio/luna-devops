@@ -104,6 +104,30 @@ export class PostgresRepository implements Repository {
     await this.assertPositiveAvailableBalanceWith(this.db, ownerUserId)
   }
 
+  async resolveLiveActorRole(userId: string, sessionId?: string): Promise<string | undefined> {
+    if (sessionId) {
+      const row = (await this.db.execute<{ role: string }>(sql`
+        select u.role
+        from users u
+        join user_sessions s on s.user_id = u.id
+        where u.id = ${userId}
+          and u.disabled = false
+          and s.id = ${sessionId}
+          and s.expires_at > now()
+        limit 1
+      `)).rows[0]
+      return row?.role
+    }
+    const row = (await this.db.execute<{ role: string }>(sql`
+      select u.role
+      from users u
+      where u.id = ${userId}
+        and u.disabled = false
+      limit 1
+    `)).rows[0]
+    return row?.role
+  }
+
   private async assertPositiveAvailableBalanceWith(db: Querier, ownerUserId: string): Promise<void> {
     const row = (await db.execute<{ allowed: boolean }>(sql`
       with wallet as (
@@ -742,7 +766,7 @@ export class PostgresRepository implements Repository {
   async claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot, userConcurrentRuns?: number) {
     const candidateToolCatalogDigest = executionSnapshot?.toolCatalogDigest ?? null
     const maxPerUser = userConcurrentRuns ?? executionSnapshot?.runtimeSettings.userConcurrentRuns
-    return withSpan("agent.repository.run.claim", internalSpanOptions(), async () => this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const candidate = (maxPerUser === undefined
         ? await tx.execute<Record<string, unknown>>(sql`
             select q.id, q.execution_snapshot_ciphertext
@@ -798,35 +822,38 @@ export class PostgresRepository implements Repository {
             limit 1
           `)).rows[0]
       if (!candidate || typeof candidate.id !== "string") return undefined
-      const candidateCiphertext = candidate.execution_snapshot_ciphertext === null && executionSnapshot
-        ? this.encryptRunExecutionSnapshot(candidate.id, executionSnapshot)
-        : null
-      const raw = (await tx.execute<Record<string, unknown>>(sql`
-        update ai.runs r
-        set status = 'running',
-            wake_at = null,
-            lease_expires_at = now() + interval '60 seconds',
-            row_version = r.row_version + 1,
-            started_at = coalesce(r.started_at, now()),
-            tool_catalog_digest = case
-              when r.execution_snapshot_ciphertext is null
-                then coalesce(${candidateToolCatalogDigest}, r.tool_catalog_digest)
-              else r.tool_catalog_digest
-            end,
-            execution_snapshot_ciphertext = coalesce(r.execution_snapshot_ciphertext, ${candidateCiphertext})
-        where r.id = ${candidate.id}
-          and r.status = 'queued'
-        returning r.*
-      `)).rows[0]
-      if (!raw) return undefined
-      const row = driverRow(runs, raw) as RunRow
-      const restoredSnapshot = row.executionSnapshotCiphertext
-        ? this.decryptRunExecutionSnapshot(row.id, row.executionSnapshotCiphertext)
-        : undefined
-      await tx.update(turns).set({ status: "running" }).where(eq(turns.id, row.turnId))
-      await this.appendEventWith(tx, row.id, "run.running", { state: "running", rowVersion: row.rowVersion })
-      return mapClaimedRun(row, restoredSnapshot)
-    }))
+      const candidateId = candidate.id
+      return withSpan("agent.repository.run.claim", internalSpanOptions({ "luna.run.id": candidateId }), async () => {
+        const candidateCiphertext = candidate.execution_snapshot_ciphertext === null && executionSnapshot
+          ? this.encryptRunExecutionSnapshot(candidateId, executionSnapshot)
+          : null
+        const raw = (await tx.execute<Record<string, unknown>>(sql`
+          update ai.runs r
+          set status = 'running',
+              wake_at = null,
+              lease_expires_at = now() + interval '60 seconds',
+              row_version = r.row_version + 1,
+              started_at = coalesce(r.started_at, now()),
+              tool_catalog_digest = case
+                when r.execution_snapshot_ciphertext is null
+                  then coalesce(${candidateToolCatalogDigest}, r.tool_catalog_digest)
+                else r.tool_catalog_digest
+              end,
+              execution_snapshot_ciphertext = coalesce(r.execution_snapshot_ciphertext, ${candidateCiphertext})
+          where r.id = ${candidateId}
+            and r.status = 'queued'
+          returning r.*
+        `)).rows[0]
+        if (!raw) return undefined
+        const row = driverRow(runs, raw) as RunRow
+        const restoredSnapshot = row.executionSnapshotCiphertext
+          ? this.decryptRunExecutionSnapshot(row.id, row.executionSnapshotCiphertext)
+          : undefined
+        await tx.update(turns).set({ status: "running" }).where(eq(turns.id, row.turnId))
+        await this.appendEventWith(tx, row.id, "run.running", { state: "running", rowVersion: row.rowVersion })
+        return mapClaimedRun(row, restoredSnapshot)
+      })
+    })
   }
 
   async renewRunLease(runId: string, expectedRowVersion: number, leaseMs: number): Promise<RunLeaseRenewalOutcome> {
@@ -876,24 +903,25 @@ export class PostgresRepository implements Repository {
     const boundedLeaseMs = Math.max(1_000, Math.floor(leaseMs))
     const referenceIso = (now ?? new Date()).toISOString()
     const nextLeaseIso = new Date(Date.parse(referenceIso) + boundedLeaseMs).toISOString()
-    return withSpan("agent.repository.run.claim_due_external", internalSpanOptions(), async () => {
-      const result = await this.db.execute<Record<string, unknown>>(sql`
-        update ai.runs r
-        set wake_at = ${nextLeaseIso}::timestamptz
-        where r.id in (
-          select candidate.id
-          from ai.runs candidate
-          where candidate.status = 'waiting_external'
-            and candidate.wake_at is not null
-            and candidate.wake_at <= ${referenceIso}::timestamptz
-          order by candidate.wake_at asc, candidate.id asc
-          for update skip locked
-          limit ${boundedLimit}
-        )
-        returning r.*
-      `)
-      return result.rows.map(raw => mapRun(driverRow(runs, raw) as RunRow))
-    })
+    const result = await this.db.execute<Record<string, unknown>>(sql`
+      update ai.runs r
+      set wake_at = ${nextLeaseIso}::timestamptz
+      where r.id in (
+        select candidate.id
+        from ai.runs candidate
+        where candidate.status = 'waiting_external'
+          and candidate.wake_at is not null
+          and candidate.wake_at <= ${referenceIso}::timestamptz
+        order by candidate.wake_at asc, candidate.id asc
+        for update skip locked
+        limit ${boundedLimit}
+      )
+      returning r.*
+    `)
+    if (result.rows.length === 0) return []
+    return withSpan("agent.repository.run.claim_due_external", internalSpanOptions({
+      "luna.claimed_runs.count": result.rows.length,
+    }), async () => result.rows.map(raw => mapRun(driverRow(runs, raw) as RunRow)))
   }
 
   async rescheduleWaitingExternalRun(
@@ -950,7 +978,7 @@ export class PostgresRepository implements Repository {
       await tx.update(runCheckpoints).set({
         revision: input.expectedCheckpointRevision + 1,
         phase: input.nextPhase,
-        state: input.nextCheckpointState,
+        state: this.encryptCheckpointState(input.runId, input.nextCheckpointState),
         updatedAt: sql`now()`,
       }).where(eq(runCheckpoints.runId, input.runId))
       const updated = (await tx.update(runs).set({
@@ -1062,7 +1090,9 @@ export class PostgresRepository implements Repository {
 
   async loadRunCheckpoint(runId: string) {
     const row = (await this.db.select().from(runCheckpoints).where(eq(runCheckpoints.runId, runId)))[0]
-    return row ? mapRunCheckpoint(row) : undefined
+    if (!row) return undefined
+    const mapped = mapRunCheckpoint(row)
+    return { ...mapped, state: this.decryptCheckpointState(runId, mapped.state) }
   }
 
   /**
@@ -1072,6 +1102,7 @@ export class PostgresRepository implements Repository {
    */
   async saveRunCheckpoint(runId: string, advance: RunCheckpointAdvance): Promise<RunCheckpoint> {
     const revision = advance.expectedRevision + 1
+    const persistedState = this.encryptCheckpointState(runId, advance.state)
     return this.db.transaction(async (tx) => {
       await this.lockAndVerifyRunningRunVersion(tx, runId, advance.expectedRunVersion)
       const row = (await tx.insert(runCheckpoints).values({
@@ -1080,7 +1111,7 @@ export class PostgresRepository implements Repository {
         phase: advance.phase,
         modelStep: advance.modelStep,
         toolCallCount: advance.toolCallCount,
-        state: advance.state,
+        state: persistedState,
       })
         .onConflictDoUpdate({
           target: runCheckpoints.runId,
@@ -1095,14 +1126,64 @@ export class PostgresRepository implements Repository {
           setWhere: sql`${runCheckpoints.revision} = excluded.revision - 1`,
         })
         .returning())[0]
-      if (row) return mapRunCheckpoint(row)
+      if (row) {
+        const mapped = mapRunCheckpoint(row)
+        return { ...mapped, state: this.decryptCheckpointState(runId, mapped.state) }
+      }
       const currentRow = (await tx.select().from(runCheckpoints).where(eq(runCheckpoints.runId, runId)))[0]
       const current = currentRow ? mapRunCheckpoint(currentRow) : undefined
       if (current && current.revision === revision) {
-        return current
+        return { ...current, state: this.decryptCheckpointState(runId, current.state) }
       }
       throw new RunCheckpointConflictError(runId, advance.expectedRevision, current?.revision)
     })
+  }
+
+  private encryptCheckpointState(runId: string, state: RunCheckpoint["state"]): RunCheckpoint["state"] {
+    if (!this.runExecutionSnapshotCipher || !state.pendingBatchCalls?.length) return state
+    return {
+      ...state,
+      pendingBatchCalls: state.pendingBatchCalls.map((call) => {
+        if (call.argumentsCiphertext) {
+          return {
+            id: call.id,
+            operationId: call.operationId,
+            argumentsCiphertext: call.argumentsCiphertext,
+            ...(call.argumentError ? { argumentError: call.argumentError } : {}),
+          }
+        }
+        const rawArgs = call.arguments ?? {}
+        const ciphertext = this.runExecutionSnapshotCipher!.encrypt(JSON.stringify(rawArgs), `${runId}:pending:${call.id}`)
+        return {
+          id: call.id,
+          operationId: call.operationId,
+          argumentsCiphertext: ciphertext,
+          ...(call.argumentError ? { argumentError: call.argumentError } : {}),
+        }
+      }),
+    }
+  }
+
+  private decryptCheckpointState(runId: string, state: RunCheckpoint["state"]): RunCheckpoint["state"] {
+    if (!state.pendingBatchCalls?.length) return state
+    return {
+      ...state,
+      pendingBatchCalls: state.pendingBatchCalls.map((call) => {
+        if (!call.argumentsCiphertext) {
+          return { ...call, arguments: call.arguments ?? {} }
+        }
+        if (!this.runExecutionSnapshotCipher) {
+          throw new Error("ai.tool_arguments_key_unavailable")
+        }
+        const decrypted = JSON.parse(this.runExecutionSnapshotCipher.decrypt(call.argumentsCiphertext, `${runId}:pending:${call.id}`)) as Record<string, unknown>
+        return {
+          id: call.id,
+          operationId: call.operationId,
+          arguments: decrypted,
+          ...(call.argumentError ? { argumentError: call.argumentError } : {}),
+        }
+      }),
+    }
   }
 
   private async interruptRunningRow(tx: AgentTx, runId: string, expectedRunVersion: number, ignoreActiveLease = false) {

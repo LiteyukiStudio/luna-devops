@@ -71,7 +71,7 @@ func openWebhookBuildDB(t *testing.T, projectDeleteStatus string) (*gorm.DB, mod
 			)
 		},
 	})
-	binding := model.RepositoryBinding{ID: "rpb_hook", ProjectID: "prj_hook", ApplicationID: "app_hook", GitAccountID: "gac_hook"}
+	binding := model.RepositoryBinding{ID: "rpb_hook", ProjectID: "prj_hook", ApplicationID: "app_hook", GitAccountID: "gac_hook", WebhookEnabled: true}
 	for _, value := range []any{
 		&model.User{ID: "usr_hook", Email: "hook@example.test", Name: "Hook Owner"},
 		&model.Project{ID: binding.ProjectID, Name: "Hook", Identifier: "hook", DeleteStatus: projectDeleteStatus},

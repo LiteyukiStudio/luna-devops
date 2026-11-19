@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -119,13 +120,10 @@ func (h *Handlers) ExchangeOAuthToken(ctx *gin.Context) {
 		credential = input.Code
 	case oauthClientAttemptRefresh:
 		credential = input.RefreshToken
-	case oauthClientAttemptDeviceCode:
-		credential = input.DeviceCode
 	}
-	allowPublicClient := grantType == oauthDeviceCodeGrantType || grantType == "refresh_token"
 	authentication, ok := h.authenticateOAuthTokenClient(
 		ctx,
-		allowPublicClient,
+		false,
 		flow,
 		input.ClientID,
 		input.ClientSecret,
@@ -139,10 +137,8 @@ func (h *Handlers) ExchangeOAuthToken(ctx *gin.Context) {
 		h.exchangeOAuthAuthorizationCode(ctx, authentication, input)
 	case "refresh_token":
 		h.exchangeOAuthRefreshToken(ctx, authentication, input)
-	case oauthDeviceCodeGrantType:
-		h.exchangeOAuthDeviceCode(ctx, authentication, input.DeviceCode)
 	default:
-		oauthError(ctx, http.StatusBadRequest, "unsupported_grant_type", "Supported grant types are authorization_code, refresh_token, and device_code")
+		oauthError(ctx, http.StatusBadRequest, "unsupported_grant_type", "Supported grant types are authorization_code and refresh_token")
 	}
 }
 
@@ -192,16 +188,33 @@ func (h *Handlers) GetOAuthAuthorizationServerMetadata(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "oauth.public_base_url.required", "PUBLIC_BASE_URL is required")
 		return
 	}
+	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, oauthAuthorizationServerMetadataResponse{
 		Issuer:                            baseURL,
 		AuthorizationEndpoint:             baseURL + "/oauth/authorize",
-		DeviceAuthorizationEndpoint:       baseURL + "/api/v1/oauth/device/authorization",
 		TokenEndpoint:                     baseURL + "/api/v1/oauth/token",
 		RevocationEndpoint:                baseURL + "/api/v1/oauth/revoke",
+		ScopesSupported:                   authz.SupportedOAuthScopes(),
 		ResponseTypesSupported:            []string{"code"},
-		GrantTypesSupported:               []string{"authorization_code", "refresh_token", oauthDeviceCodeGrantType},
-		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "none"},
+		GrantTypesSupported:               []string{"authorization_code", "refresh_token"},
+		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post"},
 		CodeChallengeMethodsSupported:     []string{"S256"},
+	})
+}
+
+func (h *Handlers) GetOAuthProtectedResourceMetadata(ctx *gin.Context) {
+	baseURL := strings.TrimRight(h.externalBaseURL(ctx), "/")
+	if baseURL == "" {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "oauth.public_base_url.required", "PUBLIC_BASE_URL is required")
+		return
+	}
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, oauthProtectedResourceMetadataResponse{
+		Resource:               baseURL + "/api/v1/mcp",
+		AuthorizationServers:   []string{baseURL},
+		BearerMethodsSupported: []string{"header"},
+		ScopesSupported:        authz.SupportedOAuthScopes(),
+		ResourceDocumentation:  "https://luna-devops.liteyuki.org/use/mcp",
 	})
 }
 

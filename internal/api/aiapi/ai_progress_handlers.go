@@ -133,11 +133,6 @@ func (h *Handler) GetAITaskStatusInternal(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusForbidden, "ai.authorization_changed", "AI conversation ownership is no longer valid")
 		return
 	}
-	if binding.ConversationProjectID != "" && binding.ConversationProjectID != projectID {
-		writeErrorCode(ctx, http.StatusForbidden, "ai.project_scope_mismatch", "AI conversation project scope does not match the requested project")
-		return
-	}
-
 	requestCtx := h.host.WithAIPlatformActor(ctx.Request.Context(), PlatformActor{
 		UserID:    binding.OwnerUserID,
 		SessionID: binding.ActorSessionID,
@@ -145,11 +140,35 @@ func (h *Handler) GetAITaskStatusInternal(ctx *gin.Context) {
 	})
 	restore := replaceRequestContext(ctx, requestCtx)
 	defer restore()
-	if _, _, ok := h.host.AuthorizeProject(ctx, requiredAction); !ok {
-		return
+
+	var resolvedProjectID string
+	if binding.ConversationProjectID != "" {
+		var convProject model.Project
+		if err := h.dbFor(ctx).First(&convProject, "id = ? AND deleted_at IS NULL", binding.ConversationProjectID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeErrorCode(ctx, http.StatusForbidden, "ai.project_scope_mismatch", "AI conversation project scope is no longer available")
+				return
+			}
+			writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.progress.unavailable", "AI conversation project lookup failed")
+			return
+		}
+		if projectID != convProject.ID && projectID != convProject.Identifier {
+			writeErrorCode(ctx, http.StatusForbidden, "ai.project_scope_mismatch", "AI conversation project scope does not match the requested project")
+			return
+		}
+		if _, _, ok := h.host.AuthorizeProjectByID(ctx, convProject.ID, requiredAction); !ok {
+			return
+		}
+		resolvedProjectID = convProject.ID
+	} else {
+		_, project, ok := h.host.AuthorizeProjectRef(ctx, projectID, requiredAction)
+		if !ok {
+			return
+		}
+		resolvedProjectID = project.ID
 	}
 
-	snapshot, err := h.resolveAITaskStatusInternal(ctx, projectID, taskType, taskID)
+	snapshot, err := h.resolveAITaskStatusInternal(ctx, resolvedProjectID, taskType, taskID)
 	if err != nil {
 		if errors.Is(err, errAIProgressNotFound) {
 			writeErrorCode(ctx, http.StatusNotFound, "resource.not_found", "target task was not found")
@@ -242,10 +261,11 @@ func normalizeAITaskStatus(raw string) (string, bool) {
 }
 
 func (h *Handler) GetAIProgress(ctx *gin.Context) {
-	if _, _, ok := h.host.AuthorizeProject(ctx, authz.ActionProjectRead); !ok {
+	_, project, ok := h.host.AuthorizeProjectRef(ctx, strings.TrimSpace(ctx.Param("projectId")), authz.ActionProjectRead)
+	if !ok {
 		return
 	}
-	snapshot, err := h.resolveAIProgress(ctx)
+	snapshot, err := h.resolveAIProgress(ctx, project.ID)
 	if err != nil {
 		h.writeAIProgressError(ctx, err)
 		return
@@ -255,11 +275,11 @@ func (h *Handler) GetAIProgress(ctx *gin.Context) {
 }
 
 func (h *Handler) StreamAIProgress(ctx *gin.Context) {
-	user, project, ok := h.host.AuthorizeProject(ctx, authz.ActionProjectRead)
+	user, project, ok := h.host.AuthorizeProjectRef(ctx, strings.TrimSpace(ctx.Param("projectId")), authz.ActionProjectRead)
 	if !ok {
 		return
 	}
-	initial, err := h.resolveAIProgress(ctx)
+	initial, err := h.resolveAIProgress(ctx, project.ID)
 	if err != nil {
 		h.writeAIProgressError(ctx, err)
 		return
@@ -301,7 +321,7 @@ func (h *Handler) StreamAIProgress(ctx *gin.Context) {
 		case <-ticker.C:
 		}
 
-		snapshot, err := h.resolveAIProgress(ctx)
+		snapshot, err := h.resolveAIProgress(ctx, project.ID)
 		if err != nil {
 			if streamCtx.Err() != nil {
 				return
@@ -327,10 +347,12 @@ func (h *Handler) StreamAIProgress(ctx *gin.Context) {
 	}
 }
 
-func (h *Handler) resolveAIProgress(ctx *gin.Context) (aiProgressSnapshot, error) {
+func (h *Handler) resolveAIProgress(ctx *gin.Context, projectID string) (aiProgressSnapshot, error) {
 	operationType := strings.TrimSpace(ctx.Param("operationType"))
 	operationID := strings.TrimSpace(ctx.Param("operationId"))
-	projectID := strings.TrimSpace(ctx.Param("projectId"))
+	if projectID == "" {
+		projectID = strings.TrimSpace(ctx.Param("projectId"))
+	}
 	if operationID == "" {
 		return aiProgressSnapshot{}, errAIProgressNotFound
 	}

@@ -9,6 +9,7 @@ RUN pnpm install --frozen-lockfile
 WORKDIR /workspace
 COPY docs/docs ./docs/docs
 COPY luna-agent/ ./luna-agent/
+COPY skills/domains ./luna-agent/skills/domains
 WORKDIR /workspace/luna-agent
 RUN pnpm build && pnpm prune --prod
 

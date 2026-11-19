@@ -70,7 +70,7 @@ describe("tool outcomes", () => {
         operationId: "getBuildRun",
         family: "build_run",
         expectation: "present",
-        arguments: { projectId: "prj_1", runId: "bldr_1" },
+        arguments: { project: "prj_1", buildRunId: "bldr_1" },
         externalOperationId: "bldr_1",
         attempts: 0,
       },
@@ -209,7 +209,7 @@ describe("tool outcomes", () => {
       result: { id: "thing_1" },
     }), operationId => operationId === "listThings" ? read : undefined)
 
-    expect(plan).toMatchObject({ arguments: { page: 1, pageSize: 100 } })
+    expect(plan).toMatchObject({ arguments: { page: 1, pageSize: 50 } })
   })
 
   it("preserves delete and cancel status configuration in verification plans", () => {
@@ -294,58 +294,58 @@ describe("tool outcomes", () => {
     }), operationId => operationId === "listProjects" ? projectRead : undefined)
     if (!projectPlan) throw new Error("missing project order verification plan")
 
-    expect(projectPlan).toMatchObject({ arguments: { page: 1, pageSize: 100 }, expected: ["prj_1", "prj_2"] })
+    expect(projectPlan).toMatchObject({ arguments: { sortBy: "dashboardOrder", sortOrder: "asc", page: 1, pageSize: 50 }, expected: ["prj_1", "prj_2"] })
 
-    const billingPlan = verificationForCall(testToolOperation("updateBillingRateRules", {
-      method: "PUT",
+    const billingPlan = verificationForCall(testToolOperation("admin_update_billing_rate_rules", {
       effect: "write",
-      verification: [{ operationId: "listBillingRateRules", family: "billing_rate_rules" }],
+      verification: [{ operationId: "admin_inspect_billing", family: "billing_rate_rules", staticArguments: { view: "rate_rules" } }],
     }), call({
-      operationId: "updateBillingRateRules",
-      arguments: { body: { rules: [{ meter: "cpu", creditsPerUnit: "2.50", enabled: true }] } },
-      result: [],
-    }), operationId => operationId === "listBillingRateRules"
-      ? testToolOperation("listBillingRateRules")
+      operationId: "admin_update_billing_rate_rules",
+      arguments: { rules: [{ meter: "cpu", creditsPerUnit: "2.50", enabled: true }] },
+      result: {},
+    }), operationId => operationId === "admin_inspect_billing"
+      ? testToolOperation("admin_inspect_billing")
       : undefined)
     if (!billingPlan) throw new Error("missing billing verification plan")
 
     expect(billingPlan).toMatchObject({
       family: "billing_rate_rules",
+      arguments: { view: "rate_rules" },
       expected: [{ meter: "cpu", creditsPerUnit: "2.50", enabled: true }],
     })
   })
 
   it("builds project runtime config secret verification plans without exposing plaintext", () => {
-    const read = testToolOperation("getProjectRuntimeConfigSetRuntimeSecretsSummary", {
+    const read = testToolOperation("delivery_get_config_set", {
       inputSchema: {
         type: "object",
-        properties: { projectId: { type: "string" }, setId: { type: "string" } },
-        required: ["projectId", "setId"],
+        properties: { project: { type: "string" }, configSet: { type: "string" } },
+        required: ["project", "configSet"],
         additionalProperties: false,
       },
-      verificationOnly: true,
     })
-    const plan = verificationForCall(testToolOperation("updateProjectRuntimeConfigSetRuntimeSecrets", {
-      method: "PUT",
+    const plan = verificationForCall(testToolOperation("delivery_configure_config_set", {
       effect: "write",
       verification: [{
-        operationId: "getProjectRuntimeConfigSetRuntimeSecretsSummary",
-        family: "runtime_config_secrets",
+        operationId: "delivery_get_config_set",
+        family: "resource",
+        idFrom: "result.id",
+        readIdArgument: "configSet",
       }],
     }), call({
-      operationId: "updateProjectRuntimeConfigSetRuntimeSecrets",
+      operationId: "delivery_configure_config_set",
       arguments: {
-        projectId: "prj_1",
-        setId: "prcs_1",
-        body: { items: [{ key: "TOKEN", valueMode: "secret", operation: "set", value: "secret-value" }] },
+        project: "prj_1",
+        configSet: "prcs_1",
+        secretActions: [{ key: "TOKEN", operation: "set", value: "secret-value" }],
       },
-      result: { environmentVariables: [] },
-    }), operationId => operationId === "getProjectRuntimeConfigSetRuntimeSecretsSummary" ? read : undefined)
+      result: { id: "prcs_1", projectId: "prj_1", environmentVariables: [] },
+    }), operationId => operationId === "delivery_get_config_set" ? read : undefined)
     if (!plan) throw new Error("missing project runtime secret verification plan")
 
     expect(plan).toMatchObject({
-      family: "runtime_config_secrets",
-      arguments: { projectId: "prj_1", setId: "prcs_1" },
+      family: "resource",
+      arguments: { project: "prj_1", configSet: "prcs_1" },
       requiredKeys: ["TOKEN"],
     })
     expect(JSON.stringify(plan)).not.toContain("secret-value")

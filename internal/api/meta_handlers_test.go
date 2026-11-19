@@ -45,14 +45,11 @@ func TestGetAPIMeta(t *testing.T) {
 	if !strings.HasPrefix(response.OpenAPIDigest, "sha256:") || len(response.OpenAPIDigest) != len("sha256:")+64 {
 		t.Fatalf("unexpected openapiDigest %q", response.OpenAPIDigest)
 	}
-	if response.MinimumCLIVersion != platformapi.MinimumCLIVersion {
-		t.Fatalf("minimumCliVersion = %q, want %q", response.MinimumCLIVersion, platformapi.MinimumCLIVersion)
-	}
 	if !response.Features.AccessToken ||
+		!response.Features.MCP ||
 		!response.Features.OAuthAuthorization ||
-		!response.Features.DeviceCode ||
 		!response.Features.OpenAPIOperations {
-		t.Fatalf("expected stable CLI features to be enabled: %#v", response.Features)
+		t.Fatalf("expected API features to be enabled: %#v", response.Features)
 	}
 	if len(openapi.SpecYAML) == 0 {
 		t.Fatal("embedded OpenAPI specification is empty")

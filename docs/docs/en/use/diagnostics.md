@@ -31,7 +31,7 @@ When an application is unready or restarting repeatedly, open the deployment tar
 - **Probe settings and Warning events**: Review liveness/readiness probe endpoints and recent Kubernetes Warning events with occurrence counts and timestamps.
 - **Previous crashed container logs**: Enable **Previous crashed container logs** in the **Runtime logs** toolbar to read the stack trace from the terminated container instance even after Kubernetes restarts it.
 
-When a deployment has several replicas, runtime logs and the Web Console connect to one replica at a time. The default **Automatic** option prefers a ready replica of the current release. To inspect a specific replica, such as one that is restarting or not ready, choose it in the **Replica** list. The list shows each replica's readiness, restart count, and whether it belongs to this release or another one. If the selected replica is recreated or scaled away, the page asks you to choose again instead of switching replicas silently. In the CLI, add `pod=<pod name>` to `luna deployment exec` or `luna release exec` to choose a replica.
+When a deployment has several replicas, runtime logs and the Web Console connect to one replica at a time. The default **Automatic** option prefers a ready replica of the current release. To inspect a specific replica, such as one that is restarting or not ready, choose it in the **Replica** list. The list shows each replica's readiness, restart count, and whether it belongs to this release or another one. If the selected replica is recreated or scaled away, the page asks you to choose again instead of switching replicas silently. Use the Web Console on the same page when you need an interactive container shell.
 
 ## An unreachable access route
 

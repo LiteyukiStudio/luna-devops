@@ -65,7 +65,7 @@ Luna DevOps 将代码仓库、镜像站、BuildKit、Kubernetes、访问入口�
 | 前端 | Vite、React、TypeScript、Tailwind CSS、shadcn/ui、TanStack Query |
 | 表单与交互 | React Hook Form、Zod、i18next、react-i18next、Sonner |
 | 交付 | Docker Compose、Helm、Kubernetes Job、BuildKit、Gateway API |
-| CLI | TypeScript、Commander、Zod、i18next、npm / pnpm、Bun |
+| MCP / Skills | Streamable HTTP MCP Server（`/api/v1/mcp`）、统一领域 `SKILL.md` |
 | 工具链 | pnpm、uv、golang-migrate、OpenAPI |
 
 ## 快速开始
@@ -107,19 +107,18 @@ Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
 
 API、Worker、辅助命令和 Agent 默认使用 `LOG_FORMAT=auto`：交互式终端显示便于阅读的 console 日志，重定向或容器中输出无 ANSI 的 JSON。可用 `LOG_LEVEL` 调整级别，或设置 `LOG_COLOR=never` / `NO_COLOR` 关闭颜色；OTel 始终接收与终端渲染无关的结构化记录。
 
-## Luna CLI
+## MCP 与外部 AI 接入
 
-Luna CLI 可在终端中管理 Luna DevOps，支持人类可读输出和面向自动化的 JSON 输出：
+Luna DevOps 在 `/api/v1/mcp` 内置原生 Streamable HTTP MCP Server，支持使用个人访问令牌（PAT，`lyd_...`）或 OAuth 2.0（`authorization_code` + PKCE `S256`）从 Claude Code、Cursor、Antigravity 等外部 AI 客户端直连管理与排障（即使未开启内置网页 AI 助手同样可用）：
 
 ```bash
-npm install --global @liteyuki/luna-cli
-luna login
-luna project list
+claude mcp add --transport http luna-devops https://devops.example.com/api/v1/mcp \
+  --header "Authorization: Bearer <YOUR_PAT>"
 ```
 
-- [CLI 使用文档](https://luna-devops.liteyuki.org/use/cli/installation)
-- [CLI GitHub 仓库](https://github.com/LiteyukiStudio/luna-cli)
-- [配套 Agent Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
+- [MCP 接入文档](https://luna-devops.liteyuki.org/use/mcp)
+- [配套 Skills 文档](https://luna-devops.liteyuki.org/use/mcp/skills)
+- [统一 Skills 目录](skills/luna-devops)
 
 ## 部署
 
@@ -180,6 +179,7 @@ helm install luna-devops ./charts/luna-devops \
 cmd/api                 API 服务入口
 cmd/worker              异步 Worker 入口
 luna-agent/             独立 AI Agent、编排图、工具目录和持久运行时
+skills/                 统一 MCP 与 Agent 领域 Skills（SKILL.md）
 internal/               后端业务域、Provider、Service 和数据模型
 migrations/             PostgreSQL 数据库迁移
 openapi/                OpenAPI 定义
@@ -189,8 +189,6 @@ docs/                   Rspress 文档站
 docs-internal/                  内部开发文档（长期规范与方案记录）
 charts/luna-devops      Helm Chart
 ```
-
-本地可选的 `/cli/` 目录已被 Git 忽略，仅用于克隆独立 CLI 仓库进行联调。
 
 ## 开发
 

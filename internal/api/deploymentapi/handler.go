@@ -38,6 +38,8 @@ type Host interface {
 	MutateDeploymentTargetRuntimeSecrets(ctx *gin.Context, user model.User, project model.Project, application model.Application, target model.DeploymentTarget)
 	ApplyDeploymentTargetRuntimeSecretsTx(ctx context.Context, tx *gorm.DB, user model.User, projectID, applicationID, targetID string, input runtimeapi.RuntimeSecretMutationInput) (string, error)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	FindApplication(ctx *gin.Context) (model.Application, bool)
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	FindBuildEnvironmentConfig(db *gorm.DB, scope, scopeRef string) (model.BuildEnvironmentConfig, error)

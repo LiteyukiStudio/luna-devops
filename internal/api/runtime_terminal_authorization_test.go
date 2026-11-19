@@ -58,38 +58,39 @@ func TestRuntimeTerminalAuthorizationStateRequiresLiveIdentityAndAuthorization(t
 	}
 }
 
-func TestRuntimeTerminalAuthorizationStateSupportsLunaCLIOAuth(t *testing.T) {
+func TestContinuousAuthorizationStateSupportsOAuthStreamBinding(t *testing.T) {
 	now := time.Now()
+	appID := "oapp_stream_test"
 	grantID := "oagr_test"
 	tokenID := "tok_test"
 	token := model.AccessToken{
-		ID: tokenID, UserID: "usr_test", Source: "oauth", OAuthApplicationID: lunaCLIApplicationID,
+		ID: tokenID, UserID: "usr_test", Source: "oauth", OAuthApplicationID: appID,
 		OAuthGrantID: grantID, OAuthFamilyID: "ofam_test",
 	}
 	binding := continuousAuthorizationBindingForAccessToken(token.UserID, token)
 	binding.Deadline = now.Add(time.Hour)
 	state := projectapi.ContinuousAuthorizationState{
 		AccessToken:      token,
-		OAuthGrant:       model.OAuthGrant{ID: grantID, ApplicationID: lunaCLIApplicationID, UserID: binding.UserID},
-		OAuthApplication: model.OAuthApplication{ID: lunaCLIApplicationID},
+		OAuthGrant:       model.OAuthGrant{ID: grantID, ApplicationID: appID, UserID: binding.UserID},
+		OAuthApplication: model.OAuthApplication{ID: appID},
 		User:             model.User{ID: binding.UserID}, AuthorizationAllowed: true,
 	}
 	if !projectapi.ContinuousAuthorizationStateActive(state, binding, now) {
-		t.Fatal("active Luna CLI OAuth grant should authorize the terminal")
+		t.Fatal("active OAuth grant should keep continuous stream authorization active")
 	}
 	state.OAuthGrant.RevokedAt = &now
 	if projectapi.ContinuousAuthorizationStateActive(state, binding, now) {
-		t.Fatal("revoked Luna CLI OAuth grant must revoke terminal authorization")
+		t.Fatal("revoked OAuth grant must revoke continuous stream authorization")
 	}
 }
 
-func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.T) {
+func TestOAuthFamilyRevocationInvalidatesStreamAndInteractiveTerminalRejectsBearer(t *testing.T) {
 	db := authIntegrationDB(t)
 	now := time.Now()
 	plainToken := "lyo_family_bound_identity"
 	user := model.User{ID: "usr_family_bound_identity", Email: "family-bound@example.com", Name: "Family Bound", Role: authz.PlatformRoleAdmin, Language: "en-US"}
 	application := model.OAuthApplication{
-		ID: lunaCLIApplicationID, Name: "Luna CLI", ClientID: lunaCLIClientID, RedirectURIs: "", AllowedScopes: "user:read", AccessTokenLifetimeDays: 30,
+		ID: "oapp_family_bound", Name: "OAuth Client", ClientID: "family-bound-client", RedirectURIs: "[]", AllowedScopes: "user:read", AccessTokenLifetimeDays: 30,
 	}
 	grant := model.OAuthGrant{ID: "ogrt_family_bound_identity", ApplicationID: application.ID, UserID: user.ID, Scope: "user:read"}
 	accessToken := model.AccessToken{
@@ -114,7 +115,7 @@ func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.
 	binding := continuousAuthorizationBindingForAccessToken(user.ID, accessToken)
 	binding.Deadline = now.Add(time.Hour)
 	if !handlers.continuousAuthorizationActive(t.Context(), binding, func(context.Context, model.User) bool { return true }) {
-		t.Fatal("live OAuth family should authorize the existing terminal")
+		t.Fatal("live OAuth family should authorize continuous stream")
 	}
 	router := gin.New()
 	router.GET("/api/v1/users/me", func(ctx *gin.Context) {
@@ -122,16 +123,14 @@ func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.
 		if !ok {
 			return
 		}
-		subject, ok := handlers.domains.runtime.CurrentInteractiveSubject(ctx, current)
-		if !ok {
-			ctx.Status(http.StatusForbidden)
-			return
+		if _, ok := handlers.domains.runtime.CurrentInteractiveSubject(ctx, current); ok {
+			t.Fatal("bearer token must not be accepted as an interactive terminal subject")
 		}
-		ctx.String(http.StatusOK, subject)
+		ctx.Status(http.StatusForbidden)
 	})
-	liveIdentity := performBearerRequest(router, http.MethodGet, "/api/v1/users/me", plainToken, "")
-	if liveIdentity.Code != http.StatusOK || liveIdentity.Body.String() != binding.SubjectID {
-		t.Fatalf("live download identity = %d %q", liveIdentity.Code, liveIdentity.Body.String())
+	bearerInteractive := performBearerRequest(router, http.MethodGet, "/api/v1/users/me", plainToken, "")
+	if bearerInteractive.Code != http.StatusForbidden {
+		t.Fatalf("bearer interactive terminal check = %d %q, want 403", bearerInteractive.Code, bearerInteractive.Body.String())
 	}
 
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -140,11 +139,11 @@ func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.
 		t.Fatal(err)
 	}
 	if handlers.continuousAuthorizationActive(t.Context(), binding, func(context.Context, model.User) bool { return true }) {
-		t.Fatal("revoked OAuth family must stop the existing terminal")
+		t.Fatal("revoked OAuth family must stop continuous authorization")
 	}
 	revokedIdentity := performBearerRequest(router, http.MethodGet, "/api/v1/users/me", plainToken, "")
 	if revokedIdentity.Code != http.StatusUnauthorized {
-		t.Fatalf("revoked OAuth family download identity = %d %s", revokedIdentity.Code, revokedIdentity.Body.String())
+		t.Fatalf("revoked OAuth family bearer check = %d %s", revokedIdentity.Code, revokedIdentity.Body.String())
 	}
 }
 

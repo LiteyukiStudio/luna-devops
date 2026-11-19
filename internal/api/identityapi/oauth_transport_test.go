@@ -31,21 +31,12 @@ func TestOAuthApplicationResponseNormalizesEmptyRedirectURIs(t *testing.T) {
 	}
 }
 
-func TestLunaCLIInternalScopeIsBoundToExactBuiltInApplication(t *testing.T) {
-	builtIn := model.OAuthApplication{ID: lunaCLIApplicationID, ClientID: lunaCLIClientID, AllowedScopes: lunaCLIFullAccessScope}
-	if scope := normalizeOAuthScopeForApplication(builtIn, lunaCLIFullAccessScope); scope != lunaCLIFullAccessScope {
-		t.Fatalf("built-in CLI internal scope = %q", scope)
+func TestNormalizeOAuthScopeRejectsWildcardScope(t *testing.T) {
+	if scope := normalizeOAuthScope("*"); scope != "" {
+		t.Fatalf("normalizeOAuthScope(*) = %q, want empty", scope)
 	}
-	if response := oauthApplicationToResponse(builtIn); response.AllowedScopes != "" {
-		t.Fatalf("built-in CLI response exposed internal scope %q", response.AllowedScopes)
-	}
-	for _, application := range []model.OAuthApplication{
-		{ID: "oapp_external", ClientID: lunaCLIClientID, AllowedScopes: lunaCLIFullAccessScope},
-		{ID: lunaCLIApplicationID, ClientID: "external-client", AllowedScopes: lunaCLIFullAccessScope},
-	} {
-		if scope := normalizeOAuthScopeForApplication(application, lunaCLIFullAccessScope); scope != "" {
-			t.Fatalf("non-built-in application accepted wildcard scope: %#v", application)
-		}
+	if scope := normalizeOAuthScope("user:read, project:read"); scope != "project:read,user:read" && scope != "user:read,project:read" {
+		t.Fatalf("normalizeOAuthScope(valid) = %q", scope)
 	}
 }
 

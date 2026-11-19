@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
-	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
@@ -30,11 +29,12 @@ func (h *Handler) GetAIProviderConfigInternal(ctx *gin.Context) {
 	if !h.requireAIAgentService(ctx) {
 		return
 	}
-	toolCatalog, err := aitool.PlatformCatalog()
-	if err != nil {
+	reg := h.host.AIToolRegistry()
+	if reg == nil || reg.Len() == 0 {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.tool_catalog_unavailable", "AI tool catalog is unavailable")
 		return
 	}
+	toolCatalog := reg.Catalog()
 	values := h.configValues(aiProviderConfigKeys)
 	var secretConfig model.AppConfig
 	_ = h.dbFor(ctx).First(&secretConfig, "key = ?", "ai.provider.api_key").Error
@@ -79,7 +79,7 @@ func aiProviderSelectConfig(values map[string]string, key string, definitionForK
 	return definition.Default
 }
 
-func aiProviderConfigVersionWithCatalog(base string, operations []aitool.OpenAPIOperation) string {
+func aiProviderConfigVersionWithCatalog(base string, operations any) string {
 	hash := sha256.New()
 	_, _ = hash.Write([]byte(base))
 	encoded, _ := json.Marshal(operations)

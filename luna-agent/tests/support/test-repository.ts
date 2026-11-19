@@ -194,6 +194,12 @@ export class TestRepository implements Repository {
     if (!(balance > 0)) throw new Error("ai.wallet_balance_insufficient")
   }
 
+  readonly userRoles = new Map<string, string>()
+
+  async resolveLiveActorRole(userId: string): Promise<string | undefined> {
+    return this.userRoles.get(userId)
+  }
+
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {
     const key = `${ownerUserId}:${input.idempotencyKey}`
     const previousLock = this.idempotencyLocks.get(key) ?? Promise.resolve()

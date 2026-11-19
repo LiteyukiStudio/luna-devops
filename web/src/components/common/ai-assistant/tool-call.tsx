@@ -220,6 +220,16 @@ function formatApprovalParameterEntries(args: Record<string, unknown>): Array<{ 
   return entries
 }
 
+function formatPreviewScalar(raw: unknown): string {
+  if (raw === undefined)
+    return '-'
+  if (typeof raw === 'string')
+    return raw || '""'
+  if (typeof raw === 'number' || typeof raw === 'boolean' || raw === null)
+    return String(raw)
+  return JSON.stringify(raw)
+}
+
 function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface: 'page' | 'window' }) {
   const { t } = useTranslation()
   const page = surface === 'page'
@@ -227,6 +237,7 @@ function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock
   const decidingRef = useRef(false)
   const pending = pendingDecision !== null
   const rememberable = block.approvalRememberable === true && block.approvalTier === 'L1'
+  const preview = block.approvalPreview
   const parameterEntries = formatApprovalParameterEntries(block.arguments)
   const decide = async (decision: AIApprovalDecision) => {
     if (decidingRef.current)
@@ -262,11 +273,53 @@ function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock
               {rememberable ? t('aiAssistant.approval.tierL1') : t('aiAssistant.approval.tierL2')}
             </StatusBadge>
           </div>
+          {preview?.summary && (
+            <p className="text-xs font-medium leading-5 text-foreground" data-ai-approval-preview-summary>
+              {preview.summary}
+            </p>
+          )}
           <p className="text-xs leading-5 text-muted-foreground">
             {rememberable ? t('aiAssistant.approval.rememberHint') : t('aiAssistant.approval.bindingHint')}
           </p>
         </div>
       </div>
+      {preview?.changes && preview.changes.length > 0 && (
+        <div className="grid gap-1 rounded-control border border-border/70 bg-surface px-2.5 py-2 text-xs" data-ai-approval-diff>
+          <span className="text-[11px] font-medium text-muted-foreground">{t('aiAssistant.approval.changesTitle')}</span>
+          <div className="grid max-h-44 gap-1 overflow-y-auto">
+            {preview.changes.map(change => (
+              <div key={`${change.field}-${change.action ?? 'diff'}-${formatPreviewScalar(change.after)}`} className="flex flex-wrap items-baseline justify-between gap-2 font-mono text-[11px]">
+                <span className="text-muted-foreground">{change.field}</span>
+                <span className="min-w-0 break-all text-right text-foreground">
+                  {change.before !== undefined ? `${formatPreviewScalar(change.before)} -> ${formatPreviewScalar(change.after)}` : formatPreviewScalar(change.after)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {preview?.sensitiveKeys && preview.sensitiveKeys.length > 0 && (
+        <div className="grid gap-0.5 rounded-control border border-border/70 bg-surface px-2.5 py-1.5 text-[11px]" data-ai-approval-sensitive-keys>
+          <span className="font-medium text-muted-foreground">{t('aiAssistant.approval.sensitiveKeysTitle')}</span>
+          <span className="font-mono text-foreground">{preview.sensitiveKeys.join(', ')}</span>
+        </div>
+      )}
+      {preview?.impact && preview.impact.length > 0 && (
+        <div className="grid gap-0.5 rounded-control border border-border/70 bg-surface px-2.5 py-1.5 text-[11px]" data-ai-approval-impact>
+          <span className="font-medium text-muted-foreground">{t('aiAssistant.approval.impactTitle')}</span>
+          {preview.impact.map(line => (
+            <span key={line} className="text-foreground">{line}</span>
+          ))}
+        </div>
+      )}
+      {preview?.warnings && preview.warnings.length > 0 && (
+        <div className="grid gap-0.5 rounded-control border border-warning/40 bg-warning-subtle/80 px-2.5 py-1.5 text-[11px]" data-ai-approval-warnings>
+          <span className="font-medium text-warning">{t('aiAssistant.approval.warningsTitle')}</span>
+          {preview.warnings.map(line => (
+            <span key={line} className="text-foreground">{line}</span>
+          ))}
+        </div>
+      )}
       {parameterEntries.length > 0 && (
         <dl className="grid max-h-44 gap-1 overflow-y-auto rounded-control border border-border/70 bg-surface px-2.5 py-2 text-xs" data-ai-approval-parameters>
           {parameterEntries.map(entry => (

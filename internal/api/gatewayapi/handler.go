@@ -17,7 +17,10 @@ import (
 type Host interface {
 	DBFor(ctx *gin.Context) *gorm.DB
 	DBWithContext(ctx context.Context) *gorm.DB
+	CurrentUser(ctx *gin.Context) (model.User, bool)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	EnsureProjectCanMutate(ctx *gin.Context, project model.Project) bool
 	EnsureGatewayRouteCanMutate(ctx *gin.Context, route model.GatewayRoute) bool
 	DeleteStatusCanStart(status string) bool

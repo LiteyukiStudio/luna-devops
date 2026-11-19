@@ -24,6 +24,7 @@ var ErrUnavailable = errors.New("ai agent is unavailable")
 type ActorContext struct {
 	UserID           string `json:"userId"`
 	SessionID        string `json:"sessionId"`
+	PlatformRole     string `json:"platformRole,omitempty"`
 	OAuthGrantID     string `json:"oauthGrantId,omitempty"`
 	RunID            string `json:"runId,omitempty"`
 	ProjectID        string `json:"projectId,omitempty"`

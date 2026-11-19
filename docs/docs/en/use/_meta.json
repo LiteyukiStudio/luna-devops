@@ -5,5 +5,5 @@
   { "type": "file", "name": "notifications", "label": "Notifications" },
   { "type": "file", "name": "billing", "label": "Billing and Spend" },
   { "type": "file", "name": "diagnostics", "label": "Status and Troubleshooting" },
-  { "type": "dir", "name": "cli", "label": "Luna CLI" }
+  { "type": "dir", "name": "mcp", "label": "MCP Integration" }
 ]

@@ -51,7 +51,7 @@ export type BuildServerDependencies = {
   cancelRun: (runId: string) => boolean | Promise<boolean>
   cancelExecutingRun: (runId: string) => Promise<boolean>
   notifyRunQueued?: () => void
-  toolCatalogDigest: () => string
+  toolCatalogDigest: (platformRole?: string) => string
   streamBus: RunStreamBus
   streamHubLimits?: { perRun: number, perInstance: number, pendingEvents?: number, pendingBytes?: number }
 }
@@ -234,7 +234,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         pageContext: z.record(z.string(), z.unknown()).default({}),
         runId: id.optional(),
       }).parse(request.body)
-      const catalogDigest = input.toolCatalogDigest()
+      const catalogDigest = input.toolCatalogDigest(request.actor.platformRole)
       const created = await withSpan("agent.turn.accept", internalSpanOptions({
         "luna.operation.name": "create_turn",
         "gen_ai.conversation.id": conversationId,
@@ -266,7 +266,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         runId: id,
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
-      const catalogDigest = input.toolCatalogDigest()
+      const catalogDigest = input.toolCatalogDigest(request.actor.platformRole)
       const responsePayload = await withToolActionLock(`${request.actor.userId}:${key}`, async () => {
         const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
           "luna.operation.name": "create_tool_action",

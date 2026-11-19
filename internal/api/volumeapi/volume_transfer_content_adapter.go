@@ -207,7 +207,7 @@ func (h *Handlers) volumeTransferDownloadBinding(ctx *gin.Context, user model.Us
 	binding, ok := h.currentInteractiveAuthorizationBinding(ctx, user)
 	if !ok {
 		if h.requestUsesBearerToken(ctx) {
-			writeErrorCode(ctx, http.StatusForbidden, "volume.download_session_required", "a browser session or Luna CLI OAuth grant is required for volume downloads")
+			writeErrorCode(ctx, http.StatusForbidden, "volume.download_session_required", "a browser session is required for volume downloads")
 		} else {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
 		}

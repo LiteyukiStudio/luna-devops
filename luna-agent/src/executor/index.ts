@@ -507,10 +507,22 @@ export class RunExecutor {
           if (!providerConfig) throw new Error("ai.provider_config_unavailable")
           let toolCatalogDigest = executionSnapshot.toolCatalogDigest ?? run.toolCatalogDigest
           let effectiveRun = run
+          const liveRole = await this.repository.resolveLiveActorRole?.(run.ownerUserId, run.actorSessionId)
+          const roleFallbackCatalog = liveRole !== undefined
+            ? this.catalogRegistry.forRole(liveRole)
+            : this.catalogRegistry.current()
           if (!toolCatalogDigest || !this.catalogRegistry.has(toolCatalogDigest)) {
-            toolCatalogDigest = this.catalogRegistry.current().digest
+            toolCatalogDigest = roleFallbackCatalog.digest
             await this.repository.updateRunToolCatalogDigest(run.id, toolCatalogDigest, run.rowVersion)
             effectiveRun = { ...run, toolCatalogDigest }
+          }
+          else if (liveRole !== undefined && liveRole !== "admin") {
+            const pinnedCatalog = this.catalogRegistry.get(toolCatalogDigest)
+            if (pinnedCatalog.all().some(operation => operation.adminOnly)) {
+              toolCatalogDigest = roleFallbackCatalog.digest
+              await this.repository.updateRunToolCatalogDigest(run.id, toolCatalogDigest, run.rowVersion)
+              effectiveRun = { ...run, toolCatalogDigest }
+            }
           }
 
           this.tools.setRunMaxToolCallsForRun(run.id, runtimeSettings.runMaxToolCalls)

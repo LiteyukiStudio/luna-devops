@@ -17,7 +17,7 @@ export function documentationHomeUrl(language: string) {
   return language.toLowerCase().startsWith('zh') ? documentationBaseUrl() : `${documentationBaseUrl()}/en/`
 }
 
-export function cliDocumentationUrl(language: string) {
-  const localizedPath = language.toLowerCase().startsWith('zh') ? '/use/cli' : '/en/use/cli'
+export function mcpDocumentationUrl(language: string) {
+  const localizedPath = language.toLowerCase().startsWith('zh') ? '/use/mcp' : '/en/use/mcp'
   return `${documentationBaseUrl()}${localizedPath}`
 }

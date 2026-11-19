@@ -37,6 +37,7 @@ type Host interface {
 	RequirePlatformAdmin(ctx *gin.Context) bool
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
 	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	EnsurePlatformSystemProject(user model.User, ctx context.Context) (model.Project, error)
 	EnsureProjectCanMutate(ctx *gin.Context, project model.Project) bool
 	EnsureRuntimeConfigSetCanMutate(ctx *gin.Context, set model.ProjectRuntimeConfigSet) bool
@@ -109,6 +110,9 @@ func (h *Handler) authorizeProject(ctx *gin.Context, action authz.Action) (model
 }
 func (h *Handler) authorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool) {
 	return h.host.AuthorizeProjectByID(ctx, projectID, action)
+}
+func (h *Handler) authorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectRef(ctx, projectRef, action)
 }
 func (h *Handler) ensurePlatformSystemProject(user model.User, ctx context.Context) (model.Project, error) {
 	return h.host.EnsurePlatformSystemProject(user, ctx)
@@ -313,8 +317,6 @@ func currentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {
 func containsString(values []string, target string) bool {
 	return identityapi.ContainsString(values, target)
 }
-
-const lunaCLIApplicationID = identityapi.LunaCLIApplicationID
 
 type runtimeClusterAuditMetadata = identityapi.RuntimeClusterAuditMetadata
 

@@ -19,32 +19,38 @@ import { UnicodeLexicalTokenizer } from "./retrieval/tokenizer.js"
 const inputSchema = z.object({
   type: z.literal("object"),
   properties: z.record(z.string(), z.record(z.string(), z.unknown())),
-  required: z.array(z.string()),
+  required: z.array(z.string()).default([]),
   additionalProperties: z.literal(false),
 }).passthrough()
 
 const outputSchema = z.record(z.string(), z.unknown())
 
+const verificationPrimitiveSchema = z.union([z.string(), z.boolean(), z.number()])
 const toolEffectSchema = z.enum(["discovery", "read", "write", "async", "execute", "interactive", "presentation"])
 const toolVerificationRuleSchema = z.object({
   operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{2,100}$/),
-  family: z.enum(["build_run", "release", "gateway_route", "application", "deployment_target", "runtime_secrets", "runtime_config_secrets", "project_order", "billing_rate_rules", "resource"]),
+  family: z.enum(["build_run", "release", "gateway_route", "application", "deployment_target", "project_order", "billing_rate_rules", "resource"]),
   expect: z.enum(["present", "absent", "canceled"]).optional(),
   whenResultHas: z.string().trim().min(1).max(120).optional(),
+  whenArgumentEquals: z.record(z.string(), verificationPrimitiveSchema).optional(),
+  whenResultEquals: z.record(z.string(), verificationPrimitiveSchema).optional(),
   idFrom: z.string().trim().min(1).max(240).optional(),
   readIdArgument: z.string().trim().min(1).max(120).optional(),
   singleton: z.boolean().optional(),
   collection: z.boolean().optional(),
+  collectionPath: z.string().trim().min(1).max(240).optional(),
+  staticArguments: z.record(z.string(), z.unknown()).optional(),
   targetField: z.string().trim().min(1).max(120).optional(),
   statusField: z.string().trim().min(1).max(120).optional(),
   pendingStatuses: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
   successStatuses: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
-  failureStatuses: z.array(z.string().trim().min(1).max(20)).max(20).optional(),
+  failureStatuses: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
 }).strict()
-const toolVerificationSchema = z.array(toolVerificationRuleSchema).min(1).max(4)
+const toolVerificationSchema = z.array(toolVerificationRuleSchema).min(1).max(6)
 
 const operationSchema = z.object({
   operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{2,100}$/),
+  domain: z.string().trim().max(64).optional(),
   name: z.string().trim().min(1).max(160),
   summary: z.string().trim().min(1).max(1000),
   category: z.string().trim().min(1).max(120),
@@ -54,18 +60,20 @@ const operationSchema = z.object({
   avoidWhen: toolLocalizedTextSchema,
   preconditions: toolLocalizedListSchema,
   successEvidence: toolLocalizedTextSchema,
+  adminOnly: z.boolean().optional(),
+  globalSessionOnly: z.boolean().optional(),
   approvalTier: z.enum(["L0", "L1", "L2"]).optional(),
   requiresApproval: z.boolean(),
   idempotent: z.boolean(),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
-  path: z.string().startsWith("/api/v1/"),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+  path: z.string().startsWith("/api/v1/").optional(),
   requiredScopes: z.array(z.string().trim().min(1).max(120)).max(20),
   inputSchema,
   outputSchema,
   sensitivePaths: z.array(z.string().trim().min(1).max(240)).max(100).default([]),
   parameters: z.array(toolRouteParameterSchema).max(100).default([]),
-  requestBody: z.boolean(),
-  requestRequired: z.boolean(),
+  requestBody: z.boolean().optional(),
+  requestRequired: z.boolean().optional(),
   requestType: z.string().trim().max(120).default(""),
   effect: toolEffectSchema.optional(),
   verification: toolVerificationSchema.optional(),
@@ -122,6 +130,17 @@ export class ToolCatalog {
 
   static load(input: unknown): ToolCatalog {
     return new ToolCatalog(z.array(operationSchema).min(1).parse(input))
+  }
+
+  has(operationId: string): boolean {
+    return this.operations.has(operationId)
+  }
+
+  withoutAdminOperations(): ToolCatalog {
+    if (!this.orderedOperations.some(operation => operation.adminOnly === true)) {
+      return this
+    }
+    return new ToolCatalog(this.orderedOperations.filter(operation => operation.adminOnly !== true))
   }
 
   get(operationId: string): ToolOperation {

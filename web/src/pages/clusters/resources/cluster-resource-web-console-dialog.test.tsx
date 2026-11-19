@@ -6,7 +6,7 @@ import i18next from '@/i18n'
 import { ClusterResourceWebConsoleDialog } from './cluster-resource-web-console-dialog'
 
 vi.mock('@/components/common/runtime-terminal-panel', () => ({
-  RuntimeTerminalPanel: () => <div>Terminal</div>,
+  RuntimeTerminalPanel: ({ socketUrl }: { socketUrl?: string }) => <output data-testid="terminal-socket-url">{socketUrl}</output>,
 }))
 
 const cluster = { id: 'clu_123' } as RuntimeCluster
@@ -30,22 +30,22 @@ const pod: ClusterResource = {
   updatedAt: '2026-09-06T00:00:00Z',
 }
 
-describe('cluster pod web console CLI command', () => {
+describe('cluster pod web console dialog', () => {
   beforeEach(async () => {
     await i18next.changeLanguage('en-US')
   })
 
-  it('uses the existing pod-terminal command and tracks the selected container', () => {
+  it('builds the pod terminal WebSocket URL and tracks the selected container', async () => {
     render(
       <TooltipProvider>
         <ClusterResourceWebConsoleDialog cluster={cluster} pod={pod} onOpenChange={vi.fn()} />
       </TooltipProvider>,
     )
 
-    const command = screen.getByRole('group', { name: 'CLI command' })
-    expect(command).toHaveTextContent(`luna cluster pod-terminal server=${window.location.origin} clusterId=clu_123 namespace=luna-project name=api-7f6cb48d8f-j9km2`)
+    const socketUrl = await screen.findByTestId('terminal-socket-url')
+    expect(socketUrl).toHaveTextContent('/runtime/clusters/clu_123/pods/terminal?namespace=luna-project&name=api-7f6cb48d8f-j9km2')
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Container' }), { target: { value: 'sidecar' } })
-    expect(command).toHaveTextContent(`luna cluster pod-terminal server=${window.location.origin} clusterId=clu_123 namespace=luna-project name=api-7f6cb48d8f-j9km2 container=sidecar`)
+    expect(await screen.findByTestId('terminal-socket-url')).toHaveTextContent('/runtime/clusters/clu_123/pods/terminal?namespace=luna-project&name=api-7f6cb48d8f-j9km2&container=sidecar')
   })
 })

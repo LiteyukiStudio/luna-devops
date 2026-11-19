@@ -38,7 +38,7 @@ On desktop devices the assistant opens as a panel docked on the right side of th
 
 When New API or another compatible gateway fronts multiple upstream channels, see [Channel affinity and prompt cache keys](/en/reference/channel-affinity) to select the hidden Provider compatibility explicitly and encourage one conversation to reuse the same channel. Unknown compatible endpoints do not receive `prompt_cache_key` by default; enable it only after confirming the complete request path supports it.
 
-If the entry is missing, ask an administrator to check enablement and account scope. If the model is temporarily unavailable, keep the conversation and retry later.
+If the entry is missing, ask an administrator to check enablement and account scope. If the model is temporarily unavailable, keep the conversation and retry later. To operate Luna DevOps directly from external IDE or terminal agents such as Claude Code, Cursor, or Antigravity (including self-hosted instances where the built-in Web AI Assistant is disabled), see [MCP Integration](/en/use/mcp).
 
 If you refresh or reopen the assistant while it is responding, the page first reads the confirmed timeline and then resumes the active Run from the latest event position. The output indicator remains visible while the connection is opening or briefly stalled. If recovery remains unavailable, the server's completed, failed, canceled, or interrupted state is authoritative; unconfirmed partial text is not treated as a completed answer.
 

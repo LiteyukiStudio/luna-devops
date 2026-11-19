@@ -1,6 +1,9 @@
 package api
 
 import (
+	"fmt"
+
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/api/aiapi"
 	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
 	"github.com/LiteyukiStudio/devops/internal/api/billingapi"
@@ -36,7 +39,7 @@ type domainHandlers struct {
 
 func newDomainHandlers(handlers *Handlers) *domainHandlers {
 	host := domainHost{handlers: handlers}
-	return &domainHandlers{
+	domains := &domainHandlers{
 		ai:           aiapi.New(aiHost{domainHost: host}),
 		application:  applicationapi.New(applicationHost{domainHost: host}),
 		billing:      billingapi.New(billingHost{domainHost: host}),
@@ -58,4 +61,38 @@ func newDomainHandlers(handlers *Handlers) *domainHandlers {
 			TransferEnabled:  handlers.volumeTransferEnabled,
 		}),
 	}
+	if handlers != nil && handlers.aiToolRegistry != nil {
+		registerAllDomainAITools(handlers, domains, handlers.aiToolRegistry)
+	}
+	return domains
+}
+
+func registerAllDomainAITools(handlers *Handlers, domains *domainHandlers, reg *aitool.Registry) {
+	domains.ai.RegisterAITools(reg)
+	domains.application.RegisterAITools(reg)
+	domains.billing.RegisterAITools(reg)
+	domains.build.RegisterAITools(reg)
+	domains.deployment.RegisterAITools(reg)
+	domains.gateway.RegisterAITools(reg)
+	domains.git.RegisterAITools(reg)
+	domains.identity.RegisterAITools(reg)
+	domains.notification.RegisterAITools(reg)
+	domains.platform.RegisterAITools(reg)
+	domains.project.RegisterAITools(reg)
+	domains.registry.RegisterAITools(reg)
+	domains.runtime.RegisterAITools(reg)
+	domains.volume.RegisterAITools(reg)
+	handlers.registerConfigAITools(reg)
+	if err := reg.ValidateCrossReferences(); err != nil {
+		panic(fmt.Sprintf("invalid AI domain tool registry: %v", err))
+	}
+}
+
+// DefaultAIToolCatalog returns the deterministic 166-tool AI Domain Facade Catalog
+// without requiring live database or Redis connections.
+func DefaultAIToolCatalog() []aitool.CatalogOperation {
+	reg := aitool.NewRegistry()
+	h := &Handlers{aiToolRegistry: reg}
+	_ = newDomainHandlers(h)
+	return reg.Catalog()
 }

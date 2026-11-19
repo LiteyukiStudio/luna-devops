@@ -41,6 +41,7 @@ type Host interface {
 	FindProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool)
 	ProjectIDsForUser(ctx context.Context, userID string) []string
 	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	WriteProjectAuthorizationError(ctx *gin.Context, err error)
 	SecretAvailable() bool
@@ -134,6 +135,10 @@ func (h *Handler) projectIDsForUser(ctx context.Context, userID string) []string
 
 func (h *Handler) authorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool) {
 	return h.host.AuthorizeProjectByID(ctx, projectID, action)
+}
+
+func (h *Handler) authorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectRef(ctx, projectRef, action)
 }
 
 func (h *Handler) auditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {

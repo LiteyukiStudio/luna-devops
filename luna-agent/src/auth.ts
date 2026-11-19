@@ -5,6 +5,7 @@ import type { ActorContext } from "./domain.js"
 const actorSchema = z.object({
   userId: z.string().min(1),
   sessionId: z.string().min(1),
+  platformRole: z.string().optional(),
   projectId: z.string().optional(),
   locale: z.string().default("zh-CN"),
   issuedAt: z.number().int(),
@@ -21,9 +22,18 @@ export class DevelopmentRequestVerifier implements RequestVerifier {
   async verify(headers: Record<string, string | string[] | undefined>): Promise<ActorContext> {
     const userId = scalar(headers["x-luna-dev-user"])
     const sessionId = scalar(headers["x-luna-dev-session"]) ?? "dev-session"
+    const platformRole = scalar(headers["x-luna-dev-role"])
     if (!userId) throw new AuthError("ai.unauthorized")
     const now = Math.floor(Date.now() / 1000)
-    return { userId, sessionId, locale: scalar(headers["x-luna-locale"]) ?? "zh-CN", issuedAt: now, expiresAt: now + 60, requestId: scalar(headers["x-request-id"]) ?? crypto.randomUUID() }
+    return {
+      userId,
+      sessionId,
+      ...(platformRole ? { platformRole } : {}),
+      locale: scalar(headers["x-luna-locale"]) ?? "zh-CN",
+      issuedAt: now,
+      expiresAt: now + 60,
+      requestId: scalar(headers["x-request-id"]) ?? crypto.randomUUID(),
+    }
   }
 }
 
@@ -60,6 +70,7 @@ export class BffHmacRequestVerifier implements RequestVerifier {
     return {
       userId: actor.userId, sessionId: actor.sessionId, locale: actor.locale,
       issuedAt: actor.issuedAt, expiresAt: actor.expiresAt, requestId: actor.requestId,
+      ...(actor.platformRole ? { platformRole: actor.platformRole } : {}),
       ...(actor.projectId ? { projectId: actor.projectId } : {}),
       ...(actor.runId ? { runId: actor.runId } : {}),
     }

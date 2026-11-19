@@ -10,196 +10,139 @@ import { getToolDetailsTool } from "../src/tools/tool-details.js"
 import { loadSkillTool } from "../src/tools/skill-loader.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
 import { navigateToRouteTool } from "../src/tools/ui-route.js"
+import { waitForTaskTool } from "../src/tools/wait-for-task.js"
 
-const platformCatalog = ToolCatalog.load(JSON.parse(readFileSync(
+const adminCatalog = ToolCatalog.load(JSON.parse(readFileSync(
   inject("platformCatalogFixturePath"),
   "utf8",
 )))
+const tenantCatalog = adminCatalog.withoutAdminOperations()
 
-describe("real PlatformCatalog retrieval", () => {
+describe("real 166-tool AI Domain Facade Catalog retrieval", () => {
+  it("enforces exact 166 admin / 133 tenant dual-snapshot role isolation", () => {
+    expect(adminCatalog.all()).toHaveLength(166)
+    expect(tenantCatalog.all()).toHaveLength(133)
+    expect(tenantCatalog.all().some(op => op.adminOnly === true || op.operationId.startsWith("admin_"))).toBe(false)
+    expect(adminCatalog.all().filter(op => op.adminOnly === true)).toHaveLength(33)
+    expect(tenantCatalog.digest).not.toBe(adminCatalog.digest)
+  })
+
   it.each([
-    ["扩容数据卷", "updateProjectVolume"],
-    ["查看数据卷详情", "getProjectVolume"],
-    ["列出项目空间数据卷", "listProjectVolumes"],
-    ["预览删除数据卷的影响", "previewProjectVolumeDeletion"],
-    ["删除数据卷", "deleteProjectVolume"],
-    ["创建项目空间", "createProject"],
-    ["查看项目空间详情", "getProject"],
-    ["列出平台用户", "listUsers"],
-    ["查看平台账单概览", "getBillingSummary"],
-    ["查看集群压力", "observeRuntimeClusterPressure"],
-    ["查看平台共享通知渠道", "listNotificationChannels"],
-    ["列出我的通知渠道", "listMyNotificationChannels"],
-    ["查看我的通知投递", "listMyNotificationDeliveries"],
-    ["搜索互联网", "webSearch"],
-    ["读取公开网页正文", "fetchWebPage"],
-    ["create project", "createProject"],
-    ["update project volume", "updateProjectVolume"],
-    ["delete project volume", "deleteProjectVolume"],
-    ["preview project volume deletion", "previewProjectVolumeDeletion"],
-    ["list project volumes", "listProjectVolumes"],
-    ["get project volume", "getProjectVolume"],
-    ["查看删除影响", "previewProjectVolumeDeletion"],
-    ["在应用市场搜索 Dify 模板", "listAppTemplates"],
-    ["读取已选应用模板的完整安装参数", "getAppTemplate"],
-    ["创建数据卷前选择存储类", "listProjectVolumeStorageClasses"],
-  ])("ranks the intended real operation first for %s", (query, operationId) => {
-    const result = platformCatalog.search({ query, pageSize: 20 })
-    expect(result.items[0]?.operationId).toBe(operationId)
+    ["扩容数据卷", "runtime_update_volume"],
+    ["查看数据卷详情", "runtime_get_volume"],
+    ["删除数据卷", "runtime_delete_volume"],
+    ["创建项目空间", "workspace_create_project"],
+    ["查看项目空间详情", "workspace_get_project"],
+    ["搜索互联网", "ops_web_search"],
+    ["读取公开网页正文", "ops_web_fetch"],
+    ["查看部署诊断快照", "runtime_get_target_diagnostics"],
+    ["扩缩容部署目标副本数", "delivery_scale_target"],
+    ["回滚生产环境版本", "delivery_rollback_target"],
+    ["在应用市场搜索模板", "delivery_list_templates"],
+    ["查看应用模板安装参数", "delivery_get_template"],
+    ["清理数据保留策略", "admin_execute_data_retention_cleanup"],
+  ])("ranks the intended real facade operation in top results for %s", (query, operationId) => {
+    const result = adminCatalog.search({ query, pageSize: 5 })
+    expect(result.items.map(item => item.operationId)).toContain(operationId)
   })
 
-  it("keeps preview/read/write boundaries and approval flags distinct", () => {
-    const preview = platformCatalog.search({ query: "预览删除数据卷的影响", pageSize: 8 })
-    const read = platformCatalog.search({ query: "查看数据卷详情", pageSize: 8 })
-    const write = platformCatalog.search({ query: "扩容数据卷", pageSize: 8 })
-
-    expect(preview.items[0]).toMatchObject({ operationId: "previewProjectVolumeDeletion", requiresApproval: true })
-    expect(preview.items[0]?.operationId).not.toBe("deleteProjectVolume")
-    expect(read.items[0]).toMatchObject({ operationId: "getProjectVolume", requiresApproval: false })
-    expect(write.items[0]).toMatchObject({ operationId: "updateProjectVolume", requiresApproval: true })
+  it("keeps read/write boundaries and approval flags distinct", () => {
+    expect(tenantCatalog.get("runtime_get_volume")).toMatchObject({
+      operationId: "runtime_get_volume",
+      approvalTier: "L0",
+      requiresApproval: false,
+    })
+    expect(tenantCatalog.get("runtime_update_volume")).toMatchObject({
+      operationId: "runtime_update_volume",
+      approvalTier: "L2",
+      requiresApproval: true,
+    })
+    expect(tenantCatalog.get("workspace_create_project")).toMatchObject({
+      operationId: "workspace_create_project",
+      approvalTier: "L1",
+      requiresApproval: true,
+    })
   })
 
-  it("indexes real parameter names and output semantics", () => {
-    expect(platformCatalog.search({ query: "volumeId", pageSize: 8 }).items.map(item => item.operationId))
-      .toContain("getProjectVolume")
-    expect(platformCatalog.search({ query: "clusterId", pageSize: 8 }).items.some(item => item.operationId.includes("RuntimeCluster")))
+  it("indexes flattened parameter names and domain semantics", () => {
+    expect(tenantCatalog.search({ query: "volume", pageSize: 8 }).items.map(item => item.operationId))
+      .toContain("runtime_get_volume")
+    expect(tenantCatalog.search({ query: "cluster", pageSize: 8 }).items.some(item => item.operationId.startsWith("runtime_")))
       .toBe(true)
-    expect(platformCatalog.search({ query: "projectId", pageSize: 8 }).items.some(item => item.operationId.includes("Project")))
+    expect(tenantCatalog.search({ query: "project", pageSize: 8 }).items.some(item => item.operationId.startsWith("workspace_")))
       .toBe(true)
   })
 
   it("discovers every real operation exactly and paginates the complete directory", () => {
-    const operations = platformCatalog.discoverableOperations()
-    const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
-      platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
+    for (const catalog of [tenantCatalog, adminCatalog]) {
+      const operations = catalog.discoverableOperations()
+      const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
+        catalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
-    expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
-    for (const operation of operations) {
-      expect(platformCatalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)
-        .toBe(operation.operationId)
+      expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
+      for (const operation of operations) {
+        expect(catalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)
+          .toBe(operation.operationId)
+      }
     }
   })
 
-  it("keeps every operation discoverable in the first eight results by its human-readable intent", () => {
-    for (const operation of platformCatalog.discoverableOperations()) {
-      const matches = platformCatalog.search({ query: operation.summary, pageSize: 8 }).items
+  it("keeps every operation discoverable in the first eight results by its human-readable summary", () => {
+    for (const operation of adminCatalog.discoverableOperations()) {
+      const matches = adminCatalog.search({ query: operation.summary, pageSize: 8 }).items
         .map(item => item.operationId)
       expect(matches, `${operation.operationId}: ${operation.summary}`)
         .toContain(operation.operationId)
     }
   })
 
-  it("accepts app-template filters and every route placeholder required by the HTTP transport", () => {
-    const list = platformCatalog.get("listAppTemplates")
-    const detail = platformCatalog.get("getAppTemplate")
-    expect(validateArguments(list.inputSchema, { query: "Dify", category: "ai" }))
-      .toEqual({ query: "Dify", category: "ai" })
-    expect(validateArguments(detail.inputSchema, { templateId: "postgresql" }))
-      .toEqual({ templateId: "postgresql" })
-
-    for (const operation of platformCatalog.all()) {
-      for (const placeholder of operation.path.matchAll(/\{([^}]+)\}/g)) {
-        expect(operation.parameters, `${operation.operationId}:${placeholder[1]}`)
-          .toContainEqual(expect.objectContaining({ in: "path", wireName: placeholder[1], required: true }))
-        expect(operation.inputSchema.properties, `${operation.operationId}:${placeholder[1]}`)
-          .toHaveProperty(placeholder[1]!)
-      }
+  it("validates flattened top-level input schemas and sensitivePaths without body wrapper", () => {
+    for (const operation of adminCatalog.all()) {
+      expect(operation.inputSchema).toMatchObject({
+        type: "object",
+        additionalProperties: false,
+      })
+      expect(operation.inputSchema.properties).not.toHaveProperty("body")
     }
-  })
 
-  it("rejects incomplete conditional volume requests before platform execution", () => {
-    const create = platformCatalog.get("createProjectVolume")
-    const incompleteBlank = {
-      projectId: "prj_1",
-      body: {
-        displayName: "postgresql-data",
-        clusterId: "clu_1",
-        capacity: "10Gi",
-        accessMode: "ReadWriteOnce",
-        volumeMode: "Filesystem",
-        source: { type: "blank" },
-      },
-    }
-    expect(() => validateArguments(create.inputSchema, incompleteBlank))
-      .toThrow("ai.tool_arguments_invalid")
-
-    const completeBlank = {
-      ...incompleteBlank,
-      body: { ...incompleteBlank.body, storageClassName: "standard" },
-    }
-    expect(validateArguments(create.inputSchema, completeBlank)).toEqual(completeBlank)
-
-    const existingClaim = {
-      projectId: "prj_1",
-      body: {
-        displayName: "existing-data",
-        clusterId: "clu_1",
-        source: { type: "existingClaim", claimName: "postgresql-data", ownershipMode: "referenced" },
-      },
-    }
-    expect(validateArguments(create.inputSchema, existingClaim)).toEqual(existingClaim)
-
-    const update = platformCatalog.get("updateProjectVolume")
-    expect(() => validateArguments(update.inputSchema, {
-      projectId: "prj_1",
-      volumeId: "pvol_1",
-      revision: 1,
-      body: {},
-    })).toThrow("ai.tool_arguments_invalid")
-  })
-
-  it("validates app-template stages and treats dynamic values as string secrets", () => {
-    const install = platformCatalog.get("installAppTemplate")
-    const input = {
-      projectId: "prj_1",
-      templateId: "redis",
-      body: {
+    const install = tenantCatalog.get("delivery_install_template")
+    try {
+      validateArguments(install.inputSchema, {
+        project: "prj_1",
+        template: "redis",
         applicationName: "Redis",
         applicationIdentifier: "redis",
-        deploymentName: "Redis dev",
         stage: "default",
-        clusterId: "clu_1",
-      },
-    }
-    try {
-      validateArguments(install.inputSchema, input)
-      throw new Error("expected installAppTemplate arguments to be rejected")
+      })
+      throw new Error("expected delivery_install_template stage=default to be rejected")
     }
     catch (error) {
       expect(error).toBeInstanceOf(ToolArgumentsInvalidError)
       expect((error as ToolArgumentsInvalidError).issues).toContainEqual(expect.objectContaining({
-        path: "/body/stage",
+        path: "/stage",
         code: "enum",
         allowedValues: ["dev", "test", "staging", "prod"],
       }))
     }
-    const validInput = {
-      ...input,
-      body: { ...input.body, stage: "dev", values: { password: "redis-test-password" } },
-    }
-    expect(validateArguments(install.inputSchema, validInput)).toEqual(validInput)
-    expect(install.sensitivePaths).toEqual(["body.values"])
-    expect(() => validateArguments(install.inputSchema, {
-      ...validInput,
-      body: { ...validInput.body, values: { password: 1234 } },
-    })).toThrow("ai.tool_arguments_invalid")
-  })
 
-  it("loads both storage-class discovery and creation for a managed-volume goal", () => {
-    const matches = platformCatalog.search({
-      query: "创建空白数据卷并选择目标集群 StorageClass",
-      pageSize: 8,
-    }).items.map(item => item.operationId)
-    expect(matches).toContain("listProjectVolumeStorageClasses")
-    expect(matches).toContain("createProjectVolume")
+    const validInstall = {
+      project: "prj_1",
+      template: "redis",
+      applicationName: "Redis",
+      applicationIdentifier: "redis",
+      stage: "dev",
+      secretValues: { password: "redis-test-password" },
+    }
+    expect(validateArguments(install.inputSchema, validInstall)).toEqual(validInstall)
+    expect(install.sensitivePaths).toContain("secretValues.*")
   })
 
   it("covers every real operation through search, semantic details, and model-tool loading", () => {
-    const operations = platformCatalog.discoverableOperations()
+    const operations = adminCatalog.discoverableOperations()
     for (const operation of operations) {
-      const search = platformCatalog.search({ query: operation.operationId, pageSize: 8 })
-      const details = platformCatalog.semanticDetails([operation.operationId])
-      const modelTools = platformCatalog.modelTools([operation.operationId])
+      const search = adminCatalog.search({ query: operation.operationId, pageSize: 8 })
+      const details = adminCatalog.semanticDetails([operation.operationId])
+      const modelTools = adminCatalog.modelTools([operation.operationId])
 
       expect(search.items[0]?.operationId, operation.operationId).toBe(operation.operationId)
       expect(details.missingOperationIds, operation.operationId).toEqual([])
@@ -216,157 +159,63 @@ describe("real PlatformCatalog retrieval", () => {
     }
   })
 
-  it("exposes writes only when they declare authoritative verification", () => {
-    for (const operation of platformCatalog.all()) {
-      const effect = operation.effect ?? (operation.method === "GET" ? "read" : "write")
+  it("exposes writes only when they declare same-snapshot authoritative L0 verification", () => {
+    for (const operation of adminCatalog.all()) {
+      const effect = operation.effect ?? "read"
       if (effect !== "write" && effect !== "async") continue
-      const discoverable = platformCatalog.discoverableOperations().some(item => item.operationId === operation.operationId)
-      expect(Boolean(operation.verification?.length), operation.operationId).toBe(discoverable)
+      expect(Boolean(operation.verification?.length), operation.operationId).toBe(true)
+      for (const rule of operation.verification ?? []) {
+        const verifyOp = adminCatalog.get(rule.operationId)
+        expect(verifyOp.approvalTier, `${operation.operationId} -> ${rule.operationId}`).toBe("L0")
+        if (!operation.adminOnly) {
+          expect(verifyOp.adminOnly ?? false, `tenant tool ${operation.operationId} references adminOnly ${rule.operationId}`).toBe(false)
+        }
+      }
     }
-
-    expect(platformCatalog.get("createProject").verification).toContainEqual(expect.objectContaining({
-      operationId: "getProject",
-      family: "resource",
-    }))
-    expect(platformCatalog.get("createProjectVolume").verification).toContainEqual(expect.objectContaining({
-      operationId: "getProjectVolume",
-      family: "resource",
-      statusField: "lifecycleState",
-    }))
-    expect(platformCatalog.get("updateMyNotificationPreferences").verification).toContainEqual(expect.objectContaining({
-      operationId: "getMyNotificationPreferences",
-      singleton: true,
-    }))
-    expect(platformCatalog.get("updateProjectRuntimeConfigSetRuntimeSecrets").verification).toContainEqual(expect.objectContaining({
-      operationId: "getProjectRuntimeConfigSetRuntimeSecretsSummary",
-      family: "runtime_config_secrets",
-    }))
-    expect(platformCatalog.get("deleteRuntimeClusterResource").verification).toContainEqual(expect.objectContaining({
-      operationId: "getRuntimeClusterResourceYAML",
-      expect: "absent",
-    }))
-    expect(platformCatalog.modelTools(["getProjectRuntimeConfigSetRuntimeSecretsSummary"])).toEqual([])
-    expect(platformCatalog.modelTools(["testMyNotificationChannel"])).toHaveLength(1)
   })
 
   it("is deterministic and returns no fabricated match", () => {
-    const first = platformCatalog.search({ query: "查看项目空间详情", pageSize: 20 })
-    const second = platformCatalog.search({ query: "查看项目空间详情", pageSize: 20 })
+    const first = tenantCatalog.search({ query: "查看项目空间详情", pageSize: 20 })
+    const second = tenantCatalog.search({ query: "查看项目空间详情", pageSize: 20 })
     expect(second).toEqual(first)
-    expect(platformCatalog.search({ query: "zzqxwvplm" }))
+    expect(tenantCatalog.search({ query: "zzqxwvplm" }))
       .toMatchObject({ items: [], total: 0, totalPages: 0 })
   })
 
-  it("uses real OpenAPI summary instead of template Chinese fallback when purpose.zh is omitted", () => {
-    const topologyCreate = platformCatalog.get("createProjectTopologyEdge")
-    expect(topologyCreate.purpose.zh).toBe("")
-    const [modelTool] = platformCatalog.modelTools(["createProjectTopologyEdge"])
-    expect(modelTool?.description).toContain(topologyCreate.summary)
-    expect(modelTool?.description).not.toContain("对应的平台能力")
-  })
-
-  it("validates merged allOf TopologyEdgeInput and conditional if/then NotificationRuleFilter schemas", () => {
-    const createEdge = platformCatalog.get("createProjectTopologyEdge")
-    const validEdge = {
-      projectId: "prj_1",
-      body: {
-        sourceApplicationId: "app_web",
-        targetApplicationId: "app_db",
-        relationType: "depends_on",
-      },
-    }
-    expect(validateArguments(createEdge.inputSchema, validEdge)).toEqual(validEdge)
-    expect(() => validateArguments(createEdge.inputSchema, {
-      projectId: "prj_1",
-      body: {
-        sourceApplicationId: "app_web",
-        relationType: "depends_on",
-      },
-    })).toThrow("ai.tool_arguments_invalid")
-    expect(() => validateArguments(createEdge.inputSchema, {
-      ...validEdge,
-      body: { ...validEdge.body, undeclaredField: true },
-    })).toThrow("ai.tool_arguments_invalid")
-
-    const createRule = platformCatalog.get("createNotificationRule")
-    const validScopedRule = {
-      body: {
-        name: "构建失败提醒",
-        eventTypes: ["build.failed"],
-        channelIds: ["nch_1"],
-        filter: {
-          scope: "projects",
-          projectIds: ["prj_1"],
-          severities: ["warning"],
-        },
-      },
-    }
-    expect(validateArguments(createRule.inputSchema, validScopedRule)).toEqual(validScopedRule)
-    expect(() => validateArguments(createRule.inputSchema, {
-      body: {
-        ...validScopedRule.body,
-        filter: { scope: "projects", severities: ["warning"] },
-      },
-    })).toThrow("ai.tool_arguments_invalid")
-    expect(() => validateArguments(createRule.inputSchema, {
-      body: {
-        ...validScopedRule.body,
-        filter: { scope: "all", projectIds: ["prj_1"] },
-      },
-    })).toThrow("ai.tool_arguments_invalid")
-  })
-
-  it("discovers operations across newly aliased Chinese domain tags", () => {
-    const cases: Array<[string, string]> = [
-      ["创建服务拓扑连线", "Topology"],
-      ["查看数据保留策略", "DataRetention"],
-      ["查看访问令牌列表", "AccessTokens"],
-      ["查看代码仓库列表", "Git"],
-      ["查看平台事件流", "Events"],
-      ["查看运行时配置集", "Configs"],
-      ["搜索应用市场模板", "AppTemplates"],
-      ["查看单点登录身份提供商", "Auth"],
-      ["查看第三方授权 OAuth 应用", "OAuthApplications"],
-      ["查看平台设置", "Settings"],
-      ["查看系统状态", "System"],
-    ]
-    for (const [query, expectedTag] of cases) {
-      const topTags = platformCatalog.search({ query, pageSize: 8 }).items.flatMap(item => item.tags)
-      expect(topTags, query).toContain(expectedTag)
-    }
-  })
-
-  it("keeps every platform operation named by a Skill available in the real catalog", () => {
+  it("keeps every platform facade operation named by a Skill available in the real catalog", () => {
     const known = new Set([
-      ...platformCatalog.all().map(operation => operation.operationId),
+      ...adminCatalog.all().map(operation => operation.operationId),
       searchToolsTool.operationId,
       getToolDetailsTool.operationId,
       loadSkillTool.operationId,
       navigateToRouteTool.operationId,
       renameConversationTool.operationId,
+      waitForTaskTool.operationId,
       ...businessCardTools.map(tool => tool.operationId),
       ...[searchDocsTool, listDocsTool, readDocTool].map(tool => tool.operationId),
     ])
-    const operationLike = /^(?:get|list|create|update|delete|preview|retry|install|trigger|check|test|read|fetch|search|rotate|revoke|unbind|pin|unpin|rollback|cancel|cleanup|export|import|resolve|set|start|complete|authorize|reconfigure)[A-Z_]/
+    const facadeOperationPattern = /^(?:delivery|build|runtime|network|workspace|ops|admin)_[a-z0-9]+_[a-z0-9_]+$/
     const missing = skillMarkdownFiles(new URL("../skills", import.meta.url).pathname)
-      .flatMap(file => [...readFileSync(file, "utf8").matchAll(/`([A-Za-z][A-Za-z0-9_]+)`/g)].map(match => match[1]!))
-      .filter((operationId, index, values) => operationLike.test(operationId) && !known.has(operationId) && values.indexOf(operationId) === index)
+      .flatMap(file => [...readFileSync(file, "utf8").matchAll(/`([a-z][a-z0-9_]+)`/g)].map(match => match[1]!))
+      .filter((operationId, index, values) =>
+        facadeOperationPattern.test(operationId)
+        && !operationId.endsWith("_*")
+        && !known.has(operationId)
+        && values.indexOf(operationId) === index,
+      )
     expect(missing).toEqual([])
   })
 
-  it("retrieves getProjectDiagnostics and getDeploymentTargetDiagnostics as L0 auto read tools in Chinese diagnostic queries", () => {
-    const projectDiag = platformCatalog.get("getProjectDiagnostics")
-    const targetDiag = platformCatalog.get("getDeploymentTargetDiagnostics")
+  it("retrieves runtime_get_target_diagnostics and workspace_get_project as L0 auto read tools in Chinese diagnostic queries", () => {
+    const projectDiag = tenantCatalog.get("workspace_get_project")
+    const targetDiag = tenantCatalog.get("runtime_get_target_diagnostics")
     expect(projectDiag.approvalTier).toBe("L0")
     expect(projectDiag.requiresApproval).toBe(false)
     expect(targetDiag.approvalTier).toBe("L0")
     expect(targetDiag.requiresApproval).toBe(false)
 
-    const projectHits = platformCatalog.search({ query: "排查项目异常失败构建与发布", pageSize: 5 })
-    expect(projectHits.items.map(item => item.operationId)).toContain("getProjectDiagnostics")
-
-    const targetHits = platformCatalog.search({ query: "查看部署诊断快照排查服务为什么挂了", pageSize: 5 })
-    expect(targetHits.items.map(item => item.operationId)).toContain("getDeploymentTargetDiagnostics")
+    const targetHits = tenantCatalog.search({ query: "查看部署诊断快照排查服务为什么挂了", pageSize: 5 })
+    expect(targetHits.items.map(item => item.operationId)).toContain("runtime_get_target_diagnostics")
   })
 })
 

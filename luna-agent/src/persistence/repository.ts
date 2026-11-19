@@ -178,6 +178,7 @@ export interface Repository {
   listActiveConversationRuns(ownerUserId: string, conversationId: string): Promise<Run[]>
   deleteConversation(ownerUserId: string, conversationId: string): Promise<boolean>
   assertPositiveAvailableBalance(ownerUserId: string): Promise<void>
+  resolveLiveActorRole?(userId: string, sessionId?: string): Promise<string | undefined>
   createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn>
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   assertRunningRunVersion(runId: string, expectedRunVersion: number): Promise<void>

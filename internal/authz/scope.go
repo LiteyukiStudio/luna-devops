@@ -107,6 +107,16 @@ func AccessTokenScopeCatalog(userRole string) []AccessTokenScopeDefinition {
 	return output
 }
 
+func SupportedOAuthScopes() []string {
+	output := make([]string, 0, len(scopeCatalog))
+	for _, definition := range scopeCatalog {
+		if allowedOAuthScopes[definition.Value] {
+			output = append(output, definition.Value)
+		}
+	}
+	return output
+}
+
 func scopeDef(action Action, group string, recommended, creatableByUser, oauthAuthorizableByUser bool) scopeDefinition {
 	return scopeDefinition{
 		AccessTokenScopeDefinition: AccessTokenScopeDefinition{

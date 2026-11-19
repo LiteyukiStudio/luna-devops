@@ -72,7 +72,8 @@ function visit(value: unknown, seen: WeakSet<object>, inSecretContainer = false)
   if (typeof value === "string") {
     const redacted = value
       .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
-      .replace(/(sk-[A-Za-z0-9_-]{8})[A-Za-z0-9_-]+/g, "$1…[REDACTED]")
+      .replace(/(?<![A-Za-z0-9_-])(sk-[A-Za-z0-9_-]{8})[A-Za-z0-9_-]+/g, "$1…[REDACTED]")
+      .replace(/(?<![A-Za-z0-9_-])(ly[do]_[A-Za-z0-9_-]{8})[A-Za-z0-9_-]+/g, "$1…[REDACTED]")
       .replace(sensitiveAssignment, "$1$2[REDACTED]")
     return redactUrlCredentials(redacted)
       .replace(privateKeyBlock, "[REDACTED PRIVATE KEY]")

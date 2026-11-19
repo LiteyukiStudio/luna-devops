@@ -1,8 +1,7 @@
 import type { ClusterResource, RuntimeCluster } from '@/api'
 import { lazy } from 'react'
 import { useTranslation } from 'react-i18next'
-import { apiBaseOrigin, runtimeClusterPodTerminalUrl } from '@/api'
-import { CliCommandSnippet } from '@/components/common/cli-command-snippet'
+import { runtimeClusterPodTerminalUrl } from '@/api'
 import { RuntimeWebConsoleDialog } from '@/components/common/runtime-web-console-dialog'
 
 const RuntimeTerminalPanel = lazy(() =>
@@ -34,18 +33,6 @@ export function ClusterResourceWebConsoleDialog({
       open={Boolean(cluster && pod)}
       resourceKey={podKey}
       resourceLabel={podLabel}
-      toolbar={({ container }) => cluster?.id && pod?.namespace && pod?.name && (
-        <CliCommandSnippet
-          spec={{
-            command: 'cluster.pod-terminal',
-            server: apiBaseOrigin(),
-            clusterId: cluster.id,
-            namespace: pod.namespace,
-            name: pod.name,
-            container,
-          }}
-        />
-      )}
       title={t('clustersPage.webConsole')}
       onOpenChange={onOpenChange}
     >

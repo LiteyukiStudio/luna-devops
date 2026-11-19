@@ -9,6 +9,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/repository"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // authorizeProject is the only request-level project RBAC entry point. It
@@ -42,6 +43,38 @@ func (h *Handler) authorizeProjectByID(ctx *gin.Context, projectID string, actio
 	defer func() { ctx.Params = originalParams }()
 	user, project, ok := h.authorizeProject(ctx, action)
 	return user, project, ok
+}
+
+// authorizeProjectRef resolves a project by primary key ID or unique identifier
+// (`deleted_at IS NULL`) and delegates RBAC enforcement to authorizeProjectByID.
+func (h *Handler) authorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return model.User{}, model.Project{}, false
+	}
+	var project model.Project
+	err := h.dbFor(ctx).
+		Where("(id = ? OR identifier = ?) AND deleted_at IS NULL", projectRef, projectRef).
+		Order(gorm.Expr("CASE WHEN id = ? THEN 0 ELSE 1 END", projectRef)).
+		First(&project).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "project not found")
+		return model.User{}, model.Project{}, false
+	}
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "project.lookup_unavailable", "project storage is unavailable")
+		return model.User{}, model.Project{}, false
+	}
+	subject := authz.ProjectSubject{UserID: user.ID, PlatformRole: user.Role}
+	access, authErr := h.projectAuthorizer(ctx.Request.Context()).AuthorizeProject(ctx.Request.Context(), subject, project.ID, action)
+	if authErr != nil {
+		writeProjectAuthorizationError(ctx, authErr)
+		return model.User{}, model.Project{}, false
+	}
+	if access.Role != "" {
+		ctx.Set(currentProjectRoleContextKey, access.Role)
+	}
+	return user, project, true
 }
 
 func (h *Handler) projectActionAllowed(ctx context.Context, subject authz.ProjectSubject, projectID string, action authz.Action) (bool, error) {

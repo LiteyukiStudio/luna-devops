@@ -15,7 +15,11 @@ import (
 
 type Host interface {
 	DBWithContext(ctx context.Context) *gorm.DB
+	CurrentUser(ctx *gin.Context) (model.User, bool)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
+	ApplyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string, ctx context.Context) *gorm.DB
 	ProjectMemberActionAllowed(ctx *gin.Context, projectID, userID string, action authz.Action) (bool, bool)
 	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
 	ProjectAuthorizer(ctx context.Context) authz.ProjectAuthorizer
@@ -71,6 +75,18 @@ func (h *Handler) dbWithContext(ctx context.Context) *gorm.DB {
 
 func (h *Handler) authorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool) {
 	return h.host.AuthorizeProject(ctx, action)
+}
+
+func (h *Handler) authorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectByID(ctx, projectID, action)
+}
+
+func (h *Handler) authorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool) {
+	return h.host.AuthorizeProjectRef(ctx, projectRef, action)
+}
+
+func (h *Handler) applyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string, ctx context.Context) *gorm.DB {
+	return h.host.ApplyScopedResourceVisibilityForProject(query, resourceType, user, projectID, ctx)
 }
 
 func (h *Handler) projectMemberActionAllowed(ctx *gin.Context, projectID, userID string, action authz.Action) (bool, bool) {

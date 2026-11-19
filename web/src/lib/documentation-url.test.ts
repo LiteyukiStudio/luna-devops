@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cliDocumentationUrl, documentationHomeUrl } from './documentation-url'
+import { documentationHomeUrl, mcpDocumentationUrl } from './documentation-url'
 
 describe('documentationHomeUrl', () => {
   it('routes Chinese languages to Chinese documentation root', () => {
@@ -14,15 +14,15 @@ describe('documentationHomeUrl', () => {
   })
 })
 
-describe('cliDocumentationUrl', () => {
-  it('routes Chinese languages to Chinese CLI docs', () => {
-    expect(cliDocumentationUrl('zh-CN')).toBe('https://luna-devops.liteyuki.org/use/cli')
-    expect(cliDocumentationUrl('zh-TW')).toBe('https://luna-devops.liteyuki.org/use/cli')
+describe('mcpDocumentationUrl', () => {
+  it('routes Chinese languages to Chinese MCP docs', () => {
+    expect(mcpDocumentationUrl('zh-CN')).toBe('https://luna-devops.liteyuki.org/use/mcp')
+    expect(mcpDocumentationUrl('zh-TW')).toBe('https://luna-devops.liteyuki.org/use/mcp')
   })
 
-  it('routes other supported languages to English CLI docs', () => {
-    expect(cliDocumentationUrl('en-US')).toBe('https://luna-devops.liteyuki.org/en/use/cli')
-    expect(cliDocumentationUrl('ja-JP')).toBe('https://luna-devops.liteyuki.org/en/use/cli')
-    expect(cliDocumentationUrl('ko-KR')).toBe('https://luna-devops.liteyuki.org/en/use/cli')
+  it('routes other supported languages to English MCP docs', () => {
+    expect(mcpDocumentationUrl('en-US')).toBe('https://luna-devops.liteyuki.org/en/use/mcp')
+    expect(mcpDocumentationUrl('ja-JP')).toBe('https://luna-devops.liteyuki.org/en/use/mcp')
+    expect(mcpDocumentationUrl('ko-KR')).toBe('https://luna-devops.liteyuki.org/en/use/mcp')
   })
 })

@@ -24,6 +24,13 @@ func TestBearerProtectedOpenAPIOperationsDeclareKnownScopes(t *testing.T) {
 			}
 			checked++
 			operationID, _ := operation["operationId"].(string)
+			if path == "/api/v1/mcp" {
+				mcpExt, _ := operation["x-luna-mcp"].(map[string]any)
+				if perTool, _ := mcpExt["perToolScopeEnforcement"].(bool); !perTool {
+					t.Errorf("%s %s (%s) must declare x-luna-mcp.perToolScopeEnforcement=true", strings.ToUpper(method), path, operationID)
+				}
+				continue
+			}
 			cli, _ := operation["x-luna-cli"].(map[string]any)
 			scopes, _ := schemaStringList(cli["requiredScopes"])
 			if len(scopes) == 0 {

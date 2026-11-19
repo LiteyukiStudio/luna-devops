@@ -11,8 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const MinimumCLIVersion = minimumCLIVersion
-
 type APIMetaResponse = apiMetaResponse
 type DataRetentionRequest = dataRetentionRequest
 type DataRetentionRange = dataRetentionRange

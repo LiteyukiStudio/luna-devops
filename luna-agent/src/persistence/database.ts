@@ -67,13 +67,15 @@ export class AgentDatabase {
   async readiness(): Promise<{ database: boolean, schema: boolean }> {
     try {
       const result = await this.pool.query<{ schema_ready: boolean }>(`
-		select count(*) = 11 as schema_ready
+		select count(*) = 13 as schema_ready
         from information_schema.columns
         where table_schema = 'ai'
 		  and (table_name, column_name) in (
 			('tool_calls', 'input_mode'),
 			('tool_calls', 'arguments_ciphertext'),
 			('tool_calls', 'approval_decision'),
+			('tool_calls', 'preview_lock'),
+			('tool_calls', 'approval_preview'),
 			('conversation_tool_approvals', 'operation_id'),
 			('runs', 'actor_session_id'),
 			('runs', 'execution_snapshot_ciphertext'),
@@ -95,13 +97,15 @@ export class AgentDatabase {
     let result
     try {
       result = await this.pool.query<{ schema_ready: boolean }>(`
-        select count(*) = 11 as schema_ready
+        select count(*) = 13 as schema_ready
         from information_schema.columns
         where table_schema = 'ai'
           and (table_name, column_name) in (
             ('tool_calls', 'input_mode'),
             ('tool_calls', 'arguments_ciphertext'),
             ('tool_calls', 'approval_decision'),
+            ('tool_calls', 'preview_lock'),
+            ('tool_calls', 'approval_preview'),
             ('conversation_tool_approvals', 'operation_id'),
             ('runs', 'actor_session_id'),
             ('runs', 'execution_snapshot_ciphertext'),

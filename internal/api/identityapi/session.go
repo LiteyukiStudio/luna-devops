@@ -157,6 +157,37 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 	return user, true
 }
 
+func (h *Handlers) authenticateMCPBearerToken(ctx *gin.Context) (model.User, model.AccessToken, bool) {
+	header := strings.TrimSpace(ctx.GetHeader("Authorization"))
+	if len(header) <= len("Bearer ") || !strings.EqualFold(header[:len("Bearer ")], "bearer ") {
+		return model.User{}, model.AccessToken{}, false
+	}
+	plainToken := strings.TrimSpace(header[len("Bearer "):])
+	if plainToken == "" {
+		return model.User{}, model.AccessToken{}, false
+	}
+	now := time.Now()
+	var token model.AccessToken
+	err := h.dbFor(ctx).First(
+		&token,
+		"token_hash = ? and source in ? and revoked_at is null and (expires_at is null or expires_at > ?)",
+		hashToken(plainToken),
+		[]string{model.AccessTokenSourcePersonal, model.AccessTokenSourceOAuth},
+		now,
+	).Error
+	if err != nil {
+		return model.User{}, model.AccessToken{}, false
+	}
+	var user model.User
+	if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", token.UserID, false).Error; err != nil {
+		return model.User{}, model.AccessToken{}, false
+	}
+	_ = h.dbFor(ctx).Model(&model.AccessToken{}).Where("id = ?", token.ID).Update("last_used_at", now).Error
+	ctx.Set(currentAccessTokenContextKey, token)
+	ctx.Set(currentUserContextKey, user)
+	return user, token, true
+}
+
 func currentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {
 	value, exists := ctx.Get(currentAccessTokenContextKey)
 	if !exists {

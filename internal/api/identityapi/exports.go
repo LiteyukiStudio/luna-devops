@@ -14,13 +14,10 @@ import (
 
 const DevelopmentRateLimit = developmentRateLimit
 const DefaultAdmissionPolicyID = defaultAdmissionPolicyID
-const LunaCLIApplicationID = lunaCLIApplicationID
 const CurrentUserContextKey = currentUserContextKey
 const CurrentAccessTokenContextKey = currentAccessTokenContextKey
 const AuthRegistrationSettingsID = authRegistrationSettingsID
 const SessionDuration = sessionDuration
-const LunaCLIClientID = lunaCLIClientID
-const OAuthDeviceCodeGrantType = oauthDeviceCodeGrantType
 const OAuthCredentialRateLimit = oauthCredentialRateLimit
 const OAuthIPRateLimit = oauthIPRateLimit
 const OAuthRateLimitWindow = oauthRateLimitWindow
@@ -28,8 +25,6 @@ const OAuthRateLimitWindow = oauthRateLimitWindow
 type OAuthClientAttemptFlow = oauthClientAttemptFlow
 
 const (
-	OAuthClientAttemptDeviceStart       = oauthClientAttemptDeviceStart
-	OAuthClientAttemptDeviceCode        = oauthClientAttemptDeviceCode
 	OAuthClientAttemptAuthorizationCode = oauthClientAttemptAuthorizationCode
 	OAuthClientAttemptRefresh           = oauthClientAttemptRefresh
 	OAuthClientAttemptRevoke            = oauthClientAttemptRevoke
@@ -44,7 +39,6 @@ type PlatformMailSendFunc = platformMailSendFunc
 type AuthProviderInput = authProviderInput
 type AuthProviderOutput = authProviderOutput
 type OAuthApplicationInput = oauthApplicationInput
-type OAuthDeviceAuthorizationInput = oauthDeviceAuthorizationInput
 type OAuthTokenInput = oauthTokenInput
 type OAuthTokenRevocationInput = oauthTokenRevocationInput
 type OAuthApplicationResponse = oauthApplicationResponse
@@ -54,11 +48,8 @@ type OAuthAuthorizationRequest = oauthAuthorizationRequest
 type OAuthAuthorizationDecisionInput = oauthAuthorizationDecisionInput
 type OAuthAuthorizationDecisionResponse = oauthAuthorizationDecisionResponse
 type OAuthAuthorizationServerMetadataResponse = oauthAuthorizationServerMetadataResponse
+type OAuthProtectedResourceMetadataResponse = oauthProtectedResourceMetadataResponse
 type OAuthProtocolErrorResponse = oauthProtocolErrorResponse
-type OAuthDeviceAuthorizationResponse = oauthDeviceAuthorizationResponse
-type OAuthDeviceVerificationResponse = oauthDeviceVerificationResponse
-type OAuthDeviceVerificationInput = oauthDeviceVerificationInput
-type OAuthDeviceVerificationResult = oauthDeviceVerificationResult
 
 type OAuthClientAuthentication struct {
 	ApplicationID    string
@@ -153,8 +144,8 @@ func (h *Handler) AllowLoginAccountAttempt(ctx *gin.Context, account string, lim
 	return h.allowLoginAccountAttempt(ctx, account, limit, window)
 }
 
-func (h *Handler) AllowOAuthClientAttempt(ctx *gin.Context, clientID string) bool {
-	return h.allowOAuthClientAttempt(ctx, clientID)
+func (h *Handler) AuthenticateMCPBearerToken(ctx *gin.Context) (model.User, model.AccessToken, bool) {
+	return h.authenticateMCPBearerToken(ctx)
 }
 
 func OAuthClientAttemptFlowForGrantType(grantType string) OAuthClientAttemptFlow {
@@ -163,10 +154,6 @@ func OAuthClientAttemptFlowForGrantType(grantType string) OAuthClientAttemptFlow
 
 func (h *Handler) AllowOAuthTokenClientAttempt(ctx *gin.Context, clientID string, flow OAuthClientAttemptFlow, credential string) bool {
 	return h.allowOAuthTokenClientAttempt(ctx, clientID, flow, credential)
-}
-
-func (h *Handler) AllowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID string) bool {
-	return h.allowOAuthDeviceVerificationAttempt(ctx, userID)
 }
 
 func ConfigBool(value string) bool { return configBool(value) }

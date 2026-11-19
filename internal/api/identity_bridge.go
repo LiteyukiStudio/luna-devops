@@ -16,13 +16,10 @@ import (
 
 const developmentRateLimit = identityapi.DevelopmentRateLimit
 const defaultAdmissionPolicyID = identityapi.DefaultAdmissionPolicyID
-const lunaCLIApplicationID = identityapi.LunaCLIApplicationID
 const currentUserContextKey = identityapi.CurrentUserContextKey
 const currentAccessTokenContextKey = identityapi.CurrentAccessTokenContextKey
 const authRegistrationSettingsID = identityapi.AuthRegistrationSettingsID
 const sessionDuration = identityapi.SessionDuration
-const lunaCLIClientID = identityapi.LunaCLIClientID
-const oauthDeviceCodeGrantType = identityapi.OAuthDeviceCodeGrantType
 const oauthCredentialRateLimit = identityapi.OAuthCredentialRateLimit
 const oauthIPRateLimit = identityapi.OAuthIPRateLimit
 const oauthRateLimitWindow = identityapi.OAuthRateLimitWindow
@@ -30,8 +27,6 @@ const oauthRateLimitWindow = identityapi.OAuthRateLimitWindow
 type oauthClientAttemptFlow = identityapi.OAuthClientAttemptFlow
 
 const (
-	oauthClientAttemptDeviceStart       = identityapi.OAuthClientAttemptDeviceStart
-	oauthClientAttemptDeviceCode        = identityapi.OAuthClientAttemptDeviceCode
 	oauthClientAttemptAuthorizationCode = identityapi.OAuthClientAttemptAuthorizationCode
 	oauthClientAttemptRefresh           = identityapi.OAuthClientAttemptRefresh
 	oauthClientAttemptRevoke            = identityapi.OAuthClientAttemptRevoke
@@ -46,7 +41,6 @@ type platformMailSendFunc = identityapi.PlatformMailSendFunc
 type authProviderInput = identityapi.AuthProviderInput
 type authProviderOutput = identityapi.AuthProviderOutput
 type oauthApplicationInput = identityapi.OAuthApplicationInput
-type oauthDeviceAuthorizationInput = identityapi.OAuthDeviceAuthorizationInput
 type oauthTokenInput = identityapi.OAuthTokenInput
 type oauthTokenRevocationInput = identityapi.OAuthTokenRevocationInput
 type oauthApplicationResponse = identityapi.OAuthApplicationResponse
@@ -56,11 +50,8 @@ type oauthAuthorizationRequest = identityapi.OAuthAuthorizationRequest
 type oauthAuthorizationDecisionInput = identityapi.OAuthAuthorizationDecisionInput
 type oauthAuthorizationDecisionResponse = identityapi.OAuthAuthorizationDecisionResponse
 type oauthAuthorizationServerMetadataResponse = identityapi.OAuthAuthorizationServerMetadataResponse
+type oauthProtectedResourceMetadataResponse = identityapi.OAuthProtectedResourceMetadataResponse
 type oauthProtocolErrorResponse = identityapi.OAuthProtocolErrorResponse
-type oauthDeviceAuthorizationResponse = identityapi.OAuthDeviceAuthorizationResponse
-type oauthDeviceVerificationResponse = identityapi.OAuthDeviceVerificationResponse
-type oauthDeviceVerificationInput = identityapi.OAuthDeviceVerificationInput
-type oauthDeviceVerificationResult = identityapi.OAuthDeviceVerificationResult
 
 type oauthClientAuthentication struct {
 	applicationID    string
@@ -201,20 +192,12 @@ func (h *Handlers) allowLoginAccountAttempt(ctx *gin.Context, account string, li
 	return h.domains.identity.AllowLoginAccountAttempt(ctx, account, limit, window)
 }
 
-func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bool {
-	return h.domains.identity.AllowOAuthClientAttempt(ctx, clientID)
-}
-
 func oauthClientAttemptFlowForGrantType(grantType string) oauthClientAttemptFlow {
 	return identityapi.OAuthClientAttemptFlowForGrantType(grantType)
 }
 
 func (h *Handlers) allowOAuthTokenClientAttempt(ctx *gin.Context, clientID string, flow oauthClientAttemptFlow, credential string) bool {
 	return h.domains.identity.AllowOAuthTokenClientAttempt(ctx, clientID, flow, credential)
-}
-
-func (h *Handlers) allowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID string) bool {
-	return h.domains.identity.AllowOAuthDeviceVerificationAttempt(ctx, userID)
 }
 
 func (h *Handlers) ensureAdmissionPolicy(ctx context.Context) (model.AuthAdmissionPolicy, error) {

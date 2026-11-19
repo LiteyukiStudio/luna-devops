@@ -1,5 +1,5 @@
 import type { AIToolVisibility } from '@luna-devops/ai-interaction-card-contract'
-import type { AIContextUsage, AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
+import type { AIApprovalPreview, AIContextUsage, AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
 import { z } from 'zod'
 
 export type AIBlock
@@ -7,7 +7,7 @@ export type AIBlock
     | { id: string, turnId: string, runId?: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled' | 'interrupted', errorCode?: string }
     | { id: string, turnId: string, runId?: string, index: number, type: 'context_compacted', status: string }
-    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, approvalTier?: 'L0' | 'L1' | 'L2', approvalRememberable?: boolean, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string }
+    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, approvalTier?: 'L0' | 'L1' | 'L2', approvalRememberable?: boolean, approvalPreview?: AIApprovalPreview, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string }
 
 export interface AIRunUsage {
   /** 只有 reported 状态允许参与上下文比例展示。 */
@@ -508,6 +508,7 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
     status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : item.status === 'failed' ? 'failed' : 'running'),
     approvalTier: item.toolCall.approvalTier,
     approvalRememberable: item.toolCall.approvalRememberable,
+    approvalPreview: item.toolCall.approvalPreview,
     arguments: item.toolCall.arguments ?? {},
     result: item.toolCall.result,
     uiActions: item.toolCall.uiActions ?? [],

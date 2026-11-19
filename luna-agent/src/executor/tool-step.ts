@@ -2,7 +2,7 @@ import { bundledDocsKnowledge, type DocsKnowledge } from "../knowledge/docs-know
 import { listDocsInput, readDocInput, searchDocsInput, type ListDocsInput, type ReadDocInput, type SearchDocsInput } from "../tools/docs-tools.js"
 import type { InteractionCardValidationIssue } from "@luna-devops/ai-interaction-card-contract"
 import type { ClaimedRun, RunCheckpoint, RunPendingToolCall, RunWaitingTaskState } from "../domain.js"
-import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
+import { genAIToolCallObject, genAIToolSpanAttributes, redactToolArgumentsForOperation } from "../genai-semconv.js"
 import type { ConversationPromptContext, ModelRuntime } from "../model-runtime.js"
 import type { Repository } from "../persistence/repository.js"
 import type { ModelMessage, ModelToolCall, ModelToolDetailsResult, ModelToolSearchResult } from "../provider/provider.js"
@@ -116,12 +116,13 @@ export class ToolStepRunner {
     executionInput: RunExecutionInput,
     checkpoint: RunCheckpoint | undefined,
   ): Promise<ToolStepState> {
-    const executedOperationIds = reconstructedExecutedOperationIds(executionInput.toolInteractions)
+    const rawExecuted = reconstructedExecutedOperationIds(executionInput.toolInteractions)
+    const executedOperationIds = new Set(await this.tools.filterCallableOperationIds(run.id, rawExecuted))
     const selectedOperationIds = checkpoint
-      ? [...run.selectedOperationIds]
+      ? await this.tools.filterCallableOperationIds(run.id, run.selectedOperationIds)
       : (await this.repository.touchRunSelectedOperations(
           run.id,
-          reconstructSelectedOperationIds(executionInput.toolInteractions),
+          await this.tools.filterCallableOperationIds(run.id, reconstructSelectedOperationIds(executionInput.toolInteractions)),
           selectedOperationLimit,
           executedOperationIds,
         )).selectedOperationIds
@@ -155,7 +156,10 @@ export class ToolStepRunner {
     const commitCallResult = (toolCall: ModelToolCall & { id: string }, resultPayload: Record<string, unknown>) => {
       assistantMessage.toolCalls ??= []
       if (!assistantMessage.toolCalls.some(existing => existing.id === toolCall.id)) {
-        assistantMessage.toolCalls.push(toolCall)
+        assistantMessage.toolCalls.push({
+          ...toolCall,
+          arguments: redactToolArgumentsForOperation(toolCall.operationId, toolCall.arguments),
+        })
       }
       const nextToolMessage = this.toolResult(toolCall, resultPayload)
       const existingIndex = state.continuationMessages.findIndex(
@@ -917,7 +921,7 @@ export class ToolStepRunner {
         ...(resolvedBatchId ? { batchId: resolvedBatchId } : {}),
         operationId: call.operationId,
         status: call.status,
-        arguments: call.arguments,
+        arguments: redactToolArgumentsForOperation(call.operationId, call.arguments),
         result: call.result,
         errorCode: call.errorCode,
       })
@@ -937,7 +941,11 @@ export class ToolStepRunner {
       const outcome = await this.tools.outcome(call.id)
       const effectiveCallId = resolvedModelCallId ?? call.id
       if (settledToolCallIds.has(effectiveCallId) || settledToolCallIds.has(call.id)) continue
-      const toolCall = { id: effectiveCallId, operationId: call.operationId, arguments: call.arguments }
+      const toolCall = {
+        id: effectiveCallId,
+        operationId: call.operationId,
+        arguments: redactToolArgumentsForOperation(call.operationId, call.arguments),
+      }
       const reasoning = reasoningByCallItem.get(itemId)
       state.continuationMessages.push({ role: "assistant", content: "", toolCalls: [toolCall], ...(reasoning ? { reasoning } : {}) })
       state.continuationMessages.push(this.toolResult(toolCall, {

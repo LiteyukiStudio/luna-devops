@@ -9,7 +9,7 @@ import i18next from '@/i18n'
 import { ApplicationWebConsolePanel } from './application-web-console-panel'
 
 vi.mock('@/components/common/runtime-terminal-panel', () => ({
-  RuntimeTerminalPanel: ({ pod }: { pod?: string }) => <div>{`Terminal ${pod || 'auto'}`}</div>,
+  RuntimeTerminalPanel: ({ container, pod }: { container?: string, pod?: string }) => <div>{`Terminal ${pod || 'auto'} ${container || 'default'}`}</div>,
 }))
 
 vi.mock('@/api', async (importOriginal) => {
@@ -55,7 +55,7 @@ describe('application web console panel', () => {
     })
   })
 
-  it('tracks the selected container in the CLI command and toggles fullscreen', async () => {
+  it('tracks the selected container and replica and toggles fullscreen', async () => {
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <TooltipProvider>
@@ -64,19 +64,15 @@ describe('application web console panel', () => {
       </QueryClientProvider>,
     )
 
-    expect(await screen.findByText('Terminal auto')).toBeInTheDocument()
-
-    const command = screen.getByRole('group', { name: 'CLI command' })
-    expect(command).toHaveTextContent(`luna deployment exec server=${window.location.origin} projectId=prj_123 applicationId=app_456 targetId=dplt_789`)
+    expect(await screen.findByText('Terminal auto default')).toBeInTheDocument()
 
     const containerSelect = await screen.findByRole('combobox', { name: 'Container' })
     await userEvent.selectOptions(containerSelect, 'worker')
-    expect(command).toHaveTextContent(`luna deployment exec server=${window.location.origin} projectId=prj_123 applicationId=app_456 targetId=dplt_789 container=worker`)
+    expect(await screen.findByText('Terminal auto worker')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Replica' }))
     await userEvent.click(await screen.findByRole('button', { name: /api-7f9c-b.*Not ready.*Restarts: 4.*Other release/ }))
-    expect(await screen.findByText('Terminal api-7f9c-b')).toBeInTheDocument()
-    expect(command).toHaveTextContent(`targetId=dplt_789 pod=api-7f9c-b container=worker`)
+    expect(await screen.findByText('Terminal api-7f9c-b worker')).toBeInTheDocument()
     expect(api.listDeploymentTargetRuntimePods).toHaveBeenCalledWith('prj_123', 'app_456', 'dplt_789', { releaseId: 'rel_123', search: '' }, expect.any(AbortSignal))
 
     fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }))

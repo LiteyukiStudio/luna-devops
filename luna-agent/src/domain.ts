@@ -9,12 +9,31 @@ export type RunStatus = typeof runStatuses[number]
 export type ActorContext = {
   userId: string
   sessionId: string
+  platformRole?: string
   projectId?: string
   locale: string
   issuedAt: number
   expiresAt: number
   requestId: string
   runId?: string
+}
+
+export type ApprovalPreviewChange = {
+  field: string
+  before?: unknown
+  after?: unknown
+  action?: string
+}
+
+export type ApprovalPreview = {
+  summary: string
+  targetResource?: string
+  targetId?: string
+  projectId?: string
+  changes?: ApprovalPreviewChange[]
+  sensitiveKeys?: string[]
+  impact?: string[]
+  warnings?: string[]
 }
 
 export type ConversationTitleSource = "default" | "assistant" | "user"
@@ -157,7 +176,8 @@ export type RunCheckpoint = {
 export type RunPendingToolCall = {
   id: string
   operationId: string
-  arguments: Record<string, unknown>
+  arguments?: Record<string, unknown>
+  argumentsCiphertext?: string
   argumentError?: {
     code: "invalid_json"
     message: string
@@ -235,7 +255,7 @@ export type RunToolVerification = {
   sourceToolCallId: string
   sourceOperationId: string
   operationId: string
-  family: "build_run" | "release" | "gateway_route" | "application" | "deployment_target" | "runtime_secrets" | "runtime_config_secrets" | "project_order" | "billing_rate_rules" | "resource"
+  family: "build_run" | "release" | "gateway_route" | "application" | "deployment_target" | "project_order" | "billing_rate_rules" | "resource"
   expectation: "present" | "absent" | "canceled"
   arguments: Record<string, unknown>
   externalOperationId: string
@@ -246,6 +266,7 @@ export type RunToolVerification = {
   resource?: {
     singleton: boolean
     collection: boolean
+    collectionPath?: string
     targetField: string
     statusField?: string
     pendingStatuses?: string[]

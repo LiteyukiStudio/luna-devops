@@ -19,13 +19,6 @@ const common = {
   copy: 'Copy',
   copied: 'Copied',
   copyFailed: 'Copy failed',
-  cliCommand: {
-    label: 'CLI command',
-    copy: 'Copy CLI command',
-    copied: 'CLI command copied',
-    docs: 'View CLI documentation',
-    docsTip: 'Run in your local terminal; open the Luna CLI documentation',
-  },
   viewer: {
     fullscreen: 'Fullscreen',
     exitFullscreen: 'Exit fullscreen',

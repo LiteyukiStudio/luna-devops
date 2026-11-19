@@ -1,5 +1,6 @@
+import type { ApprovalPreview } from "../domain.js"
 import { hashCanonicalJSON } from "../canonical-json.js"
-import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
+import { genAIToolCallObject, genAIToolSpanAttributes, redactToolArgumentsForOperation } from "../genai-semconv.js"
 import { createId } from "../id.js"
 import { redact, redactSensitivePaths } from "../redaction.js"
 import { agentMetrics, errorDiagnostic, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
@@ -34,6 +35,8 @@ export type ToolCallRecord = {
   approvalDecision?: RecordedApprovalDecision
   approvalTier?: ToolApprovalTier
   approvalRememberable?: boolean
+  previewLock?: string
+  approvalPreview?: ApprovalPreview
   inputMode?: "model" | "direct" | "verification"
   result?: unknown
   errorCode?: string
@@ -160,7 +163,7 @@ export class ToolOrchestrator {
         operationId: record.operationId,
         approvalTier: effectiveTier,
         approvalRememberable: effectiveTier === "L1",
-        parameterSummary: redact(record.arguments),
+        parameterSummary: redactToolArgumentsForOperation(record.operationId, record.arguments, operation.sensitivePaths),
         ...(record.modelCallId ? { modelCallId: record.modelCallId } : {}),
         ...(record.batchId ? { batchId: record.batchId } : {}),
       },
@@ -180,6 +183,24 @@ export class ToolOrchestrator {
     catch {
       return false
     }
+  }
+
+  async filterCallableOperationIds(runId: string, operationIds: Iterable<string>): Promise<string[]> {
+    const catalog = await this.catalogForRun(runId)
+    const allowed: string[] = []
+    for (const operationId of operationIds) {
+      try {
+        const operation = catalog.get(operationId)
+        if (operation.verificationOnly) continue
+        const effect = toolEffect(operation)
+        if ((effect === "write" || effect === "async") && !operation.verification?.length) continue
+        allowed.push(operationId)
+      }
+      catch {
+        // Operation does not exist in this Run's role-scoped catalog; prune it.
+      }
+    }
+    return allowed
   }
 
   async isReadOrDiscoveryOperation(runId: string, operationId: string): Promise<boolean> {
@@ -247,15 +268,13 @@ export class ToolOrchestrator {
       const sessionRemembered = effectiveTier === "L1"
         ? (await this.store.hasRememberedApproval?.(input.runId, input.operationId)) === true
         : false
-      const decision = this.policy.evaluate(operation, { explicitApproved: false, sessionRemembered }, args)
-      const requiresApproval = decision.action === "wait_approval"
       const id = createId("aitool")
       const record: ToolCallRecord = {
         id,
         idempotencyKey,
         runId: input.runId,
         operationId: input.operationId,
-        status: requiresApproval ? "awaiting_approval" : "proposed",
+        status: "proposed",
         arguments: args,
         argumentsHash,
         attempt: 1,
@@ -275,22 +294,9 @@ export class ToolOrchestrator {
           operationId: record.operationId,
           approvalTier: effectiveTier,
           approvalRememberable: effectiveTier === "L1",
-          parameterSummary: redact(record.arguments),
+          parameterSummary: redactToolArgumentsForOperation(record.operationId, record.arguments, operation.sensitivePaths),
         },
       })
-      if (requiresApproval) {
-        await this.store.emit({
-          type: "approval.required",
-          toolCallId: record.id,
-          data: redact({
-            status: "awaiting_approval",
-            operationId: record.operationId,
-            approvalTier: decision.tier,
-            approvalRememberable: decision.rememberable,
-            parameterSummary: redact(record.arguments),
-          }),
-        })
-      }
       return record
     }
     finally {
@@ -559,13 +565,17 @@ export class ToolOrchestrator {
         approvalTier: decision.tier,
         approvalRememberable: decision.tier === "L1",
       }
-      if (decision.action === "wait_approval")
+      if (decision.action === "wait_approval") {
+        if (decision.tier === "L2" && this.client.preview) {
+          return this.previewAndAwaitApproval(enrichedCall, operation, execution.signal)
+        }
         return this.transition(enrichedCall, "awaiting_approval", {}, "approval.required", {
           operationId: call.operationId,
           approvalTier: decision.tier,
           approvalRememberable: decision.rememberable,
-          parameterSummary: redact(call.arguments),
+          parameterSummary: redactToolArgumentsForOperation(call.operationId, call.arguments, operation.sensitivePaths),
         })
+      }
       const approvalGranted = typeof grant === "boolean"
         ? grant
         : Boolean(grant.explicitApproved || grant.sessionRemembered)
@@ -609,6 +619,7 @@ export class ToolOrchestrator {
             idempotencyKey: call.idempotencyKey,
             operation,
             arguments: call.arguments,
+            ...(call.previewLock ? { previewLock: call.previewLock } : {}),
             signal,
           })
         }
@@ -725,8 +736,12 @@ export class ToolOrchestrator {
     const code = extractCode(result.body)
     const storedResult = redact(withRequestId(result.body, result.requestId))
     if (result.status === 428 && code === "ai.approval_required") {
+      const escalated: ToolCallRecord = { ...call, approvalTier: "L2", approvalRememberable: false }
+      if (this.client.preview) {
+        return this.previewAndAwaitApproval(escalated, operation, undefined, true)
+      }
       return this.transition(
-        { ...call, approvalTier: "L2", approvalRememberable: false },
+        escalated,
         "awaiting_approval",
         { approvalTier: "L2", approvalRememberable: false, clearApprovalDecision: true },
         "approval.required",
@@ -734,7 +749,7 @@ export class ToolOrchestrator {
           operationId: call.operationId,
           approvalTier: "L2",
           approvalRememberable: false,
-          parameterSummary: redact(call.arguments),
+          parameterSummary: redactToolArgumentsForOperation(call.operationId, call.arguments, operation.sensitivePaths),
         },
       )
     }
@@ -759,6 +774,88 @@ export class ToolOrchestrator {
 
   private fail(call: ToolCallRecord, errorCode: string, storedResult: unknown, diagnostics: { durationMs: number, traceId: string }): Promise<ToolCallRecord> {
     return this.transition(call, "failed", { errorCode, result: storedResult }, "tool_call.failed", diagnostics)
+  }
+
+  private async previewAndAwaitApproval(
+    call: ToolCallRecord,
+    operation: ReturnType<ToolCatalog["get"]>,
+    signal?: AbortSignal,
+    clearApprovalDecision = false,
+  ): Promise<ToolCallRecord> {
+    const startedAt = performance.now()
+    let previewRes: ToolExecutionResult
+    try {
+      signal?.throwIfAborted()
+      previewRes = await this.client.preview!({
+        runId: call.runId,
+        toolCallId: call.id,
+        operation,
+        arguments: call.arguments,
+        ...(signal ? { signal } : {}),
+      })
+    }
+    catch (error) {
+      if (error instanceof RunStateConflictError) throw error
+      if (signal?.aborted) throw error
+      const errorCode = stableErrorCode(error)
+      return this.fail(call, errorCode, { code: errorCode, retryable: true }, {
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        traceId: "",
+      })
+    }
+
+    const code = extractCode(previewRes.body)
+    const storedResult = redact(withRequestId(previewRes.body, previewRes.requestId))
+    if (previewRes.status < 200 || previewRes.status >= 300) {
+      const errorStoredResult = storedResult && typeof storedResult === "object" && !Array.isArray(storedResult)
+        ? { ...(storedResult as Record<string, unknown>), httpStatus: previewRes.status }
+        : { ...(storedResult === undefined ? {} : { body: storedResult }), httpStatus: previewRes.status }
+      const fallbackCode = previewRes.status === 401 || previewRes.status === 403 ? "ai.tool_forbidden" : "ai.tool_preview_failed"
+      const failed = await this.fail(call, code ?? fallbackCode, errorStoredResult, {
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        traceId: "",
+      })
+      if (isExplicitlyNonRetryable(previewRes.body)) {
+        this.loopGuard.blockNonRetryable({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
+      }
+      return failed
+    }
+
+    const bodyRecord = previewRes.body && typeof previewRes.body === "object" && !Array.isArray(previewRes.body)
+      ? previewRes.body as Record<string, unknown>
+      : {}
+    const previewLock = typeof bodyRecord.previewLock === "string" && bodyRecord.previewLock.trim()
+      ? bodyRecord.previewLock.trim()
+      : undefined
+    const rawPreview = bodyRecord.approvalPreview && typeof bodyRecord.approvalPreview === "object" && !Array.isArray(bodyRecord.approvalPreview)
+      ? redact(bodyRecord.approvalPreview as ApprovalPreview)
+      : undefined
+
+    return this.transition(
+      {
+        ...call,
+        approvalTier: "L2",
+        approvalRememberable: false,
+        ...(previewLock ? { previewLock } : {}),
+        ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+      },
+      "awaiting_approval",
+      {
+        approvalTier: "L2",
+        approvalRememberable: false,
+        ...(clearApprovalDecision ? { clearApprovalDecision: true } : {}),
+        ...(previewLock ? { previewLock } : {}),
+        ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+      },
+      "approval.required",
+      {
+        operationId: call.operationId,
+        approvalTier: "L2",
+        approvalRememberable: false,
+        parameterSummary: redactToolArgumentsForOperation(call.operationId, call.arguments, operation.sensitivePaths),
+        ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+      },
+    )
   }
 
   private async rejectInvalidArguments(
@@ -1026,8 +1123,9 @@ function toolCallContent(call: ToolCallRecord) {
     ...(call.approvalDecision ? { approvalDecision: call.approvalDecision } : {}),
     ...(call.approvalTier ? { approvalTier: call.approvalTier } : {}),
     ...(call.approvalRememberable !== undefined ? { approvalRememberable: call.approvalRememberable } : {}),
+    ...(call.approvalPreview ? { approvalPreview: redact(call.approvalPreview) } : {}),
     ...(call.verificationForToolCallId ? { verificationForToolCallId: call.verificationForToolCallId } : {}),
-    arguments: call.arguments,
+    arguments: redactToolArgumentsForOperation(call.operationId, call.arguments),
     result: call.result,
     errorCode: call.errorCode,
   }

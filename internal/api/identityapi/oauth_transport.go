@@ -16,10 +16,6 @@ type oauthApplicationInput struct {
 	AccessTokenLifetimeDays int      `json:"accessTokenLifetimeDays"`
 }
 
-type oauthDeviceAuthorizationInput struct {
-	ClientID string `form:"client_id" binding:"required"`
-}
-
 type oauthTokenInput struct {
 	GrantType    string `form:"grant_type" binding:"required"`
 	ClientID     string `form:"client_id"`
@@ -28,7 +24,6 @@ type oauthTokenInput struct {
 	CodeVerifier string `form:"code_verifier" binding:"required_if=GrantType authorization_code"`
 	RedirectURI  string `form:"redirect_uri" binding:"required_if=GrantType authorization_code"`
 	RefreshToken string `form:"refresh_token" binding:"required_if=GrantType refresh_token"`
-	DeviceCode   string `form:"device_code" binding:"required_if=GrantType urn:ietf:params:oauth:grant-type:device_code"`
 }
 
 type oauthTokenRevocationInput struct {
@@ -91,13 +86,21 @@ type oauthAuthorizationDecisionResponse struct {
 type oauthAuthorizationServerMetadataResponse struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
-	DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
 	RevocationEndpoint                string   `json:"revocation_endpoint"`
+	ScopesSupported                   []string `json:"scopes_supported,omitempty"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	GrantTypesSupported               []string `json:"grant_types_supported"`
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
+}
+
+type oauthProtectedResourceMetadataResponse struct {
+	Resource               string   `json:"resource"`
+	AuthorizationServers   []string `json:"authorization_servers"`
+	BearerMethodsSupported []string `json:"bearer_methods_supported"`
+	ScopesSupported        []string `json:"scopes_supported,omitempty"`
+	ResourceDocumentation  string   `json:"resource_documentation,omitempty"`
 }
 
 type oauthTokenResponse struct {
@@ -114,38 +117,10 @@ type oauthProtocolErrorResponse struct {
 	RequestID   string `json:"requestId"`
 }
 
-type oauthDeviceAuthorizationResponse struct {
-	DeviceCode              string `json:"device_code"`
-	UserCode                string `json:"user_code"`
-	VerificationURI         string `json:"verification_uri"`
-	VerificationURIComplete string `json:"verification_uri_complete"`
-	ExpiresIn               int64  `json:"expires_in"`
-	Interval                int    `json:"interval"`
-}
-
-type oauthDeviceVerificationResponse struct {
-	Application oauthApplicationResponse `json:"application"`
-	UserCode    string                   `json:"userCode"`
-	ExpiresAt   time.Time                `json:"expiresAt"`
-}
-
-type oauthDeviceVerificationInput struct {
-	Approved bool   `json:"approved"`
-	UserCode string `json:"userCode" binding:"required"`
-}
-
-type oauthDeviceVerificationResult struct {
-	Status string `json:"status"`
-}
-
 func oauthApplicationToResponse(application model.OAuthApplication) oauthApplicationResponse {
 	redirectURIs := decodeStringList(application.RedirectURIs)
 	if redirectURIs == nil {
 		redirectURIs = []string{}
-	}
-	allowedScopes := application.AllowedScopes
-	if isLunaCLIApplication(application) {
-		allowedScopes = ""
 	}
 	return oauthApplicationResponse{
 		ID:                      application.ID,
@@ -156,7 +131,7 @@ func oauthApplicationToResponse(application model.OAuthApplication) oauthApplica
 		LogoURL:                 application.LogoURL,
 		ClientID:                application.ClientID,
 		RedirectURIs:            redirectURIs,
-		AllowedScopes:           allowedScopes,
+		AllowedScopes:           application.AllowedScopes,
 		AccessTokenLifetimeDays: application.AccessTokenLifetimeDays,
 		RevokedAt:               application.RevokedAt,
 		CreatedAt:               application.CreatedAt,

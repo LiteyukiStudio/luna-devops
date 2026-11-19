@@ -23,7 +23,6 @@ const InboxPage = lazyTranslated(() => import('./pages/inbox/InboxPage'), 'Inbox
 const RegisterPage = lazyTranslated(() => import('./pages/login/RegisterPage'), 'RegisterPage', ['usersPage'])
 const NotificationsPage = lazyTranslated(() => import('./pages/settings/notifications/NotificationsPage'), 'NotificationsPage', ['notificationsPage', 'settings', 'eventsPage', 'projectSpaces'])
 const OAuthAuthorizePage = lazyNamed(() => import('./pages/oauth/OAuthAuthorizePage'), 'OAuthAuthorizePage')
-const OAuthDevicePage = lazyNamed(() => import('./pages/oauth/OAuthDevicePage'), 'OAuthDevicePage')
 const OperationsDashboardPage = lazyTranslated(() => import('./pages/settings/operations/OperationsDashboardPage'), 'OperationsDashboardPage', ['operationsDashboardPage', 'settings'])
 const ProjectsPage = lazyTranslated(() => import('./pages/projects/overview/ProjectsPage'), 'ProjectsPage', ['projectSpaces'])
 const ProjectWorkspacePage = lazyTranslated(() => import('./pages/projects/overview/ProjectWorkspacePage'), 'ProjectWorkspacePage', ['projectSpaces', 'apps', 'buildsPage', 'runtimeConfigSets', 'projectHooks', 'projectMembers', 'projectVolumes', 'projectTopology', 'deploymentsPage', 'gatewayRoutesPage', 'billingPage', 'eventsPage', 'runtimeConfigFilesEditor', 'notificationsPage'])
@@ -42,7 +41,6 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />
-          <Route path="/oauth/device" element={<OAuthDevicePage />} />
           {AIInteractionCardGallery && <Route path="/__dev/ai-interaction-cards" element={<AIInteractionCardGallery />} />}
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />

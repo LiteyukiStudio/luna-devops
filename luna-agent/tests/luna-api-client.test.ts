@@ -1,50 +1,88 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ToolCatalog, type ToolOperation } from "../src/tools/catalog.js"
-import { buildToolRequest, HttpLunaApiToolClient, UnknownToolOutcomeError } from "../src/tools/luna-api-client.js"
+import { HttpLunaApiToolClient } from "../src/tools/luna-api-client.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+function toolOperation(overrides: Partial<ToolOperation> & { operationId: string }): ToolOperation {
+  const { operationId, ...rest } = overrides
+  return ToolCatalog.load([testToolOperation(operationId, rest)]).get(operationId)
+}
+
 describe("Luna API tool client", () => {
-  it("calls the real catalog route with path parameters, JSON body, and durable execution identity", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify({ accepted: true }), { status: 201 }))
+  it("dispatches tool execution via unified POST /internal/v1/ai/tools/execute with preview lock", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(JSON.stringify({ accepted: true, projectId: "prj_1" }), { status: 200 }),
+    )
     vi.stubGlobal("fetch", fetchMock)
     const operation = toolOperation({
-      operationId: "installAppTemplate",
-      method: "POST",
-      path: "/api/v1/projects/{projectId}/app-templates/{templateId}/install",
-      parameters: [
-        { inputName: "projectId", wireName: "projectId", in: "path", required: true },
-        { inputName: "templateId", wireName: "templateId", in: "path", required: true },
-      ],
-      requestBody: true,
+      operationId: "delivery_install_template",
+      approvalTier: "L2",
       requiresApproval: true,
     })
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
-      idempotencyKey: "aitool_1",
+      idempotencyKey: "aiidem_1",
+      previewLock: "ailock_v1.payload.sig",
       operation,
-      arguments: { projectId: "prj_1", templateId: "postgresql", values: { username: "app", password: "generated" } },
+      arguments: { project: "prj_1", template: "postgresql", secretValues: { password: "generated" } },
     })
 
-    expect(result.status).toBe(201)
+    expect(result.status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]!
-    expect(url).toEqual(new URL("http://api:8080/api/v1/projects/prj_1/app-templates/postgresql/install"))
+    expect(url).toEqual(new URL("http://api:8080/internal/v1/ai/tools/execute"))
+    expect(init?.method).toBe("POST")
     expect(init?.headers).toMatchObject({
-      authorization: "Bearer service-token",
+      "authorization": "Bearer service-token",
       "x-luna-ai-run-id": "airun_1",
       "x-luna-ai-tool-call-id": "aitool_1",
-      "idempotency-key": "aitool_1",
+      "idempotency-key": "aiidem_1",
+      "x-luna-ai-preview-lock": "ailock_v1.payload.sig",
+      "content-type": "application/json",
     })
-    if (typeof init?.body !== "string") throw new Error("expected JSON request body")
-    expect(JSON.parse(init.body)).toEqual({ values: { username: "app", password: "generated" } })
+    expect(JSON.parse(typeof init?.body === "string" ? init.body : "")).toEqual({
+      toolName: "delivery_install_template",
+      arguments: { project: "prj_1", template: "postgresql", secretValues: { password: "generated" } },
+    })
   })
 
-  it("maps query parameters and retries transient failures only for idempotent operations", async () => {
+  it("dispatches L2 pre-approval preview via POST /internal/v1/ai/tools/preview", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        approvalPreview: { summary: "Install PostgreSQL" },
+        previewLock: "ailock_v1.test.sig",
+      }), { status: 200 }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const operation = toolOperation({
+      operationId: "delivery_install_template",
+      approvalTier: "L2",
+      requiresApproval: true,
+    })
+    const result = await new HttpLunaApiToolClient("http://api:8080", "service-token").preview({
+      runId: "airun_1",
+      toolCallId: "aitool_1",
+      operation,
+      arguments: { project: "prj_1", template: "postgresql" },
+    })
+
+    expect(result.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toEqual(new URL("http://api:8080/internal/v1/ai/tools/preview"))
+    expect(init?.method).toBe("POST")
+    expect(JSON.parse(typeof init?.body === "string" ? init.body : "")).toEqual({
+      toolName: "delivery_install_template",
+      arguments: { project: "prj_1", template: "postgresql" },
+    })
+  })
+
+  it("retries transient failures only for idempotent operations", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response("busy", { status: 503, headers: { "retry-after": "0" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] }), { status: 200 }))
@@ -54,16 +92,13 @@ describe("Luna API tool client", () => {
       toolCallId: "aitool_1",
       idempotencyKey: "aitool_1",
       operation: toolOperation({
-        operationId: "listProjects",
-        method: "GET",
-        path: "/api/v1/projects",
-        parameters: [{ inputName: "page", wireName: "page", in: "query", required: false }],
+        operationId: "workspace_list_projects",
+        idempotent: true,
       }),
       arguments: { page: 2 },
     })
     expect(result.status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock.mock.calls[0]?.[0]).toEqual(new URL("http://api:8080/api/v1/projects?page=2"))
   })
 
   it("does not retry a non-idempotent write with an unknown outcome", async () => {
@@ -73,25 +108,11 @@ describe("Luna API tool client", () => {
       runId: "airun_1",
       toolCallId: "aitool_1",
       idempotencyKey: "aitool_1",
-      operation: toolOperation({ operationId: "createThing", method: "POST", path: "/api/v1/things", requestBody: true, idempotent: false }),
+      operation: toolOperation({ operationId: "delivery_create_application", idempotent: false }),
       arguments: { name: "thing" },
     })
     expect(result.status).toBe(503)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
-
-  it("returns no result for a successful no-content response", async () => {
-    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 204 })))
-
-    const result = await new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
-      runId: "airun_1",
-      toolCallId: "aitool_1",
-      idempotencyKey: "aitool_1",
-      operation: toolOperation({ operationId: "deleteThing", method: "DELETE", path: "/api/v1/things/{thingId}", parameters: [{ inputName: "thingId", wireName: "thingId", in: "path", required: true }] }),
-      arguments: { thingId: "thing_1" },
-    })
-
-    expect(result).toMatchObject({ status: 204, body: undefined })
   })
 
   it("marks a successful response with an invalid JSON body as an unknown outcome", async () => {
@@ -101,7 +122,7 @@ describe("Luna API tool client", () => {
       runId: "airun_1",
       toolCallId: "aitool_1",
       idempotencyKey: "aitool_1",
-      operation: toolOperation({ operationId: "getThing", method: "GET", path: "/api/v1/things" }),
+      operation: toolOperation({ operationId: "workspace_get_project", idempotent: false }),
       arguments: {},
     })).rejects.toMatchObject({
       name: "UnknownToolOutcomeError",
@@ -116,45 +137,11 @@ describe("Luna API tool client", () => {
       runId: "airun_1",
       toolCallId: "aitool_1",
       idempotencyKey: "aitool_1",
-      operation: toolOperation({ operationId: "triggerThing", method: "POST", path: "/api/v1/things", requestBody: true, idempotent: false }),
-      arguments: { name: "thing" },
-    })).rejects.toBeInstanceOf(UnknownToolOutcomeError)
-  })
-
-  it("unwraps the OpenAPI request body envelope before calling the platform route", () => {
-    const operation = toolOperation({ operationId: "webSearch", method: "POST", path: "/api/v1/ai-tools/web-search", requestBody: true })
-
-    const request = buildToolRequest(operation, { body: { query: "Luna DevOps", limit: 5 } }, "http://api:8080")
-
-    expect(request.url).toEqual(new URL("http://api:8080/api/v1/ai-tools/web-search"))
-    expect(request.body).toEqual({ query: "Luna DevOps", limit: 5 })
-  })
-
-  it("allows the version precondition header required by mutating platform routes", () => {
-    const operation = toolOperation({
-      parameters: [{ inputName: "revision", wireName: "If-Match", in: "header", required: true }],
+      operation: toolOperation({ operationId: "build_trigger_run", idempotent: false }),
+      arguments: { project: "prj_1" },
+    })).rejects.toMatchObject({
+      name: "UnknownToolOutcomeError",
+      message: "ai.tool_outcome_unknown",
     })
-
-    expect(buildToolRequest(operation, { revision: 7 }, "http://api:8080"))
-      .toMatchObject({ headers: { "if-match": "7" } })
-  })
-
-  it("rejects arbitrary catalog-defined headers so identity cannot cross from model arguments", () => {
-    const operation = toolOperation({
-      parameters: [{ inputName: "tenant", wireName: "X-Tenant", in: "header", required: true }],
-    })
-
-    expect(() => buildToolRequest(operation, { tenant: "untrusted" }, "http://api:8080"))
-      .toThrow("ai.tool_catalog_invalid")
   })
 })
-
-function toolOperation(overrides: Partial<ToolOperation>): ToolOperation {
-  return ToolCatalog.load([{
-    ...testToolOperation("getThing"),
-    name: "测试工具",
-    summary: "测试真实平台路由调用。",
-    path: "/api/v1/things",
-    ...overrides,
-  }]).all()[0]!
-}

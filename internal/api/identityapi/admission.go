@@ -230,7 +230,7 @@ func (h *Handler) auditWithSafeMetadata(userID, action, resource string, success
 func auditResourceType(action string) string {
 	prefix, _, _ := strings.Cut(strings.TrimSpace(action), ".")
 	switch prefix {
-	case "ai", "application", "artifact_registry", "auth", "billing", "build", "build_variable", "deployment", "deployment_bundle", "deployment_volume", "gateway", "git_account", "git_provider", "git_repository", "git_webhook", "oidc", "project", "registry", "release", "runtime_cluster", "runtime_config", "secret", "user", "volume":
+	case "access_token", "ai", "application", "artifact_registry", "auth", "billing", "build", "build_environment", "build_variable", "config", "data_retention", "deployment", "deployment_bundle", "deployment_volume", "external_identity", "gateway", "git_account", "git_provider", "git_repository", "git_webhook", "mail", "notification", "oauth_application", "oauth_grant", "oidc", "platform_app_template", "project", "registry", "release", "runtime_cluster", "runtime_config", "secret", "system_component", "user", "volume":
 		return prefix
 	default:
 		return "unknown"
