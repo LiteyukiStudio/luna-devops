@@ -22,6 +22,17 @@ import (
 
 func TestMCPStreamableHTTPEndToEnd(t *testing.T) {
 	db := authIntegrationDB(t)
+	if err := db.AutoMigrate(
+		&model.ProjectPin{},
+		&model.Application{},
+		&model.DeploymentTarget{},
+		&model.RuntimeCluster{},
+		&model.NetworkEgressException{},
+		&model.NetworkEgressExceptionGrant{},
+		&model.NetworkServiceShare{},
+	); err != nil {
+		t.Fatalf("migrate MCP integration tables: %v", err)
+	}
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("PUBLIC_BASE_URL", "https://devops.example.com")
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mcp-integration-secret-key-32bytes")
@@ -196,7 +207,7 @@ func TestMCPStreamableHTTPEndToEnd(t *testing.T) {
 		ClientID:                "claude-code-mcp",
 		ClientSecretHash:        transportapi.HashToken(clientSecret),
 		RedirectURIs:            encodeStringList([]string{redirectURI}),
-		AllowedScopes:           "project:read,project:write",
+		AllowedScopes:           "project:read,project:write,project:manage",
 		AccessTokenLifetimeDays: 7,
 	}
 	if err := db.Create(&oauthApp).Error; err != nil {
@@ -208,7 +219,7 @@ func TestMCPStreamableHTTPEndToEnd(t *testing.T) {
 		Approved:            true,
 		ClientID:            oauthApp.ClientID,
 		RedirectURI:         redirectURI,
-		Scope:               "project:read,project:write",
+		Scope:               "project:read,project:write,project:manage",
 		CodeChallenge:       base64.RawURLEncoding.EncodeToString(sum[:]),
 		CodeChallengeMethod: "S256",
 	})
@@ -286,8 +297,6 @@ func TestMCPStreamableHTTPEndToEnd(t *testing.T) {
 	}
 
 	// Cross-token reuse of previewLock (using OAuth token with writePAT's lock) MUST fail!
-	// (First grant project:manage to OAuth grant so it reaches lock verification)
-	_ = db.Model(&model.AccessToken{}).Where("token_hash = ?", transportapi.HashToken(oauthTokens.AccessToken)).Update("scope", "project:read,project:write,project:manage").Error
 	crossTokenRec := callMCP(oauthTokens.AccessToken, `{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"execute_tool","arguments":{"toolName":"workspace_configure_network_policy","arguments":{"project":"alpha-svc","ingressMode":"dependencies"},"previewLock":"`+lock+`"}}}`)
 	if !strings.Contains(crossTokenRec.Body.String(), "ai.preview_lock_mismatch") {
 		t.Fatalf("expected cross-token previewLock rejection, got %s", crossTokenRec.Body.String())

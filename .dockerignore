@@ -40,9 +40,10 @@ coverage/
 
 # API/worker images do not need project documentation, reports, charts, or tests.
 Doc/
-# 只有 Agent 镜像需要公开文档原文（构建时打包为检索知识库）
+# API（MCP 内嵌公开文档检索）与 Agent 镜像需要公开文档原文与 Go embed 入口
 docs/*
 !docs/docs
+!docs/embed.go
 notes/
 charts/
 tests/

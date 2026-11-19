@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 137
+	latestMigrationVersion   = 138
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -300,7 +300,36 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 131, "notification_rules", "channel_targets_json")
 	assertSingleColumnMigration(t, testDB, runner, 131, "runtime_alert_incidents", "incident_kind")
 	assertSingleColumnMigration(t, testDB, runner, 132, "platform_app_templates", "spec_json")
+	assertOAuthDeviceAndLunaCLIRemovalMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
+}
+
+func assertOAuthDeviceAndLunaCLIRemovalMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	const removalVersion = 138
+	if err := runner.Migrate(removalVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("apply OAuth device and Luna CLI removal migration: %v", err)
+	}
+	if db.Migrator().HasTable("oauth_device_authorizations") {
+		t.Fatal("OAuth device removal retained oauth_device_authorizations")
+	}
+	if err := runner.Migrate(previousMigrationVersion(t, removalVersion)); err != nil {
+		t.Fatalf("roll back OAuth device and Luna CLI removal migration: %v", err)
+	}
+	if !db.Migrator().HasTable("oauth_device_authorizations") {
+		t.Fatal("OAuth device removal rollback did not restore oauth_device_authorizations")
+	}
+	var restoredCLIApp int64
+	if err := db.Table("oauth_applications").Where("id = ?", "oapp_luna_cli").Count(&restoredCLIApp).Error; err != nil {
+		t.Fatalf("count restored oapp_luna_cli: %v", err)
+	}
+	if restoredCLIApp != 1 {
+		t.Fatalf("restored oapp_luna_cli count = %d, want 1", restoredCLIApp)
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after OAuth device round trip: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 }
 
 func assertConcurrencyPolicyRemovalMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
@@ -530,7 +559,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			t.Fatalf("fresh database is missing table %s", table)
 		}
 	}
-	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions", "ai.model_credit_holds", "kube_access_bindings"} {
+	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions", "ai.model_credit_holds", "kube_access_bindings", "oauth_device_authorizations"} {
 		if db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database still contains retired table %s", table)
 		}
@@ -837,8 +866,8 @@ func assertBaselineSeedData(t *testing.T, db *gorm.DB) {
 	if err := db.Table("oauth_applications").Count(&oauthApplicationCount).Error; err != nil {
 		t.Fatalf("count built-in OAuth applications: %v", err)
 	}
-	if oauthApplicationCount != 1 {
-		t.Fatalf("built-in OAuth application count = %d, want 1", oauthApplicationCount)
+	if oauthApplicationCount != 0 {
+		t.Fatalf("built-in OAuth application count = %d, want 0", oauthApplicationCount)
 	}
 	var cliAppCount int64
 	if err := db.Table("oauth_applications").Where("id = ?", "oapp_luna_cli").Count(&cliAppCount).Error; err != nil {

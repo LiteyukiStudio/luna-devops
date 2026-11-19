@@ -521,7 +521,7 @@ func requiresCSRForiginCheck(ctx *gin.Context) bool {
 		return false
 	}
 	path := ctx.Request.URL.Path
-	if strings.HasPrefix(path, "/api/v1/git/webhooks/") {
+	if path == "/api/v1/mcp" || strings.HasPrefix(path, "/api/v1/git/webhooks/") {
 		return false
 	}
 	return true

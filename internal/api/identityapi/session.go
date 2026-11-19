@@ -182,7 +182,6 @@ func (h *Handlers) authenticateMCPBearerToken(ctx *gin.Context) (model.User, mod
 	if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", token.UserID, false).Error; err != nil {
 		return model.User{}, model.AccessToken{}, false
 	}
-	_ = h.dbFor(ctx).Model(&model.AccessToken{}).Where("id = ?", token.ID).Update("last_used_at", now).Error
 	ctx.Set(currentAccessTokenContextKey, token)
 	ctx.Set(currentUserContextKey, user)
 	return user, token, true
