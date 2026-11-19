@@ -38,7 +38,10 @@ type Host interface {
 	MonitorContinuousAuthorization(ctx context.Context, binding projectapi.ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool, revoke func()) (<-chan struct{}, bool)
 	ProjectContinuousAuthorizationAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) bool
 	RegistryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string, ctx context.Context) (model.RegistryCredential, bool)
+	SecretAvailable() bool
 	StoreSecret(ctx context.Context, value, userID, resource string) string
+	StoreSecretWithDB(ctx context.Context, db *gorm.DB, value, userID, resource string) (string, error)
+	DeleteSecretRefWithDB(ctx context.Context, db *gorm.DB, ref, resource string) error
 	ResolveSecret(ctx context.Context, ref string) string
 	BuildQueueAvailable() bool
 	EnqueueBuildRun(ctx context.Context, payload tasks.BuildRunPayload) error
@@ -138,8 +141,20 @@ func (h *Handler) registryPushCredentialForProject(user model.User, registry mod
 	return h.host.RegistryPushCredentialForProject(user, registry, projectID, ctx)
 }
 
+func (h *Handler) secretAvailable() bool {
+	return h.host.SecretAvailable()
+}
+
 func (h *Handler) storeSecret(ctx context.Context, value, userID, resource string) string {
 	return h.host.StoreSecret(ctx, value, userID, resource)
+}
+
+func (h *Handler) storeSecretWithDB(ctx context.Context, db *gorm.DB, value, userID, resource string) (string, error) {
+	return h.host.StoreSecretWithDB(ctx, db, value, userID, resource)
+}
+
+func (h *Handler) deleteSecretRefWithDB(ctx context.Context, db *gorm.DB, ref, resource string) error {
+	return h.host.DeleteSecretRefWithDB(ctx, db, ref, resource)
 }
 
 func (h *Handler) resolveSecret(ctx context.Context, ref string) string {

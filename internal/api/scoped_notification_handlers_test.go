@@ -367,3 +367,153 @@ func TestProjectSMTPRecipientOverrideRuleAndManualDeliveryRetry(t *testing.T) {
 		t.Fatalf("unexpected retried delivery payload: %#v", retried)
 	}
 }
+
+func TestNotificationChannelGuardsRuleReferencesOnDeleteScopeChangeAndTemplateCleanup(t *testing.T) {
+	db, handlers, _ := openScopedNotificationTestDB(t, "scoped_notification_guards")
+
+	admin := model.User{ID: "usr_admin", Email: "admin@example.com", Role: authz.PlatformRoleAdmin}
+	owner := model.User{ID: "usr_owner", Email: "owner@example.com", Role: authz.PlatformRoleUser}
+	if err := db.Create(&[]model.User{admin, owner}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&[]model.Project{
+		{ID: "prj_a", Name: "Alpha", Identifier: "alpha"},
+		{ID: "prj_b", Name: "Beta", Identifier: "beta"},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&[]model.ProjectMember{
+		{ID: "pm_a", ProjectID: "prj_a", UserID: owner.ID, Role: authz.ProjectRoleOwner},
+		{ID: "pm_b", ProjectID: "prj_b", UserID: owner.ID, Role: authz.ProjectRoleOwner},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Create shared project channel bound to prj_a and prj_b.
+	createRec, createCtx := newScopedNotificationTestContext(
+		http.MethodPost,
+		"/api/v1/notification-channels",
+		owner,
+		nil,
+		`{"name":"Shared Feishu","scope":"project","projectIds":["prj_a","prj_b"],"presetId":"feishu-bot","secrets":{"WebhookToken":"tok-guard"}}`,
+	)
+	handlers.domains.notification.CreateScopedNotificationChannel(createCtx)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create shared channel = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+	var sharedChannel model.NotificationChannel
+	if err := json.Unmarshal(createRec.Body.Bytes(), &sharedChannel); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create rule in prj_b referencing sharedChannel.
+	ruleRec, ruleCtx := newScopedNotificationTestContext(
+		http.MethodPost,
+		"/api/v1/projects/prj_b/notifications/rules",
+		owner,
+		gin.Params{{Key: "projectId", Value: "prj_b"}},
+		`{"name":"Beta Rule","eventTypes":["release.failed"],"channelIds":["`+sharedChannel.ID+`"]}`,
+	)
+	handlers.domains.notification.CreateProjectNotificationRule(ruleCtx)
+	if ruleRec.Code != http.StatusCreated {
+		t.Fatalf("create project rule = %d, body = %s", ruleRec.Code, ruleRec.Body.String())
+	}
+
+	// Deleting the channel while referenced by Beta Rule returns 409 notification.channel_in_use.
+	delRec, delCtx := newScopedNotificationTestContext(
+		http.MethodDelete,
+		"/api/v1/notification-channels/"+sharedChannel.ID,
+		owner,
+		gin.Params{{Key: "channelId", Value: sharedChannel.ID}},
+		"",
+	)
+	handlers.domains.notification.DeleteScopedNotificationChannel(delCtx)
+	if delRec.Code != http.StatusConflict || !strings.Contains(delRec.Body.String(), "notification.channel_in_use") {
+		t.Fatalf("delete in-use channel = %d, body = %s", delRec.Code, delRec.Body.String())
+	}
+
+	// Narrowing projectIds to remove prj_b via UpdateScopedNotificationChannel is also rejected with 409.
+	narrowRec, narrowCtx := newScopedNotificationTestContext(
+		http.MethodPut,
+		"/api/v1/notification-channels/"+sharedChannel.ID,
+		owner,
+		gin.Params{{Key: "channelId", Value: sharedChannel.ID}},
+		`{"name":"Shared Feishu","scope":"project","projectIds":["prj_a"],"presetId":"feishu-bot"}`,
+	)
+	handlers.domains.notification.UpdateScopedNotificationChannel(narrowCtx)
+	if narrowRec.Code != http.StatusConflict || !strings.Contains(narrowRec.Body.String(), "notification.channel_in_use") {
+		t.Fatalf("narrow projectIds removing referenced project = %d, body = %s", narrowRec.Code, narrowRec.Body.String())
+	}
+
+	// Template validation and delete cleanup on global rules.
+	globalChannel := model.NotificationChannel{
+		ID: "nch_global_guard", Scope: "global", Name: "Global Webhook", AdapterKind: notification.AdapterKindWebhook,
+		ConfigJSON: `{"url":"https://hooks.example.com/notify"}`, SecretRefsJSON: `{}`, Enabled: true,
+	}
+	tmpl := model.NotificationTemplate{
+		ID: "ntp_guard", Name: "Custom Template", EventType: "build.failed", AdapterKind: notification.AdapterKindWebhook, BodyTemplate: "failed", Enabled: true,
+	}
+	if err := db.Create(&globalChannel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	missingTmplRec, missingTmplCtx := newScopedNotificationTestContext(
+		http.MethodPost,
+		"/api/v1/notifications/rules",
+		admin,
+		nil,
+		`{"name":"Bad Template Rule","eventTypes":["build.failed"],"filter":{"scope":"all"},"channelIds":["nch_global_guard"],"templateId":"ntp_missing"}`,
+	)
+	handlers.domains.notification.CreateNotificationRule(missingTmplCtx)
+	if missingTmplRec.Code != http.StatusBadRequest || !strings.Contains(missingTmplRec.Body.String(), "notification.template_not_found") {
+		t.Fatalf("missing template status = %d, body = %s", missingTmplRec.Code, missingTmplRec.Body.String())
+	}
+
+	globalRuleRec, globalRuleCtx := newScopedNotificationTestContext(
+		http.MethodPost,
+		"/api/v1/notifications/rules",
+		admin,
+		nil,
+		`{"name":"Global Rule","eventTypes":["build.failed"],"filter":{"scope":"all"},"channelIds":["nch_global_guard"],"templateId":"ntp_guard"}`,
+	)
+	handlers.domains.notification.CreateNotificationRule(globalRuleCtx)
+	if globalRuleRec.Code != http.StatusCreated {
+		t.Fatalf("create global rule = %d, body = %s", globalRuleRec.Code, globalRuleRec.Body.String())
+	}
+
+	// Legacy admin DeleteNotificationChannel also blocks with 409 when referenced by Global Rule.
+	adminDelChRec, adminDelChCtx := newScopedNotificationTestContext(
+		http.MethodDelete,
+		"/api/v1/notifications/channels/nch_global_guard",
+		admin,
+		gin.Params{{Key: "channelId", Value: "nch_global_guard"}},
+		"",
+	)
+	handlers.domains.notification.DeleteNotificationChannel(adminDelChCtx)
+	if adminDelChRec.Code != http.StatusConflict || !strings.Contains(adminDelChRec.Body.String(), "notification.channel_in_use") {
+		t.Fatalf("legacy delete in-use channel = %d, body = %s", adminDelChRec.Code, adminDelChRec.Body.String())
+	}
+
+	// Deleting the template clears template_id on referencing rules so subsequent rule edits remain valid.
+	delTmplRec, delTmplCtx := newScopedNotificationTestContext(
+		http.MethodDelete,
+		"/api/v1/notifications/templates/ntp_guard",
+		admin,
+		gin.Params{{Key: "templateId", Value: "ntp_guard"}},
+		"",
+	)
+	handlers.domains.notification.DeleteNotificationTemplate(delTmplCtx)
+	if delTmplCtx.Writer.Status() != http.StatusNoContent {
+		t.Fatalf("delete template = %d, body = %s", delTmplCtx.Writer.Status(), delTmplRec.Body.String())
+	}
+	var updatedGlobalRule model.NotificationRule
+	if err := db.First(&updatedGlobalRule, "name = ?", "Global Rule").Error; err != nil {
+		t.Fatal(err)
+	}
+	if updatedGlobalRule.TemplateID != "" {
+		t.Fatalf("rule template_id after template delete = %q, want empty", updatedGlobalRule.TemplateID)
+	}
+}

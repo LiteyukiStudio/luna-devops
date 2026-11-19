@@ -25,6 +25,8 @@ func openApplicationDeleteTestDB(t *testing.T, prefix string) *gorm.DB {
 				&model.Project{}, &model.RuntimeCluster{}, &model.Application{}, &model.DeploymentTarget{},
 				&model.DeploymentVolumeMount{}, &model.ServiceBinding{}, &model.ProjectTopologyEdge{}, &model.NetworkServiceShare{},
 				&model.DeploymentTargetHookBinding{}, &model.GatewayRoute{}, &model.RepositoryBinding{},
+				&model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{},
+				&model.ScopedResourceProjectBinding{}, &model.NotificationChannel{}, &model.NotificationRule{}, &model.SecretValue{},
 			)
 		},
 	})

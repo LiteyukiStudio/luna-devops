@@ -45,6 +45,8 @@ type Host interface {
 	WriteProjectAuthorizationError(ctx *gin.Context, err error)
 	SecretAvailable() bool
 	StoreSecret(ctx context.Context, value, userID, resource string) string
+	StoreSecretWithDB(ctx context.Context, db *gorm.DB, value, userID, resource string) (string, error)
+	DeleteSecretRefWithDB(ctx context.Context, db *gorm.DB, ref, resource string) error
 	ResolveSecret(ctx context.Context, ref string) string
 	EgressPolicyForUser(user model.User, ctx context.Context) security.EgressPolicy
 	AllowRegistrySearch(ctx *gin.Context, userID string) bool
@@ -150,6 +152,14 @@ func (h *Handler) storeSecret(ctx context.Context, value, userID, resource strin
 	return h.host.StoreSecret(ctx, value, userID, resource)
 }
 
+func (h *Handler) storeSecretWithDB(ctx context.Context, db *gorm.DB, value, userID, resource string) (string, error) {
+	return h.host.StoreSecretWithDB(ctx, db, value, userID, resource)
+}
+
+func (h *Handler) deleteSecretRefWithDB(ctx context.Context, db *gorm.DB, ref, resource string) error {
+	return h.host.DeleteSecretRefWithDB(ctx, db, ref, resource)
+}
+
 func (h *Handler) resolveSecret(ctx context.Context, ref string) string {
 	return h.host.ResolveSecret(ctx, ref)
 }
@@ -167,6 +177,9 @@ func writeError(ctx *gin.Context, status int, message string) {
 }
 func writeErrorKey(ctx *gin.Context, status int, message, key string) {
 	transportapi.WriteErrorKey(ctx, status, message, key)
+}
+func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
+	transportapi.WriteErrorCode(ctx, status, code, detail)
 }
 func paginationFromQueryWithSort(ctx *gin.Context, allowedFields map[string]string, defaultField string) paginationParams {
 	return transportapi.PaginationFromQueryWithSort(ctx, allowedFields, defaultField)

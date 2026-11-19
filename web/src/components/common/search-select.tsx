@@ -44,6 +44,7 @@ interface SearchSelectProps extends SearchSelectCommonProps {
 }
 
 interface SearchMultiSelectProps extends SearchSelectCommonProps {
+  pruneUnknownValues?: boolean
   selectedLabel?: (options: SearchSelectOption[]) => string
   value: string[]
   onValueChange: (value: string[]) => void
@@ -141,6 +142,7 @@ export function SearchMultiSelect({
   maxVisible = 50,
   options,
   placeholder,
+  pruneUnknownValues,
   search,
   searchPlaceholder,
   selectedLabel,
@@ -156,6 +158,7 @@ export function SearchMultiSelect({
   const selectedValues = useMemo(() => new Set(value), [value])
   const selectedOptions = useMemo(() => options.filter(option => selectedValues.has(option.value)), [options, selectedValues])
   const isLimited = limited || visibleOptions.total > visibleOptions.items.length
+  const shouldPruneUnknown = Boolean(pruneUnknownValues) && !loading && !limited
   const label = selectedLabel?.(selectedOptions)
     ?? (selectedOptions.length === 1 ? selectedOptions[0]?.label : '')
     ?? ''
@@ -170,7 +173,9 @@ export function SearchMultiSelect({
     else
       next.add(option.value)
     const knownValues = options.filter(item => next.has(item.value)).map(item => item.value)
-    const unknownValues = value.filter(item => next.has(item) && !options.some(optionItem => optionItem.value === item))
+    const unknownValues = shouldPruneUnknown
+      ? []
+      : value.filter(item => next.has(item) && !options.some(optionItem => optionItem.value === item))
     onValueChange([...unknownValues, ...knownValues])
   }
 
@@ -191,7 +196,7 @@ export function SearchMultiSelect({
       </SelectTriggerButton>
       <SearchOptionsContent
         emptyLabel={emptyLabel}
-        footer={selectedOptions.length > 0 && (
+        footer={(selectedOptions.length > 0 || (shouldPruneUnknown && value.length > 0)) && (
           <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <span>{t('common.selectedCount', { count: selectedOptions.length })}</span>
             <Button className="h-auto gap-1 p-0 text-xs font-normal text-foreground hover:bg-transparent hover:text-primary-text [&_svg]:size-3.5" type="button" variant="ghost" onClick={() => onValueChange([])}>

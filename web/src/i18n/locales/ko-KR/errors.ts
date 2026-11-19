@@ -143,7 +143,8 @@ const errors = {
     forbidden: '이 런타임 클러스터의 리소스를 볼 권한이 없습니다.',
     delete_in_progress: '런타임 클러스터를 삭제하는 중입니다. 정리가 끝난 뒤 다시 시도하세요.',
     cleanup_enqueue_failed: '런타임 클러스터 정리 작업을 큐에 넣지 못했습니다. 잠시 후 다시 시도하세요.',
-    in_use: '이 런타임 클러스터는 아직 활성 리소스에서 참조 중입니다. 참조를 해제한 뒤 삭제하세요.',
+    in_use: '이 런타임 클러스터는 아직 활성 리소스에서 참조 중입니다. 범위 축소 또는 삭제 전에 참조를 해제하세요.',
+    not_active: '런타임 클러스터가 활성 상태가 아니므로 수정할 수 없습니다.',
     not_found: '런타임 클러스터가 없거나 이미 삭제되었습니다.',
   },
   billing: {
@@ -303,7 +304,8 @@ const errors = {
     smtp_recipient_required: 'SMTP 채널은 채널 기본 수신자 또는 규칙 수신자 중 최소 하나 이상의 이메일 주소가 필요합니다.',
     channel_not_found: '선택한 알림 채널이 없거나 이 프로젝트 스페이스에 바인딩되지 않았습니다.',
     channel_required: '채널 이름을 입력하고 알림 어댑터를 선택하세요.',
-    channel_in_use: '바인딩을 해제하기 전에 프로젝트 알림 규칙에서 이 채널을 제거하세요.',
+    channel_in_use: '바인딩 해제, 범위 축소 또는 삭제하기 전에 관련 알림 규칙에서 이 채널을 제거하세요.',
+    template_not_found: '선택한 알림 템플릿이 없거나 삭제되었습니다. 다시 선택하세요.',
     channel_shared_owner_required: '이 채널은 여러 프로젝트 스페이스에서 공유되므로 편집하거나 삭제하려면 모든 바인딩된 스페이스의 Owner 권한이 필요합니다. 현재 스페이스에서만 바인딩 해제할 수 있습니다.',
     channel_scope_not_project: '프로젝트 범위 알림 채널만 프로젝트 스페이스에 바인딩하거나 해제할 수 있습니다.',
     channel_test_failed: '테스트 알림 발송에 실패했습니다. 대상 주소, 네트워크 및 자격 증명을 확인하세요.',
@@ -326,6 +328,15 @@ const errors = {
     webhook_callback_invalid: 'Webhook 콜백 주소 형식이 유효하지 않습니다. http/https로 시작하는 PUBLIC_BASE_URL을 설정한 후 Webhook을 다시 설정하세요.',
     webhook_already_exists: '이 리포지토리에 이미 같은 콜백 주소의 Webhook이 존재할 수 있습니다. Git 플랫폼에서 확인한 후 다시 시도하거나 기존 Webhook을 사용하세요.',
     webhook_rate_limited: 'Git 플랫폼이 일시적으로 Webhook 생성 요청을 제한하고 있습니다. 잠시 후 다시 시도하세요.',
+    provider_in_use: '이 Git 제공자는 리포지토리 바인딩에서 참조 중입니다. 범위 축소 또는 삭제 전에 바인딩을 해제하세요.',
+    account_in_use: '이 Git 자격 증명은 리포지토리 바인딩에서 참조 중입니다. 범위 축소 또는 삭제 전에 바인딩을 해제하세요.',
+    credential_scope_conflict: '하위 Git 자격 증명의 공유 프로젝트 범위를 먼저 조정하세요.',
+    repository_binding_in_use: '이 리포지토리 바인딩은 배포 구성에서 참조 중입니다. 관련 배포 구성을 먼저 수정하거나 삭제하세요.',
+  },
+  registry: {
+    in_use: '이 레지스트리는 배포 구성에서 참조 중입니다. 관련 배포 구성을 먼저 수정하거나 삭제하세요.',
+    credential_in_use: '이 레지스트리 자격 증명은 리포지토리 배포 구성에 필요합니다. 다른 푸시 자격 증명을 추가하거나 관련 배포 구성을 먼저 수정하세요.',
+    credential_scope_conflict: '하위 레지스트리 자격 증명의 공유 프로젝트 범위를 먼저 조정하세요.',
   },
 }
 

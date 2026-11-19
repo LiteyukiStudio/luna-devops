@@ -261,6 +261,164 @@ describe('project notifications panel', () => {
     expect(smtpCard).toHaveAttribute('aria-checked', 'true')
     expect(within(dialog).getByPlaceholderText('smtp.example.com')).toBeInTheDocument()
   })
+
+  it('strips deleted or unbound channel and filter IDs when editing a rule with stale references', async () => {
+    const user = userEvent.setup()
+    mocks.updateProjectNotificationRule.mockResolvedValue({})
+    mocks.listProjectNotificationChannels.mockResolvedValue(page([
+      {
+        id: 'nch_feishu',
+        name: 'Feishu Bot',
+        adapterKind: 'webhook',
+        presetId: 'feishu-bot',
+        scope: 'project',
+        projectIds: ['prj_1'],
+        canManage: true,
+        configJson: '{}',
+        enabled: true,
+      },
+    ]))
+    mocks.listApplications.mockResolvedValue([
+      { id: 'app_live', identifier: 'blog', name: 'Blog', projectId: 'prj_1' },
+    ])
+    mocks.listDeploymentTargets.mockResolvedValue([
+      { id: 'dplt_live', applicationId: 'app_live', name: 'Production', projectId: 'prj_1', stage: 'prod' },
+    ])
+    mocks.listProjectNotificationRules.mockResolvedValue(page([
+      {
+        id: 'nrl_stale',
+        projectId: 'prj_1',
+        name: 'Blog Alert Rule',
+        eventTypesJson: JSON.stringify(['release.failed']),
+        filterJson: JSON.stringify({
+          scope: 'projects',
+          projectIds: ['prj_1'],
+          applicationIds: ['app_deleted', 'app_live'],
+          deploymentTargetIds: ['dplt_deleted', 'dplt_live'],
+        }),
+        channelIdsJson: JSON.stringify(['nch_deleted']),
+        channelTargetsJson: JSON.stringify({ nch_deleted: { to: ['old@example.com'] } }),
+        templateId: '',
+        locale: '',
+        timeZone: 'Asia/Shanghai',
+        remindIntervalMinutes: 60,
+        maxReminders: 3,
+        notifyOnRecovery: true,
+        enabled: true,
+      },
+    ]))
+
+    renderPanel({
+      currentUserActions: ['notification:read', 'notification:manage'],
+    })
+
+    const actionsButton = await screen.findByRole('button', { name: i18next.t('notificationsPage.rowActions', { name: 'Blog Alert Rule' }) })
+    await user.click(actionsButton)
+    await user.click(await screen.findByRole('menuitem', { name: i18next.t('common.edit') }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Notification rule' })
+    const saveButton = within(dialog).getByRole('button', { name: i18next.t('common.save') })
+    expect(saveButton).toBeDisabled()
+
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Feishu Bot' }))
+    expect(saveButton).toBeEnabled()
+
+    await user.click(saveButton)
+    await waitFor(() => expect(mocks.updateProjectNotificationRule).toHaveBeenCalledWith(
+      'prj_1',
+      'nrl_stale',
+      expect.objectContaining({
+        name: 'Blog Alert Rule',
+        channelIds: ['nch_feishu'],
+        filter: {
+          scope: 'projects',
+          projectIds: ['prj_1'],
+          applicationIds: ['app_live'],
+          deploymentTargetIds: ['dplt_live'],
+        },
+      }),
+    ))
+    const submittedPayload = mocks.updateProjectNotificationRule.mock.calls[0]?.[2]
+    expect(submittedPayload.channelTargets).toBeUndefined()
+  })
+
+  it('blocks silent scope widening when a rule only targeted deleted applications until cleared', async () => {
+    const user = userEvent.setup()
+    mocks.updateProjectNotificationRule.mockResolvedValue({})
+    mocks.listProjectNotificationChannels.mockResolvedValue(page([
+      {
+        id: 'nch_feishu',
+        name: 'Feishu Bot',
+        adapterKind: 'webhook',
+        presetId: 'feishu-bot',
+        scope: 'project',
+        projectIds: ['prj_1'],
+        canManage: true,
+        configJson: '{}',
+        enabled: true,
+      },
+    ]))
+    mocks.listApplications.mockResolvedValue([
+      { id: 'app_live', identifier: 'blog', name: 'Blog', projectId: 'prj_1' },
+    ])
+    mocks.listDeploymentTargets.mockResolvedValue([
+      { id: 'dplt_live', applicationId: 'app_live', name: 'Production', projectId: 'prj_1', stage: 'prod' },
+    ])
+    mocks.listProjectNotificationRules.mockResolvedValue(page([
+      {
+        id: 'nrl_sole_deleted_app',
+        projectId: 'prj_1',
+        name: 'Narrowed App Alert',
+        eventTypesJson: JSON.stringify(['release.failed']),
+        filterJson: JSON.stringify({
+          scope: 'projects',
+          projectIds: ['prj_1'],
+          applicationIds: ['app_deleted_only'],
+        }),
+        channelIdsJson: JSON.stringify(['nch_feishu']),
+        channelTargetsJson: '{}',
+        templateId: '',
+        locale: '',
+        timeZone: 'Asia/Shanghai',
+        remindIntervalMinutes: 60,
+        maxReminders: 3,
+        notifyOnRecovery: true,
+        enabled: true,
+      },
+    ]))
+
+    renderPanel({
+      currentUserActions: ['notification:read', 'notification:manage'],
+    })
+
+    const actionsButton = await screen.findByRole('button', { name: i18next.t('notificationsPage.rowActions', { name: 'Narrowed App Alert' }) })
+    await user.click(actionsButton)
+    await user.click(await screen.findByRole('menuitem', { name: i18next.t('common.edit') }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Notification rule' })
+    expect(await within(dialog).findByText(i18next.t('errors.notification.rule_application_not_found'))).toBeInTheDocument()
+    const saveButton = within(dialog).getByRole('button', { name: i18next.t('common.save') })
+    expect(saveButton).toBeDisabled()
+
+    await user.click(within(dialog).getByRole('button', { name: i18next.t('notificationsPage.filterApplications') }))
+    await user.click(await screen.findByRole('button', { name: i18next.t('common.clearSelection') }))
+
+    await waitFor(() => expect(saveButton).toBeEnabled())
+    await user.click(saveButton)
+
+    await waitFor(() => expect(mocks.updateProjectNotificationRule).toHaveBeenCalledWith(
+      'prj_1',
+      'nrl_sole_deleted_app',
+      expect.objectContaining({
+        name: 'Narrowed App Alert',
+        channelIds: ['nch_feishu'],
+        filter: {
+          scope: 'projects',
+          projectIds: ['prj_1'],
+        },
+      }),
+    ))
+  })
 })
 
 function renderPanel({

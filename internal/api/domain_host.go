@@ -91,8 +91,20 @@ func (host domainHost) SecretStore() secret.Store {
 	return host.handlers.secrets
 }
 
+func (host domainHost) SecretAvailable() bool {
+	return host.handlers.secrets.Available()
+}
+
 func (host domainHost) StoreSecret(ctx context.Context, value, userID, resource string) string {
 	return host.handlers.secrets.StoreContext(ctx, value, userID, resource)
+}
+
+func (host domainHost) StoreSecretWithDB(ctx context.Context, db *gorm.DB, value, userID, resource string) (string, error) {
+	return host.handlers.secrets.StoreContextWithDB(ctx, db, value, userID, resource)
+}
+
+func (host domainHost) DeleteSecretRefWithDB(ctx context.Context, db *gorm.DB, ref, resource string) error {
+	return host.handlers.secrets.DeleteRefContextWithDB(ctx, db, ref, resource)
 }
 
 func (host domainHost) ResolveSecret(ctx context.Context, ref string) string {

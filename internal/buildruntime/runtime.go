@@ -330,11 +330,14 @@ func (r Resolver) buildVariableSetsForRun(db *gorm.DB, user model.User, projectI
 		}
 		seen[setID] = true
 		var set model.BuildVariableSet
-		if err := db.First(&set, "id = ? and enabled = ?", setID, true).Error; err != nil {
+		if err := db.First(&set, "id = ?", setID).Error; err != nil {
 			return nil, errors.New("variables are unavailable")
 		}
 		if !r.buildVariableSetAccessible(db, user, projectID, set) {
 			return nil, errors.New("variables are not allowed")
+		}
+		if !set.Enabled {
+			continue
 		}
 		sets = append(sets, set)
 	}

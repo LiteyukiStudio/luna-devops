@@ -143,7 +143,8 @@ const errors = {
     forbidden: '沒有檢視該執行階段叢集資源的權限。',
     delete_in_progress: '執行集群正在刪除中，請等待清理完成後再試。',
     cleanup_enqueue_failed: '執行集群清理任務排入佇列失敗，請稍後重試。',
-    in_use: '此執行集群仍被活動資源引用，請先解除引用後再刪除。',
+    in_use: '此執行集群仍被活動資源引用，請先解除引用後再收窄範圍或刪除。',
+    not_active: '執行集群目前不是活動狀態，暫時無法修改。',
     not_found: '執行集群不存在或已被刪除。',
   },
   billing: {
@@ -303,7 +304,8 @@ const errors = {
     smtp_recipient_required: 'SMTP 郵件渠道必須在渠道預設收件人或當前規則收件人中至少填寫一個信箱。',
     channel_not_found: '所選通知渠道不存在或尚未繫結到當前專案空間，請重新選擇。',
     channel_required: '請填寫渠道名稱並選擇通知配接器。',
-    channel_in_use: '請先從當前專案空間的通知規則中移除該渠道，再執行解綁。',
+    channel_in_use: '請先從關聯的通知規則中移除該渠道，再執行解綁、收窄範圍或刪除。',
+    template_not_found: '所選通知範本不存在或已被刪除，請重新選擇。',
     channel_shared_owner_required: '該渠道已繫結到多個專案空間，需要擁有全部繫結空間的 Owner 許可權才能編輯或刪除；你可以在當前空間單獨解綁。',
     channel_scope_not_project: '僅專案級通知渠道支援繫結或解綁專案空間。',
     channel_test_failed: '測試通知傳送失敗，請檢查目標地址、網路或憑據配置。',
@@ -326,6 +328,15 @@ const errors = {
     webhook_callback_invalid: 'Webhook 回撥地址格式無效。請配置以 http/https 開頭的 PUBLIC_BASE_URL 後重新配置 Webhook。',
     webhook_already_exists: '該倉庫可能已經存在相同回撥地址的 Webhook。請在 Git 平臺確認後重試或使用現有 Webhook。',
     webhook_rate_limited: 'Git 平臺暫時限制了 Webhook 建立請求，請稍後重試。',
+    provider_in_use: '該 Git 平臺仍被倉庫繫結引用，請先解除關聯後再修改範圍或刪除。',
+    account_in_use: '該 Git 憑據仍被倉庫繫結引用，請先解除關聯後再修改範圍或刪除。',
+    credential_scope_conflict: '請先調整下屬 Git 憑據的共享專案範圍。',
+    repository_binding_in_use: '該程式碼倉庫繫結仍被部署配置引用，請先調整或刪除關聯部署配置。',
+  },
+  registry: {
+    in_use: '該映像站仍被部署配置引用，請先調整或刪除關聯部署配置。',
+    credential_in_use: '該映像憑據仍被程式碼建置部署配置依賴，請先補充可用的推送憑據或調整關聯部署配置。',
+    credential_scope_conflict: '請先調整下屬映像憑據的共享專案範圍。',
   },
 }
 

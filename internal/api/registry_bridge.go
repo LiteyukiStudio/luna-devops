@@ -25,10 +25,6 @@ func (host registryHost) ScopedResourceDefaultProjectIDMap(resourceType string, 
 	return host.handlers.scopedResourceDefaultProjectIDMap(resourceType, resourceIDs, ctx)
 }
 
-func (host registryHost) SecretAvailable() bool {
-	return host.handlers.secrets.Available()
-}
-
 func (host registryHost) AllowRegistrySearch(ctx *gin.Context, userID string) bool {
 	limit := 60
 	if host.handlers.mode == "development" {

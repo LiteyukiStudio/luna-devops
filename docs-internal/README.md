@@ -19,6 +19,7 @@
 | [13-AI-Agent运行时整改方案.md](13-AI-Agent运行时整改方案.md) | Agent Loop、checkpoint、工具执行与终态判定整改方案 |
 | [14-Agent运行时行为矩阵.md](14-Agent运行时行为矩阵.md) | Agent Loop 当前行为基线、事实源归属与测试缺口 |
 | [可观测和插桩规范.md](可观测和插桩规范.md) | Trace、日志、Metric、Context 与遥测安全规范 |
+| [pitfall.md](pitfall.md) | 通用性工程踩坑记录（复现方式、原因与解决方案） |
 
 ## 其他入口
 

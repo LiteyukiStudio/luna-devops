@@ -203,6 +203,7 @@ function GrantRow({ index, onRemove }: { index: number, onRemove: () => void }) 
               loading={topology.isFetching}
               options={targetOptions}
               placeholder={t('clustersPage.egressExceptions.wholeProject')}
+              pruneUnknownValues
               value={field.value}
               onValueChange={field.onChange}
             />

@@ -1,5 +1,7 @@
 import type { TFunction } from 'i18next'
 import type {
+  Application,
+  DeploymentTarget,
   NotificationChannel,
   NotificationChannelDraftTestPayload,
   NotificationChannelPayload,
@@ -8,6 +10,8 @@ import type {
   NotificationRule,
   NotificationRuleAdvancedFilter,
   NotificationRulePayload,
+  NotificationTemplate,
+  Project,
 } from '@/api'
 import { z } from 'zod'
 
@@ -529,15 +533,29 @@ export function smtpChannelMissingRuleRecipient(
 }
 
 export function buildNotificationRulePayload(options: {
+  availableApplications?: Application[]
   availableChannels: NotificationChannel[]
+  availableDeploymentTargets?: DeploymentTarget[]
+  availableProjects?: Project[]
+  availableTemplates?: NotificationTemplate[]
   contextMode: 'project' | 'global'
   fixedProjectId?: string
   values: NotificationRuleFormValues
 }): NotificationRulePayload | null {
-  const { availableChannels, contextMode, fixedProjectId = '', values } = options
+  const {
+    availableApplications,
+    availableChannels,
+    availableDeploymentTargets,
+    availableProjects,
+    availableTemplates,
+    contextMode,
+    fixedProjectId = '',
+    values,
+  } = options
   const name = values.name.trim()
   const eventTypes = normalizedStringList(values.eventTypes)
-  const channelIds = normalizedStringList(values.channelIds)
+  const channelById = new Map(availableChannels.map(channel => [channel.id, channel]))
+  const channelIds = normalizedStringList(values.channelIds).filter(channelId => channelById.has(channelId))
   if (!name || eventTypes.length === 0 || channelIds.length === 0)
     return null
   if (
@@ -551,7 +569,6 @@ export function buildNotificationRulePayload(options: {
     return null
   }
 
-  const channelById = new Map(availableChannels.map(channel => [channel.id, channel]))
   const channelTargets: Record<string, NotificationChannelTargetOverride> = {}
   for (const channelId of channelIds) {
     const channel = channelById.get(channelId)
@@ -574,8 +591,21 @@ export function buildNotificationRulePayload(options: {
   if (contextMode === 'project') {
     if (!fixedProjectId)
       return null
-    const applicationIds = normalizedStringList(values.applicationIds)
-    const deploymentTargetIds = normalizedStringList(values.deploymentTargetIds)
+    const rawApplicationIds = normalizedStringList(values.applicationIds)
+    const applicationIds = availableApplications
+      ? filterExistingIds(rawApplicationIds, availableApplications)
+      : rawApplicationIds
+    if (availableApplications !== undefined && rawApplicationIds.length > 0 && applicationIds.length === 0)
+      return null
+    const rawDeploymentTargetIds = normalizedStringList(values.deploymentTargetIds)
+    const allowedDeploymentTargets = availableDeploymentTargets
+      ? availableDeploymentTargets.filter(target => applicationIds.length === 0 || applicationIds.includes(target.applicationId))
+      : undefined
+    const deploymentTargetIds = allowedDeploymentTargets
+      ? filterExistingIds(rawDeploymentTargetIds, allowedDeploymentTargets)
+      : rawDeploymentTargetIds
+    if (allowedDeploymentTargets !== undefined && rawDeploymentTargetIds.length > 0 && deploymentTargetIds.length === 0)
+      return null
     filter = {
       scope: 'projects',
       projectIds: [fixedProjectId],
@@ -585,13 +615,21 @@ export function buildNotificationRulePayload(options: {
   }
   else {
     const advancedFilter = parseNotificationRuleAdvancedFilter(values.filterText)
-    const projectIds = normalizedStringList(values.projectIds)
+    const rawProjectIds = normalizedStringList(values.projectIds)
+    const projectIds = availableProjects
+      ? filterExistingIds(rawProjectIds, availableProjects)
+      : rawProjectIds
     if (!advancedFilter || (values.scope === 'projects' && projectIds.length === 0))
       return null
     filter = values.scope === 'all'
       ? { ...advancedFilter, scope: 'all' }
       : { ...advancedFilter, projectIds, scope: 'projects' }
   }
+
+  const rawTemplateId = values.templateId.trim()
+  const templateId = contextMode === 'global'
+    ? (availableTemplates && rawTemplateId && !availableTemplates.some(item => item.id === rawTemplateId) ? '' : rawTemplateId)
+    : ''
 
   return {
     name,
@@ -600,13 +638,18 @@ export function buildNotificationRulePayload(options: {
     filter,
     channelIds,
     ...(Object.keys(channelTargets).length > 0 ? { channelTargets } : {}),
-    templateId: contextMode === 'global' ? values.templateId.trim() : '',
+    templateId,
     locale: values.locale.trim(),
     timeZone: values.timeZone.trim() || 'Asia/Shanghai',
     remindIntervalMinutes: values.remindIntervalMinutes,
     maxReminders: values.maxReminders,
     notifyOnRecovery: values.notifyOnRecovery,
   }
+}
+
+function filterExistingIds<T extends { id: string }>(ids: string[], items: T[]): string[] {
+  const allowed = new Set(items.map(item => item.id))
+  return ids.filter(id => allowed.has(id))
 }
 
 export function parseNotificationRuleAdvancedFilter(value: string): NotificationRuleAdvancedFilter | null {

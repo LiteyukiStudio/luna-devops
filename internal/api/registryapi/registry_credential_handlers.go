@@ -2,6 +2,7 @@ package registryapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (h *Handler) ListRegistryCredentials(ctx *gin.Context) {
@@ -92,13 +94,13 @@ func (h *Handler) CreateRegistryCredential(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if strings.TrimSpace(input.Password) != "" || strings.TrimSpace(input.Token) != "" {
-		if !h.secretAvailable() {
-			status := http.StatusInternalServerError
-			message := "SECRET_ENCRYPTION_KEY is required to save registry credentials in production"
-			writeError(ctx, status, message)
-			return
-		}
+	if strings.TrimSpace(input.Password) == "" && strings.TrimSpace(input.Token) == "" {
+		writeError(ctx, http.StatusBadRequest, "请填写 Registry 密码或 Token")
+		return
+	}
+	if !h.secretAvailable() {
+		writeError(ctx, http.StatusInternalServerError, "SECRET_ENCRYPTION_KEY is required to save registry credentials in production")
+		return
 	}
 	scope, ownerRef, projectIDs, scopeOK := h.normalizeCredentialScopeWithinParent(ctx, user, input.Scope, input.ProjectIDs, registry.Scope, registry.ProjectIDs, "只有平台管理员可以创建全局镜像凭据")
 	if !scopeOK {
@@ -110,8 +112,6 @@ func (h *Handler) CreateRegistryCredential(ctx *gin.Context) {
 		RegistryID:         registry.ID,
 		Name:               fallback(strings.TrimSpace(input.Name), "default"),
 		Username:           strings.TrimSpace(input.Username),
-		PasswordRef:        h.storeSecret(ctx.Request.Context(), input.Password, user.ID, "registry_credential:"+registry.ID+":password"),
-		TokenRef:           h.storeSecret(ctx.Request.Context(), input.Token, user.ID, "registry_credential:"+registry.ID+":token"),
 		Usage:              normalizeCredentialUsage(input.Usage),
 		Scope:              scope,
 		OwnerRef:           ownerRef,
@@ -120,23 +120,48 @@ func (h *Handler) CreateRegistryCredential(ctx *gin.Context) {
 		TagTemplate:        normalizeImageTagTemplate(input.TagTemplate),
 		CreatedBy:          user.ID,
 	}
-	if credential.PasswordRef == "" && credential.TokenRef == "" {
-		writeError(ctx, http.StatusBadRequest, "请填写 Registry 密码或 Token")
-		return
-	}
 
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedRegistry model.ArtifactRegistry
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedRegistry, "id = ?", registry.ID).Error; err != nil {
+			return err
+		}
+		if err := ensureCredentialFitsRegistryScopeTx(tx, lockedRegistry, credential); err != nil {
+			return err
+		}
+		if strings.TrimSpace(input.Password) != "" {
+			ref, storeErr := h.storeSecretWithDB(ctx.Request.Context(), tx, input.Password, user.ID, "registry_credential:"+lockedRegistry.ID+":password")
+			if storeErr != nil {
+				return storeErr
+			}
+			credential.PasswordRef = ref
+		}
+		if strings.TrimSpace(input.Token) != "" {
+			ref, storeErr := h.storeSecretWithDB(ctx.Request.Context(), tx, input.Token, user.ID, "registry_credential:"+lockedRegistry.ID+":token")
+			if storeErr != nil {
+				return storeErr
+			}
+			credential.TokenRef = ref
+		}
 		if err := tx.Create(&credential).Error; err != nil {
 			return err
 		}
 		if err := h.replaceScopedResourceProjectBindings(tx, scopedResourceRegistryCredential, credential.ID, sortedProjectIDs(credential.ProjectIDs), nil); err != nil {
 			return err
 		}
-		if registry.CredentialRef == "" {
-			return tx.Model(&registry).Update("credential_ref", credential.ID).Error
+		if lockedRegistry.CredentialRef == "" && credentialAllowsPush(credential.Usage) {
+			return tx.Model(&model.ArtifactRegistry{}).Where("id = ?", lockedRegistry.ID).Update("credential_ref", credential.ID).Error
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(ctx, http.StatusNotFound, "artifact registry not found")
+			return
+		}
+		if errors.Is(err, errRegistryCredentialScopeConflict) {
+			writeErrorCode(ctx, http.StatusConflict, "registry.credential_scope_conflict", "registry credential scope exceeds the parent registry scope")
+			return
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -163,11 +188,11 @@ func (h *Handler) UpdateRegistryCredential(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if strings.TrimSpace(input.Password) != "" || strings.TrimSpace(input.Token) != "" {
+	hasNewPassword := strings.TrimSpace(input.Password) != ""
+	hasNewToken := strings.TrimSpace(input.Token) != ""
+	if hasNewPassword || hasNewToken {
 		if !h.secretAvailable() {
-			status := http.StatusInternalServerError
-			message := "SECRET_ENCRYPTION_KEY is required to save registry credentials in production"
-			writeError(ctx, status, message)
+			writeError(ctx, http.StatusInternalServerError, "SECRET_ENCRYPTION_KEY is required to save registry credentials in production")
 			return
 		}
 	}
@@ -177,41 +202,96 @@ func (h *Handler) UpdateRegistryCredential(ctx *gin.Context) {
 		return
 	}
 
-	passwordRef := credential.PasswordRef
-	if strings.TrimSpace(input.Password) != "" {
-		passwordRef = h.storeSecret(ctx.Request.Context(), input.Password, user.ID, "registry_credential:"+registry.ID+":password")
+	var updated model.RegistryCredential
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedRegistry model.ArtifactRegistry
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedRegistry, "id = ?", registry.ID).Error; err != nil {
+			return err
+		}
+		var lockedCred model.RegistryCredential
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedCred, "id = ? and registry_id = ?", credential.ID, lockedRegistry.ID).Error; err != nil {
+			return err
+		}
+		passwordRef := lockedCred.PasswordRef
+		if hasNewPassword {
+			resource := "registry_credential:" + lockedRegistry.ID + ":password"
+			newRef, storeErr := h.storeSecretWithDB(ctx.Request.Context(), tx, input.Password, user.ID, resource)
+			if storeErr != nil {
+				return storeErr
+			}
+			if strings.TrimSpace(lockedCred.PasswordRef) != "" && lockedCred.PasswordRef != newRef {
+				if delErr := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, lockedCred.PasswordRef, resource); delErr != nil {
+					return delErr
+				}
+			}
+			passwordRef = newRef
+		}
+		tokenRef := lockedCred.TokenRef
+		if hasNewToken {
+			resource := "registry_credential:" + lockedRegistry.ID + ":token"
+			newRef, storeErr := h.storeSecretWithDB(ctx.Request.Context(), tx, input.Token, user.ID, resource)
+			if storeErr != nil {
+				return storeErr
+			}
+			if strings.TrimSpace(lockedCred.TokenRef) != "" && lockedCred.TokenRef != newRef {
+				if delErr := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, lockedCred.TokenRef, resource); delErr != nil {
+					return delErr
+				}
+			}
+			tokenRef = newRef
+		}
+		if passwordRef == "" && tokenRef == "" {
+			return errRegistryCredentialSecretMissing
+		}
+
+		lockedCred.Name = fallback(strings.TrimSpace(input.Name), "default")
+		lockedCred.Username = strings.TrimSpace(input.Username)
+		lockedCred.PasswordRef = passwordRef
+		lockedCred.TokenRef = tokenRef
+		lockedCred.Usage = normalizeCredentialUsage(input.Usage)
+		lockedCred.Scope = scope
+		lockedCred.OwnerRef = ownerRef
+		lockedCred.ProjectIDs = projectIDs
+		lockedCred.RepositoryTemplate = normalizeImageRepositoryTemplate(input.RepositoryTemplate)
+		lockedCred.TagTemplate = normalizeImageTagTemplate(input.TagTemplate)
+		if err := ensureCredentialFitsRegistryScopeTx(tx, lockedRegistry, lockedCred); err != nil {
+			return err
+		}
+
+		if err := tx.Save(&lockedCred).Error; err != nil {
+			return err
+		}
+		if err := h.replaceScopedResourceProjectBindings(tx, scopedResourceRegistryCredential, lockedCred.ID, sortedProjectIDs(lockedCred.ProjectIDs), nil); err != nil {
+			return err
+		}
+		if err := reconcileRegistryPushCredentialsTx(tx, lockedRegistry, &lockedCred); err != nil {
+			return err
+		}
+		updated = lockedCred
+		return nil
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "registry credential not found")
+		return
 	}
-	tokenRef := credential.TokenRef
-	if strings.TrimSpace(input.Token) != "" {
-		tokenRef = h.storeSecret(ctx.Request.Context(), input.Token, user.ID, "registry_credential:"+registry.ID+":token")
-	}
-	if passwordRef == "" && tokenRef == "" {
+	if errors.Is(err, errRegistryCredentialSecretMissing) {
 		writeError(ctx, http.StatusBadRequest, "请填写 Registry 密码或 Token")
 		return
 	}
-
-	credential.Name = fallback(strings.TrimSpace(input.Name), "default")
-	credential.Username = strings.TrimSpace(input.Username)
-	credential.PasswordRef = passwordRef
-	credential.TokenRef = tokenRef
-	credential.Usage = normalizeCredentialUsage(input.Usage)
-	credential.Scope = scope
-	credential.OwnerRef = ownerRef
-	credential.ProjectIDs = projectIDs
-	credential.RepositoryTemplate = normalizeImageRepositoryTemplate(input.RepositoryTemplate)
-	credential.TagTemplate = normalizeImageTagTemplate(input.TagTemplate)
-
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&credential).Error; err != nil {
-			return err
-		}
-		return h.replaceScopedResourceProjectBindings(tx, scopedResourceRegistryCredential, credential.ID, sortedProjectIDs(credential.ProjectIDs), nil)
-	}); err != nil {
+	if errors.Is(err, errRegistryCredentialScopeConflict) {
+		writeErrorCode(ctx, http.StatusConflict, "registry.credential_scope_conflict", "registry credential scope exceeds the parent registry scope")
+		return
+	}
+	if errors.Is(err, errRegistryCredentialInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "registry.credential_in_use", "registry credential is required by repository deployment targets")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.auditWithContext(user.ID, "registry_credential.update", credential.ID, true, credential.Scope, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, credentialResponse(credential))
+	h.auditWithContext(user.ID, "registry_credential.update", updated.ID, true, updated.Scope, ctx.Request.Context())
+	ctx.JSON(http.StatusOK, credentialResponse(updated))
 }
 
 func (h *Handler) DeleteRegistryCredential(ctx *gin.Context) {
@@ -228,23 +308,167 @@ func (h *Handler) DeleteRegistryCredential(ctx *gin.Context) {
 	if !h.canManageRegistryCredential(ctx, user, registry, credential) {
 		return
 	}
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceRegistryCredential, credential.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedRegistry model.ArtifactRegistry
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedRegistry, "id = ?", registry.ID).Error; err != nil {
 			return err
 		}
-		if err := tx.Delete(&credential).Error; err != nil {
+		var lockedCred model.RegistryCredential
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedCred, "id = ? and registry_id = ?", credential.ID, lockedRegistry.ID).Error; err != nil {
 			return err
 		}
-		if registry.CredentialRef == credential.ID {
-			return tx.Model(&registry).Update("credential_ref", "").Error
+		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceRegistryCredential, lockedCred.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
+			return err
 		}
-		return nil
-	}); err != nil {
+		if err := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, lockedCred.PasswordRef, "registry_credential:"+lockedCred.RegistryID+":password"); err != nil {
+			return err
+		}
+		if err := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, lockedCred.TokenRef, "registry_credential:"+lockedCred.RegistryID+":token"); err != nil {
+			return err
+		}
+		if err := tx.Delete(&lockedCred).Error; err != nil {
+			return err
+		}
+		if lockedRegistry.CredentialRef == lockedCred.ID {
+			if err := tx.Model(&model.ArtifactRegistry{}).Where("id = ?", lockedRegistry.ID).Update("credential_ref", "").Error; err != nil {
+				return err
+			}
+			lockedRegistry.CredentialRef = ""
+		}
+		return reconcileRegistryPushCredentialsTx(tx, lockedRegistry, nil)
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "registry credential not found")
+		return
+	}
+	if errors.Is(err, errRegistryCredentialInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "registry.credential_in_use", "registry credential is required by repository deployment targets")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	h.auditWithContext(user.ID, "registry_credential.delete", credential.ID, true, credential.Scope, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
+}
+
+var (
+	errRegistryCredentialInUse         = errors.New("registry credential is required by repository deployment targets")
+	errRegistryCredentialSecretMissing = errors.New("registry credential password or token is required")
+)
+
+func credentialAllowsPush(usage string) bool {
+	normalized := normalizeCredentialUsage(usage)
+	return normalized == "push" || normalized == "push-pull"
+}
+
+func ensureCredentialFitsRegistryScopeTx(tx *gorm.DB, registry model.ArtifactRegistry, credential model.RegistryCredential) error {
+	switch registry.Scope {
+	case "global":
+		return nil
+	case "user":
+		if credential.Scope != "user" || strings.TrimSpace(credential.OwnerRef) != strings.TrimSpace(registry.OwnerRef) {
+			return errRegistryCredentialScopeConflict
+		}
+		return nil
+	case "project":
+		if credential.Scope == "global" {
+			return errRegistryCredentialScopeConflict
+		}
+		if credential.Scope == "project" {
+			var boundProjects []string
+			if err := tx.Model(&model.ScopedResourceProjectBinding{}).
+				Where("resource_type = ? and resource_id = ?", scopedResourceArtifactRegistry, registry.ID).
+				Pluck("project_id", &boundProjects).Error; err != nil {
+				return err
+			}
+			allowed := make(map[string]bool, len(boundProjects))
+			for _, projectID := range boundProjects {
+				allowed[strings.TrimSpace(projectID)] = true
+			}
+			for _, projectID := range credential.ProjectIDs {
+				if !allowed[strings.TrimSpace(projectID)] {
+					return errRegistryCredentialScopeConflict
+				}
+			}
+		}
+		return nil
+	default:
+		return errRegistryCredentialScopeConflict
+	}
+}
+
+func credentialCoversProjectTx(tx *gorm.DB, credential model.RegistryCredential, projectID string) (bool, error) {
+	var count int64
+	switch credential.Scope {
+	case "global":
+		return true, nil
+	case "project":
+		err := tx.Model(&model.ScopedResourceProjectBinding{}).
+			Where("resource_type = ? and resource_id = ? and project_id = ?", scopedResourceRegistryCredential, credential.ID, projectID).
+			Count(&count).Error
+		return count > 0, err
+	case "user":
+		err := tx.Model(&model.ProjectMember{}).
+			Where("project_id = ? and user_id = ?", projectID, credential.OwnerRef).
+			Count(&count).Error
+		return count > 0, err
+	default:
+		return false, nil
+	}
+}
+
+func reconcileRegistryPushCredentialsTx(tx *gorm.DB, registry model.ArtifactRegistry, updatedCred *model.RegistryCredential) error {
+	var referencingProjectIDs []string
+	if err := tx.Model(&model.DeploymentTarget{}).
+		Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").
+		Where("deployment_targets.target_registry_id = ? and (deployment_targets.source_type = '' or deployment_targets.source_type = ?)", registry.ID, "repository").
+		Distinct("deployment_targets.project_id").
+		Pluck("deployment_targets.project_id", &referencingProjectIDs).Error; err != nil {
+		return err
+	}
+
+	if updatedCred != nil && registry.CredentialRef == updatedCred.ID {
+		clearRef := !credentialAllowsPush(updatedCred.Usage)
+		if !clearRef {
+			for _, projectID := range referencingProjectIDs {
+				covered, err := credentialCoversProjectTx(tx, *updatedCred, projectID)
+				if err != nil {
+					return err
+				}
+				if !covered {
+					clearRef = true
+					break
+				}
+			}
+		}
+		if clearRef {
+			if err := tx.Model(&model.ArtifactRegistry{}).Where("id = ?", registry.ID).Update("credential_ref", "").Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, projectID := range referencingProjectIDs {
+		var count int64
+		err := tx.Model(&model.RegistryCredential{}).
+			Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
+			Where(
+				"scope = ? or (scope = ? and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = registry_credentials.id and srpb.project_id = ?)) or (scope = ? and exists (select 1 from project_members pm where pm.project_id = ? and pm.user_id = registry_credentials.owner_ref))",
+				"global",
+				"project", scopedResourceRegistryCredential, projectID,
+				"user", projectID,
+			).
+			Count(&count).Error
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return errRegistryCredentialInUse
+		}
+	}
+	return nil
 }
 
 func (h *Handler) registryCredentialFor(user model.User, registry model.ArtifactRegistry, ctx context.Context) (model.RegistryCredential, bool) {

@@ -688,10 +688,12 @@ export function ProjectNotificationsPanel({
       />
 
       <NotificationRuleDialog
-        applications={applications.data ?? []}
+        applications={applications.data}
+        applicationsLoading={applications.isLoading}
         channels={channelOptions.data?.items ?? []}
         contextMode="project"
-        deploymentTargets={deploymentTargets.data ?? []}
+        deploymentTargets={applications.data?.length === 0 ? [] : deploymentTargets.data}
+        deploymentTargetsLoading={applications.isLoading || ((applications.data?.length ?? 0) > 0 && deploymentTargets.isLoading)}
         fixedProjectId={projectId}
         open={Boolean(ruleDialog)}
         rule={ruleDialog?.rule}

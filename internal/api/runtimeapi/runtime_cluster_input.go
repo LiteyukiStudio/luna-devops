@@ -17,45 +17,46 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, input runtimeClusterInput, clusterID string) (model.RuntimeCluster, bool) {
+func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, input runtimeClusterInput, clusterID string) (model.RuntimeCluster, string, bool) {
 	scope, ownerRef, projectIDs, ok := h.normalizeScopedOwnerWithProjects(ctx, user, input.Scope, input.OwnerRef, input.ProjectIDs, "只有平台管理员可以维护全局运行集群")
 	if !ok {
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	if input.IsDefault && scope != "global" {
 		writeError(ctx, http.StatusBadRequest, "只有全局运行集群可以设为默认集群")
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
-	kubeconfigRef := ""
+	flattenedKubeconfig := ""
 	if strings.TrimSpace(input.Kubeconfig) != "" {
 		kubeconfig, err := flattenKubeconfig(input.Kubeconfig)
 		if err != nil {
 			writeError(ctx, http.StatusBadRequest, err.Error())
-			return model.RuntimeCluster{}, false
+			return model.RuntimeCluster{}, "", false
 		}
-		kubeconfigRef = h.secrets.StoreContext(ctx.Request.Context(), kubeconfig, user.ID, "runtime_cluster:"+clusterID+":kubeconfig")
+		flattenedKubeconfig = kubeconfig
 	}
 	platformAdmin := user.Role == authz.PlatformRoleAdmin
 	requestHeaders, err := parseGatewayHeaderMap(input.GatewayDefaultRequestHeaders, platformAdmin)
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("默认请求头配置无效: %s", err.Error()))
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	responseHeaders, err := parseGatewayHeaderMap(input.GatewayDefaultResponseHeaders, platformAdmin)
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("默认响应头配置无效: %s", err.Error()))
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	if err := validateTrustedProxyCIDRs(input.GatewayTrustedProxyCIDRs); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	networkBlockedCIDRs, err := normalizeNetworkBlockedCIDRs(input.NetworkBlockedCIDRs)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.network_blocked_cidrs_invalid", err.Error())
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	buildEgressMode := strings.TrimSpace(input.BuildEgressMode)
 	if buildEgressMode == "" {
@@ -63,28 +64,28 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 	}
 	if buildEgressMode != runtimecluster.BuildEgressRestricted && buildEgressMode != runtimecluster.BuildEgressPermissive {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.build_egress_mode_invalid", "build egress mode must be restricted or permissive")
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	buildPrivateEgressCIDRs, err := normalizeBuildPrivateEgressCIDRs(input.BuildPrivateEgressCIDRs)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.build_private_egress_cidrs_invalid", err.Error())
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	buildPrivateEgressPorts, err := normalizeBuildPrivateEgressPorts(input.BuildPrivateEgressPorts)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.build_private_egress_ports_invalid", err.Error())
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	networkGatewayNamespace := strings.TrimSpace(input.NetworkGatewayNamespace)
 	if networkGatewayNamespace != "" && len(validation.IsDNS1123Label(networkGatewayNamespace)) > 0 {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.network_gateway_namespace_invalid", "network gateway namespace must be a DNS-1123 label")
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	gatewayDomainSuffixes := runtimecluster.NormalizeGatewayDomainSuffixes(input.GatewayDomainSuffixes)
 	policy := runtimeClusterResourcePolicy(input)
 	if err := policy.Validate(); err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime.resource_policy_invalid", err.Error())
-		return model.RuntimeCluster{}, false
+		return model.RuntimeCluster{}, "", false
 	}
 	return model.RuntimeCluster{
 		ID:                            clusterID,
@@ -93,7 +94,6 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		Scope:                         scope,
 		OwnerRef:                      ownerRef,
 		ProjectIDs:                    projectIDs,
-		KubeconfigRef:                 kubeconfigRef,
 		IsDefault:                     input.IsDefault,
 		MaxConcurrentBuilds:           normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultClusterBuildConcurrency),
 		CPURequestPercent:             policy.CPURequestPercent,
@@ -131,7 +131,7 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayDefaultRequestHeaders:  encodeGatewayHeaderMap(requestHeaders),
 		GatewayDefaultResponseHeaders: encodeGatewayHeaderMap(responseHeaders),
 		CreatedBy:                     user.ID,
-	}, true
+	}, flattenedKubeconfig, true
 }
 
 func flattenKubeconfig(kubeconfig string) (string, error) {
@@ -142,10 +142,230 @@ func flattenKubeconfig(kubeconfig string) (string, error) {
 	return output, nil
 }
 
-func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster, resetProbe bool, ctx context.Context) error {
-	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return h.saveRuntimeClusterWithDefaultTx(tx, cluster, resetProbe)
+var (
+	errRuntimeClusterInUse     = errors.New("runtime cluster is still referenced by active resources")
+	errRuntimeClusterNotActive = errors.New("runtime cluster is not active")
+)
+
+func (h *Handlers) createRuntimeClusterWithDefault(cluster model.RuntimeCluster, flattenedKubeconfig, userID string, ctx context.Context) (model.RuntimeCluster, error) {
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if strings.TrimSpace(flattenedKubeconfig) != "" && h.secrets.Available() {
+			ref, storeErr := h.secrets.StoreContextWithDB(ctx, tx, flattenedKubeconfig, userID, "runtime_cluster:"+cluster.ID+":kubeconfig")
+			if storeErr != nil {
+				return storeErr
+			}
+			cluster.KubeconfigRef = ref
+		}
+		return h.saveRuntimeClusterWithDefaultTx(tx, cluster, false)
 	})
+	return cluster, err
+}
+
+func (h *Handlers) updateRuntimeClusterWithDefault(clusterID string, next model.RuntimeCluster, flattenedKubeconfig string, resetProbe bool, userID string, ctx context.Context) (model.RuntimeCluster, model.RuntimeCluster, bool, bool, error) {
+	var previous model.RuntimeCluster
+	var updated model.RuntimeCluster
+	grantsPruned := false
+	networkChanged := false
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.RuntimeCluster
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", clusterID).Error; err != nil {
+			return err
+		}
+		if !runtimecluster.IsActive(locked) {
+			return errRuntimeClusterNotActive
+		}
+		previous = locked
+		if resetProbe {
+			locked.NetworkPolicyEnforcement = kubeprovider.NetworkPolicyEnforcementUnknown
+			locked.NetworkPolicyProbeCode = ""
+			locked.NetworkPolicyProbedAt = nil
+		}
+		networkChanged = locked.NetworkBlockedCIDRs != next.NetworkBlockedCIDRs ||
+			locked.NetworkGatewayNamespace != next.NetworkGatewayNamespace ||
+			locked.GatewayNamespace != next.GatewayNamespace ||
+			locked.GatewayHTTPListenerPort != next.GatewayHTTPListenerPort ||
+			locked.GatewayHTTPSListenerPort != next.GatewayHTTPSListenerPort ||
+			locked.BuildEgressMode != next.BuildEgressMode ||
+			locked.BuildPrivateEgressCIDRs != next.BuildPrivateEgressCIDRs ||
+			locked.BuildPrivateEgressPorts != next.BuildPrivateEgressPorts
+		locked.Name = next.Name
+		locked.Endpoint = next.Endpoint
+		locked.Scope = next.Scope
+		locked.OwnerRef = next.OwnerRef
+		locked.ProjectIDs = next.ProjectIDs
+		if strings.TrimSpace(flattenedKubeconfig) != "" && h.secrets.Available() {
+			resource := "runtime_cluster:" + locked.ID + ":kubeconfig"
+			newRef, storeErr := h.secrets.StoreContextWithDB(ctx, tx, flattenedKubeconfig, userID, resource)
+			if storeErr != nil {
+				return storeErr
+			}
+			if strings.TrimSpace(previous.KubeconfigRef) != "" && previous.KubeconfigRef != newRef {
+				if delErr := h.secrets.DeleteRefContextWithDB(ctx, tx, previous.KubeconfigRef, resource); delErr != nil {
+					return delErr
+				}
+			}
+			locked.KubeconfigRef = newRef
+		}
+		locked.IsDefault = next.IsDefault
+		locked.MaxConcurrentBuilds = next.MaxConcurrentBuilds
+		locked.CPURequestPercent = next.CPURequestPercent
+		locked.MemoryRequestPercent = next.MemoryRequestPercent
+		locked.CPULimitPercent = next.CPULimitPercent
+		locked.MemoryLimitPercent = next.MemoryLimitPercent
+		locked.GatewayDomainSuffixesRaw = next.GatewayDomainSuffixesRaw
+		locked.GatewayDomainSuffixes = next.GatewayDomainSuffixes
+		locked.GatewayPublicScheme = next.GatewayPublicScheme
+		locked.GatewayPublicPort = next.GatewayPublicPort
+		locked.GatewayControllerType = next.GatewayControllerType
+		locked.GatewayClassName = next.GatewayClassName
+		locked.GatewayName = next.GatewayName
+		locked.GatewayNamespace = next.GatewayNamespace
+		locked.GatewayHTTPListenerName = next.GatewayHTTPListenerName
+		locked.GatewayHTTPListenerPort = next.GatewayHTTPListenerPort
+		locked.GatewayHTTPSListenerName = next.GatewayHTTPSListenerName
+		locked.GatewayHTTPSListenerPort = next.GatewayHTTPSListenerPort
+		locked.GatewayTLSSecretName = next.GatewayTLSSecretName
+		locked.GatewayTLSSecretNamespace = next.GatewayTLSSecretNamespace
+		locked.GatewayCertIssuerKind = next.GatewayCertIssuerKind
+		locked.GatewayCertIssuerName = next.GatewayCertIssuerName
+		locked.GatewayCertificateNamespace = next.GatewayCertificateNamespace
+		locked.GatewayWildcardCertEnabled = next.GatewayWildcardCertEnabled
+		locked.GatewayWildcardCertDomain = next.GatewayWildcardCertDomain
+		locked.GatewayWildcardCertSecretName = next.GatewayWildcardCertSecretName
+		locked.GatewayExternalTLSMode = next.GatewayExternalTLSMode
+		locked.GatewayForwardedHeadersMode = next.GatewayForwardedHeadersMode
+		locked.NetworkBlockedCIDRs = next.NetworkBlockedCIDRs
+		locked.NetworkGatewayNamespace = next.NetworkGatewayNamespace
+		locked.BuildEgressMode = next.BuildEgressMode
+		locked.BuildPrivateEgressCIDRs = next.BuildPrivateEgressCIDRs
+		locked.BuildPrivateEgressPorts = next.BuildPrivateEgressPorts
+		locked.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
+		locked.GatewayDefaultRequestHeaders = next.GatewayDefaultRequestHeaders
+		locked.GatewayDefaultResponseHeaders = next.GatewayDefaultResponseHeaders
+		if err := h.saveRuntimeClusterWithDefaultTx(tx, locked, resetProbe); err != nil {
+			return err
+		}
+		if err := ensureUpdatedRuntimeClusterReferencesAccessible(tx, previous, locked); err != nil {
+			return err
+		}
+		var pruneErr error
+		grantsPruned, pruneErr = pruneUnusableClusterEgressExceptionGrants(tx, locked)
+		if pruneErr != nil {
+			return pruneErr
+		}
+		updated = locked
+		return nil
+	})
+	return previous, updated, grantsPruned, networkChanged, err
+}
+
+func projectCoveredByClusterScope(tx *gorm.DB, cluster model.RuntimeCluster, projectID string) (bool, error) {
+	var projectCount int64
+	if err := tx.Model(&model.Project{}).Where("id = ?", projectID).Count(&projectCount).Error; err != nil {
+		return false, err
+	}
+	if projectCount == 0 {
+		return false, nil
+	}
+	var count int64
+	switch cluster.Scope {
+	case runtimecluster.ScopeGlobal:
+		return true, nil
+	case "project":
+		err := tx.Model(&model.ScopedResourceProjectBinding{}).
+			Where("resource_type = ? and resource_id = ? and project_id = ?", scopedResourceRuntimeCluster, cluster.ID, projectID).
+			Count(&count).Error
+		return count > 0, err
+	case "user":
+		err := tx.Model(&model.ProjectMember{}).
+			Where("project_id = ? and user_id = ?", projectID, cluster.OwnerRef).
+			Count(&count).Error
+		return count > 0, err
+	default:
+		return false, nil
+	}
+}
+
+func ensureUpdatedRuntimeClusterReferencesAccessible(tx *gorm.DB, previous, cluster model.RuntimeCluster) error {
+	if previous.Scope == "global" && cluster.Scope != "global" {
+		if _, err := runtimecluster.ResolveForTarget(tx, ""); err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			var implicitTargetCount int64
+			if err := tx.Model(&model.DeploymentTarget{}).
+				Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").
+				Where("cluster_id = ''").
+				Count(&implicitTargetCount).Error; err != nil {
+				return err
+			}
+			if implicitTargetCount > 0 {
+				return errRuntimeClusterInUse
+			}
+		}
+	}
+	if previous.Scope == cluster.Scope && previous.OwnerRef == cluster.OwnerRef && cluster.Scope == "global" {
+		return nil
+	}
+	referencedProjects := map[string]bool{}
+	var targetProjectIDs []string
+	if err := tx.Model(&model.DeploymentTarget{}).
+		Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").
+		Where("deployment_targets.cluster_id = ?", cluster.ID).
+		Distinct("deployment_targets.project_id").
+		Pluck("deployment_targets.project_id", &targetProjectIDs).Error; err != nil {
+		return err
+	}
+	for _, projectID := range targetProjectIDs {
+		referencedProjects[projectID] = true
+	}
+	var volumeProjectIDs []string
+	if err := tx.Model(&model.ProjectVolume{}).
+		Joins("join projects on projects.id = project_volumes.project_id and projects.deleted_at is null").
+		Where("project_volumes.cluster_id = ?", cluster.ID).
+		Distinct("project_volumes.project_id").
+		Pluck("project_volumes.project_id", &volumeProjectIDs).Error; err != nil {
+		return err
+	}
+	for _, projectID := range volumeProjectIDs {
+		referencedProjects[projectID] = true
+	}
+	for projectID := range referencedProjects {
+		covered, err := projectCoveredByClusterScope(tx, cluster, projectID)
+		if err != nil {
+			return err
+		}
+		if !covered {
+			return errRuntimeClusterInUse
+		}
+	}
+	return nil
+}
+
+func pruneUnusableClusterEgressExceptionGrants(tx *gorm.DB, cluster model.RuntimeCluster) (bool, error) {
+	if cluster.Scope == "global" {
+		return false, nil
+	}
+	var grants []model.NetworkEgressExceptionGrant
+	exceptionsSubquery := tx.Model(&model.NetworkEgressException{}).Select("id").Where("runtime_cluster_id = ?", cluster.ID)
+	if err := tx.Where("exception_id in (?)", exceptionsSubquery).Find(&grants).Error; err != nil {
+		return false, err
+	}
+	pruned := false
+	for _, grant := range grants {
+		covered, err := projectCoveredByClusterScope(tx, cluster, grant.ProjectID)
+		if err != nil {
+			return false, err
+		}
+		if covered {
+			continue
+		}
+		if err := tx.Delete(&grant).Error; err != nil {
+			return false, err
+		}
+		pruned = true
+	}
+	return pruned, nil
 }
 
 // saveRuntimeClusterWithDefaultTx 保存集群配置。探测结论由 Worker 写入，普通保存不得用请求开始时读到的旧值覆盖；

@@ -2,6 +2,7 @@ package registryapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	registryprovider "github.com/LiteyukiStudio/devops/internal/provider/registry"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (h *Handler) ListArtifactRegistries(ctx *gin.Context) {
@@ -108,23 +110,49 @@ func (h *Handler) UpdateArtifactRegistry(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	existing.Name = next.Name
-	existing.Provider = next.Provider
-	existing.Endpoint = next.Endpoint
-	existing.Namespace = next.Namespace
-	existing.Scope = next.Scope
-	existing.OwnerRef = next.OwnerRef
-	existing.ProjectIDs = next.ProjectIDs
-	existing.IsDefault = next.IsDefault
-	existing.Capabilities = next.Capabilities
-
-	if err := h.saveRegistryWithDefault(existing, ctx.Request.Context()); err != nil {
+	var updated model.ArtifactRegistry
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.ArtifactRegistry
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", existing.ID).Error; err != nil {
+			return err
+		}
+		locked.Name = next.Name
+		locked.Provider = next.Provider
+		locked.Endpoint = next.Endpoint
+		locked.Namespace = next.Namespace
+		locked.Scope = next.Scope
+		locked.OwnerRef = next.OwnerRef
+		locked.ProjectIDs = next.ProjectIDs
+		locked.IsDefault = next.IsDefault
+		locked.Capabilities = next.Capabilities
+		if compatErr := ensureRegistryScopeCompatibleTx(tx, locked); compatErr != nil {
+			return compatErr
+		}
+		if saveErr := h.saveRegistryWithDefaultTx(tx, locked); saveErr != nil {
+			return saveErr
+		}
+		updated = locked
+		return nil
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "artifact registry not found")
+		return
+	}
+	if errors.Is(err, errRegistryCredentialScopeConflict) {
+		writeErrorCode(ctx, http.StatusConflict, "registry.credential_scope_conflict", "child registry credentials exceed the target registry scope")
+		return
+	}
+	if errors.Is(err, errArtifactRegistryInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "registry.in_use", "artifact registry is referenced by deployment targets outside the target scope")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.auditWithContext(user.ID, "registry.update", existing.ID, true, existing.Scope, ctx.Request.Context())
-	h.observeArtifactRegistry(ctx.Request.Context(), user, &existing)
-	ctx.JSON(http.StatusOK, registryResponse(existing))
+	h.auditWithContext(user.ID, "registry.update", updated.ID, true, updated.Scope, ctx.Request.Context())
+	h.observeArtifactRegistry(ctx.Request.Context(), user, &updated)
+	ctx.JSON(http.StatusOK, registryResponse(updated))
 }
 
 func (h *Handler) DeleteArtifactRegistry(ctx *gin.Context) {
@@ -141,29 +169,135 @@ func (h *Handler) DeleteArtifactRegistry(ctx *gin.Context) {
 	if !h.canManageRegistry(ctx, user, registry) {
 		return
 	}
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		var credentialIDs []string
-		if err := tx.Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID).Pluck("id", &credentialIDs).Error; err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.ArtifactRegistry
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", registry.ID).Error; err != nil {
 			return err
+		}
+		var targetCount int64
+		if err := tx.Model(&model.DeploymentTarget{}).
+			Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").
+			Where("deployment_targets.target_registry_id = ?", locked.ID).
+			Count(&targetCount).Error; err != nil {
+			return err
+		}
+		if targetCount > 0 {
+			return errArtifactRegistryInUse
+		}
+		var credentials []model.RegistryCredential
+		if err := tx.Where("registry_id = ?", locked.ID).Find(&credentials).Error; err != nil {
+			return err
+		}
+		credentialIDs := make([]string, 0, len(credentials))
+		for _, cred := range credentials {
+			credentialIDs = append(credentialIDs, cred.ID)
+			if err := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, cred.PasswordRef, "registry_credential:"+cred.RegistryID+":password"); err != nil {
+				return err
+			}
+			if err := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, cred.TokenRef, "registry_credential:"+cred.RegistryID+":token"); err != nil {
+				return err
+			}
 		}
 		if len(credentialIDs) > 0 {
 			if err := tx.Where("resource_type = ? and resource_id in ?", scopedResourceRegistryCredential, credentialIDs).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Where("registry_id = ?", registry.ID).Delete(&model.RegistryCredential{}).Error; err != nil {
+		if err := tx.Where("registry_id = ?", locked.ID).Delete(&model.RegistryCredential{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Delete(&registry).Error; err != nil {
+		if err := tx.Delete(&locked).Error; err != nil {
 			return err
 		}
-		return tx.Where("resource_type = ? and resource_id = ?", scopedResourceArtifactRegistry, registry.ID).Delete(&model.ScopedResourceProjectBinding{}).Error
-	}); err != nil {
+		return tx.Where("resource_type = ? and resource_id = ?", scopedResourceArtifactRegistry, locked.ID).Delete(&model.ScopedResourceProjectBinding{}).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "artifact registry not found")
+		return
+	}
+	if errors.Is(err, errArtifactRegistryInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "registry.in_use", "artifact registry is referenced by deployment targets")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditWithContext(user.ID, "registry.delete", registry.ID, true, registry.Scope, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
+}
+
+var (
+	errArtifactRegistryInUse           = errors.New("artifact registry is referenced by deployment targets")
+	errRegistryCredentialScopeConflict = errors.New("child registry credentials exceed the target registry scope")
+)
+
+func ensureRegistryScopeCompatibleTx(tx *gorm.DB, registry model.ArtifactRegistry) error {
+	if registry.Scope == "global" {
+		return nil
+	}
+	var credentials []model.RegistryCredential
+	if err := tx.Where("registry_id = ?", registry.ID).Find(&credentials).Error; err != nil {
+		return err
+	}
+	allowedProjects := make(map[string]bool, len(registry.ProjectIDs))
+	for _, projectID := range registry.ProjectIDs {
+		allowedProjects[strings.TrimSpace(projectID)] = true
+	}
+	credentialIDs := make([]string, 0, len(credentials))
+	for _, cred := range credentials {
+		credentialIDs = append(credentialIDs, cred.ID)
+	}
+	credProjectMap := make(map[string][]string, len(credentialIDs))
+	if len(credentialIDs) > 0 {
+		var bindings []model.ScopedResourceProjectBinding
+		if err := tx.Where("resource_type = ? and resource_id in ?", scopedResourceRegistryCredential, credentialIDs).Find(&bindings).Error; err != nil {
+			return err
+		}
+		for _, binding := range bindings {
+			credProjectMap[binding.ResourceID] = append(credProjectMap[binding.ResourceID], binding.ProjectID)
+		}
+	}
+	for _, cred := range credentials {
+		switch registry.Scope {
+		case "user":
+			if cred.Scope != "user" || strings.TrimSpace(cred.OwnerRef) != strings.TrimSpace(registry.OwnerRef) {
+				return errRegistryCredentialScopeConflict
+			}
+		case "project":
+			if cred.Scope == "global" {
+				return errRegistryCredentialScopeConflict
+			}
+			if cred.Scope == "project" {
+				for _, boundProjectID := range credProjectMap[cred.ID] {
+					if !allowedProjects[boundProjectID] {
+						return errRegistryCredentialScopeConflict
+					}
+				}
+			}
+		}
+	}
+
+	targetQuery := tx.Model(&model.DeploymentTarget{}).
+		Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").
+		Where("deployment_targets.target_registry_id = ?", registry.ID)
+	switch registry.Scope {
+	case "project":
+		if len(registry.ProjectIDs) > 0 {
+			targetQuery = targetQuery.Where("deployment_targets.project_id not in ?", registry.ProjectIDs)
+		}
+	case "user":
+		memberProjects := tx.Model(&model.ProjectMember{}).Select("project_id").Where("user_id = ?", registry.OwnerRef)
+		targetQuery = targetQuery.Where("deployment_targets.project_id not in (?)", memberProjects)
+	}
+	var conflictTargets int64
+	if err := targetQuery.Count(&conflictTargets).Error; err != nil {
+		return err
+	}
+	if conflictTargets > 0 {
+		return errArtifactRegistryInUse
+	}
+	return nil
 }
 
 func (h *Handler) GetDefaultArtifactRegistry(ctx *gin.Context) {
@@ -229,28 +363,34 @@ func (h *Handler) registryFromInput(ctx *gin.Context, user model.User, input art
 
 func (h *Handler) saveRegistryWithDefault(registry model.ArtifactRegistry, ctx context.Context) error {
 	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		projectIDs := sortedProjectIDs(registry.ProjectIDs)
-		defaultProjectIDs := []string{}
-		if registry.Scope == "project" {
-			if registry.IsDefault {
-				defaultProjectIDs = projectIDs
+		return h.saveRegistryWithDefaultTx(tx, registry)
+	})
+}
+
+func (h *Handler) saveRegistryWithDefaultTx(tx *gorm.DB, registry model.ArtifactRegistry) error {
+	projectIDs := sortedProjectIDs(registry.ProjectIDs)
+	defaultProjectIDs := []string{}
+	if registry.Scope == "project" {
+		if registry.IsDefault {
+			defaultProjectIDs = projectIDs
+			if len(projectIDs) > 0 {
 				if err := tx.Model(&model.ScopedResourceProjectBinding{}).
 					Where("resource_type = ? and project_id in ? and resource_id <> ?", scopedResourceArtifactRegistry, projectIDs, registry.ID).
 					Update("is_default", false).Error; err != nil {
 					return err
 				}
 			}
-			registry.IsDefault = false
-		} else if registry.IsDefault {
-			if err := tx.Model(&model.ArtifactRegistry{}).
-				Where("scope = ? and owner_ref = ? and id <> ?", registry.Scope, registry.OwnerRef, registry.ID).
-				Update("is_default", false).Error; err != nil {
-				return err
-			}
 		}
-		if err := tx.Save(&registry).Error; err != nil {
+		registry.IsDefault = false
+	} else if registry.IsDefault {
+		if err := tx.Model(&model.ArtifactRegistry{}).
+			Where("scope = ? and owner_ref = ? and id <> ?", registry.Scope, registry.OwnerRef, registry.ID).
+			Update("is_default", false).Error; err != nil {
 			return err
 		}
-		return h.replaceScopedResourceProjectBindings(tx, scopedResourceArtifactRegistry, registry.ID, projectIDs, defaultProjectIDs)
-	})
+	}
+	if err := tx.Save(&registry).Error; err != nil {
+		return err
+	}
+	return h.replaceScopedResourceProjectBindings(tx, scopedResourceArtifactRegistry, registry.ID, projectIDs, defaultProjectIDs)
 }

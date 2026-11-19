@@ -16,12 +16,14 @@ import (
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
 	errGitClientResponseWritten      = errors.New("git client response written")
 	errRepositoryWebhookPersistence  = errors.New("repository webhook persistence failed")
 	errRepositoryWebhookCompensation = errors.New("repository webhook compensation failed")
+	errRepositoryBindingInUse        = errors.New("repository binding is referenced by deployment targets")
 )
 
 const (
@@ -266,6 +268,20 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 	if !h.ensureRepositoryBindingUnique(ctx, binding, existing.ID) {
 		return
 	}
+	if strings.TrimSpace(existing.ApplicationID) != "" && existing.ApplicationID != binding.ApplicationID {
+		var targetCount int64
+		if err := h.dbFor(ctx).Model(&model.DeploymentTarget{}).
+			Where("project_id = ? and application_id = ? and repository_binding_id = ?", existing.ProjectID, existing.ApplicationID, existing.ID).
+			Count(&targetCount).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if targetCount > 0 {
+			writeErrorCode(ctx, http.StatusConflict, "git.repository_binding_in_use", "repository binding is referenced by deployment targets")
+			return
+		}
+	}
+	previousAppID := existing.ApplicationID
 	webhookTargetChanged := repositoryBindingWebhookTargetChanged(existing, binding)
 	existing.ApplicationID = binding.ApplicationID
 	existing.GitProviderID = binding.GitProviderID
@@ -285,13 +301,58 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 	existing.CredentialRef = ""
 
 	if existing.WebhookEnabled && (webhookTargetChanged || strings.TrimSpace(existing.WebhookID) == "") {
-		if err := h.configureRepositoryWebhook(ctx, user, &existing, false); err != nil {
+		if err := h.configureRepositoryWebhookWithGuard(ctx, user, &existing, false, true); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeError(ctx, http.StatusNotFound, "repository binding not found")
+				return
+			}
+			if errors.Is(err, errRepositoryBindingInUse) {
+				writeErrorCode(ctx, http.StatusConflict, "git.repository_binding_in_use", "repository binding is referenced by deployment targets")
+				return
+			}
 			writeRepositoryWebhookError(ctx, err)
 			return
 		}
-	} else if err := h.dbFor(ctx).Save(&existing).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
-		return
+	} else {
+		err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+			var locked model.RepositoryBinding
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ? and project_id = ?", existing.ID, existing.ProjectID).Error; err != nil {
+				return err
+			}
+			prevApp := strings.TrimSpace(locked.ApplicationID)
+			if prevApp == "" {
+				prevApp = strings.TrimSpace(previousAppID)
+			}
+			if prevApp != "" && prevApp != existing.ApplicationID {
+				var targetCount int64
+				if err := tx.Model(&model.DeploymentTarget{}).
+					Where("project_id = ? and application_id = ? and repository_binding_id = ?", existing.ProjectID, prevApp, existing.ID).
+					Count(&targetCount).Error; err != nil {
+					return err
+				}
+				if targetCount > 0 {
+					return errRepositoryBindingInUse
+				}
+			}
+			if strings.TrimSpace(locked.WebhookSecret) != "" && strings.TrimSpace(existing.WebhookSecret) == "" {
+				if err := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, locked.WebhookSecret, "repository_binding:"+locked.ID+":webhook"); err != nil {
+					return err
+				}
+			}
+			return tx.Save(&existing).Error
+		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(ctx, http.StatusNotFound, "repository binding not found")
+			return
+		}
+		if errors.Is(err, errRepositoryBindingInUse) {
+			writeErrorCode(ctx, http.StatusConflict, "git.repository_binding_in_use", "repository binding is referenced by deployment targets")
+			return
+		}
+		if err != nil {
+			writeError(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	h.syncApplicationRepositoryURL(existing)
 	existing.CredentialRef = ""
@@ -305,12 +366,34 @@ func (h *Handlers) DeleteRepositoryBinding(ctx *gin.Context) {
 		return
 	}
 
-	var binding model.RepositoryBinding
-	if err := h.dbFor(ctx).First(&binding, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.RepositoryBinding
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
+			return err
+		}
+		var targetCount int64
+		if err := tx.Model(&model.DeploymentTarget{}).
+			Where("project_id = ? and repository_binding_id = ?", locked.ProjectID, locked.ID).
+			Count(&targetCount).Error; err != nil {
+			return err
+		}
+		if targetCount > 0 {
+			return errRepositoryBindingInUse
+		}
+		if err := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, locked.WebhookSecret, "repository_binding:"+locked.ID+":webhook"); err != nil {
+			return err
+		}
+		return tx.Delete(&locked).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusNotFound, "repository binding not found")
 		return
 	}
-	if err := h.dbFor(ctx).Delete(&binding).Error; err != nil {
+	if errors.Is(err, errRepositoryBindingInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "git.repository_binding_in_use", "repository binding is referenced by deployment targets")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -335,7 +418,11 @@ func (h *Handlers) configureRepositoryWebhookFromRequest(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "repository binding not found")
 		return
 	}
-	if err := h.configureRepositoryWebhook(ctx, user, &binding, true); err != nil {
+	if err := h.configureRepositoryWebhookWithGuard(ctx, user, &binding, true, true); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(ctx, http.StatusNotFound, "repository binding not found")
+			return
+		}
 		writeRepositoryWebhookError(ctx, err)
 		return
 	}
@@ -528,6 +615,10 @@ func (h *Handlers) auditRepositoryWebhook(ctx context.Context, userID, bindingID
 }
 
 func (h *Handlers) configureRepositoryWebhook(ctx *gin.Context, user model.User, binding *model.RepositoryBinding, writeClientErrors bool) error {
+	return h.configureRepositoryWebhookWithGuard(ctx, user, binding, writeClientErrors, false)
+}
+
+func (h *Handlers) configureRepositoryWebhookWithGuard(ctx *gin.Context, user model.User, binding *model.RepositoryBinding, writeClientErrors bool, requireExisting bool) error {
 	if !h.secrets.Available() {
 		h.auditRepositoryWebhook(ctx.Request.Context(), user.ID, binding.ID, false, "secret store unavailable")
 		return fmt.Errorf("%w: secret store unavailable", errRepositoryWebhookPersistence)
@@ -547,9 +638,28 @@ func (h *Handlers) configureRepositoryWebhook(ctx *gin.Context, user model.User,
 	candidate := *binding
 	err = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var persisted model.RepositoryBinding
-		lookupErr := tx.First(&persisted, "id = ?", binding.ID).Error
-		if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-			return lookupErr
+		var lookupErr error
+		if requireExisting {
+			lookupErr = tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&persisted, "id = ? and project_id = ?", binding.ID, binding.ProjectID).Error
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if strings.TrimSpace(persisted.ApplicationID) != "" && persisted.ApplicationID != candidate.ApplicationID {
+				var targetCount int64
+				if countErr := tx.Model(&model.DeploymentTarget{}).
+					Where("project_id = ? and application_id = ? and repository_binding_id = ?", persisted.ProjectID, persisted.ApplicationID, persisted.ID).
+					Count(&targetCount).Error; countErr != nil {
+					return countErr
+				}
+				if targetCount > 0 {
+					return errRepositoryBindingInUse
+				}
+			}
+		} else {
+			lookupErr = tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&persisted, "id = ?", binding.ID).Error
+			if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				return lookupErr
+			}
 		}
 		secretRef, storeErr := h.secrets.StoreContextWithDB(ctx.Request.Context(), tx, secret, user.ID, resource)
 		if storeErr != nil {
@@ -576,6 +686,9 @@ func (h *Handlers) configureRepositoryWebhook(ctx *gin.Context, user model.User,
 			return fmt.Errorf("%w: persist: %v; cleanup: %v", errRepositoryWebhookCompensation, err, cleanupErr)
 		}
 		h.auditRepositoryWebhook(ctx.Request.Context(), user.ID, binding.ID, false, message)
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errRepositoryBindingInUse) {
+			return err
+		}
 		return fmt.Errorf("%w: %v", errRepositoryWebhookPersistence, err)
 	}
 	*binding = candidate

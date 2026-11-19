@@ -1,7 +1,7 @@
 package gitapi
 
 import (
-	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const gitOAuthStateTTL = 10 * time.Minute
@@ -321,9 +322,6 @@ func (h *Handlers) CreateGitProvider(ctx *gin.Context) {
 		ClientID:   strings.TrimSpace(input.ClientID),
 		Enabled:    input.Enabled,
 	}
-	if strings.TrimSpace(input.ClientSecret) != "" {
-		provider.ClientSecretRef = h.secrets.StoreContext(ctx.Request.Context(), input.ClientSecret, user.ID, "git_provider:"+provider.ID)
-	}
 	if provider.Name == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git Provider 名称")
 		return
@@ -332,7 +330,20 @@ func (h *Handlers) CreateGitProvider(ctx *gin.Context) {
 		provider.BaseURL = defaultGitBaseURL(provider.Type)
 	}
 
-	if err := h.saveGitProvider(provider, ctx.Request.Context()); err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		if strings.TrimSpace(input.ClientSecret) != "" && h.secrets.Available() {
+			ref, storeErr := h.secrets.StoreContextWithDB(ctx.Request.Context(), tx, input.ClientSecret, user.ID, "git_provider:"+provider.ID)
+			if storeErr != nil {
+				return storeErr
+			}
+			provider.ClientSecretRef = ref
+		}
+		if err := tx.Save(&provider).Error; err != nil {
+			return err
+		}
+		return h.replaceScopedResourceProjectBindings(tx, scopedResourceGitProvider, provider.ID, sortedProjectIDs(provider.ProjectIDs), nil)
+	})
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -382,28 +393,74 @@ func (h *Handlers) UpdateGitProvider(ctx *gin.Context) {
 		projectIDs = normalizedProjectIDs
 	}
 
-	provider.Type = providerType
-	provider.Name = strings.TrimSpace(input.Name)
-	provider.BaseURL = normalizeGitBaseURL(providerType, input.BaseURL)
-	provider.Scope = scope
-	provider.OwnerRef = strings.TrimSpace(input.OwnerRef)
-	provider.ProjectIDs = projectIDs
-	provider.AuthType = normalizeGitAuthType(input.AuthType)
-	provider.ClientID = strings.TrimSpace(input.ClientID)
-	if strings.TrimSpace(input.ClientSecret) != "" {
-		provider.ClientSecretRef = h.secrets.StoreContext(ctx.Request.Context(), input.ClientSecret, user.ID, "git_provider:"+provider.ID)
-	}
-	provider.Enabled = input.Enabled
-	if provider.Name == "" {
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git Provider 名称")
 		return
 	}
-	if err := h.saveGitProvider(provider, ctx.Request.Context()); err != nil {
+	baseURL := normalizeGitBaseURL(providerType, input.BaseURL)
+	ownerRef := strings.TrimSpace(input.OwnerRef)
+	authType := normalizeGitAuthType(input.AuthType)
+	clientID := strings.TrimSpace(input.ClientID)
+
+	var updated model.GitProvider
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.GitProvider
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", provider.ID).Error; err != nil {
+			return err
+		}
+		locked.Type = providerType
+		locked.Name = name
+		locked.BaseURL = baseURL
+		locked.Scope = scope
+		locked.OwnerRef = ownerRef
+		locked.ProjectIDs = projectIDs
+		locked.AuthType = authType
+		locked.ClientID = clientID
+		locked.Enabled = input.Enabled
+		if compatErr := ensureGitProviderScopeCompatibleTx(tx, locked); compatErr != nil {
+			return compatErr
+		}
+		if strings.TrimSpace(input.ClientSecret) != "" && h.secrets.Available() {
+			resource := "git_provider:" + locked.ID
+			newRef, storeErr := h.secrets.StoreContextWithDB(ctx.Request.Context(), tx, input.ClientSecret, user.ID, resource)
+			if storeErr != nil {
+				return storeErr
+			}
+			if strings.TrimSpace(locked.ClientSecretRef) != "" && locked.ClientSecretRef != newRef {
+				if delErr := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, locked.ClientSecretRef, resource); delErr != nil {
+					return delErr
+				}
+			}
+			locked.ClientSecretRef = newRef
+		}
+		if err := tx.Save(&locked).Error; err != nil {
+			return err
+		}
+		if err := h.replaceScopedResourceProjectBindings(tx, scopedResourceGitProvider, locked.ID, sortedProjectIDs(locked.ProjectIDs), nil); err != nil {
+			return err
+		}
+		updated = locked
+		return nil
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "git provider not found")
+		return
+	}
+	if errors.Is(err, errGitCredentialScopeConflict) {
+		writeErrorCode(ctx, http.StatusConflict, "git.credential_scope_conflict", "child git accounts exceed the target provider scope")
+		return
+	}
+	if errors.Is(err, errGitProviderInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "git.provider_in_use", "git provider is referenced by repository bindings outside the target scope")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.auditWithContext(user.ID, "git_provider.update", provider.ID, true, provider.Type, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, gitProviderResponse(provider))
+	h.auditWithContext(user.ID, "git_provider.update", updated.ID, true, updated.Type, ctx.Request.Context())
+	ctx.JSON(http.StatusOK, gitProviderResponse(updated))
 }
 
 func (h *Handlers) DeleteGitProvider(ctx *gin.Context) {
@@ -420,25 +477,64 @@ func (h *Handlers) DeleteGitProvider(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "git provider not found")
 		return
 	}
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		var accountIDs []string
-		if err := tx.Model(&model.GitAccount{}).Where("provider_id = ?", provider.ID).Pluck("id", &accountIDs).Error; err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.GitProvider
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", provider.ID).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("provider_id = ?", provider.ID).Delete(&model.GitAccount{}).Error; err != nil {
+		var accounts []model.GitAccount
+		if err := tx.Where("provider_id = ?", locked.ID).Find(&accounts).Error; err != nil {
 			return err
 		}
-		if err := tx.Delete(&provider).Error; err != nil {
+		accountIDs := gitAccountIDs(accounts)
+		bindingQuery := tx.Model(&model.RepositoryBinding{}).
+			Joins("join projects on projects.id = repository_bindings.project_id and projects.deleted_at is null")
+		if len(accountIDs) > 0 {
+			bindingQuery = bindingQuery.Where("repository_bindings.git_provider_id = ? or repository_bindings.git_account_id in ?", locked.ID, accountIDs)
+		} else {
+			bindingQuery = bindingQuery.Where("repository_bindings.git_provider_id = ?", locked.ID)
+		}
+		var bindingCount int64
+		if err := bindingQuery.Count(&bindingCount).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceGitProvider, provider.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
+		if bindingCount > 0 {
+			return errGitProviderInUse
+		}
+		for _, account := range accounts {
+			if err := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, account.AccessTokenRef, "git_account:"+account.ID+":access"); err != nil {
+				return err
+			}
+			if err := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, account.RefreshTokenRef, "git_account:"+account.ID+":refresh"); err != nil {
+				return err
+			}
+		}
+		if err := h.secrets.DeleteRefContextWithDB(ctx.Request.Context(), tx, locked.ClientSecretRef, "git_provider:"+locked.ID); err != nil {
+			return err
+		}
+		if err := tx.Where("provider_id = ?", locked.ID).Delete(&model.GitAccount{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&locked).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceGitProvider, locked.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
 			return err
 		}
 		if len(accountIDs) > 0 {
 			return tx.Where("resource_type = ? and resource_id in ?", scopedResourceGitAccount, accountIDs).Delete(&model.ScopedResourceProjectBinding{}).Error
 		}
 		return nil
-	}); err != nil {
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "git provider not found")
+		return
+	}
+	if errors.Is(err, errGitProviderInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "git.provider_in_use", "git provider is referenced by repository bindings")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -446,11 +542,73 @@ func (h *Handlers) DeleteGitProvider(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) saveGitProvider(provider model.GitProvider, ctx context.Context) error {
-	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&provider).Error; err != nil {
+var (
+	errGitProviderInUse           = errors.New("git provider is referenced by repository bindings")
+	errGitCredentialScopeConflict = errors.New("child git accounts exceed the target provider scope")
+)
+
+func ensureGitProviderScopeCompatibleTx(tx *gorm.DB, provider model.GitProvider) error {
+	if provider.Scope == "global" {
+		return nil
+	}
+	var accounts []model.GitAccount
+	if err := tx.Where("provider_id = ?", provider.ID).Find(&accounts).Error; err != nil {
+		return err
+	}
+	allowedProjects := make(map[string]bool, len(provider.ProjectIDs))
+	for _, projectID := range provider.ProjectIDs {
+		allowedProjects[strings.TrimSpace(projectID)] = true
+	}
+	accountIDs := gitAccountIDs(accounts)
+	accountProjectMap := make(map[string][]string, len(accountIDs))
+	if len(accountIDs) > 0 {
+		var bindings []model.ScopedResourceProjectBinding
+		if err := tx.Where("resource_type = ? and resource_id in ?", scopedResourceGitAccount, accountIDs).Find(&bindings).Error; err != nil {
 			return err
 		}
-		return h.replaceScopedResourceProjectBindings(tx, scopedResourceGitProvider, provider.ID, sortedProjectIDs(provider.ProjectIDs), nil)
-	})
+		for _, binding := range bindings {
+			accountProjectMap[binding.ResourceID] = append(accountProjectMap[binding.ResourceID], binding.ProjectID)
+		}
+	}
+	for _, account := range accounts {
+		accountScope := normalizeGitScope(account.Scope)
+		switch provider.Scope {
+		case "user":
+			if accountScope != "user" || strings.TrimSpace(account.OwnerRef) != strings.TrimSpace(provider.OwnerRef) {
+				return errGitCredentialScopeConflict
+			}
+		case "project":
+			if accountScope == "global" {
+				return errGitCredentialScopeConflict
+			}
+			if accountScope == "project" {
+				for _, boundProjectID := range accountProjectMap[account.ID] {
+					if !allowedProjects[boundProjectID] {
+						return errGitCredentialScopeConflict
+					}
+				}
+			}
+		}
+	}
+
+	bindingQuery := tx.Model(&model.RepositoryBinding{}).
+		Joins("join projects on projects.id = repository_bindings.project_id and projects.deleted_at is null").
+		Where("repository_bindings.git_provider_id = ?", provider.ID)
+	switch provider.Scope {
+	case "project":
+		if len(provider.ProjectIDs) > 0 {
+			bindingQuery = bindingQuery.Where("repository_bindings.project_id not in ?", provider.ProjectIDs)
+		}
+	case "user":
+		memberProjects := tx.Model(&model.ProjectMember{}).Select("project_id").Where("user_id = ?", provider.OwnerRef)
+		bindingQuery = bindingQuery.Where("repository_bindings.project_id not in (?)", memberProjects)
+	}
+	var conflictBindings int64
+	if err := bindingQuery.Count(&conflictBindings).Error; err != nil {
+		return err
+	}
+	if conflictBindings > 0 {
+		return errGitProviderInUse
+	}
+	return nil
 }

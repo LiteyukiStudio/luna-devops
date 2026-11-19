@@ -219,11 +219,14 @@ func (h *Handlers) buildVariableSetsForRun(db *gorm.DB, user model.User, project
 		}
 		seen[setID] = true
 		var set model.BuildVariableSet
-		if err := db.First(&set, "id = ? and enabled = ?", setID, true).Error; err != nil {
+		if err := db.First(&set, "id = ?", setID).Error; err != nil {
 			return nil, errors.New("变量和密钥不可用")
 		}
 		if !h.buildVariableSetAccessible(user, projectID, set, ctx) {
 			return nil, errors.New("无权使用该变量和密钥")
+		}
+		if !set.Enabled {
+			continue
 		}
 		sets = append(sets, set)
 	}

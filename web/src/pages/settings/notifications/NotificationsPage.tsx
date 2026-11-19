@@ -561,10 +561,11 @@ export function NotificationsPage() {
         channels={globalChannelOptions}
         contextMode="global"
         open={Boolean(ruleDialog)}
-        projects={projectOptions.data ?? []}
+        projects={projectOptions.data}
+        projectsLoading={projectOptions.isLoading}
         rule={ruleDialog?.rule}
         saving={saveRule.isPending}
-        templates={templateOptions.data?.items ?? []}
+        templates={templateOptions.data?.items}
         onClose={() => setRuleDialog(null)}
         onSave={(payload, ruleId) => saveRule.mutate({ payload, ruleId })}
       />

@@ -143,7 +143,8 @@ const errors = {
     forbidden: 'You do not have permission to view resources in this runtime cluster.',
     delete_in_progress: 'The runtime cluster is being deleted. Wait for cleanup to finish before trying again.',
     cleanup_enqueue_failed: 'The runtime cluster cleanup task could not be queued. Try again later.',
-    in_use: 'This runtime cluster is still referenced by active resources. Remove those references before deleting it.',
+    in_use: 'This runtime cluster is still referenced by active resources. Remove those references before narrowing its scope or deleting it.',
+    not_active: 'The runtime cluster is not active and cannot be modified right now.',
     not_found: 'The runtime cluster does not exist or has been deleted.',
   },
   billing: {
@@ -303,7 +304,8 @@ const errors = {
     smtp_recipient_required: 'Each SMTP channel requires at least one recipient on the channel default or this rule.',
     channel_not_found: 'A selected notification channel does not exist or is not bound to this project space.',
     channel_required: 'Enter a channel name and select a notification adapter.',
-    channel_in_use: 'Remove this channel from project notification rules before unbinding it.',
+    channel_in_use: 'Remove this channel from referencing notification rules before unbinding, narrowing its scope, or deleting it.',
+    template_not_found: 'The selected notification template does not exist or was deleted. Select it again.',
     channel_shared_owner_required: 'This channel is shared across multiple project spaces. Owner permission on all bound spaces is required to edit or delete it; you can unbind it from this space instead.',
     channel_scope_not_project: 'Only project-scoped notification channels can be bound to or unbound from a project space.',
     channel_test_failed: 'Test notification failed. Check the target endpoint, network connectivity, and credentials.',
@@ -326,6 +328,15 @@ const errors = {
     webhook_callback_invalid: 'The webhook callback URL is invalid. Configure PUBLIC_BASE_URL with an http/https URL and reconfigure the webhook.',
     webhook_already_exists: 'A webhook with the same callback URL may already exist in this repository. Check the Git platform and retry or use the existing webhook.',
     webhook_rate_limited: 'The Git platform is temporarily limiting webhook creation requests. Try again later.',
+    provider_in_use: 'This Git provider is still referenced by repository bindings. Remove those bindings before narrowing its scope or deleting it.',
+    account_in_use: 'This Git credential is still referenced by repository bindings. Remove those bindings before narrowing its scope or deleting it.',
+    credential_scope_conflict: 'Update the project scope of child Git credentials first.',
+    repository_binding_in_use: 'This repository binding is still referenced by deployment configs. Update or delete those deployment configs first.',
+  },
+  registry: {
+    in_use: 'This artifact registry is still referenced by deployment configs. Update or delete those deployment configs first.',
+    credential_in_use: 'This registry credential is required by repository deployment configs. Add another push credential or update those deployment configs first.',
+    credential_scope_conflict: 'Update the project scope of child registry credentials first.',
   },
 }
 

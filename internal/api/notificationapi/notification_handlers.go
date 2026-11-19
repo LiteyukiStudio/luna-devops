@@ -14,6 +14,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type notificationChannelInput struct {
@@ -126,12 +127,47 @@ func (h *Handler) CreateNotificationChannel(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	channel, ok := h.notificationChannelFromInput(ctx, user, input, model.NotificationChannel{ID: id.New("nch"), Scope: "global", OwnerUserID: ""})
+	channel, secretValues, ok := prepareNotificationChannelDraft(ctx, user, input, model.NotificationChannel{ID: id.New("nch"), Scope: "global", OwnerUserID: ""})
 	if !ok {
 		return
 	}
 	channel.Scope = "global"
-	if err := h.dbFor(ctx).Create(&channel).Error; err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		secretRefs := map[string]string{}
+		refOverlay := make(map[string]string, len(secretValues)*2)
+		for key, value := range secretValues {
+			refOverlay[key] = value
+			ref, storeErr := h.secrets().StoreContextWithDB(ctx.Request.Context(), tx, value, user.ID, "notification_channel:"+channel.ID+":"+key)
+			if storeErr != nil {
+				return storeErr
+			}
+			secretRefs[key] = ref
+			refOverlay[ref] = value
+		}
+		channel.ConfigJSON = attachSMTPPasswordRef(channel.AdapterKind, channel.ConfigJSON, secretRefs)
+		channel.SecretRefsJSON = mustJSON(secretRefs)
+		resolver := staticOverlaySecretResolver{overlay: refOverlay, fallback: h.secrets()}
+		if validateErr := validateNotificationChannel(ctx.Request.Context(), channel, resolver); validateErr != nil {
+			return errChannelValidation{err: validateErr}
+		}
+		wantEnabled := channel.Enabled
+		if createErr := tx.Create(&channel).Error; createErr != nil {
+			return createErr
+		}
+		if channel.Enabled != wantEnabled {
+			if updateErr := tx.Model(&model.NotificationChannel{}).Where("id = ?", channel.ID).Update("enabled", wantEnabled).Error; updateErr != nil {
+				return updateErr
+			}
+			channel.Enabled = wantEnabled
+		}
+		return nil
+	})
+	var validationErr errChannelValidation
+	if errors.As(err, &validationErr) {
+		writeError(ctx, http.StatusBadRequest, validationErr.err.Error())
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -159,11 +195,66 @@ func (h *Handler) UpdateNotificationChannel(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	channel, ok := h.notificationChannelFromInput(ctx, user, input, existing)
+	channel, secretValues, ok := prepareNotificationChannelDraft(ctx, user, input, existing)
 	if !ok {
 		return
 	}
-	if err := h.dbFor(ctx).Save(&channel).Error; err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.NotificationChannel
+		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ? and owner_user_id = ?", existing.ID, "").Error; lockErr != nil {
+			return lockErr
+		}
+		secretRefs := decodeStringMap(locked.SecretRefsJSON)
+		refOverlay := make(map[string]string, len(secretValues)*2)
+		for key, value := range secretValues {
+			refOverlay[key] = value
+			resource := "notification_channel:" + channel.ID + ":" + key
+			newRef, storeErr := h.secrets().StoreContextWithDB(ctx.Request.Context(), tx, value, user.ID, resource)
+			if storeErr != nil {
+				return storeErr
+			}
+			oldRef := secretRefs[key]
+			secretRefs[key] = newRef
+			refOverlay[newRef] = value
+			if strings.TrimSpace(oldRef) != "" && oldRef != newRef {
+				if delErr := h.secrets().DeleteRefContextWithDB(ctx.Request.Context(), tx, oldRef, resource); delErr != nil {
+					return delErr
+				}
+			}
+		}
+		channel.ConfigJSON = attachSMTPPasswordRef(channel.AdapterKind, channel.ConfigJSON, secretRefs)
+		channel.SecretRefsJSON = mustJSON(secretRefs)
+		resolver := staticOverlaySecretResolver{overlay: refOverlay, fallback: h.secrets()}
+		if validateErr := validateNotificationChannel(ctx.Request.Context(), channel, resolver); validateErr != nil {
+			return errChannelValidation{err: validateErr}
+		}
+		boundProjectIDs, bindErr := scopedResourceProjectIDsTx(tx, notification.ScopedResourceChannelType, channel.ID)
+		if bindErr != nil {
+			return bindErr
+		}
+		if compatErr := ensureChannelUpdateCompatibleWithRules(tx, channel, notification.NormalizeChannelScope(channel.Scope), boundProjectIDs); compatErr != nil {
+			return compatErr
+		}
+		return tx.Save(&channel).Error
+	})
+	var validationErr errChannelValidation
+	if errors.As(err, &validationErr) {
+		writeError(ctx, http.StatusBadRequest, validationErr.err.Error())
+		return
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "notification channel not found")
+		return
+	}
+	if errors.Is(err, errChannelInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "notification.channel_in_use", "remove this channel from notification rules before narrowing its scope")
+		return
+	}
+	if errors.Is(err, errChannelSMTPRecipientRequired) {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.smtp_recipient_required", "smtp channel requires at least one recipient on channel or referencing rules")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -180,11 +271,25 @@ func (h *Handler) DeleteNotificationChannel(ctx *gin.Context) {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
-	if err := h.dbFor(ctx).Delete(&model.NotificationChannel{}, "id = ? and owner_user_id = ?", ctx.Param("channelId"), "").Error; err != nil {
+	channelID := strings.TrimSpace(ctx.Param("channelId"))
+	var existing model.NotificationChannel
+	if err := h.dbFor(ctx).First(&existing, "id = ? and owner_user_id = ?", channelID, "").Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "notification channel not found")
+		return
+	}
+	if err := h.deleteSharedNotificationChannel(ctx, existing); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(ctx, http.StatusNotFound, "notification channel not found")
+			return
+		}
+		if errors.Is(err, errChannelInUse) {
+			writeErrorCode(ctx, http.StatusConflict, "notification.channel_in_use", "remove this channel from notification rules before deleting")
+			return
+		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.auditWithContext(user.ID, "notification.channel.delete", ctx.Param("channelId"), true, "", ctx.Request.Context())
+	h.auditWithContext(user.ID, "notification.channel.delete", channelID, true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -291,40 +396,34 @@ func (h *Handler) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 		return
 	}
 	configRaw := json.RawMessage(preset.ConfigTemplate)
-	secretRefs := map[string]string{}
+	secretValues := map[string]string{}
 	for _, field := range preset.SecretFields {
 		value := strings.TrimSpace(input.Secrets[field])
 		if value == "" {
 			writeErrorCode(ctx, http.StatusBadRequest, "notification.secret_required", "notification preset secret is required")
 			return
 		}
-		secretRefs[field] = h.secrets().StoreContext(ctx.Request.Context(), value, user.ID, "notification_channel:preset:"+preset.ID+":"+field)
+		secretValues[field] = value
 	}
 	for _, field := range preset.OptionalSecretFields {
 		if value := strings.TrimSpace(input.Secrets[field]); value != "" {
-			secretRefs[field] = h.secrets().StoreContext(ctx.Request.Context(), value, user.ID, "notification_channel:preset:"+preset.ID+":"+field)
+			secretValues[field] = value
 		}
 	}
-	secretRefsRaw := mustJSON(secretRefs)
 	enabled := true
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
 	channel := model.NotificationChannel{
-		ID:             id.New("nch"),
-		Scope:          "global",
-		PresetID:       preset.ID,
-		OwnerUserID:    "",
-		Name:           firstNonEmpty(input.Name, preset.Name),
-		AdapterKind:    preset.AdapterKind,
-		ConfigJSON:     string(configRaw),
-		SecretRefsJSON: secretRefsRaw,
-		Enabled:        enabled,
-		CreatedBy:      user.ID,
-	}
-	if err := validateNotificationChannel(ctx.Request.Context(), channel, h.secrets()); err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
-		return
+		ID:          id.New("nch"),
+		Scope:       "global",
+		PresetID:    preset.ID,
+		OwnerUserID: "",
+		Name:        firstNonEmpty(input.Name, preset.Name),
+		AdapterKind: preset.AdapterKind,
+		ConfigJSON:  string(configRaw),
+		Enabled:     enabled,
+		CreatedBy:   user.ID,
 	}
 	template := model.NotificationTemplate{
 		ID:               id.New("ntp"),
@@ -335,12 +434,40 @@ func (h *Handler) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 		Enabled:          true,
 		CreatedBy:        user.ID,
 	}
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		secretRefs := map[string]string{}
+		refOverlay := make(map[string]string, len(secretValues)*2)
+		for field, value := range secretValues {
+			refOverlay[field] = value
+			ref, storeErr := h.secrets().StoreContextWithDB(ctx.Request.Context(), tx, value, user.ID, "notification_channel:"+channel.ID+":"+field)
+			if storeErr != nil {
+				return storeErr
+			}
+			secretRefs[field] = ref
+			refOverlay[ref] = value
+		}
+		channel.SecretRefsJSON = mustJSON(secretRefs)
+		resolver := staticOverlaySecretResolver{overlay: refOverlay, fallback: h.secrets()}
+		if validateErr := validateNotificationChannel(ctx.Request.Context(), channel, resolver); validateErr != nil {
+			return errChannelValidation{err: validateErr}
+		}
 		if err := tx.Create(&channel).Error; err != nil {
 			return err
 		}
+		if channel.Enabled != enabled {
+			if err := tx.Model(&model.NotificationChannel{}).Where("id = ?", channel.ID).Update("enabled", enabled).Error; err != nil {
+				return err
+			}
+			channel.Enabled = enabled
+		}
 		return tx.Create(&template).Error
-	}); err != nil {
+	})
+	var validationErr errChannelValidation
+	if errors.As(err, &validationErr) {
+		writeError(ctx, http.StatusBadRequest, validationErr.err.Error())
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -442,11 +569,18 @@ func (h *Handler) DeleteNotificationTemplate(ctx *gin.Context) {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
-	if err := h.dbFor(ctx).Delete(&model.NotificationTemplate{}, "id = ?", ctx.Param("templateId")).Error; err != nil {
+	templateID := strings.TrimSpace(ctx.Param("templateId"))
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.NotificationRule{}).Where("template_id = ?", templateID).Update("template_id", "").Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.NotificationTemplate{}, "id = ?", templateID).Error
+	})
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.auditWithContext(user.ID, "notification.template.delete", ctx.Param("templateId"), true, "", ctx.Request.Context())
+	h.auditWithContext(user.ID, "notification.template.delete", templateID, true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -625,32 +759,23 @@ func (h *Handler) RetryNotificationDelivery(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, items[0])
 }
 
-func (h *Handler) notificationChannelFromInput(ctx *gin.Context, user model.User, input notificationChannelInput, channel model.NotificationChannel) (model.NotificationChannel, bool) {
+func prepareNotificationChannelDraft(ctx *gin.Context, user model.User, input notificationChannelInput, channel model.NotificationChannel) (model.NotificationChannel, map[string]string, bool) {
 	channel.Name = strings.TrimSpace(input.Name)
 	channel.AdapterKind = strings.TrimSpace(input.AdapterKind)
 	if channel.Name == "" || channel.AdapterKind == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_required", "notification channel name and adapter kind are required")
-		return model.NotificationChannel{}, false
+		return model.NotificationChannel{}, nil, false
 	}
 	configRaw := normalizedJSON(input.Config, channel.ConfigJSON)
-	secretRefs := decodeStringMap(channel.SecretRefsJSON)
-	if input.Secrets == nil {
-		input.Secrets = map[string]string{}
-	}
-	configRaw, secretRefs = h.captureNotificationSecrets(ctx.Request.Context(), user, channel.ID, channel.AdapterKind, configRaw, input.Secrets, secretRefs)
+	configRaw, secretValues := extractNotificationSecrets(configRaw, input.Secrets)
 	channel.ConfigJSON = string(configRaw)
-	channel.SecretRefsJSON = mustJSON(secretRefs)
 	if input.Enabled != nil {
 		channel.Enabled = *input.Enabled
 	} else if channel.ID != "" && channel.CreatedAt.IsZero() {
 		channel.Enabled = true
 	}
 	channel.CreatedBy = firstNonEmpty(channel.CreatedBy, user.ID)
-	if err := validateNotificationChannel(ctx.Request.Context(), channel, h.secrets()); err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
-		return model.NotificationChannel{}, false
-	}
-	return channel, true
+	return channel, secretValues, true
 }
 
 func notificationTemplateFromInput(ctx *gin.Context, input notificationTemplateInput, template model.NotificationTemplate) (model.NotificationTemplate, bool) {
@@ -751,6 +876,17 @@ func (h *Handler) NotificationRuleFromInput(ctx *gin.Context, input Notification
 		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_required", "notification rule name, event types and channels are required")
 		return model.NotificationRule{}, false
 	}
+	if rule.TemplateID != "" {
+		var templateCount int64
+		if err := h.dbFor(ctx).Model(&model.NotificationTemplate{}).Where("id = ?", rule.TemplateID).Count(&templateCount).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return model.NotificationRule{}, false
+		}
+		if templateCount == 0 {
+			writeErrorCode(ctx, http.StatusBadRequest, "notification.template_not_found", "notification template not found")
+			return model.NotificationRule{}, false
+		}
+	}
 	if filter.Scope == notification.RuleScopeProjects {
 		var projectCount int64
 		if err := h.dbFor(ctx).Model(&model.Project{}).Where("id in ?", filter.ProjectIDs).Count(&projectCount).Error; err != nil {
@@ -760,6 +896,45 @@ func (h *Handler) NotificationRuleFromInput(ctx *gin.Context, input Notification
 		if projectCount != int64(len(filter.ProjectIDs)) {
 			writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_project_not_found", "notification rule project not found")
 			return model.NotificationRule{}, false
+		}
+	}
+	if strings.TrimSpace(rule.ProjectID) == "" {
+		if len(filter.ApplicationIDs) > 0 {
+			appQuery := h.dbFor(ctx).Model(&model.Application{}).
+				Joins("join projects on projects.id = applications.project_id and projects.deleted_at is null").
+				Where("applications.id in ?", filter.ApplicationIDs)
+			if filter.Scope == notification.RuleScopeProjects {
+				appQuery = appQuery.Where("applications.project_id in ?", filter.ProjectIDs)
+			}
+			var appCount int64
+			if err := appQuery.Count(&appCount).Error; err != nil {
+				writeError(ctx, http.StatusInternalServerError, err.Error())
+				return model.NotificationRule{}, false
+			}
+			if appCount != int64(len(filter.ApplicationIDs)) {
+				writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_application_not_found", "selected application not found or outside rule project scope")
+				return model.NotificationRule{}, false
+			}
+		}
+		if len(filter.DeploymentTargetIDs) > 0 {
+			targetQuery := h.dbFor(ctx).Model(&model.DeploymentTarget{}).
+				Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").
+				Where("deployment_targets.id in ?", filter.DeploymentTargetIDs)
+			if filter.Scope == notification.RuleScopeProjects {
+				targetQuery = targetQuery.Where("deployment_targets.project_id in ?", filter.ProjectIDs)
+			}
+			if len(filter.ApplicationIDs) > 0 {
+				targetQuery = targetQuery.Where("deployment_targets.application_id in ?", filter.ApplicationIDs)
+			}
+			var targetCount int64
+			if err := targetQuery.Count(&targetCount).Error; err != nil {
+				writeError(ctx, http.StatusInternalServerError, err.Error())
+				return model.NotificationRule{}, false
+			}
+			if targetCount != int64(len(filter.DeploymentTargetIDs)) {
+				writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_deployment_target_not_found", "selected deployment target not found or outside rule scope")
+				return model.NotificationRule{}, false
+			}
 		}
 	}
 	var channels []model.NotificationChannel
@@ -867,40 +1042,26 @@ func validateNotificationChannel(ctx context.Context, channel model.Notification
 	return adapter.Validate(validateCtx, json.RawMessage(channel.ConfigJSON), resolver)
 }
 
-func (h *Handler) captureNotificationSecrets(ctx context.Context, user model.User, channelID string, adapterKind string, configRaw json.RawMessage, secretValues map[string]string, existing map[string]string) (json.RawMessage, map[string]string) {
+func extractNotificationSecrets(configRaw json.RawMessage, rawSecrets map[string]string) (json.RawMessage, map[string]string) {
 	config := map[string]any{}
 	_ = json.Unmarshal(configRaw, &config)
-	if password, ok := config["password"].(string); ok && strings.TrimSpace(password) != "" {
-		secretValues["password"] = password
-		delete(config, "password")
-	}
-	for key, value := range secretValues {
+	secretValues := map[string]string{}
+	for key, value := range rawSecrets {
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
-		if key == "" || value == "" {
-			continue
+		if key != "" && value != "" {
+			secretValues[key] = value
 		}
-		existing[key] = h.secrets().StoreContext(ctx, value, user.ID, "notification_channel:"+channelID+":"+key)
 	}
-	if adapterKind == notification.AdapterKindSMTP {
-		ref := strings.TrimSpace(existing["password"])
-		if ref == "" {
-			for key, candidate := range existing {
-				if strings.EqualFold(key, "password") && strings.TrimSpace(candidate) != "" {
-					ref = strings.TrimSpace(candidate)
-					break
-				}
-			}
-		}
-		if ref != "" {
-			config["passwordRef"] = ref
-		}
+	if password, ok := config["password"].(string); ok && strings.TrimSpace(password) != "" {
+		secretValues["password"] = strings.TrimSpace(password)
+		delete(config, "password")
 	}
 	data, err := json.Marshal(config)
 	if err != nil || len(config) == 0 {
-		return configRaw, existing
+		return configRaw, secretValues
 	}
-	return data, existing
+	return data, secretValues
 }
 
 func notificationChannelResponses(channels []model.NotificationChannel) []notificationChannelResponse {

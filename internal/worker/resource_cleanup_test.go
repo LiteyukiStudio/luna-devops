@@ -8,6 +8,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"gorm.io/gorm"
@@ -162,6 +163,13 @@ func TestFinishProjectDeleteSoftDeletesRuntimeDesiredState(t *testing.T) {
 				&model.NetworkEgressException{},
 				&model.NetworkEgressExceptionGrant{},
 				&model.NetworkServiceShare{},
+				&model.ScopedResourceProjectBinding{},
+				&model.NotificationChannel{},
+				&model.NotificationRule{},
+				&model.SecretValue{},
+				&model.DeploymentTargetHookBinding{},
+				&model.GatewayRoute{},
+				&model.RepositoryBinding{},
 			)
 		},
 	})
@@ -518,5 +526,181 @@ func TestProjectCleanupReleasesGatewayCertificatesAfterNamespaceDeletion(t *test
 	release := manager.releases[0]
 	if release.Namespace != "cert-system" || release.Name != gatewayRuntimeName(route) || release.GatewayNamespace != "kube-system" {
 		t.Fatalf("certificate release = %#v", release)
+	}
+}
+
+func TestCleanupPrunesNotificationRulesScopedBindingsAndEgressGrantsFailClosed(t *testing.T) {
+	db := openApplicationDeleteTestDB(t, "cleanup_dangling_refs_test")
+	if err := db.AutoMigrate(
+		&model.ProjectVolume{},
+		&model.BuildVariableSet{},
+		&model.ArtifactRegistry{},
+		&model.RegistryCredential{},
+		&model.GitProvider{},
+		&model.GitAccount{},
+		&model.SecretValue{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	codec, err := secret.NewCodec("worker-cleanup-test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets := secret.NewStore(db, nil, codec)
+
+	surviving := model.Project{ID: "prj_surviving", Identifier: "surviving", Name: "Surviving", DeleteStatus: "active"}
+	doomed := model.Project{ID: "prj_doomed", Identifier: "doomed", Name: "Doomed", DeleteStatus: "deleting"}
+	appOnly := model.Application{ID: "app_only", ProjectID: surviving.ID, Identifier: "only", Name: "Only", DeleteStatus: "deleting"}
+	appKeep := model.Application{ID: "app_keep", ProjectID: surviving.ID, Identifier: "keep", Name: "Keep", DeleteStatus: "active"}
+	appDoomed := model.Application{ID: "app_doomed", ProjectID: doomed.ID, Identifier: "doomed-app", Name: "Doomed App", DeleteStatus: "deleting"}
+	targetOnly := model.DeploymentTarget{ID: "dplt_only", ProjectID: surviving.ID, ApplicationID: appOnly.ID, Name: "prod", Stage: "prod"}
+	targetKeep := model.DeploymentTarget{ID: "dplt_keep", ProjectID: surviving.ID, ApplicationID: appKeep.ID, Name: "prod", Stage: "prod"}
+	targetDoomed := model.DeploymentTarget{ID: "dplt_doomed", ProjectID: doomed.ID, ApplicationID: appDoomed.ID, Name: "prod", Stage: "prod"}
+	cluster := model.RuntimeCluster{ID: "clu_ref", Name: "Primary", Scope: "global", IsDefault: true, DeleteStatus: "active"}
+
+	orphanBvsSecretRef, err := secrets.StoreContextWithDB(t.Context(), db, "super-secret", "usr_owner", "build_variable_set:bvs_doomed_only:TOKEN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphanBvs := model.BuildVariableSet{
+		ID: "bvs_doomed_only", Name: "Doomed Vars", Scope: "project",
+		Variables: `{}`, SecretRefs: `{"TOKEN":"` + orphanBvsSecretRef + `"}`, Enabled: true,
+	}
+	orphanReg := model.ArtifactRegistry{ID: "reg_doomed_only", Name: "Doomed Reg", Provider: "harbor", Endpoint: "https://reg.doomed.local", Scope: "project"}
+	orphanCredRef, err := secrets.StoreContextWithDB(t.Context(), db, "reg-pass", "usr_owner", "registry_credential:"+orphanReg.ID+":password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphanCred := model.RegistryCredential{
+		ID: "regc_doomed_only", RegistryID: orphanReg.ID, Name: "default", Username: "bot",
+		PasswordRef: orphanCredRef, Usage: "push-pull", Scope: "project",
+	}
+
+	sharedCh := model.NotificationChannel{ID: "nch_shared", Scope: "project", Name: "Shared", AdapterKind: "webhook", ConfigJSON: `{}`, SecretRefsJSON: `{}`, Enabled: true}
+	orphanCh := model.NotificationChannel{ID: "nch_orphan", Scope: "project", Name: "Doomed Only", AdapterKind: "webhook", ConfigJSON: `{}`, SecretRefsJSON: `{}`, Enabled: true}
+	bindings := []model.ScopedResourceProjectBinding{
+		{ID: "srpb_shared_1", ResourceType: "notification_channel", ResourceID: sharedCh.ID, ProjectID: surviving.ID},
+		{ID: "srpb_shared_2", ResourceType: "notification_channel", ResourceID: sharedCh.ID, ProjectID: doomed.ID},
+		{ID: "srpb_orphan_1", ResourceType: "notification_channel", ResourceID: orphanCh.ID, ProjectID: doomed.ID},
+		{ID: "srpb_orphan_bvs", ResourceType: "build_variable_set", ResourceID: orphanBvs.ID, ProjectID: doomed.ID},
+		{ID: "srpb_orphan_reg", ResourceType: "artifact_registry", ResourceID: orphanReg.ID, ProjectID: doomed.ID},
+		{ID: "srpb_orphan_regc", ResourceType: "registry_credential", ResourceID: orphanCred.ID, ProjectID: doomed.ID},
+	}
+
+	rules := []model.NotificationRule{
+		{
+			ID: "nrl_app_narrow", ProjectID: surviving.ID, Name: "Only App Rule",
+			EventTypesJSON: `["release.failed"]`,
+			FilterJSON:     `{"scope":"projects","projectIds":["prj_surviving"],"applicationIds":["app_only"]}`,
+			ChannelIDsJSON: `["nch_shared"]`, Enabled: true,
+		},
+		{
+			ID: "nrl_multi_target", ProjectID: surviving.ID, Name: "Multi Target Rule",
+			EventTypesJSON: `["release.failed"]`,
+			FilterJSON:     `{"scope":"projects","projectIds":["prj_surviving"],"applicationIds":["app_only","app_keep"],"deploymentTargetIds":["dplt_only","dplt_keep"]}`,
+			ChannelIDsJSON: `["nch_shared"]`, Enabled: true,
+		},
+		{
+			ID: "nrl_global_multi", ProjectID: "", Name: "Global Multi Project",
+			EventTypesJSON: `["release.failed"]`,
+			FilterJSON:     `{"scope":"projects","projectIds":["prj_surviving","prj_doomed"],"applicationIds":["app_doomed"],"deploymentTargetIds":["dplt_doomed","dplt_keep"]}`,
+			ChannelIDsJSON: `["nch_global"]`, Enabled: true,
+		},
+		{
+			ID: "nrl_global_doomed_only", ProjectID: "", Name: "Global Doomed Only",
+			EventTypesJSON: `["release.failed"]`,
+			FilterJSON:     `{"scope":"projects","projectIds":["prj_doomed"]}`,
+			ChannelIDsJSON: `["nch_global"]`, Enabled: true,
+		},
+	}
+
+	excNarrow := model.NetworkEgressException{ID: "nex_narrow", RuntimeClusterID: cluster.ID, Name: "Narrow", CIDR: "10.10.0.0/16", Protocol: "tcp", Reason: "db"}
+	excMulti := model.NetworkEgressException{ID: "nex_multi", RuntimeClusterID: cluster.ID, Name: "Multi", CIDR: "10.20.0.0/16", Protocol: "tcp", Reason: "cache"}
+	grants := []model.NetworkEgressExceptionGrant{
+		{ID: "nexg_narrow", ExceptionID: excNarrow.ID, ProjectID: surviving.ID, DeploymentTargetIDs: targetOnly.ID},
+		{ID: "nexg_multi", ExceptionID: excMulti.ID, ProjectID: surviving.ID, DeploymentTargetIDs: targetOnly.ID + "," + targetKeep.ID},
+	}
+
+	for _, row := range []any{
+		&surviving, &doomed, &cluster, &appOnly, &appKeep, &appDoomed,
+		&targetOnly, &targetKeep, &targetDoomed,
+		&orphanBvs, &orphanReg, &orphanCred,
+		&sharedCh, &orphanCh, &bindings, &rules, &excNarrow, &excMulti, &grants,
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	enqueuer := &recordingReconcileEnqueuer{}
+	runner := &Runner{db: db, secrets: secrets, networkPolicyReconcileEnqueuer: enqueuer}
+	if err := runner.finishApplicationDelete(t.Context(), appOnly); err != nil {
+		t.Fatalf("finishApplicationDelete() error = %v", err)
+	}
+
+	var narrowRule model.NotificationRule
+	if err := db.First(&narrowRule, "id = ?", "nrl_app_narrow").Error; err != nil {
+		t.Fatal(err)
+	}
+	if narrowRule.Enabled || strings.Contains(narrowRule.FilterJSON, "app_only") {
+		t.Fatalf("narrow rule after sole app delete = %#v, want disabled without app_only", narrowRule)
+	}
+
+	var multiRule model.NotificationRule
+	if err := db.First(&multiRule, "id = ?", "nrl_multi_target").Error; err != nil {
+		t.Fatal(err)
+	}
+	if !multiRule.Enabled || strings.Contains(multiRule.FilterJSON, "app_only") || strings.Contains(multiRule.FilterJSON, "dplt_only") || !strings.Contains(multiRule.FilterJSON, "app_keep") || !strings.Contains(multiRule.FilterJSON, "dplt_keep") {
+		t.Fatalf("multi rule after app delete = %#v", multiRule)
+	}
+
+	var narrowGrantCount int64
+	db.Model(&model.NetworkEgressExceptionGrant{}).Where("id = ?", "nexg_narrow").Count(&narrowGrantCount)
+	if narrowGrantCount != 0 {
+		t.Fatalf("narrow egress grant should be deleted when last target is deleted, count = %d", narrowGrantCount)
+	}
+	var multiGrant model.NetworkEgressExceptionGrant
+	if err := db.First(&multiGrant, "id = ?", "nexg_multi").Error; err != nil {
+		t.Fatal(err)
+	}
+	if multiGrant.DeploymentTargetIDs != targetKeep.ID {
+		t.Fatalf("multi egress grant targets = %q, want %q", multiGrant.DeploymentTargetIDs, targetKeep.ID)
+	}
+	if len(enqueuer.projects) == 0 || enqueuer.projects[0] != surviving.ID {
+		t.Fatalf("expected network policy reconcile for %s, got %v", surviving.ID, enqueuer.projects)
+	}
+
+	if err := runner.finishProjectDelete(t.Context(), doomed); err != nil {
+		t.Fatalf("finishProjectDelete() error = %v", err)
+	}
+	var doomedBindings int64
+	db.Model(&model.ScopedResourceProjectBinding{}).Where("project_id = ?", doomed.ID).Count(&doomedBindings)
+	if doomedBindings != 0 {
+		t.Fatalf("doomed project bindings remaining = %d, want 0", doomedBindings)
+	}
+	var activeChannels []string
+	db.Model(&model.NotificationChannel{}).Order("id").Pluck("id", &activeChannels)
+	if len(activeChannels) != 1 || activeChannels[0] != sharedCh.ID {
+		t.Fatalf("active channels after doomed project delete = %v, want [%s]", activeChannels, sharedCh.ID)
+	}
+	var globalMulti model.NotificationRule
+	if err := db.First(&globalMulti, "id = ?", "nrl_global_multi").Error; err != nil {
+		t.Fatal(err)
+	}
+	if globalMulti.Enabled || strings.Contains(globalMulti.FilterJSON, doomed.ID) || strings.Contains(globalMulti.FilterJSON, "app_doomed") || strings.Contains(globalMulti.FilterJSON, "dplt_doomed") || !strings.Contains(globalMulti.FilterJSON, surviving.ID) || !strings.Contains(globalMulti.FilterJSON, "dplt_keep") {
+		t.Fatalf("global multi rule after doomed project delete = %#v", globalMulti)
+	}
+	var orphanBvsCount, orphanRegCount, orphanCredCount, remainingSecrets int64
+	db.Model(&model.BuildVariableSet{}).Where("id = ?", orphanBvs.ID).Count(&orphanBvsCount)
+	db.Model(&model.ArtifactRegistry{}).Where("id = ?", orphanReg.ID).Count(&orphanRegCount)
+	db.Model(&model.RegistryCredential{}).Where("id = ?", orphanCred.ID).Count(&orphanCredCount)
+	db.Model(&model.SecretValue{}).Count(&remainingSecrets)
+	if orphanBvsCount != 0 || orphanRegCount != 0 || orphanCredCount != 0 || remainingSecrets != 0 {
+		t.Fatalf("expected sole-project scoped resources and secrets to be cleaned up, got bvs=%d reg=%d cred=%d secrets=%d", orphanBvsCount, orphanRegCount, orphanCredCount, remainingSecrets)
+	}
+	var doomedGlobalCount int64
+	db.Model(&model.NotificationRule{}).Where("id = ?", "nrl_global_doomed_only").Count(&doomedGlobalCount)
+	if doomedGlobalCount != 0 {
+		t.Fatalf("global rule targeting only deleted project must be deleted, count = %d", doomedGlobalCount)
 	}
 }

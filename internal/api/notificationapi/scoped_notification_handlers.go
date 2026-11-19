@@ -101,7 +101,7 @@ func (h *Handler) CreateScopedNotificationChannel(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	scope, projectIDs, ok := h.authorizeNotificationChannelScopeWrite(ctx, user, input.Scope, input.ProjectIDs)
+	scope, projectIDs, ok := h.authorizeNotificationChannelScopeWrite(ctx, user, input.Scope, input.ProjectIDs, nil)
 	if !ok {
 		return
 	}
@@ -193,7 +193,7 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 	if targetScope == "project" && len(targetProjectIDs) == 0 && input.ProjectIDs == nil {
 		targetProjectIDs = existingProjectIDs
 	}
-	scope, projectIDs, ok := h.authorizeNotificationChannelScopeWrite(ctx, user, targetScope, targetProjectIDs)
+	scope, projectIDs, ok := h.authorizeNotificationChannelScopeWrite(ctx, user, targetScope, targetProjectIDs, existingProjectIDs)
 	if !ok {
 		return
 	}
@@ -204,7 +204,11 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 	updated.Scope = scope
 
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		secretRefs := decodeStringMap(existing.SecretRefsJSON)
+		var locked model.NotificationChannel
+		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ? and owner_user_id = ?", updated.ID, "").Error; lockErr != nil {
+			return lockErr
+		}
+		secretRefs := decodeStringMap(locked.SecretRefsJSON)
 		refOverlay := make(map[string]string, len(secretValues)*2)
 		for key, value := range secretValues {
 			refOverlay[key] = value
@@ -216,7 +220,7 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 			oldRef := secretRefs[key]
 			secretRefs[key] = newRef
 			refOverlay[newRef] = value
-			if strings.TrimSpace(oldRef) != "" {
+			if strings.TrimSpace(oldRef) != "" && oldRef != newRef {
 				if delErr := h.secrets().DeleteRefContextWithDB(ctx.Request.Context(), tx, oldRef, resource); delErr != nil {
 					return delErr
 				}
@@ -227,6 +231,9 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 		resolver := staticOverlaySecretResolver{overlay: refOverlay, fallback: h.secrets()}
 		if validateErr := validateNotificationChannel(ctx.Request.Context(), updated, resolver); validateErr != nil {
 			return errChannelValidation{err: validateErr}
+		}
+		if compatErr := ensureChannelUpdateCompatibleWithRules(tx, updated, scope, projectIDs); compatErr != nil {
+			return compatErr
 		}
 		if saveErr := tx.Save(&updated).Error; saveErr != nil {
 			return saveErr
@@ -239,6 +246,18 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 	var validationErr errChannelValidation
 	if errors.As(err, &validationErr) {
 		writeError(ctx, http.StatusBadRequest, validationErr.err.Error())
+		return
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "notification channel not found")
+		return
+	}
+	if errors.Is(err, errChannelInUse) {
+		writeErrorCode(ctx, http.StatusConflict, "notification.channel_in_use", "remove this channel from notification rules before narrowing its scope or bound project spaces")
+		return
+	}
+	if errors.Is(err, errChannelSMTPRecipientRequired) {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.smtp_recipient_required", "smtp channel requires at least one recipient on channel or referencing rules")
 		return
 	}
 	if err != nil {
@@ -267,27 +286,137 @@ func (h *Handler) DeleteScopedNotificationChannel(ctx *gin.Context) {
 	if !h.requireManageNotificationChannel(ctx, user, existing, existingProjectIDs) {
 		return
 	}
-	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if bindErr := h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, existing.ID, nil, nil); bindErr != nil {
-			return bindErr
+	if err := h.deleteSharedNotificationChannel(ctx, existing); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(ctx, http.StatusNotFound, "notification channel not found")
+			return
 		}
-		for key, ref := range decodeStringMap(existing.SecretRefsJSON) {
-			if strings.TrimSpace(ref) == "" {
-				continue
-			}
-			resource := "notification_channel:" + existing.ID + ":" + key
-			if delErr := h.secrets().DeleteRefContextWithDB(ctx.Request.Context(), tx, ref, resource); delErr != nil {
-				return delErr
-			}
+		if errors.Is(err, errChannelInUse) {
+			writeErrorCode(ctx, http.StatusConflict, "notification.channel_in_use", "remove this channel from notification rules before deleting")
+			return
 		}
-		return tx.Delete(&existing).Error
-	})
-	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditWithContext(user.ID, "notification.channel.delete", existing.ID, true, existing.Scope, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
+}
+
+var (
+	errChannelInUse                 = errors.New("notification channel is referenced by notification rules")
+	errChannelSMTPRecipientRequired = errors.New("smtp channel requires at least one recipient on channel or referencing rules")
+	errChannelNotBound              = errors.New("notification channel is not bound to this project space")
+	errChannelLastProject           = errors.New("cannot unbind the last bound project space")
+	errChannelScopeNotProject       = errors.New("notification channel scope is not project")
+)
+
+func scopedResourceProjectIDsTx(tx *gorm.DB, resourceType, resourceID string) ([]string, error) {
+	var projectIDs []string
+	if err := tx.Model(&model.ScopedResourceProjectBinding{}).
+		Where("resource_type = ? and resource_id = ?", resourceType, resourceID).
+		Order("project_id asc").
+		Pluck("project_id", &projectIDs).Error; err != nil {
+		return nil, err
+	}
+	return normalizeUniqueStrings(projectIDs), nil
+}
+
+func (h *Handler) deleteSharedNotificationChannel(ctx *gin.Context, existing model.NotificationChannel) error {
+	return h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.NotificationChannel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ? and owner_user_id = ?", existing.ID, "").Error; err != nil {
+			return err
+		}
+		referenced, err := channelReferencedByAnyRule(tx, locked.ID)
+		if err != nil {
+			return err
+		}
+		if referenced {
+			return errChannelInUse
+		}
+		if bindErr := h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, locked.ID, nil, nil); bindErr != nil {
+			return bindErr
+		}
+		for key, ref := range decodeStringMap(locked.SecretRefsJSON) {
+			if strings.TrimSpace(ref) == "" {
+				continue
+			}
+			resource := "notification_channel:" + locked.ID + ":" + key
+			if delErr := h.secrets().DeleteRefContextWithDB(ctx.Request.Context(), tx, ref, resource); delErr != nil {
+				return delErr
+			}
+			if presetID := strings.TrimSpace(locked.PresetID); presetID != "" {
+				legacyResource := "notification_channel:preset:" + presetID + ":" + key
+				if delErr := h.secrets().DeleteRefContextWithDB(ctx.Request.Context(), tx, ref, legacyResource); delErr != nil {
+					return delErr
+				}
+			}
+		}
+		return tx.Delete(&locked).Error
+	})
+}
+
+func activeNotificationRulesQuery(tx *gorm.DB) *gorm.DB {
+	return tx.Model(&model.NotificationRule{}).
+		Where("project_id = '' or exists (select 1 from projects where projects.id = notification_rules.project_id and projects.deleted_at is null)")
+}
+
+func channelReferencedByAnyRule(tx *gorm.DB, channelID string) (bool, error) {
+	channelID = strings.TrimSpace(channelID)
+	var rules []model.NotificationRule
+	if err := activeNotificationRulesQuery(tx).Select("id", "channel_ids_json").Find(&rules).Error; err != nil {
+		return false, err
+	}
+	for _, rule := range rules {
+		for _, usedID := range decodeStringList(rule.ChannelIDsJSON) {
+			if strings.TrimSpace(usedID) == channelID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func ensureChannelUpdateCompatibleWithRules(tx *gorm.DB, channel model.NotificationChannel, nextScope string, nextProjectIDs []string) error {
+	channelID := strings.TrimSpace(channel.ID)
+	var rules []model.NotificationRule
+	if err := activeNotificationRulesQuery(tx).Select("id", "project_id", "channel_ids_json", "channel_targets_json").Find(&rules).Error; err != nil {
+		return err
+	}
+	boundProjects := make(map[string]bool, len(nextProjectIDs))
+	for _, projectID := range nextProjectIDs {
+		boundProjects[strings.TrimSpace(projectID)] = true
+	}
+	for _, rule := range rules {
+		usesChannel := false
+		for _, usedID := range decodeStringList(rule.ChannelIDsJSON) {
+			if strings.TrimSpace(usedID) == channelID {
+				usesChannel = true
+				break
+			}
+		}
+		if !usesChannel {
+			continue
+		}
+		ruleProjectID := strings.TrimSpace(rule.ProjectID)
+		if ruleProjectID == "" {
+			if nextScope != "global" {
+				return errChannelInUse
+			}
+		} else if nextScope != "global" && !(nextScope == "project" && (boundProjects[ruleProjectID] || strings.TrimSpace(channel.ProjectID) == ruleProjectID)) {
+			return errChannelInUse
+		}
+		if channel.AdapterKind == notification.AdapterKindSMTP {
+			targets, err := notification.DecodeChannelTargets([]byte(rule.ChannelTargetsJSON))
+			if err != nil {
+				return errChannelSMTPRecipientRequired
+			}
+			if _, recipients, applyErr := notification.ApplySMTPTargetOverride(json.RawMessage(channel.ConfigJSON), targets[channelID]); applyErr != nil || len(recipients) == 0 {
+				return errChannelSMTPRecipientRequired
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Handler) TestScopedNotificationChannel(ctx *gin.Context) {
@@ -502,10 +631,30 @@ func (h *Handler) BindProjectNotificationChannel(ctx *gin.Context) {
 	if !h.requireManageNotificationChannel(ctx, user, channel, existingProjectIDs) {
 		return
 	}
-	nextProjects := normalizeUniqueStrings(append(append([]string(nil), existingProjectIDs...), project.ID))
+	var nextProjects []string
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		return h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, channel.ID, nextProjects, nil)
+		var locked model.NotificationChannel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ? and owner_user_id = ?", channel.ID, "").Error; err != nil {
+			return err
+		}
+		if notification.NormalizeChannelScope(locked.Scope) != "project" {
+			return errChannelScopeNotProject
+		}
+		currentProjects, err := scopedResourceProjectIDsTx(tx, notification.ScopedResourceChannelType, locked.ID)
+		if err != nil {
+			return err
+		}
+		nextProjects = normalizeUniqueStrings(append(append([]string(nil), currentProjects...), project.ID))
+		return h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, locked.ID, nextProjects, nil)
 	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(ctx, http.StatusNotFound, "notification channel not found")
+			return
+		}
+		if errors.Is(err, errChannelScopeNotProject) {
+			writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_scope_not_project", "only project-scoped notification channels can be bound to a project space")
+			return
+		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -534,44 +683,61 @@ func (h *Handler) UnbindProjectNotificationChannel(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_scope_not_project", "global notification channels cannot be unbound from a single project space")
 		return
 	}
-	existingProjectIDs := h.host.ScopedResourceProjectIDs(notification.ScopedResourceChannelType, channel.ID, ctx.Request.Context())
-	boundToProject := false
-	remaining := make([]string, 0, len(existingProjectIDs))
-	for _, idValue := range existingProjectIDs {
-		if idValue == project.ID {
-			boundToProject = true
-			continue
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.NotificationChannel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ? and owner_user_id = ?", channel.ID, "").Error; err != nil {
+			return err
 		}
-		remaining = append(remaining, idValue)
-	}
-	if !boundToProject {
-		writeError(ctx, http.StatusNotFound, "notification channel is not bound to this project space")
-		return
-	}
-	if len(remaining) == 0 {
-		writeErrorCode(ctx, http.StatusConflict, "notification.project_required", "cannot unbind the last bound project space; delete the notification channel instead")
-		return
-	}
-
-	var projectRules []model.NotificationRule
-	if err := h.dbFor(ctx).Where("project_id = ?", project.ID).Find(&projectRules).Error; err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
-	for _, rule := range projectRules {
-		for _, usedID := range decodeStringList(rule.ChannelIDsJSON) {
-			if strings.TrimSpace(usedID) == channel.ID {
-				writeErrorCode(ctx, http.StatusConflict, "notification.channel_in_use", "remove this channel from project notification rules before unbinding")
-				return
+		if notification.NormalizeChannelScope(locked.Scope) != "project" {
+			return errChannelScopeNotProject
+		}
+		existingProjectIDs, err := scopedResourceProjectIDsTx(tx, notification.ScopedResourceChannelType, locked.ID)
+		if err != nil {
+			return err
+		}
+		boundToProject := false
+		remaining := make([]string, 0, len(existingProjectIDs))
+		for _, idValue := range existingProjectIDs {
+			if idValue == project.ID {
+				boundToProject = true
+				continue
+			}
+			remaining = append(remaining, idValue)
+		}
+		if !boundToProject {
+			return errChannelNotBound
+		}
+		if len(remaining) == 0 {
+			return errChannelLastProject
+		}
+		var projectRules []model.NotificationRule
+		if err := tx.Where("project_id = ?", project.ID).Find(&projectRules).Error; err != nil {
+			return err
+		}
+		for _, rule := range projectRules {
+			for _, usedID := range decodeStringList(rule.ChannelIDsJSON) {
+				if strings.TrimSpace(usedID) == locked.ID {
+					return errChannelInUse
+				}
 			}
 		}
-	}
-
-	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		return h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, channel.ID, remaining, nil)
+		return h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, locked.ID, remaining, nil)
 	})
 	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			writeError(ctx, http.StatusNotFound, "notification channel not found")
+		case errors.Is(err, errChannelScopeNotProject):
+			writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_scope_not_project", "global notification channels cannot be unbound from a single project space")
+		case errors.Is(err, errChannelNotBound):
+			writeError(ctx, http.StatusNotFound, "notification channel is not bound to this project space")
+		case errors.Is(err, errChannelLastProject):
+			writeErrorCode(ctx, http.StatusConflict, "notification.project_required", "cannot unbind the last bound project space; delete the notification channel instead")
+		case errors.Is(err, errChannelInUse):
+			writeErrorCode(ctx, http.StatusConflict, "notification.channel_in_use", "remove this channel from project notification rules before unbinding")
+		default:
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 	h.auditWithContext(user.ID, "notification.channel.unbind_project", channel.ID, true, project.ID, ctx.Request.Context())
@@ -868,7 +1034,7 @@ func (h *Handler) manageableNotificationProjectIDs(ctx context.Context, user mod
 	return normalizeUniqueStrings(out), nil
 }
 
-func (h *Handler) authorizeNotificationChannelScopeWrite(ctx *gin.Context, user model.User, rawScope string, rawProjectIDs []string) (string, []string, bool) {
+func (h *Handler) authorizeNotificationChannelScopeWrite(ctx *gin.Context, user model.User, rawScope string, rawProjectIDs []string, alreadyBoundProjectIDs []string) (string, []string, bool) {
 	scope := strings.ToLower(strings.TrimSpace(rawScope))
 	if scope == "" {
 		scope = "project"
@@ -886,13 +1052,17 @@ func (h *Handler) authorizeNotificationChannelScopeWrite(ctx *gin.Context, user 
 			writeErrorCode(ctx, http.StatusBadRequest, "notification.project_required", "at least one project space is required")
 			return "", nil, false
 		}
+		alreadyBound := make(map[string]bool, len(alreadyBoundProjectIDs))
+		for _, existingID := range alreadyBoundProjectIDs {
+			alreadyBound[strings.TrimSpace(existingID)] = true
+		}
 		for _, projectID := range projectIDs {
 			var project model.Project
 			if err := h.dbFor(ctx).First(&project, "id = ?", projectID).Error; err != nil {
 				writeError(ctx, http.StatusNotFound, "project not found")
 				return "", nil, false
 			}
-			if !h.host.EnsureProjectCanMutate(ctx, project) {
+			if !alreadyBound[projectID] && !h.host.EnsureProjectCanMutate(ctx, project) {
 				return "", nil, false
 			}
 			if authz.IsPlatformAdmin(user.Role) {
@@ -1213,7 +1383,11 @@ func (h *Handler) validateProjectRuleScopeReferences(ctx *gin.Context, projectID
 	}
 	if len(filter.DeploymentTargetIDs) > 0 {
 		var targetCount int64
-		if err := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("project_id = ? and id in ?", projectID, filter.DeploymentTargetIDs).Count(&targetCount).Error; err != nil {
+		targetQuery := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("project_id = ? and id in ?", projectID, filter.DeploymentTargetIDs)
+		if len(filter.ApplicationIDs) > 0 {
+			targetQuery = targetQuery.Where("application_id in ?", filter.ApplicationIDs)
+		}
+		if err := targetQuery.Count(&targetCount).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return false
 		}

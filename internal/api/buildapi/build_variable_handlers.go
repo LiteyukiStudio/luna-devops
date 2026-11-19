@@ -3,6 +3,7 @@ package buildapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (h *Handlers) ListBuildVariableSets(ctx *gin.Context) {
@@ -65,12 +67,35 @@ func (h *Handlers) CreateBuildVariableSet(ctx *gin.Context) {
 		return
 	}
 	setID := id.New("bvs")
-	set, ok := h.buildVariableSetFromInput(ctx, user, input, setID, nil)
+	set, secretInputs, ok := h.buildVariableSetDraftFromInput(ctx, user, input, setID, nil)
 	if !ok {
 		return
 	}
 	set.CreatedBy = user.ID
-	if err := h.saveBuildVariableSet(set, ctx.Request.Context()); err != nil {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		secretRefs := make(map[string]string, len(secretInputs))
+		for key, value := range secretInputs {
+			if h.secretAvailable() {
+				ref, storeErr := h.storeSecretWithDB(ctx.Request.Context(), tx, value, user.ID, "build_variable_set:"+set.ID+":"+key)
+				if storeErr != nil {
+					return storeErr
+				}
+				secretRefs[key] = ref
+			} else {
+				secretRefs[key] = ""
+			}
+		}
+		secretContent, marshalErr := json.Marshal(secretRefs)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		set.SecretRefs = string(secretContent)
+		if err := tx.Save(&set).Error; err != nil {
+			return err
+		}
+		return h.replaceScopedResourceProjectBindings(tx, scopedResourceBuildVariableSet, set.ID, sortedProjectIDs(set.ProjectIDs), nil)
+	})
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -99,22 +124,80 @@ func (h *Handlers) UpdateBuildVariableSet(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	next, ok := h.buildVariableSetFromInput(ctx, user, input, existing.ID, decodeSecretRefs(existing.SecretRefs))
+	next, secretInputs, ok := h.buildVariableSetDraftFromInput(ctx, user, input, existing.ID, decodeSecretRefs(existing.SecretRefs))
 	if !ok {
 		return
 	}
-	existing.Name = next.Name
-	existing.Scope = next.Scope
-	existing.OwnerRef = next.OwnerRef
-	existing.ProjectIDs = next.ProjectIDs
-	existing.Variables = next.Variables
-	existing.SecretRefs = next.SecretRefs
-	existing.Enabled = next.Enabled
-	if err := h.saveBuildVariableSet(existing, ctx.Request.Context()); err != nil {
+	var updated model.BuildVariableSet
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.BuildVariableSet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", existing.ID).Error; err != nil {
+			return err
+		}
+		oldRefs := decodeSecretRefs(locked.SecretRefs)
+		nextRefs := make(map[string]string, len(secretInputs))
+		for key, value := range secretInputs {
+			if value == "" {
+				if existingRef := strings.TrimSpace(oldRefs[key]); existingRef != "" {
+					nextRefs[key] = existingRef
+				}
+				continue
+			}
+			if h.secretAvailable() {
+				resource := "build_variable_set:" + locked.ID + ":" + key
+				newRef, storeErr := h.storeSecretWithDB(ctx.Request.Context(), tx, value, user.ID, resource)
+				if storeErr != nil {
+					return storeErr
+				}
+				nextRefs[key] = newRef
+			} else {
+				nextRefs[key] = ""
+			}
+		}
+		for key, oldRef := range oldRefs {
+			if strings.TrimSpace(oldRef) == "" {
+				continue
+			}
+			if nextRefs[key] == oldRef {
+				continue
+			}
+			if err := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, oldRef, "build_variable_set:"+locked.ID+":"+key); err != nil {
+				return err
+			}
+		}
+		secretContent, marshalErr := json.Marshal(nextRefs)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		locked.Name = next.Name
+		locked.Scope = next.Scope
+		locked.OwnerRef = next.OwnerRef
+		locked.ProjectIDs = next.ProjectIDs
+		locked.Variables = next.Variables
+		locked.SecretRefs = string(secretContent)
+		locked.Enabled = next.Enabled
+		if err := tx.Save(&locked).Error; err != nil {
+			return err
+		}
+		projectIDs := sortedProjectIDs(locked.ProjectIDs)
+		if err := h.replaceScopedResourceProjectBindings(tx, scopedResourceBuildVariableSet, locked.ID, projectIDs, nil); err != nil {
+			return err
+		}
+		if err := pruneInaccessibleBuildVariableSetTargets(tx, locked, projectIDs); err != nil {
+			return err
+		}
+		updated = locked
+		return nil
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "build variable set not found")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	response, err := h.buildVariableSetResponseForUser(user, existing, ctx.Request.Context())
+	response, err := h.buildVariableSetResponseForUser(user, updated, ctx.Request.Context())
 	if err != nil {
 		h.writeProjectAuthorizationError(ctx, err)
 		return
@@ -136,60 +219,71 @@ func (h *Handlers) DeleteBuildVariableSet(ctx *gin.Context) {
 		return
 	}
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.BuildVariableSet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", set.ID).Error; err != nil {
+			return err
+		}
 		var targets []model.DeploymentTarget
 		if err := tx.Select("id", "build_variable_set_ids").Find(&targets).Error; err != nil {
 			return err
 		}
 		for _, target := range targets {
-			nextIDs := removeBuildVariableSetID(target.BuildVariableSetIDs, set.ID)
+			nextIDs := removeBuildVariableSetID(target.BuildVariableSetIDs, locked.ID)
 			if nextIDs != target.BuildVariableSetIDs {
 				if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("build_variable_set_ids", nextIDs).Error; err != nil {
 					return err
 				}
 			}
 		}
-		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceBuildVariableSet, set.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
+		for key, ref := range decodeSecretRefs(locked.SecretRefs) {
+			if strings.TrimSpace(ref) == "" {
+				continue
+			}
+			if err := h.deleteSecretRefWithDB(ctx.Request.Context(), tx, ref, "build_variable_set:"+locked.ID+":"+key); err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceBuildVariableSet, locked.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&set).Error
+		return tx.Delete(&locked).Error
 	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(ctx, http.StatusNotFound, "build variable set not found")
+			return
+		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) buildVariableSetFromInput(ctx *gin.Context, user model.User, input buildVariableSetInput, setID string, existingSecretRefs map[string]string) (model.BuildVariableSet, bool) {
+func (h *Handlers) buildVariableSetDraftFromInput(ctx *gin.Context, user model.User, input buildVariableSetInput, setID string, existingSecretRefs map[string]string) (model.BuildVariableSet, map[string]string, bool) {
 	scope, ownerRef, projectIDs, ok := h.normalizeScopedOwnerWithProjects(ctx, user, input.Scope, input.OwnerRef, input.ProjectIDs, "只有平台管理员可以维护全局变量和密钥")
 	if !ok {
-		return model.BuildVariableSet{}, false
+		return model.BuildVariableSet{}, nil, false
 	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入变量和密钥名称")
-		return model.BuildVariableSet{}, false
+		return model.BuildVariableSet{}, nil, false
 	}
 	variables, ok := normalizeBuildVariables(ctx, input.Variables)
 	if !ok {
-		return model.BuildVariableSet{}, false
+		return model.BuildVariableSet{}, nil, false
 	}
-	secretRefs, ok := h.buildVariableSecretRefsFromInput(ctx, user, setID, input.Secrets, existingSecretRefs)
+	secretInputs, ok := normalizeBuildVariableSecretInputs(ctx, input.Secrets, existingSecretRefs)
 	if !ok {
-		return model.BuildVariableSet{}, false
+		return model.BuildVariableSet{}, nil, false
 	}
-	if len(variables) == 0 && len(secretRefs) == 0 {
+	if len(variables) == 0 && len(secretInputs) == 0 {
 		writeError(ctx, http.StatusBadRequest, "请至少配置一个构建变量或密钥")
-		return model.BuildVariableSet{}, false
+		return model.BuildVariableSet{}, nil, false
 	}
 	content, err := json.Marshal(variables)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return model.BuildVariableSet{}, false
-	}
-	secretContent, err := json.Marshal(secretRefs)
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return model.BuildVariableSet{}, false
+		return model.BuildVariableSet{}, nil, false
 	}
 	return model.BuildVariableSet{
 		ID:         setID,
@@ -198,18 +292,37 @@ func (h *Handlers) buildVariableSetFromInput(ctx *gin.Context, user model.User, 
 		OwnerRef:   ownerRef,
 		ProjectIDs: projectIDs,
 		Variables:  string(content),
-		SecretRefs: string(secretContent),
 		Enabled:    input.Enabled,
-	}, true
+	}, secretInputs, true
 }
 
-func (h *Handlers) saveBuildVariableSet(set model.BuildVariableSet, ctx context.Context) error {
-	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&set).Error; err != nil {
-			return err
+func pruneInaccessibleBuildVariableSetTargets(tx *gorm.DB, set model.BuildVariableSet, projectIDs []string) error {
+	if set.Scope == "global" {
+		return nil
+	}
+	query := tx.Select("id", "build_variable_set_ids")
+	switch set.Scope {
+	case "project":
+		if len(projectIDs) > 0 {
+			query = query.Where("project_id not in ?", projectIDs)
 		}
-		return h.replaceScopedResourceProjectBindings(tx, scopedResourceBuildVariableSet, set.ID, sortedProjectIDs(set.ProjectIDs), nil)
-	})
+	case "user":
+		memberProjects := tx.Model(&model.ProjectMember{}).Select("project_id").Where("user_id = ?", set.OwnerRef)
+		query = query.Where("project_id not in (?) or created_by <> ?", memberProjects, set.OwnerRef)
+	}
+	var targets []model.DeploymentTarget
+	if err := query.Find(&targets).Error; err != nil {
+		return err
+	}
+	for _, target := range targets {
+		nextIDs := removeBuildVariableSetID(target.BuildVariableSetIDs, set.ID)
+		if nextIDs != target.BuildVariableSetIDs {
+			if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("build_variable_set_ids", nextIDs).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Handlers) attachBuildVariableSetProjects(sets []model.BuildVariableSet, ctx context.Context) {
@@ -227,7 +340,7 @@ func buildVariableSetModelIDs(sets []model.BuildVariableSet) []string {
 	return ids
 }
 
-func (h *Handlers) buildVariableSecretRefsFromInput(ctx *gin.Context, user model.User, setID string, input map[string]string, existing map[string]string) (map[string]string, bool) {
+func normalizeBuildVariableSecretInputs(ctx *gin.Context, input map[string]string, existing map[string]string) (map[string]string, bool) {
 	output := make(map[string]string)
 	for key, value := range input {
 		key = strings.TrimSpace(key)
@@ -240,8 +353,8 @@ func (h *Handlers) buildVariableSecretRefsFromInput(ctx *gin.Context, user model
 			return nil, false
 		}
 		if value == "" {
-			if existingRef := strings.TrimSpace(existing[key]); existingRef != "" {
-				output[key] = existingRef
+			if strings.TrimSpace(existing[key]) != "" {
+				output[key] = ""
 			}
 			continue
 		}
@@ -249,7 +362,7 @@ func (h *Handlers) buildVariableSecretRefsFromInput(ctx *gin.Context, user model
 			writeError(ctx, http.StatusBadRequest, "构建密钥值过长")
 			return nil, false
 		}
-		output[key] = h.storeSecret(ctx.Request.Context(), value, user.ID, "build_variable_set:"+setID+":"+key)
+		output[key] = value
 	}
 	return output, true
 }

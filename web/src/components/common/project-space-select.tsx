@@ -57,11 +57,15 @@ export function ProjectSpaceMultiSelect({
   className,
   disabled,
   id,
+  loading,
   projects,
+  pruneUnknownValues,
   size,
   value,
   onChange,
 }: ProjectSpaceControlProps & {
+  loading?: boolean
+  pruneUnknownValues?: boolean
   value: string[]
   onChange: (value: string[]) => void
 }) {
@@ -75,8 +79,10 @@ export function ProjectSpaceMultiSelect({
       disabled={disabled}
       emptyLabel={t('projectSpaces.emptyTitle')}
       id={id}
+      loading={loading}
       options={options}
       placeholder={t('projectSpaces.selectProjects')}
+      pruneUnknownValues={pruneUnknownValues}
       searchPlaceholder={t('projectSpaces.searchProjects')}
       selectedLabel={selected => selected.map(project => project.label).join(', ')}
       size={size}

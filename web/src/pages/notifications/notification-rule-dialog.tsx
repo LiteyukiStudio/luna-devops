@@ -33,26 +33,32 @@ import {
 } from './notification-models'
 
 export function NotificationRuleDialog({
-  applications = [],
+  applications,
+  applicationsLoading,
   channels,
   contextMode,
-  deploymentTargets = [],
+  deploymentTargets,
+  deploymentTargetsLoading,
   fixedProjectId,
   open,
-  projects = [],
+  projects,
+  projectsLoading,
   rule,
   saving,
-  templates = [],
+  templates,
   onClose,
   onSave,
 }: {
   applications?: Application[]
+  applicationsLoading?: boolean
   channels: NotificationChannel[]
   contextMode: 'project' | 'global'
   deploymentTargets?: DeploymentTarget[]
+  deploymentTargetsLoading?: boolean
   fixedProjectId?: string
   open: boolean
   projects?: Project[]
+  projectsLoading?: boolean
   rule?: NotificationRule
   saving: boolean
   templates?: NotificationTemplate[]
@@ -68,11 +74,14 @@ export function NotificationRuleDialog({
       <NotificationRuleDialogBody
         key={dialogKey}
         applications={applications}
+        applicationsLoading={applicationsLoading}
         channels={channels}
         contextMode={contextMode}
         deploymentTargets={deploymentTargets}
+        deploymentTargetsLoading={deploymentTargetsLoading}
         fixedProjectId={fixedProjectId}
         projects={projects}
+        projectsLoading={projectsLoading}
         rule={rule}
         saving={saving}
         templates={templates}
@@ -85,30 +94,40 @@ export function NotificationRuleDialog({
 
 function NotificationRuleDialogBody({
   applications,
+  applicationsLoading,
   channels,
   contextMode,
   deploymentTargets,
+  deploymentTargetsLoading,
   fixedProjectId,
   projects,
+  projectsLoading,
   rule,
   saving,
   templates,
   onClose,
   onSave,
 }: {
-  applications: Application[]
+  applications?: Application[]
+  applicationsLoading?: boolean
   channels: NotificationChannel[]
   contextMode: 'project' | 'global'
-  deploymentTargets: DeploymentTarget[]
+  deploymentTargets?: DeploymentTarget[]
+  deploymentTargetsLoading?: boolean
   fixedProjectId?: string
-  projects: Project[]
+  projects?: Project[]
+  projectsLoading?: boolean
   rule?: NotificationRule
   saving: boolean
-  templates: NotificationTemplate[]
+  templates?: NotificationTemplate[]
   onClose: () => void
   onSave: (payload: NotificationRulePayload, ruleId?: string) => void
 }) {
   const { t } = useTranslation()
+  const resolvedApplications = useMemo(() => applications ?? [], [applications])
+  const resolvedDeploymentTargets = useMemo(() => deploymentTargets ?? [], [deploymentTargets])
+  const resolvedProjects = useMemo(() => projects ?? [], [projects])
+  const resolvedTemplates = useMemo(() => templates ?? [], [templates])
   const form = useForm({
     defaultValues: defaultRuleFormValues({
       contextMode,
@@ -127,33 +146,77 @@ function NotificationRuleDialogBody({
       : [...COMMON_TIME_ZONES]
   }, [values.timeZone])
 
-  const applicationOptions = useMemo(() => applications.map(app => ({
+  const applicationOptions = useMemo(() => resolvedApplications.map(app => ({
     description: app.identifier,
     label: app.name,
     value: app.id,
-  })), [applications])
+  })), [resolvedApplications])
 
   const applicationNameById = useMemo(
-    () => new Map(applications.map(app => [app.id, app.name])),
-    [applications],
+    () => new Map(resolvedApplications.map(app => [app.id, app.name])),
+    [resolvedApplications],
   )
 
-  const deploymentTargetOptions = useMemo(() => deploymentTargets
-    .filter(target => values.applicationIds.length === 0 || values.applicationIds.includes(target.applicationId))
+  const activeApplicationIds = useMemo(() => {
+    if (!applications)
+      return values.applicationIds
+    const allowed = new Set(applications.map(app => app.id))
+    return values.applicationIds.filter(id => allowed.has(id))
+  }, [applications, values.applicationIds])
+
+  const deploymentTargetOptions = useMemo(() => resolvedDeploymentTargets
+    .filter(target => activeApplicationIds.length === 0 || activeApplicationIds.includes(target.applicationId))
     .map(target => ({
       description: applicationNameById.get(target.applicationId) ?? target.stage,
       label: target.name,
       value: target.id,
-    })), [applicationNameById, deploymentTargets, values.applicationIds])
+    })), [activeApplicationIds, applicationNameById, resolvedDeploymentTargets])
+
+  const activeDeploymentTargetIds = useMemo(() => {
+    if (!deploymentTargets)
+      return values.deploymentTargetIds
+    const allowed = new Set(
+      deploymentTargets
+        .filter(target => activeApplicationIds.length === 0 || activeApplicationIds.includes(target.applicationId))
+        .map(target => target.id),
+    )
+    return values.deploymentTargetIds.filter(id => allowed.has(id))
+  }, [activeApplicationIds, deploymentTargets, values.deploymentTargetIds])
+
+  const staleApplicationsExhausted = applications !== undefined
+    && !applicationsLoading
+    && values.applicationIds.length > 0
+    && activeApplicationIds.length === 0
+
+  const staleDeploymentTargetsExhausted = deploymentTargets !== undefined
+    && !deploymentTargetsLoading
+    && values.deploymentTargetIds.length > 0
+    && activeDeploymentTargetIds.length === 0
+
+  const selectedActiveProjectCount = useMemo(() => {
+    if (!projects)
+      return values.projectIds.length
+    const validProjectIds = new Set(projects.map(project => project.id))
+    return values.projectIds.filter(projectId => validProjectIds.has(projectId)).length
+  }, [projects, values.projectIds])
+
+  const filterOptionsLoading = (contextMode === 'project'
+    && ((values.applicationIds.length > 0 && Boolean(applicationsLoading))
+      || (values.deploymentTargetIds.length > 0 && Boolean(deploymentTargetsLoading))))
+    || (contextMode === 'global' && values.scope === 'projects' && values.projectIds.length > 0 && Boolean(projectsLoading))
 
   const advancedFilterValid = contextMode !== 'global' || parseNotificationRuleAdvancedFilter(values.filterText) !== null
   const payload = buildNotificationRulePayload({
+    availableApplications: applications,
     availableChannels: channels,
+    availableDeploymentTargets: deploymentTargets,
+    availableProjects: projects,
+    availableTemplates: templates,
     contextMode,
     fixedProjectId,
     values,
   })
-  const canSave = payload !== null
+  const canSave = payload !== null && !filterOptionsLoading
 
   const toggleEvent = (eventType: string, checked: boolean) => {
     const next = checked
@@ -163,15 +226,21 @@ function NotificationRuleDialogBody({
   }
 
   const toggleChannel = (channelId: string, checked: boolean) => {
+    const activeChannelIds = new Set(channels.map(channel => channel.id))
+    const base = values.channelIds.filter(item => activeChannelIds.has(item))
     const next = checked
-      ? [...values.channelIds, channelId]
-      : values.channelIds.filter(item => item !== channelId)
+      ? [...base, channelId]
+      : base.filter(item => item !== channelId)
     form.setValue('channelIds', next, { shouldDirty: true, shouldValidate: true })
   }
 
   const submit = form.handleSubmit((submittedValues) => {
     const nextPayload = buildNotificationRulePayload({
+      availableApplications: applications,
       availableChannels: channels,
+      availableDeploymentTargets: deploymentTargets,
+      availableProjects: projects,
+      availableTemplates: templates,
       contextMode,
       fixedProjectId,
       values: submittedValues,
@@ -198,11 +267,11 @@ function NotificationRuleDialogBody({
           {contextMode === 'global' && (
             <Field label={t('notificationsPage.template')}>
               <Select
-                value={values.templateId}
+                value={resolvedTemplates.some(item => item.id === values.templateId) ? values.templateId : ''}
                 onChange={event => form.setValue('templateId', event.target.value, { shouldDirty: true })}
               >
                 <option value="">{t('notificationsPage.defaultTemplate')}</option>
-                {templates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                {resolvedTemplates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
               </Select>
             </Field>
           )}
@@ -228,13 +297,15 @@ function NotificationRuleDialogBody({
                 ? (
                     <Field
                       className="md:col-span-2"
-                      error={values.projectIds.length === 0 ? t('notificationsPage.ruleProjectsRequired') : undefined}
+                      error={!projectsLoading && selectedActiveProjectCount === 0 ? t('notificationsPage.ruleProjectsRequired') : undefined}
                       hint={t('notificationsPage.ruleProjectsHint')}
                       label={t('notificationsPage.ruleProjects')}
                       required
                     >
                       <ProjectSpaceMultiSelect
-                        projects={projects}
+                        loading={projectsLoading}
+                        projects={resolvedProjects}
+                        pruneUnknownValues
                         value={values.projectIds}
                         onChange={projectIds => form.setValue('projectIds', projectIds, { shouldDirty: true, shouldValidate: true })}
                       />
@@ -250,24 +321,45 @@ function NotificationRuleDialogBody({
 
           {contextMode === 'project' && (
             <>
-              <Field label={t('notificationsPage.filterApplications')}>
+              <Field
+                error={staleApplicationsExhausted ? t('errors.notification.rule_application_not_found') : undefined}
+                label={t('notificationsPage.filterApplications')}
+              >
                 <SearchMultiSelect
+                  loading={applicationsLoading}
                   options={applicationOptions}
                   placeholder={t('notificationsPage.filterApplicationsPlaceholder')}
+                  pruneUnknownValues
                   searchPlaceholder={t('notificationsPage.filterApplicationsSearch')}
                   selectedLabel={selected => selected.map(item => item.label).join(', ')}
                   value={values.applicationIds}
-                  onValueChange={next => form.setValue('applicationIds', next, { shouldDirty: true })}
+                  onValueChange={(next) => {
+                    form.setValue('applicationIds', next, { shouldDirty: true, shouldValidate: true })
+                    if (deploymentTargets && next.length > 0) {
+                      const targetById = new Map(deploymentTargets.map(target => [target.id, target]))
+                      const prunedTargets = values.deploymentTargetIds.filter((id) => {
+                        const target = targetById.get(id)
+                        return !target || next.includes(target.applicationId)
+                      })
+                      if (prunedTargets.length !== values.deploymentTargetIds.length)
+                        form.setValue('deploymentTargetIds', prunedTargets, { shouldDirty: true, shouldValidate: true })
+                    }
+                  }}
                 />
               </Field>
-              <Field label={t('notificationsPage.filterDeploymentTargets')}>
+              <Field
+                error={staleDeploymentTargetsExhausted ? t('errors.notification.rule_deployment_target_not_found') : undefined}
+                label={t('notificationsPage.filterDeploymentTargets')}
+              >
                 <SearchMultiSelect
+                  loading={deploymentTargetsLoading}
                   options={deploymentTargetOptions}
                   placeholder={t('notificationsPage.filterDeploymentTargetsPlaceholder')}
+                  pruneUnknownValues
                   searchPlaceholder={t('notificationsPage.filterDeploymentTargetsSearch')}
                   selectedLabel={selected => selected.map(item => item.label).join(', ')}
                   value={values.deploymentTargetIds}
-                  onValueChange={next => form.setValue('deploymentTargetIds', next, { shouldDirty: true })}
+                  onValueChange={next => form.setValue('deploymentTargetIds', next, { shouldDirty: true, shouldValidate: true })}
                 />
               </Field>
             </>

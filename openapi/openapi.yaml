@@ -1228,6 +1228,8 @@ paths:
       responses:
         "200":
           description: Updated Git provider.
+        "409":
+          $ref: "#/components/responses/Conflict"
     delete:
       operationId: deleteGitProvider
       x-luna-cli:
@@ -1243,6 +1245,8 @@ paths:
       responses:
         "204":
           description: Deleted Git provider.
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v1/git/providers/{providerId}/oauth/start:
     get:
@@ -1354,6 +1358,7 @@ paths:
       responses:
         "201":
           description: Created Git account.
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/git/accounts/{accountId}:
     put:
@@ -1377,6 +1382,8 @@ paths:
       responses:
         "200":
           description: Updated Git account.
+        "409":
+          $ref: "#/components/responses/Conflict"
     delete:
       operationId: deleteGitAccount
       x-luna-cli:
@@ -1392,6 +1399,8 @@ paths:
       responses:
         "204":
           description: Deleted Git account.
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v1/git/accounts/{accountId}/refresh:
     post:
@@ -1569,6 +1578,8 @@ paths:
       responses:
         "200":
           description: Updated artifact registry.
+        "409":
+          $ref: "#/components/responses/Conflict"
     delete:
       operationId: deleteArtifactRegistry
       x-luna-cli:
@@ -1584,6 +1595,8 @@ paths:
       responses:
         "204":
           description: Deleted artifact registry.
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v1/registries/{registryId}/test:
     post:
@@ -1663,6 +1676,7 @@ paths:
       responses:
         "201":
           description: Created registry credential.
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/registry-credentials:
     get:
@@ -1725,6 +1739,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RegistryCredential"
+        "409": { $ref: "#/components/responses/Conflict" }
     delete:
       operationId: deleteRegistryCredential
       x-luna-cli:
@@ -1741,6 +1756,7 @@ paths:
       responses:
         "204":
           description: Deleted registry credential.
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/container-images:
     get:
@@ -4125,6 +4141,8 @@ paths:
       responses:
         "200":
           description: Updated repository binding.
+        "409":
+          $ref: "#/components/responses/Conflict"
     delete:
       operationId: deleteRepositoryBinding
       x-luna-cli:
@@ -4141,6 +4159,8 @@ paths:
       responses:
         "204":
           description: Deleted repository binding.
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v1/projects/{projectId}/repository-bindings/{bindingId}/webhook:
     post:
@@ -4952,6 +4972,11 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The cluster is still referenced (`runtime_cluster.in_use`) or not active (`runtime_cluster.not_active`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
     delete:
       operationId: deleteRuntimeCluster
       x-luna-cli:
@@ -6205,6 +6230,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
     delete:
       operationId: deleteNotificationChannel
       x-luna-cli:
@@ -6231,6 +6258,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/notifications/channels/{channelId}/test:
     post:
       operationId: testNotificationChannel
@@ -6799,6 +6828,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
     delete:
       operationId: deleteScopedNotificationChannel
       tags: [Notifications]

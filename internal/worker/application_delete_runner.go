@@ -197,6 +197,10 @@ func (r *Runner) finishApplicationDelete(ctx context.Context, app model.Applicat
 			return err
 		}
 		// 应用删除时其部署配置提供的跨项目共享一并删除，提交后立即重新下发对端策略。
+		var targetIDs []string
+		if err := tx.Model(&model.DeploymentTarget{}).Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Pluck("id", &targetIDs).Error; err != nil {
+			return err
+		}
 		appTargets := tx.Model(&model.DeploymentTarget{}).Select("id").Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)
 		peers, err := runtimecluster.SharePeerProjectIDs(tx, "deployment_target_id in (?)", appTargets)
 		if err != nil {
@@ -206,11 +210,27 @@ func (r *Runner) finishApplicationDelete(ctx context.Context, app model.Applicat
 		if err := tx.Where("deployment_target_id in (?)", appTargets).Delete(&model.NetworkServiceShare{}).Error; err != nil {
 			return err
 		}
+		egressChanged, err := cleanupTargetReferences(tx, app.ProjectID, app.ID, targetIDs)
+		if err != nil {
+			return err
+		}
+		if egressChanged {
+			sharePeers = appendUniqueProjectID(sharePeers, app.ProjectID)
+		}
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.DeploymentTarget{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.GatewayRoute{}).Error; err != nil {
 			return err
+		}
+		var repoBindings []model.RepositoryBinding
+		if err := tx.Select("id", "webhook_secret").Where("project_id = ? and application_id = ? and webhook_secret <> ''", app.ProjectID, app.ID).Find(&repoBindings).Error; err != nil {
+			return err
+		}
+		for _, repoBinding := range repoBindings {
+			if err := r.secrets.DeleteRefContextWithDB(ctx, tx, repoBinding.WebhookSecret, "repository_binding:"+repoBinding.ID+":webhook"); err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.RepositoryBinding{}).Error; err != nil {
 			return err

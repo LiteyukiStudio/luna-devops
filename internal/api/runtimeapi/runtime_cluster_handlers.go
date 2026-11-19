@@ -2,6 +2,7 @@ package runtimeapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
@@ -74,24 +76,25 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	clusterID := id.New("clu")
-	cluster, ok := h.runtimeClusterFromInput(ctx, user, input, clusterID)
+	cluster, flattenedKubeconfig, ok := h.runtimeClusterFromInput(ctx, user, input, clusterID)
 	if !ok {
 		return
 	}
 	auditMetadata := runtimeClusterSafeAuditMetadata(model.RuntimeCluster{}, cluster, strings.TrimSpace(input.Kubeconfig) != "")
-	if err := h.saveRuntimeClusterWithDefault(cluster, false, ctx.Request.Context()); err != nil {
+	persisted, err := h.createRuntimeClusterWithDefault(cluster, flattenedKubeconfig, user.ID, ctx.Request.Context())
+	if err != nil {
 		auditWithSafeMetadata(h, user.ID, "runtime_cluster.create", cluster.ID, false, runtimeClusterPersistenceAuditMessage(err), auditMetadata, ctx.Request.Context())
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	auditWithSafeMetadata(h, user.ID, "runtime_cluster.create", cluster.ID, true, "", auditMetadata, ctx.Request.Context())
-	h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), cluster.ID)
-	cluster, err := h.runtimeClusterResponseForUser(user, cluster, ctx.Request.Context())
+	auditWithSafeMetadata(h, user.ID, "runtime_cluster.create", persisted.ID, true, "", auditMetadata, ctx.Request.Context())
+	h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), persisted.ID)
+	persisted, err = h.runtimeClusterResponseForUser(user, persisted, ctx.Request.Context())
 	if err != nil {
 		writeProjectAuthorizationError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusCreated, h.observeRuntimeCluster(ctx.Request.Context(), cluster))
+	ctx.JSON(http.StatusCreated, h.observeRuntimeCluster(ctx.Request.Context(), persisted))
 }
 
 func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
@@ -105,7 +108,7 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	if !runtimecluster.IsActive(existing) {
-		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.not_active", "运行集群不是活动状态，不能修改")
+		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.not_active", "runtime cluster is not active")
 		return
 	}
 	if !h.canManageScopedResourceByID(ctx, user, existing.Scope, existing.OwnerRef, scopedResourceRuntimeCluster, existing.ID, "无权维护该运行集群") {
@@ -119,91 +122,45 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusForbidden, "只有创建者或平台管理员可以替换 kubeconfig")
 		return
 	}
-	next, ok := h.runtimeClusterFromInput(ctx, user, input, existing.ID)
+	next, flattenedKubeconfig, ok := h.runtimeClusterFromInput(ctx, user, input, existing.ID)
 	if !ok {
 		return
 	}
-	previous := existing
 	kubeconfigReplaced := strings.TrimSpace(input.Kubeconfig) != ""
-	if kubeconfigReplaced {
-		// 换了凭据可能换了集群，旧的探测结论不再可信。
-		existing.NetworkPolicyEnforcement = kubeprovider.NetworkPolicyEnforcementUnknown
-		existing.NetworkPolicyProbeCode = ""
-		existing.NetworkPolicyProbedAt = nil
-	}
-	networkChanged := existing.NetworkBlockedCIDRs != next.NetworkBlockedCIDRs ||
-		existing.NetworkGatewayNamespace != next.NetworkGatewayNamespace ||
-		existing.GatewayNamespace != next.GatewayNamespace ||
-		existing.GatewayHTTPListenerPort != next.GatewayHTTPListenerPort ||
-		existing.GatewayHTTPSListenerPort != next.GatewayHTTPSListenerPort ||
-		existing.BuildEgressMode != next.BuildEgressMode ||
-		existing.BuildPrivateEgressCIDRs != next.BuildPrivateEgressCIDRs ||
-		existing.BuildPrivateEgressPorts != next.BuildPrivateEgressPorts
-	existing.Name = next.Name
-	existing.Endpoint = next.Endpoint
-	existing.Scope = next.Scope
-	existing.OwnerRef = next.OwnerRef
-	existing.ProjectIDs = next.ProjectIDs
-	if next.KubeconfigRef != "" {
-		existing.KubeconfigRef = next.KubeconfigRef
-	}
-	existing.IsDefault = next.IsDefault
-	existing.MaxConcurrentBuilds = next.MaxConcurrentBuilds
-	existing.CPURequestPercent = next.CPURequestPercent
-	existing.MemoryRequestPercent = next.MemoryRequestPercent
-	existing.CPULimitPercent = next.CPULimitPercent
-	existing.MemoryLimitPercent = next.MemoryLimitPercent
-	existing.GatewayDomainSuffixesRaw = next.GatewayDomainSuffixesRaw
-	existing.GatewayDomainSuffixes = next.GatewayDomainSuffixes
-	existing.GatewayPublicScheme = next.GatewayPublicScheme
-	existing.GatewayPublicPort = next.GatewayPublicPort
-	existing.GatewayControllerType = next.GatewayControllerType
-	existing.GatewayClassName = next.GatewayClassName
-	existing.GatewayName = next.GatewayName
-	existing.GatewayNamespace = next.GatewayNamespace
-	existing.GatewayHTTPListenerName = next.GatewayHTTPListenerName
-	existing.GatewayHTTPListenerPort = next.GatewayHTTPListenerPort
-	existing.GatewayHTTPSListenerName = next.GatewayHTTPSListenerName
-	existing.GatewayHTTPSListenerPort = next.GatewayHTTPSListenerPort
-	existing.GatewayTLSSecretName = next.GatewayTLSSecretName
-	existing.GatewayTLSSecretNamespace = next.GatewayTLSSecretNamespace
-	existing.GatewayCertIssuerKind = next.GatewayCertIssuerKind
-	existing.GatewayCertIssuerName = next.GatewayCertIssuerName
-	existing.GatewayCertificateNamespace = next.GatewayCertificateNamespace
-	existing.GatewayWildcardCertEnabled = next.GatewayWildcardCertEnabled
-	existing.GatewayWildcardCertDomain = next.GatewayWildcardCertDomain
-	existing.GatewayWildcardCertSecretName = next.GatewayWildcardCertSecretName
-	existing.GatewayExternalTLSMode = next.GatewayExternalTLSMode
-	existing.GatewayForwardedHeadersMode = next.GatewayForwardedHeadersMode
-	existing.NetworkBlockedCIDRs = next.NetworkBlockedCIDRs
-	existing.NetworkGatewayNamespace = next.NetworkGatewayNamespace
-	existing.BuildEgressMode = next.BuildEgressMode
-	existing.BuildPrivateEgressCIDRs = next.BuildPrivateEgressCIDRs
-	existing.BuildPrivateEgressPorts = next.BuildPrivateEgressPorts
-	existing.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
-	existing.GatewayDefaultRequestHeaders = next.GatewayDefaultRequestHeaders
-	existing.GatewayDefaultResponseHeaders = next.GatewayDefaultResponseHeaders
-	auditMetadata := runtimeClusterSafeAuditMetadata(previous, existing, kubeconfigReplaced)
-	if err := h.saveRuntimeClusterWithDefault(existing, kubeconfigReplaced, ctx.Request.Context()); err != nil {
+	previous, updated, grantsPruned, networkChanged, err := h.updateRuntimeClusterWithDefault(existing.ID, next, flattenedKubeconfig, kubeconfigReplaced, user.ID, ctx.Request.Context())
+	if err != nil {
+		if previous.ID == "" {
+			previous = existing
+		}
+		auditMetadata := runtimeClusterSafeAuditMetadata(previous, next, kubeconfigReplaced)
 		auditWithSafeMetadata(h, user.ID, "runtime_cluster.update", existing.ID, false, runtimeClusterPersistenceAuditMessage(err), auditMetadata, ctx.Request.Context())
+		if errors.Is(err, errRuntimeClusterNotActive) {
+			writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.not_active", "runtime cluster is not active")
+			return
+		}
+		if errors.Is(err, errRuntimeClusterInUse) {
+			writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.in_use", "runtime cluster is referenced by active deployment targets or project volumes")
+			return
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	auditWithSafeMetadata(h, user.ID, "runtime_cluster.update", existing.ID, true, "", auditMetadata, ctx.Request.Context())
-	if networkChanged {
+	auditMetadata := runtimeClusterSafeAuditMetadata(previous, updated, kubeconfigReplaced)
+	auditWithSafeMetadata(h, user.ID, "runtime_cluster.update", updated.ID, true, "", auditMetadata, ctx.Request.Context())
+	if networkChanged || grantsPruned {
 		// 立即重新下发项目空间网络策略；入队失败时由 Worker 周期同步兜底。
-		h.host.EnqueueNetworkPolicyReconcile(ctx.Request.Context(), existing.ID)
+		h.host.EnqueueNetworkPolicyReconcile(ctx.Request.Context(), updated.ID)
 	}
 	if kubeconfigReplaced {
 		// 换了集群凭据可能换了集群，重新探测 NetworkPolicy 执行能力；失败时由周期探测兜底。
-		h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), existing.ID)
+		h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), updated.ID)
 	}
-	existing, err := h.runtimeClusterResponseForUser(user, existing, ctx.Request.Context())
+	updated, err = h.runtimeClusterResponseForUser(user, updated, ctx.Request.Context())
 	if err != nil {
 		writeProjectAuthorizationError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, h.observeRuntimeCluster(ctx.Request.Context(), existing))
+	ctx.JSON(http.StatusOK, h.observeRuntimeCluster(ctx.Request.Context(), updated))
 }
 
 func applyRuntimeClusterSearch(ctx *gin.Context, query *gorm.DB, user model.User) *gorm.DB {
@@ -261,28 +218,30 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权维护该运行集群") {
 		return
 	}
-	targetCount, volumeCount, err := runtimeClusterReferenceCounts(h.dbFor(ctx), cluster)
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if targetCount > 0 {
-		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.in_use", "runtime cluster is referenced by active deployment targets")
-		return
-	}
-	if volumeCount > 0 {
-		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.in_use", "runtime cluster is referenced by active project volumes")
-		return
-	}
 	if !h.deleteStatusCanStart(cluster.DeleteStatus) {
-		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "运行集群正在删除中，请等待资源清理完成")
+		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "runtime cluster deletion is already in progress")
 		return
 	}
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		return h.markResourceDeleting(tx, &model.RuntimeCluster{}, cluster.ID)
+		var locked model.RuntimeCluster
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", cluster.ID).Error; err != nil {
+			return err
+		}
+		targetCount, volumeCount, err := runtimeClusterReferenceCounts(tx, locked)
+		if err != nil {
+			return err
+		}
+		if targetCount > 0 || volumeCount > 0 {
+			return errRuntimeClusterInUse
+		}
+		return h.markResourceDeleting(tx, &model.RuntimeCluster{}, locked.ID)
 	}); err != nil {
+		if errors.Is(err, errRuntimeClusterInUse) {
+			writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.in_use", "runtime cluster is referenced by active deployment targets or project volumes")
+			return
+		}
 		if h.host.ResourceDeleteAlreadyStarted(err) {
-			writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "运行集群正在删除中，请等待资源清理完成")
+			writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "runtime cluster deletion is already in progress")
 			return
 		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -291,7 +250,7 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 	if !h.enqueueResourceCleanup(ctx.Request.Context(), "runtime_cluster", cluster.ID, "", user.ID) {
 		_ = h.markResourceDeleteFailed(h.dbFor(ctx), &model.RuntimeCluster{}, cluster.ID, "资源清理任务投递失败，请稍后重试")
 		h.auditWithContext(user.ID, "runtime_cluster.delete", cluster.ID, false, "cleanup_enqueue_failed", ctx.Request.Context())
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_cluster.cleanup_enqueue_failed", "运行集群清理任务投递失败，请稍后重试")
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_cluster.cleanup_enqueue_failed", "failed to enqueue runtime cluster cleanup")
 		return
 	}
 	h.auditWithContext(user.ID, "runtime_cluster.delete", cluster.ID, true, "cleanup_queued", ctx.Request.Context())
@@ -305,10 +264,10 @@ func runtimeClusterReferenceCounts(db *gorm.DB, cluster model.RuntimeCluster) (i
 	}
 	if cluster.Scope == "global" {
 		defaultCluster, err := runtimecluster.ResolveForTarget(db, "")
-		if err != nil {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, 0, err
 		}
-		if defaultCluster.ID == cluster.ID {
+		if errors.Is(err, gorm.ErrRecordNotFound) || defaultCluster.ID == cluster.ID {
 			var implicitTargetCount int64
 			if err := db.Model(&model.DeploymentTarget{}).
 				Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").

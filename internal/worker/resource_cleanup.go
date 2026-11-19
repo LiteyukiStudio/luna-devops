@@ -680,6 +680,9 @@ func (r *Runner) finishProjectDelete(ctx context.Context, project model.Project)
 		if err := tx.Where("provider_project_id = ? or consumer_project_id = ?", project.ID, project.ID).Delete(&model.NetworkServiceShare{}).Error; err != nil {
 			return err
 		}
+		if err := cleanupProjectReferences(ctx, tx, r.secrets, project.ID); err != nil {
+			return err
+		}
 		if err := tx.Where("project_id = ?", project.ID).Delete(&model.DeploymentVolumeMount{}).Error; err != nil {
 			return err
 		}
@@ -744,6 +747,13 @@ func (r *Runner) finishDeploymentTargetDelete(ctx context.Context, target model.
 		sharePeers = peers
 		if err := tx.Where("deployment_target_id = ?", target.ID).Delete(&model.NetworkServiceShare{}).Error; err != nil {
 			return err
+		}
+		egressChanged, err := cleanupTargetReferences(tx, target.ProjectID, "", []string{target.ID})
+		if err != nil {
+			return err
+		}
+		if egressChanged {
+			sharePeers = appendUniqueProjectID(sharePeers, target.ProjectID)
 		}
 		if err := tx.Where("target_id = ?", target.ID).Delete(&model.DeploymentTargetHookBinding{}).Error; err != nil {
 			return err
