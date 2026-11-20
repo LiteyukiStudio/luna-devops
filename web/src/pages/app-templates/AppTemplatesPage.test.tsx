@@ -759,6 +759,39 @@ describe('app template installation', () => {
       clickSpy.mockRestore()
     }
   })
+
+  it('displays normalized full image references with non-Docker Hub domains and separate tag suffixes on template cards', async () => {
+    mocks.listAppTemplates.mockResolvedValue([
+      {
+        ...template,
+        id: 'memcached',
+        slug: 'memcached',
+        name: 'Memcached',
+        image: 'docker.io/library/memcached:1.6-alpine',
+        version: '1.6-alpine',
+      },
+      {
+        ...template,
+        id: 'memos',
+        slug: 'memos',
+        name: 'Memos',
+        image: 'ghcr.io/usememos/memos:stable',
+        version: 'stable',
+      },
+    ])
+
+    const { container } = renderPage()
+    await screen.findByRole('button', { name: /^Memcached/ })
+
+    const refs = [...container.querySelectorAll<HTMLElement>('[data-template-image-ref]')]
+    expect(refs.map(el => el.getAttribute('title'))).toEqual([
+      'memcached:1.6-alpine',
+      'ghcr.io/usememos/memos:stable',
+    ])
+    expect(refs[0]).toHaveTextContent('memcached:1.6-alpine')
+    expect(refs[1]?.firstElementChild).toHaveTextContent('ghcr.io/usememos/memos')
+    expect(refs[1]?.lastElementChild).toHaveTextContent(':stable')
+  })
 })
 
 function escapeRegExp(value: string) {

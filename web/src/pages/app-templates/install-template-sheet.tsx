@@ -42,7 +42,7 @@ import {
   projectInstallPayload,
   projectVolumeModeOf,
 } from './install-form'
-import { TemplateIcon, TemplateSourceLinks } from './template-card'
+import { TemplateIcon, TemplateImageRef, TemplateSourceLinks } from './template-card'
 import { TemplateProjectVolumePicker } from './template-project-volume-picker'
 import { templateCategoryLabel, templateDescription } from './template-text'
 
@@ -140,7 +140,9 @@ export function InstallTemplateSheet({
                   <SheetTitle className="truncate text-base">{t('appTemplatesPage.installDialogTitle', { name: summary.name })}</SheetTitle>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span>{templateCategoryLabel(summary.category, t)}</span>
-                    {summary.version && <span className="font-mono">{summary.version}</span>}
+                    {!isMultiComponentTemplate(summary) && summary.image
+                      ? <TemplateImageRef fallbackTag={summary.version} image={summary.image} />
+                      : !isMultiComponentTemplate(summary) && summary.version && <span className="font-mono">{summary.version}</span>}
                     {isMultiComponentTemplate(summary) && <span>{t('appTemplatesPage.componentCount', { count: summary.components.length })}</span>}
                     {isSystemComponentTemplate(summary)
                       ? <StatusBadge tone="neutral">{t('appTemplatesPage.platformComponent')}</StatusBadge>

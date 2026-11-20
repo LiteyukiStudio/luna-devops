@@ -3,6 +3,7 @@ import type { AppTemplate, AppTemplateSummary } from '@/api'
 import { ExternalLink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/common/status-badge'
+import { parseFamiliarImageRef } from '@/lib/image-ref'
 import { cn } from '@/lib/utils'
 import { isMultiComponentTemplate, isSystemComponentTemplate } from './install-form'
 import { templateCategoryLabel, templateDescription } from './template-text'
@@ -39,11 +40,44 @@ export function TemplateCard({ template, onOpen }: { template: AppTemplateSummar
         {templateDescription(template, t)}
       </span>
       <span className="mt-auto flex min-w-0 items-center gap-2 pt-3 text-xs text-muted-foreground">
-        {template.version && <span className="shrink-0 font-mono">{template.version}</span>}
+        {!multiComponent && template.image
+          ? <TemplateImageRef fallbackTag={template.version} image={template.image} />
+          : !multiComponent && template.version && <span className="shrink-0 font-mono">{template.version}</span>}
         {multiComponent && <span className="shrink-0">{t('appTemplatesPage.componentCount', { count: template.components.length })}</span>}
         {componentSummary && <span className="min-w-0 truncate text-muted-foreground/80">{componentSummary}</span>}
       </span>
     </button>
+  )
+}
+
+/**
+ * 按 Docker / OCI Familiar 规范展示镜像引用：
+ * 宽度充足时展示完整镜像名（非 Docker Hub 含域名）；过长时仅截断仓库名中部/尾部并固定保留 `:tag`（如 `thisisanlong…:latest`）。
+ */
+export function TemplateImageRef({
+  className,
+  fallbackTag,
+  image,
+}: {
+  className?: string
+  fallbackTag?: string
+  image: string
+}) {
+  const parsed = parseFamiliarImageRef(image, fallbackTag)
+  if (!parsed)
+    return null
+
+  return (
+    <span
+      className={cn('inline-flex min-w-0 max-w-full items-baseline font-mono', className)}
+      data-template-image-ref=""
+      title={parsed.full}
+    >
+      <span className="min-w-0 truncate">{parsed.repository}</span>
+      {parsed.suffix && (
+        <span className="max-w-[55%] shrink-0 truncate">{parsed.suffix}</span>
+      )}
+    </span>
   )
 }
 

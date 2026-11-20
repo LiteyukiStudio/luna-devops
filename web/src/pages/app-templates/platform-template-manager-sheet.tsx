@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { platformTemplateToWritePayload } from './platform-template-form'
-import { TemplateIcon } from './template-card'
+import { TemplateIcon, TemplateImageRef } from './template-card'
 import { templateCategoryLabel } from './template-text'
 
 export function PlatformTemplateManagerSheet({
@@ -136,12 +136,11 @@ export function PlatformTemplateManagerSheet({
                       <span className="truncate text-sm font-semibold text-foreground">{item.name}</span>
                       <span className="font-mono text-xs text-muted-foreground">{item.slug}</span>
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                       <span>{templateCategoryLabel(item.category, t)}</span>
-                      {item.version && <span className="font-mono">{item.version}</span>}
                       {item.isMultiComponent
                         ? <span>{t('appTemplatesPage.componentCount', { count: item.components.length })}</span>
-                        : <span className="truncate font-mono">{item.image}</span>}
+                        : <TemplateImageRef fallbackTag={item.version} image={item.image} />}
                     </div>
                   </div>
                   <StatusBadge className="shrink-0" tone={item.enabled ? 'success' : 'neutral'}>
