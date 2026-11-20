@@ -1,7 +1,7 @@
 import type { RefObject } from 'react'
 import type { AISuggestionSet } from './suggestions'
 import type { AIUIAction } from '@/api'
-import { Bug, LoaderCircle, Maximize2, Minimize2, PanelLeft, SquarePen, X } from 'lucide-react'
+import { Bug, LoaderCircle, Maximize2, Minimize2, PanelLeft, Plus, X } from 'lucide-react'
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -100,7 +100,7 @@ export function AIAssistantChatSurface({
           variant="ghost"
           onClick={runtime.createConversation}
         >
-          {runtime.creatingConversation ? <LoaderCircle className="animate-spin motion-reduce:animate-none" /> : <SquarePen />}
+          {runtime.creatingConversation ? <LoaderCircle className="animate-spin motion-reduce:animate-none" /> : <Plus />}
         </Button>
         {onExpand && (
           <Button aria-label={t('aiAssistant.expand')} className={headerButtonClassName} size="icon" title={t('aiAssistant.expand')} variant="ghost" onClick={onExpand}>
