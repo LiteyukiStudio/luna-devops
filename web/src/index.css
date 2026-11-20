@@ -167,13 +167,6 @@ body {
   background: transparent;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
 .luna-devops-code-editor {
   contain: inline-size;
   width: 100%;

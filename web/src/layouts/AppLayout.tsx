@@ -1,7 +1,7 @@
 import type { AIAssistantView } from '@/components/common/ai-assistant/route-state'
 import type { ProjectWorkspaceSection } from '@/pages/projects/overview/project-workspace-sections'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Bell, ChartNoAxesCombined, Check, ChevronsUpDown, Container, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, PanelLeft, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
+import { ArrowLeft, Bell, ChartNoAxesCombined, Check, ChevronsUpDown, CircleAlert, Container, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, PanelLeft, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -78,7 +78,7 @@ const navSections: NavSection[] = [
       { to: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
       { to: '/projects', labelKey: 'projects', icon: FolderKanban, activeMatch: pathname => pathname === '/projects' || pathname.startsWith('/projects/') },
       { to: '/app-templates', labelKey: 'appTemplates', icon: Store },
-      { to: '/events', labelKey: 'events', icon: ScrollText },
+      { to: '/events', labelKey: 'events', icon: CircleAlert },
     ],
   },
   {
@@ -128,8 +128,8 @@ const pageMetaRules = [
 
 function sidebarMenuButtonClassName(active?: boolean) {
   return cn(
-    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-control px-3 text-sm font-normal leading-snug text-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-[18px]',
-    active && 'font-medium [background:var(--sidebar-nav-active)] text-sidebar-nav-active-text hover:[background:var(--sidebar-nav-active)] hover:text-sidebar-nav-active-text',
+    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-control px-3 text-sm font-normal leading-snug text-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:stroke-[1.5] [&>svg]:text-muted-foreground',
+    active && 'font-medium [background:var(--sidebar-nav-active)] text-sidebar-nav-active-text hover:[background:var(--sidebar-nav-active)] hover:text-sidebar-nav-active-text [&>svg]:text-sidebar-nav-active-text',
   )
 }
 
@@ -407,7 +407,7 @@ export function AppLayout() {
                     <Button
                       aria-expanded={mobileSidebarOpen}
                       aria-label={t('nav.openSidebar')}
-                      className="-ml-1 size-8 shrink-0 lg:hidden"
+                      className="-ml-1 size-8 shrink-0 hover:bg-primary-subtle-hover lg:hidden"
                       size="icon"
                       variant="ghost"
                       onClick={() => setMobileSidebarOpen(true)}
@@ -417,7 +417,7 @@ export function AppLayout() {
                     <Button
                       aria-label={t('nav.toggleSidebar')}
                       aria-pressed={!desktopSidebarCollapsed}
-                      className="-ml-1 hidden size-8 shrink-0 lg:inline-flex"
+                      className="-ml-1 hidden size-8 shrink-0 hover:bg-primary-subtle-hover lg:inline-flex"
                       size="icon"
                       variant="ghost"
                       onClick={() => setDesktopSidebarCollapsed(collapsed => !collapsed)}
@@ -523,11 +523,11 @@ function AIAssistantTopbarButton() {
   return (
     <Button
       aria-pressed={open}
-      className={cn('h-8 w-8 shrink-0 gap-1.5 px-0 sm:w-auto sm:px-2.5', open && 'border-primary-border bg-primary-subtle text-primary-text hover:bg-primary-subtle-hover')}
+      className={cn('h-8 w-8 shrink-0 gap-1.5 px-0 text-xs hover:bg-primary-subtle-hover sm:w-auto sm:px-2.5', open && 'bg-primary-subtle-hover text-primary-text hover:bg-primary-subtle-active')}
       data-ai-assistant-trigger
       size="sm"
       title={t('aiAssistant.open')}
-      variant="outline"
+      variant="ghost"
       onClick={() => {
         if (presentationMode === 'window') {
           if (runtime.open)
@@ -561,7 +561,7 @@ function ParentBackLink({ items }: { items: Breadcrumb[] }) {
     return null
 
   return (
-    <Button asChild className="size-8 shrink-0 md:hidden" size="icon" variant="ghost">
+    <Button asChild className="size-8 shrink-0 hover:bg-primary-subtle-hover md:hidden" size="icon" variant="ghost">
       <Link aria-label={t('nav.backToParent', { name: parent.label })} title={t('nav.backToParent', { name: parent.label })} to={parent.to}>
         <ArrowLeft aria-hidden="true" className="size-4" />
       </Link>

@@ -23,10 +23,10 @@ export function HelpMenu() {
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={t('helpMenu')}
-          className="size-8 shrink-0 data-[state=open]:bg-muted"
+          className="size-8 shrink-0 hover:bg-primary-subtle-hover data-[state=open]:bg-primary-subtle-hover"
           size="icon"
           title={t('helpMenu')}
-          variant="outline"
+          variant="ghost"
         >
           <CircleHelp aria-hidden="true" className="size-4" />
         </Button>

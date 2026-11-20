@@ -505,7 +505,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
     <>
       <Button
         aria-keyshortcuts="Meta+K Control+K"
-        className="h-8 w-8 shrink-0 gap-2 px-0 sm:w-48 sm:justify-start sm:px-3 sm:text-muted-foreground"
+        className="h-8 w-8 shrink-0 gap-2 px-0 text-xs hover:bg-primary-subtle-hover sm:w-48 sm:justify-start sm:px-3 sm:text-muted-foreground"
         size="sm"
         type="button"
         variant="outline"
@@ -513,7 +513,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
       >
         <Search aria-hidden="true" className="size-4" />
         <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">{t('nav.commandPalette.trigger')}</span>
-        <kbd aria-hidden="true" className="hidden rounded-control border border-border bg-muted px-1.5 font-mono text-xs leading-5 text-muted-foreground sm:inline-block">{shortcut}</kbd>
+        <kbd aria-hidden="true" className="hidden font-sans text-xs leading-5 text-muted-foreground sm:inline-block">{shortcut}</kbd>
       </Button>
       <CommandDialog
         className="sm:max-w-xl"
