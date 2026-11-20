@@ -1,3 +1,4 @@
+import type { ConversationApprovalMode } from "../../domain.js"
 import { bigint, index, pgSchema, text, timestamp } from "drizzle-orm/pg-core"
 
 export const aiSchema = pgSchema("ai")
@@ -7,6 +8,7 @@ export const conversations = aiSchema.table("conversations", {
   ownerUserId: text("owner_user_id").notNull(),
   projectId: text("project_id"),
   modelId: text("model_id"),
+  approvalMode: text("approval_mode").notNull().$type<ConversationApprovalMode>().default("default"),
   title: text("title").notNull(),
   // 数据库当前使用 text + check constraint，类型约束在 TypeScript 边界完成
   titleSource: text("title_source").notNull().$type<"default" | "assistant" | "user">().default("default"),

@@ -209,6 +209,7 @@ func Register[In, Out any](reg *Registry, spec Spec[In, Out]) {
 		GlobalSessionOnly: globalSessionOnly,
 		ApprovalTier:      tier,
 		RequiresApproval:  tier != ApprovalTierL0,
+		AutoModeExempt:    ComputeAutoModeExempt(domain, name, tier, adminOnly),
 		Idempotent:        idempotent,
 		RequiredScopes:    append([]string(nil), spec.RequiredScopes...),
 		InputSchema:       inputSchema,
@@ -366,4 +367,33 @@ func dedupePreserveOrder(items []string) []string {
 		out = append(out, trimmed)
 	}
 	return out
+}
+
+// ComputeAutoModeExempt determines whether a platform operation can be auto-approved
+// under conversation `approval_mode = "auto"` (when not targeting a production stage).
+// Destructive operations, container command execution, cluster infrastructure mutations,
+// billing ownership transfers, and platform administrator tools always require explicit
+// approval unless the conversation is in `full_access` mode.
+func ComputeAutoModeExempt(domain, name, tier string, adminOnly bool) bool {
+	if tier == ApprovalTierL0 {
+		return true
+	}
+	if adminOnly || domain == DomainAdmin {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(name))
+	for _, marker := range []string{"_delete_", "_remove_", "_unbind_", "_revoke_"} {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	switch lower {
+	case "runtime_exec_command",
+		"runtime_save_cluster",
+		"runtime_save_cluster_egress_exception",
+		"runtime_approve_cluster_network_share",
+		"workspace_request_billing_transfer":
+		return false
+	}
+	return true
 }

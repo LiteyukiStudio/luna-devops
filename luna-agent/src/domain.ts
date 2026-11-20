@@ -37,6 +37,8 @@ export type ApprovalPreview = {
 }
 
 export type ConversationTitleSource = "default" | "assistant" | "user"
+export const conversationApprovalModes = ["strict", "default", "auto", "full_access"] as const
+export type ConversationApprovalMode = typeof conversationApprovalModes[number]
 export type PromptVersion = "system-v4"
 
 export type AIModelSnapshot = {
@@ -54,6 +56,7 @@ export type Conversation = {
   ownerUserId: string
   projectId?: string
   modelId?: string
+  approvalMode: ConversationApprovalMode
   title: string
   titleSource: ConversationTitleSource
   status: "active"

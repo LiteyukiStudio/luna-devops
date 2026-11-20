@@ -729,7 +729,8 @@ func (h *Handler) mcpCallPreviewOrExecute(
 		return mcpToolErrorResult(aitool.BadRequest("ai.tool_arguments_invalid", "tool arguments are not valid JSON"))
 	}
 
-	effectiveTier := resolveEffectiveApprovalTier(tool.Catalog, argsMap)
+	isProdTarget := h.isTargetProductionStage(ctx, "", argsMap)
+	effectiveTier := resolveEffectiveApprovalTier(tool.Catalog, argsMap, isProdTarget)
 	mcpRunBindingID := "mcp:" + token.ID
 	signingSecret := h.host.MCPPreviewSigningSecret()
 

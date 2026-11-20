@@ -11,6 +11,28 @@ const aiAssistant = {
       unavailableDescription: '현재 이 계정에서는 Luna 어시스턴트를 사용할 수 없습니다. 관리자에게 기능 및 계정 범위를 확인해 달라고 요청하세요.',
     },
     modelLabel: 'AI 모델',
+    approvalMode: {
+      label: '실행 권한 모드',
+      fullAccessNotice: '현재 세션에 전체 액세스가 켜져 있습니다: 권한 범위 내 모든 고위험 및 프로덕션 작업이 승인 없이 자동 실행됩니다',
+      options: {
+        strict: {
+          label: '엄격 승인',
+          description: '모든 변경 작업을 매번 수동 확인하며 세션 기억을 사용하지 않습니다',
+        },
+        default: {
+          label: '기본',
+          description: '일반 작업은 세션 기억을 지원하고 배포 및 고위험 작업은 매번 승인합니다',
+        },
+        auto: {
+          label: '자동',
+          description: '비프로덕션 빌드·배포를 자동 실행하고 삭제·프로덕션·관리 작업만 확인합니다',
+        },
+        full_access: {
+          label: '전체 액세스',
+          description: '현재 계정 권한 범위 내 모든 작업(고위험·프로덕션 포함)을 자동 승인합니다',
+        },
+      },
+    },
     contextUsage: '컨텍스트 {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: 'Provider 사용량 데이터 없음',
     modelEmpty: '사용 가능한 모델이 없습니다',
@@ -646,6 +668,7 @@ const aiAssistant = {
     errors: {
       createConversation: '세션을 생성할 수 없습니다',
       updateModel: '현재 세션의 모델을 전환할 수 없습니다',
+      updateApprovalMode: '현재 세션의 실행 권한 모드를 전환할 수 없습니다',
       renameConversation: '세션 이름을 변경할 수 없습니다',
       deleteConversation: '세션을 삭제할 수 없습니다',
       timeline: '세션 기록을 로드할 수 없습니다',

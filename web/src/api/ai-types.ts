@@ -8,6 +8,7 @@ type AISelectedRunTransport = NonNullable<AITimelineTurnTransport['selectedRun']
 
 export type AIAssistantAccess = AISchemas['AIAssistantAccess']
 export type AICapabilities = Omit<AIAssistantAccess, 'maxInputBytes'> & { maxInputBytes: number }
+export type AIApprovalMode = AISchemas['AIApprovalMode']
 export type AIModelOption = AISchemas['AIModelOption']
 export type AIModelConfig = AISchemas['AIModelConfig']
 export type AIConversation = AISchemas['AIConversation']

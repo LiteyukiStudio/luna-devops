@@ -64,6 +64,26 @@ const approvalCatalog = ToolCatalog.load([
       additionalProperties: false,
     },
   },
+  {
+    ...testToolOperation("delivery_delete_application"),
+    operationId: "delivery_delete_application",
+    domain: "delivery",
+    approvalTier: "L2",
+    requiresApproval: true,
+    autoModeExempt: false,
+    requiredScopes: ["applications:delete"],
+    idempotent: true,
+    effect: "write",
+    verification: [{ operationId: "getThingState", family: "resource", singleton: true }],
+    inputSchema: {
+      type: "object",
+      properties: {
+        application: { type: "string" },
+      },
+      required: ["application"],
+      additionalProperties: false,
+    },
+  },
 ])
 
 async function approvalFixture(
@@ -582,6 +602,139 @@ describe("approval decisions", () => {
     const executed = await fixture.tools.executePendingCall(escalated.id)
     expect(executed.status).toBe("succeeded")
     expect(attempts).toBe(2)
+
+    await fixture.app.close()
+  })
+
+  it("enforces strict, auto, and full_access conversation approval modes with L2 preview lock", async () => {
+    const seenPreviewLocks: string[] = []
+    const client = new DeterministicLunaApiClient((request) => {
+      if (request.previewLock) seenPreviewLocks.push(request.previewLock)
+      return { status: 200, body: { ok: true } }
+    })
+    const fixture = await approvalFixture(client)
+
+    // 1. strict mode ignores L1 session memory and forbids approve_and_remember
+    const strictConv = await fixture.repository.createConversation("usr_owner", "Strict session", undefined, "user", "aimod_test", "strict")
+    const strictTurn = await fixture.repository.createTurn("usr_owner", {
+      conversationId: strictConv.id,
+      input: "strict",
+      pageContext: {},
+      idempotencyKey: "mode-strict-1",
+    })
+    await fixture.repository.updateRun(strictTurn.run.id, "queued", "running")
+    await fixture.repository.rememberToolApproval(strictTurn.run.id, "deployTemplate", "aitool_prior")
+    const strictCall = await fixture.tools.propose({
+      runId: strictTurn.run.id,
+      operationId: "deployTemplate",
+      arguments: { stage: "dev", name: "svc" },
+    })
+    expect(strictCall).toMatchObject({
+      status: "awaiting_approval",
+      approvalTier: "L1",
+      approvalRememberable: false,
+    })
+    await fixture.repository.updateRun(strictTurn.run.id, "running", "waiting_approval")
+    const rejectRemember = await fixture.app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${strictTurn.run.id}/approvals/${strictCall.id}/decision`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { decision: "approve_and_remember" },
+    })
+    expect(rejectRemember.statusCode).toBe(409)
+
+    // 2. auto mode auto-previews and executes routine L2 (updateThing), gates destructive L2 and prod stage
+    const autoConv = await fixture.repository.createConversation("usr_owner", "Auto session", undefined, "user", "aimod_test", "auto")
+    const autoTurn = await fixture.repository.createTurn("usr_owner", {
+      conversationId: autoConv.id,
+      input: "auto deploy",
+      pageContext: {},
+      idempotencyKey: "mode-auto-1",
+    })
+    await fixture.repository.updateRun(autoTurn.run.id, "queued", "running")
+    const autoRoutineL2 = await fixture.tools.propose({
+      runId: autoTurn.run.id,
+      operationId: "updateThing",
+      arguments: { value: "v2" },
+    })
+    expect(autoRoutineL2).toMatchObject({
+      status: "succeeded",
+      approvalTier: "L2",
+      approvalDecision: "mode_auto",
+    })
+    expect(seenPreviewLocks.length).toBeGreaterThanOrEqual(1)
+
+    const autoProdCall = await fixture.tools.propose({
+      runId: autoTurn.run.id,
+      operationId: "deployTemplate",
+      arguments: { stage: "prod", name: "svc-prod" },
+    })
+    expect(autoProdCall.status).toBe("awaiting_approval")
+
+    const autoDeleteCall = await fixture.tools.propose({
+      runId: autoTurn.run.id,
+      operationId: "delivery_delete_application",
+      arguments: { application: "app-1" },
+    })
+    expect(autoDeleteCall.status).toBe("awaiting_approval")
+
+    // 3. full_access mode auto-previews and executes destructive L2 and prod stage
+    const fullConv = await fixture.repository.createConversation("usr_owner", "Full access", undefined, "user", "aimod_test", "full_access")
+    const fullTurn = await fixture.repository.createTurn("usr_owner", {
+      conversationId: fullConv.id,
+      input: "full access cleanup",
+      pageContext: {},
+      idempotencyKey: "mode-full-1",
+    })
+    await fixture.repository.updateRun(fullTurn.run.id, "queued", "running")
+    const fullDeleteCall = await fixture.tools.propose({
+      runId: fullTurn.run.id,
+      operationId: "delivery_delete_application",
+      arguments: { application: "app-1" },
+    })
+    expect(fullDeleteCall).toMatchObject({
+      status: "succeeded",
+      approvalTier: "L2",
+      approvalDecision: "mode_full_access",
+    })
+
+    await fixture.app.close()
+  })
+
+  it("wakes waiting_approval runs when conversation approvalMode is upgraded via PATCH", async () => {
+    const fixture = await approvalFixture()
+    const conversation = await fixture.repository.createConversation("usr_owner", "Upgrade mid-run")
+    const turn = await fixture.repository.createTurn("usr_owner", {
+      conversationId: conversation.id,
+      input: "update thing",
+      pageContext: {},
+      idempotencyKey: "mode-wake-1",
+    })
+    await fixture.repository.updateRun(turn.run.id, "queued", "running")
+    const pending = await fixture.tools.propose({
+      runId: turn.run.id,
+      operationId: "updateThing",
+      arguments: { value: "pending-v1" },
+    })
+    expect(pending.status).toBe("awaiting_approval")
+    await fixture.repository.updateRun(turn.run.id, "running", "waiting_approval")
+
+    const patchRes = await fixture.app.inject({
+      method: "PATCH",
+      url: `/internal/v1/conversations/${conversation.id}`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+      payload: { approvalMode: "auto" },
+    })
+    expect(patchRes.statusCode).toBe(200)
+    expect(patchRes.json()).toMatchObject({
+      id: conversation.id,
+      approvalMode: "auto",
+    })
+    expect((await fixture.repository.getRun("usr_owner", turn.run.id))?.status).toBe("queued")
+    expect(fixture.store.records.get(pending.id)).toMatchObject({
+      status: "proposed",
+      approvalDecision: "mode_auto",
+    })
 
     await fixture.app.close()
   })

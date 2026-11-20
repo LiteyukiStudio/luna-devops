@@ -17,7 +17,7 @@ export const toolCalls = aiSchema.table("tool_calls", {
   attempt: integer("attempt").notNull().default(1),
   executionCount: integer("execution_count").notNull().default(0),
   rowVersion: integer("row_version").notNull().default(1),
-  approvalDecision: text("approval_decision").$type<"approve" | "approve_and_remember" | "remembered">(),
+  approvalDecision: text("approval_decision").$type<"approve" | "approve_and_remember" | "remembered" | "mode_auto" | "mode_full_access">(),
   previewLock: text("preview_lock").notNull().default(""),
   approvalPreview: jsonb("approval_preview").$type<ApprovalPreview>(),
   result: jsonb("result").$type<unknown>(),

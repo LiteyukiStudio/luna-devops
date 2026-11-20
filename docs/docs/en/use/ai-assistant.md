@@ -12,12 +12,25 @@ AI Assistant uses the current page and your permissions to query resources, expl
 
 Describe the goal directly, such as “check why this application is unreachable” or “deploy this API repository.” If containers or Kubernetes are new to you, say that this is your first deployment and the assistant will explain only the required concepts.
 
+## Execution permission modes
+
+The composer footer lets you switch the current conversation between four execution permission modes at any time (every new conversation resets to **Default**):
+
+| Mode | Typical use | Approval behavior |
+| --- | --- | --- |
+| **Strict** (`strict`) | Sensitive step-by-step review | Every mutating tool requires manual confirmation; session approval memory is disabled. |
+| **Default** (`default`) | Everyday diagnostics and operations | Read-only tools run automatically; routine reversible writes can be remembered for the conversation; deployments, routes, deletions, secrets, and production changes require per-call preview and approval. |
+| **Auto** (`auto`) | End-to-end non-production delivery | Automatically previews and executes non-production builds, configurations, deployments, and gateway routes; still gates deletions/removals/revocations, `prod`/`production` targets, container command execution, and platform/cluster administration. |
+| **Full access** (`full_access`) | Unattended automation within your RBAC | Automatically approves all operations allowed by your account permissions and conversation project sandbox (including high-risk and production changes), with an active warning indicator in the composer. |
+
+> Even in **Auto** or **Full access** mode, the backend still enforces session validation, platform and project RBAC, single-project conversation sandboxing, L2 preview locks (conflict detection), and full audit logging. Switching a paused `waiting_approval` conversation to **Auto** or **Full access** immediately resumes eligible pending operations.
+
 ## Boundaries
 
 > AI Assistant is an operational and diagnostic interface. It does not bypass authorization or replace human release verification.
 
 - It can access only resources that you can access.
-- Deletion, release, permission changes, and other high-risk operations show targets and parameters before confirmation. Changed parameters require a new confirmation.
+- In Default mode, deletion, release, permission changes, and other high-risk operations show targets and parameters before confirmation. Changed parameters require a new confirmation.
 - Builds, Releases, and other asynchronous work are complete only after the authoritative status reaches a terminal state.
 - If an external service is unavailable, permission is missing, or the platform lacks a capability, the assistant reports the unfinished step instead of treating an accepted request as success.
 - AI can misunderstand a request. Review the resource, environment, image version, and impact before approving a change.

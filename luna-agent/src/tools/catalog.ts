@@ -64,6 +64,7 @@ const operationSchema = z.object({
   globalSessionOnly: z.boolean().optional(),
   approvalTier: z.enum(["L0", "L1", "L2"]).optional(),
   requiresApproval: z.boolean(),
+  autoModeExempt: z.boolean().optional(),
   idempotent: z.boolean(),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
   path: z.string().startsWith("/api/v1/").optional(),

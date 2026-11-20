@@ -11,6 +11,28 @@ const aiAssistant = {
       unavailableDescription: 'このアカウントでは現在 Luna アシスタントを利用できません。機能とアカウント範囲を管理者に確認してください。',
     },
     modelLabel: 'AI モデル',
+    approvalMode: {
+      label: '実行権限モード',
+      fullAccessNotice: 'このセッションではフルアクセスが有効です：権限内の高リスク操作・本番環境操作も承認なしで自動実行されます',
+      options: {
+        strict: {
+          label: '厳格承認',
+          description: 'すべての変更操作を毎回手動で確認し、セッション記憶を使いません',
+        },
+        default: {
+          label: 'デフォルト',
+          description: '通常変更はセッション記憶に対応し、デプロイや高リスク操作は都度承認します',
+        },
+        auto: {
+          label: '自動',
+          description: '非本番のビルド・デプロイを自動実行し、削除・本番・管理操作のみ確認します',
+        },
+        full_access: {
+          label: 'フルアクセス',
+          description: '現在のアカウント権限内のすべての操作（本番・高リスクを含む）を自動承認します',
+        },
+      },
+    },
     contextUsage: 'コンテキスト {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: 'Provider の使用量データはありません',
     modelEmpty: '利用可能なモデルがありません',
@@ -646,6 +668,7 @@ const aiAssistant = {
     errors: {
       createConversation: 'セッションを作成できません',
       updateModel: '現在のセッションのモデルを切り替えられません',
+      updateApprovalMode: '現在のセッションの実行権限モードを切り替えられません',
       renameConversation: 'セッション名を変更できません',
       deleteConversation: 'セッションを削除できません',
       timeline: 'セッション記録を読み込めません',

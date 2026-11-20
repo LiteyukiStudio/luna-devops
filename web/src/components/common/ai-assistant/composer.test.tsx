@@ -317,4 +317,63 @@ describe('ai assistant composer keyboard submission', () => {
     fireEvent.click(screen.getByRole('button', { name: i18next.t('aiAssistant.stop') }))
     expect(onCancel).toHaveBeenCalledOnce()
   })
+
+  it('renders the approval mode selector, keeps it enabled during an active run, and displays full-access warning notice', async () => {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+    await i18next.changeLanguage('zh-CN')
+    const onApprovalModeChange = vi.fn()
+    const { container, rerender } = render(
+      <AIAssistantComposer
+        activeRun
+        approvalMode="default"
+        canceling={false}
+        canCancel
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        modelSelectionDisabled
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onApprovalModeChange={onApprovalModeChange}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    const modePicker = screen.getByRole('combobox', { name: i18next.t('aiAssistant.approvalMode.label') })
+    expect(modePicker).toBeEnabled()
+    expect(modePicker).toHaveAttribute('data-ai-approval-mode', 'default')
+    expect(container.querySelector('[data-ai-full-access-notice]')).toBeNull()
+
+    fireEvent.keyDown(modePicker, { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: /完全访问/ }))
+    expect(onApprovalModeChange).toHaveBeenCalledWith('full_access')
+
+    rerender(
+      <AIAssistantComposer
+        activeRun
+        approvalMode="full_access"
+        canceling={false}
+        canCancel
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        modelSelectionDisabled
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onApprovalModeChange={onApprovalModeChange}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(container.querySelector('[data-ai-full-access-notice="true"]')).toHaveTextContent(
+      i18next.t('aiAssistant.approvalMode.fullAccessNotice'),
+    )
+  })
 })

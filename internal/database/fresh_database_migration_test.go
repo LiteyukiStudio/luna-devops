@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 138
+	latestMigrationVersion   = 139
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -98,6 +98,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000137_ai_tool_preview_lock.down.sql":                       false,
 		"000138_drop_oauth_device_and_luna_cli.up.sql":               false,
 		"000138_drop_oauth_device_and_luna_cli.down.sql":             false,
+		"000139_ai_conversation_approval_mode.up.sql":                false,
+		"000139_ai_conversation_approval_mode.down.sql":              false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -301,6 +303,7 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 131, "runtime_alert_incidents", "incident_kind")
 	assertSingleColumnMigration(t, testDB, runner, 132, "platform_app_templates", "spec_json")
 	assertOAuthDeviceAndLunaCLIRemovalMigration(t, testDB, runner)
+	assertSingleColumnMigration(t, testDB, runner, 139, "ai.conversations", "approval_mode")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -597,6 +600,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "volume_transfers", column: "creation_lease_owner"},
 		{table: "volume_transfers", column: "creation_lease_expires_at"},
 		{table: "volume_transfers", column: "job_created_at"},
+		{table: "ai.conversations", column: "approval_mode"},
 		{table: "ai.runs", column: "next_item_position"},
 		{table: "ai.runs", column: "next_event_sequence"},
 		{table: "ai.runs", column: "max_context_tokens"},

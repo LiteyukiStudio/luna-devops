@@ -328,6 +328,41 @@ func TestAIFacadeToolGatewayHardening(t *testing.T) {
 		t.Fatalf("expected 200 and locked payload delivery, got %d %s (locked=%q)", okLockRec.Code, okLockRec.Body.String(), lockedSeen)
 	}
 
+	// 7b) Zero-trust conversation approvalMode enforcement (`strict` / `default` / `auto` / `full_access`)
+	state.mu.Lock()
+	state.approvalDecision = "mode_auto"
+	state.approvalMode = "default"
+	state.mu.Unlock()
+	if r := callGateway("/internal/v1/ai/tools/execute", host.callbackToken, "tc_l2", "build_save_variable_set", nestedArgs, prevPayload.PreviewLock); r.Code != http.StatusPreconditionRequired {
+		t.Fatalf("expected 428 when mode_auto is forged under default conversation mode, got %d %s", r.Code, r.Body.String())
+	}
+
+	state.mu.Lock()
+	state.approvalMode = "auto"
+	state.mu.Unlock()
+	if r := callGateway("/internal/v1/ai/tools/execute", host.callbackToken, "tc_l2", "build_save_variable_set", nestedArgs, prevPayload.PreviewLock); r.Code != http.StatusOK {
+		t.Fatalf("expected 200 when mode_auto executes autoModeExempt L2 tool with valid previewLock, got %d %s", r.Code, r.Body.String())
+	}
+
+	state.mu.Lock()
+	state.approvalDecision = "mode_full_access"
+	state.approvalMode = "auto"
+	state.mu.Unlock()
+	if r := callGateway("/internal/v1/ai/tools/execute", host.callbackToken, "tc_l2", "build_save_variable_set", nestedArgs, prevPayload.PreviewLock); r.Code != http.StatusPreconditionRequired {
+		t.Fatalf("expected 428 when mode_full_access is used under auto mode, got %d %s", r.Code, r.Body.String())
+	}
+
+	state.mu.Lock()
+	state.approvalMode = "full_access"
+	state.mu.Unlock()
+	if r := callGateway("/internal/v1/ai/tools/execute", host.callbackToken, "tc_l2", "build_save_variable_set", nestedArgs, prevPayload.PreviewLock); r.Code != http.StatusOK {
+		t.Fatalf("expected 200 under full_access mode with valid previewLock, got %d %s", r.Code, r.Body.String())
+	}
+	state.mu.Lock()
+	state.approvalDecision = "approve"
+	state.approvalMode = "default"
+	state.mu.Unlock()
+
 	// 8) Sandbox rejections: visibility=all, scope=global, mismatched addProjects, mismatched upsertGrants, case-smuggled AddProjects
 	for name, tcCase := range map[string]struct {
 		tool string
@@ -425,6 +460,8 @@ type stubAIToolDBState struct {
 	userRole           string
 	projectID          string
 	projectSlug        string
+	approvalMode       string
+	targetStage        string
 	operationID        string
 	toolStatus         string
 	inputMode          string
@@ -463,17 +500,29 @@ func (c stubSQLConn) QueryContext(_ context.Context, query string, _ []driver.Na
 		if toolStatus == "" {
 			toolStatus = "running"
 		}
+		approvalMode := c.state.approvalMode
+		if approvalMode == "" {
+			approvalMode = "default"
+		}
 		return &stubSQLRows{
 			cols: []string{
 				"owner_user_id", "actor_session_id", "conversation_id", "run_status",
-				"conversation_owner_id", "conversation_project_id", "operation_id",
+				"conversation_owner_id", "conversation_project_id", "conversation_approval_mode", "operation_id",
 				"tool_status", "input_mode", "arguments_hash", "approval_decision", "remembered_approval",
 			},
 			rows: [][]driver.Value{{
 				"usr_1", "ses_1", "aicnv_1", "running",
-				"usr_1", c.state.projectID, c.state.operationID,
+				"usr_1", c.state.projectID, approvalMode, c.state.operationID,
 				toolStatus, inputMode, c.state.argumentsHash, c.state.approvalDecision, c.state.rememberedApproval,
 			}},
+		}, nil
+	case strings.Contains(lower, "deployment_targets"):
+		if c.state.targetStage == "" {
+			return &stubSQLRows{cols: []string{"stage"}, rows: nil}, nil
+		}
+		return &stubSQLRows{
+			cols: []string{"stage"},
+			rows: [][]driver.Value{{c.state.targetStage}},
 		}, nil
 	case strings.Contains(lower, `from "users"`):
 		return &stubSQLRows{

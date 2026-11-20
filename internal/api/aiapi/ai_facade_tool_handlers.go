@@ -30,18 +30,19 @@ type aiFacadeToolRequest struct {
 }
 
 type aiFacadeToolBinding struct {
-	OwnerUserID           string `gorm:"column:owner_user_id"`
-	ActorSessionID        string `gorm:"column:actor_session_id"`
-	ConversationID        string `gorm:"column:conversation_id"`
-	RunStatus             string `gorm:"column:run_status"`
-	ConversationOwnerID   string `gorm:"column:conversation_owner_id"`
-	ConversationProjectID string `gorm:"column:conversation_project_id"`
-	OperationID           string `gorm:"column:operation_id"`
-	ToolStatus            string `gorm:"column:tool_status"`
-	InputMode             string `gorm:"column:input_mode"`
-	ArgumentsHash         string `gorm:"column:arguments_hash"`
-	ApprovalDecision      string `gorm:"column:approval_decision"`
-	RememberedApproval    bool   `gorm:"column:remembered_approval"`
+	OwnerUserID              string `gorm:"column:owner_user_id"`
+	ActorSessionID           string `gorm:"column:actor_session_id"`
+	ConversationID           string `gorm:"column:conversation_id"`
+	RunStatus                string `gorm:"column:run_status"`
+	ConversationOwnerID      string `gorm:"column:conversation_owner_id"`
+	ConversationProjectID    string `gorm:"column:conversation_project_id"`
+	ConversationApprovalMode string `gorm:"column:conversation_approval_mode"`
+	OperationID              string `gorm:"column:operation_id"`
+	ToolStatus               string `gorm:"column:tool_status"`
+	InputMode                string `gorm:"column:input_mode"`
+	ArgumentsHash            string `gorm:"column:arguments_hash"`
+	ApprovalDecision         string `gorm:"column:approval_decision"`
+	RememberedApproval       bool   `gorm:"column:remembered_approval"`
 }
 
 // PreviewAIToolInternal handles POST /internal/v1/ai/tools/preview.
@@ -156,10 +157,12 @@ func (h *Handler) handleAIFacadeTool(ctx *gin.Context, isPreview bool) {
 		return
 	}
 
+	isProdTarget := h.isTargetProductionStage(ctx, binding.ConversationProjectID, argsMap)
+	effectiveTier := resolveEffectiveApprovalTier(tool.Catalog, argsMap, isProdTarget)
+
 	var lockedPayload json.RawMessage
 	if !isPreview {
-		effectiveTier := resolveEffectiveApprovalTier(tool.Catalog, argsMap)
-		if !facadeApprovalSatisfied(effectiveTier, binding) {
+		if !facadeApprovalSatisfied(effectiveTier, tool.Catalog, isProdTarget, binding) {
 			writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "AI tool execution requires approval")
 			return
 		}
@@ -245,10 +248,14 @@ func (h *Handler) handleAIFacadeTool(ctx *gin.Context, isPreview bool) {
 			writeErrorCode(ctx, http.StatusInternalServerError, "ai.preview_lock_sign_failed", "failed to sign preview lock")
 			return
 		}
-		ctx.JSON(http.StatusOK, gin.H{
+		respPayload := gin.H{
 			"approvalPreview": previewRes.Preview,
 			"previewLock":     lockToken,
-		})
+		}
+		if !isModeAutoApprovable(binding.ConversationApprovalMode, tool.Catalog, isProdTarget) {
+			respPayload["requiresManualApproval"] = true
+		}
+		ctx.JSON(http.StatusOK, respPayload)
 		return
 	}
 
@@ -283,6 +290,7 @@ func (h *Handler) resolveAIFacadeToolBinding(ctx *gin.Context, runID, toolCallID
 		       r.status AS run_status,
 		       c.owner_user_id AS conversation_owner_id,
 		       COALESCE(c.project_id, '') AS conversation_project_id,
+		       COALESCE(c.approval_mode, 'default') AS conversation_approval_mode,
 		       tc.operation_id,
 		       tc.status AS tool_status,
 		       COALESCE(tc.input_mode, '') AS input_mode,
@@ -480,7 +488,85 @@ func schemaFieldIsRequired(schema map[string]any, field string) bool {
 	return false
 }
 
-func resolveEffectiveApprovalTier(cat aitool.CatalogOperation, argsMap map[string]any) string {
+func (h *Handler) isTargetProductionStage(ctx *gin.Context, conversationProjectID string, argsMap map[string]any) bool {
+	if argsContainProductionStage(argsMap) {
+		return true
+	}
+	rawTarget, ok := argsMap["target"].(string)
+	if !ok {
+		return false
+	}
+	targetVal := strings.TrimSpace(rawTarget)
+	if targetVal == "" {
+		return false
+	}
+	db := h.dbFor(ctx)
+	if db == nil {
+		return false
+	}
+	if strings.HasPrefix(targetVal, "dplt_") {
+		var stage string
+		if err := db.Table("deployment_targets").
+			Select("stage").
+			Where("id = ? AND deleted_at IS NULL", targetVal).
+			Limit(1).
+			Scan(&stage).Error; err == nil && isProductionStageValue(stage) {
+			return true
+		}
+		return false
+	}
+	projectFilter := strings.TrimSpace(conversationProjectID)
+	if projectFilter == "" {
+		if rawProj, ok := argsMap["project"].(string); ok && strings.TrimSpace(rawProj) != "" {
+			var resolvedProjID string
+			if err := db.Table("projects").
+				Select("id").
+				Where("(id = ? OR identifier = ?) AND deleted_at IS NULL", strings.TrimSpace(rawProj), strings.TrimSpace(rawProj)).
+				Limit(1).
+				Scan(&resolvedProjID).Error; err == nil {
+				projectFilter = strings.TrimSpace(resolvedProjID)
+			}
+		}
+	}
+	if projectFilter == "" {
+		return false
+	}
+	var stages []string
+	if err := db.Table("deployment_targets").
+		Select("stage").
+		Where("project_id = ? AND deleted_at IS NULL AND (id = ? OR stage = ? OR name = ? OR kubernetes_name = ?)", projectFilter, targetVal, targetVal, targetVal, targetVal).
+		Scan(&stages).Error; err == nil {
+		for _, stage := range stages {
+			if isProductionStageValue(stage) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func argsContainProductionStage(argsMap map[string]any) bool {
+	for key, rawVal := range argsMap {
+		if strings.EqualFold(key, "stage") || strings.EqualFold(key, "target") {
+			if val, ok := rawVal.(string); ok && isProductionStageValue(val) {
+				return true
+			}
+		}
+		if strings.EqualFold(key, "body") {
+			if nested, ok := rawVal.(map[string]any); ok && argsContainProductionStage(nested) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isProductionStageValue(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	return normalized == "prod" || normalized == "production"
+}
+
+func resolveEffectiveApprovalTier(cat aitool.CatalogOperation, argsMap map[string]any, isProdTarget bool) string {
 	tier := strings.ToUpper(strings.TrimSpace(cat.ApprovalTier))
 	if tier == "" {
 		if cat.RequiresApproval {
@@ -489,33 +575,46 @@ func resolveEffectiveApprovalTier(cat aitool.CatalogOperation, argsMap map[strin
 			tier = aitool.ApprovalTierL0
 		}
 	}
-	if tier == aitool.ApprovalTierL1 {
-		for key, rawVal := range argsMap {
-			if strings.EqualFold(key, "stage") || strings.EqualFold(key, "target") {
-				if val, ok := rawVal.(string); ok {
-					normalized := strings.ToLower(strings.TrimSpace(val))
-					if normalized == "prod" || normalized == "production" {
-						return aitool.ApprovalTierL2
-					}
-				}
-			}
-		}
+	if tier == aitool.ApprovalTierL1 && (isProdTarget || argsContainProductionStage(argsMap)) {
+		return aitool.ApprovalTierL2
 	}
 	return tier
 }
 
-func facadeApprovalSatisfied(tier string, binding aiFacadeToolBinding) bool {
-	decision := strings.TrimSpace(binding.ApprovalDecision)
-	switch tier {
-	case aitool.ApprovalTierL0:
+func isModeAutoApprovable(mode string, cat aitool.CatalogOperation, isProdTarget bool) bool {
+	switch strings.TrimSpace(mode) {
+	case "full_access":
 		return true
-	case aitool.ApprovalTierL1:
-		return decision == "approve" ||
-			decision == "approve_and_remember" ||
-			(decision == "remembered" && binding.RememberedApproval)
+	case "auto":
+		return cat.AutoModeExempt && !isProdTarget
 	default:
-		return decision == "approve"
+		return false
 	}
+}
+
+func facadeApprovalSatisfied(tier string, cat aitool.CatalogOperation, isProdTarget bool, binding aiFacadeToolBinding) bool {
+	decision := strings.TrimSpace(binding.ApprovalDecision)
+	mode := strings.TrimSpace(binding.ConversationApprovalMode)
+	if mode == "" {
+		mode = "default"
+	}
+	if tier == aitool.ApprovalTierL0 {
+		return true
+	}
+	if decision == "approve" {
+		return true
+	}
+	if decision == "mode_full_access" {
+		return mode == "full_access"
+	}
+	if decision == "mode_auto" {
+		return (mode == "auto" || mode == "full_access") && cat.AutoModeExempt && !isProdTarget
+	}
+	if tier == aitool.ApprovalTierL1 && !isProdTarget && mode != "strict" {
+		return decision == "approve_and_remember" ||
+			(decision == "remembered" && binding.RememberedApproval)
+	}
+	return false
 }
 
 func (h *Handler) previewLockSecrets() [][]byte {

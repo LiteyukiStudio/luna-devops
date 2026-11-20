@@ -11,6 +11,28 @@ const aiAssistant = {
       unavailableDescription: '当前账号暂时无法使用 Luna 助手，请联系管理员确认功能与账号范围。',
     },
     modelLabel: 'AI 模型',
+    approvalMode: {
+      label: '执行权限模式',
+      fullAccessNotice: '当前会话已开启完全访问：权限内的全部高危与生产操作将免审批自动执行',
+      options: {
+        strict: {
+          label: '严格审批',
+          description: '所有写操作逐次人工确认，不启用本会话记忆',
+        },
+        default: {
+          label: '默认',
+          description: '常规操作支持本会话记住，部署与高危操作逐次批准',
+        },
+        auto: {
+          label: '自动',
+          description: '自动执行非生产构建与部署，仅拦截删除、生产环境与高危管理操作',
+        },
+        full_access: {
+          label: '完全访问',
+          description: '自动放行当前账号权限范围内的全部操作（含高危与生产环境）',
+        },
+      },
+    },
     contextUsage: '上下文 {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: '暂无 Provider 用量数据',
     modelEmpty: '暂无可用模型',
@@ -646,6 +668,7 @@ const aiAssistant = {
     errors: {
       createConversation: '无法创建会话',
       updateModel: '无法切换当前会话的模型',
+      updateApprovalMode: '无法切换当前会话的执行权限模式',
       renameConversation: '无法重命名会话',
       deleteConversation: '无法删除会话',
       timeline: '无法加载会话记录',

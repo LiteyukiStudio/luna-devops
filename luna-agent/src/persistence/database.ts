@@ -67,7 +67,7 @@ export class AgentDatabase {
   async readiness(): Promise<{ database: boolean, schema: boolean }> {
     try {
       const result = await this.pool.query<{ schema_ready: boolean }>(`
-		select count(*) = 13 as schema_ready
+		select count(*) = 14 as schema_ready
         from information_schema.columns
         where table_schema = 'ai'
 		  and (table_name, column_name) in (
@@ -83,7 +83,8 @@ export class AgentDatabase {
 			('runs', 'lease_expires_at'),
 			('model_usages', 'input_credits_per_million'),
 			('model_usages', 'prompt_tokens'),
-			('conversations', 'context_used_tokens')
+			('conversations', 'context_used_tokens'),
+			('conversations', 'approval_mode')
           )
       `)
       return { database: true, schema: result.rows[0]?.schema_ready === true }
@@ -97,7 +98,7 @@ export class AgentDatabase {
     let result
     try {
       result = await this.pool.query<{ schema_ready: boolean }>(`
-        select count(*) = 13 as schema_ready
+        select count(*) = 14 as schema_ready
         from information_schema.columns
         where table_schema = 'ai'
           and (table_name, column_name) in (
@@ -113,7 +114,8 @@ export class AgentDatabase {
             ('runs', 'lease_expires_at'),
             ('model_usages', 'input_credits_per_million'),
             ('model_usages', 'prompt_tokens'),
-            ('conversations', 'context_used_tokens')
+            ('conversations', 'context_used_tokens'),
+            ('conversations', 'approval_mode')
           )
       `)
     }

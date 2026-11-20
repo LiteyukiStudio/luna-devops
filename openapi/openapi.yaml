@@ -11783,6 +11783,11 @@ components:
       type: object
       additionalProperties: true
       description: Versioned AI Agent response projected through the Luna API BFF.
+    AIApprovalMode:
+      type: string
+      enum: [strict, default, auto, full_access]
+      default: default
+      description: Conversation-scoped tool approval policy (`strict` prompts on every write; `default` allows L1 session memory and gates L2; `auto` auto-runs non-destructive non-production operations while gating deletes, `prod`, container exec, and platform/cluster governance; `full_access` auto-approves all operations within the user's RBAC and project sandbox).
     AIConversation:
       type: object
       additionalProperties: false
@@ -11794,6 +11799,7 @@ components:
         status: { type: string }
         projectId: { type: string }
         modelId: { type: string, minLength: 5, maxLength: 64, description: Model preference used by subsequent turns in this conversation. }
+        approvalMode: { $ref: "#/components/schemas/AIApprovalMode" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     AIToolApprovalDecisionInput:
@@ -11825,15 +11831,18 @@ components:
         projectId: { type: string, minLength: 5, maxLength: 64 }
         modelId: { type: string, minLength: 5, maxLength: 64 }
         title: { type: string, minLength: 1, maxLength: 120 }
+        approvalMode: { $ref: "#/components/schemas/AIApprovalMode" }
     AIConversationUpdateInput:
       type: object
       additionalProperties: false
       anyOf:
         - required: [title]
         - required: [modelId]
+        - required: [approvalMode]
       properties:
         title: { type: string, minLength: 1, maxLength: 120 }
         modelId: { type: string, minLength: 5, maxLength: 64 }
+        approvalMode: { $ref: "#/components/schemas/AIApprovalMode" }
     AIConversationPage:
       type: object
       additionalProperties: false
@@ -11856,6 +11865,7 @@ components:
         titleSource: { type: string, enum: [default, assistant, user] }
         status: { type: string }
         modelId: { type: string, minLength: 5, maxLength: 64, description: Model preference used by subsequent turns in this conversation. }
+        approvalMode: { $ref: "#/components/schemas/AIApprovalMode" }
     AIMessagePart:
       type: object
       additionalProperties: false

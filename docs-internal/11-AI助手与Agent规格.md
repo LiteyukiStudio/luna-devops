@@ -54,10 +54,10 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 
 - Agent Loop：补充上下文 → 模型判断 → 工具调用（经 Schema 与分级审批校验）→ 结果回灌 → 直至
   最终答复或明确终态（批准/补充输入/后台任务等待/取消/超时/上限）。
-- 工具审批采用 `L0 / L1 / L2` 三级策略：
-  - `L0`（纯只读与发现工具，`requiresApproval=false`）：自动执行，不打断用户，也不写危险操作审计噪音；
-  - `L1`（可逆常规非生产写操作）：支持“拒绝”“批准本次（`approve`）”与“批准并在本会话记住（`approve_and_remember`）”。会话级记忆保存在 `ai.conversation_tool_approvals`（随会话删除级联清理），与 `ai.tool_calls` 状态转换原子绑定；同一会话后续同 `operationId` 非生产调用以 `approval_decision='remembered'` 自动放行，一旦目标涉及 `stage=prod` 或服务端返回 `428 ai.approval_required` 则立即升级为 `L2` 逐次审批；
-  - `L2`（删除、含 `sensitivePaths` 的凭据写入、任意脚本 Hook、发布/回滚/取消发布、网关路由、集群/RBAC/计费/系统配置及所有 `stage=prod` 变更）：强制逐次展示完整脱敏参数并绑定当次 `approve`，严禁会话记忆豁免。拒绝只终结当前 ToolCall，让模型继续。
+- 工具审批采用 `L0 / L1 / L2` 三级策略，并结合会话级持久化的四档执行权限模式（`ai.conversations.approval_mode`：`strict / default / auto / full_access`，新建会话默认 `default`）：
+  - `L0`（纯只读与发现工具，`requiresApproval=false`）：在全部模式下自动执行，不打断用户，也不写危险操作审计噪音；
+  - `L1`（可逆常规非生产写操作）：`default` 模式下支持“拒绝”“批准本次（`approve`）”与“批准并在本会话记住（`approve_and_remember`）”，会话记忆保存在 `ai.conversation_tool_approvals`；`strict` 模式下禁用会话记忆并强制逐次批准；一旦目标涉及 `stage=prod`（含实库解析目标 `DeploymentTarget.Stage`）或服务端返回 `428 ai.approval_required` 则立即升级为 `L2`；
+  - `L2`（删除、凭据写入、脚本 Hook、构建/发布/回滚、网关路由、集群/RBAC/计费/系统配置及所有 `stage=prod` 变更）：`default` 与 `strict` 模式下逐次预检展示参数对比并等待 `approve`；`auto` 模式下对 `CatalogOperation.AutoModeExempt=true` 的非生产常规交付/网络/卷/通知写操作自动执行预检签发 `X-Luna-AI-Preview-Lock` 并以 `approval_decision='mode_auto'` 放行，继续拦截删除/移除/解绑/吊销、生产环境（`prod`/`production`）、容器远程命令（`runtime_exec_command`）及平台/集群治理类操作；`full_access` 模式下在用户自身 RBAC 与单项目会话沙箱内对全部操作自动完成预检锁签发并以 `approval_decision='mode_full_access'` 放行。Go 零信任网关在执行入口实时回查 `ai.conversations.approval_mode`、预检锁与目标部署环境，拒绝越档伪造。拒绝只终结当前 ToolCall，让模型继续。
 - 异步长任务（如构建 `build_run`、发布 `release`）采用双模式：
   - 默认单步触发：平台写工具返回已受理 ID 与初始状态后立即回灌模型，模型生成 `present_card`（`template: live_task`，绑定 `live_progress`）并正常 `completed` 收口本轮，交由前端实时订阅进度；
   - 多步串联编排或失败自动排障：模型显式调用内置工具 `wait_for_task`，执行器将 Run 置为 `waiting_external` 并写入指数退避 `wake_at` 立即释放执行槽位；到达终态（含 `succeeded` / `failed` / `canceled`）或超时后写回工具结果并将 Run 置回 `queued` 唤醒模型继续。

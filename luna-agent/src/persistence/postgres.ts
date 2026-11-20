@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNull, lt, ne, sql } from "drizzle-orm"
 import type { Pool } from "pg"
 import type {
+  ConversationApprovalMode,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationToolInteraction,
@@ -219,12 +220,13 @@ export class PostgresRepository implements Repository {
     }))
   }
 
-  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string) {
+  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string, approvalMode: ConversationApprovalMode = "default") {
     const row = (await this.db.insert(conversations).values({
       id: createId("aicnv"),
       ownerUserId,
       projectId: projectId ?? null,
       modelId: modelId ?? null,
+      approvalMode,
       title,
       titleSource: titleSource ?? (title === "新会话" ? "default" : "user"),
     }).returning())[0]
@@ -272,7 +274,7 @@ export class PostgresRepository implements Repository {
     return this.updateConversation(ownerUserId, id, { title })
   }
 
-  async updateConversation(ownerUserId: string, id: string, input: { title?: string, modelId?: string }) {
+  async updateConversation(ownerUserId: string, id: string, input: { title?: string, modelId?: string, approvalMode?: ConversationApprovalMode }) {
     return this.db.transaction(async (tx) => {
       const current = (await tx.select().from(conversations)
         .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
@@ -282,6 +284,7 @@ export class PostgresRepository implements Repository {
         .set({
           ...(input.title ? { title: input.title, titleSource: "user" as const } : {}),
           ...(input.modelId ? { modelId: input.modelId } : {}),
+          ...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
           updatedAt: sql`now()`,
         })
         .where(eq(conversations.id, id))
@@ -1745,6 +1748,22 @@ export class PostgresRepository implements Repository {
       )
       if (exists.rowCount === 0) throw new Error("ai.run_not_found")
     }
+  }
+
+  async getConversationApprovalModeByRunId(runId: string): Promise<ConversationApprovalMode> {
+    const result = await this.pool.query<{ approval_mode: string }>(
+      `select coalesce(c.approval_mode, 'default') as approval_mode
+       from ai.runs r
+       join ai.conversations c on c.id = r.conversation_id
+       where r.id = $1
+       limit 1`,
+      [runId],
+    )
+    const mode = result.rows[0]?.approval_mode
+    if (mode === "strict" || mode === "default" || mode === "auto" || mode === "full_access") {
+      return mode
+    }
+    return "default"
   }
 
   /** 原子推进 next_item_position 并插入 Timeline Item；计数器原子更新无法以 ORM 查询安全表达，保留最小 sql 模板 */

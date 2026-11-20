@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ConversationApprovalMode,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationToolInteraction,
@@ -80,10 +81,11 @@ export class TestRepository implements Repository {
   async health(): Promise<boolean> { return true }
   async readiness() { return { database: true, schema: true } }
 
-  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string): Promise<Conversation> {
+  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string, approvalMode: ConversationApprovalMode = "default"): Promise<Conversation> {
     const now = new Date().toISOString()
     const value: Conversation = {
       id: createId("aicnv"), ownerUserId, title,
+      approvalMode,
       titleSource: titleSource ?? (title === "新会话" ? "default" : "user"),
       status: "active", createdAt: now, updatedAt: now,
       ...(projectId ? { projectId } : {}),
@@ -120,13 +122,14 @@ export class TestRepository implements Repository {
     return this.updateConversation(ownerUserId, id, { title })
   }
 
-  async updateConversation(ownerUserId: string, id: string, input: { title?: string, modelId?: string }) {
+  async updateConversation(ownerUserId: string, id: string, input: { title?: string, modelId?: string, approvalMode?: ConversationApprovalMode }) {
     const value = await this.getConversation(ownerUserId, id)
     if (!value) return undefined
     const next: Conversation = {
       ...value,
       ...(input.title ? { title: input.title, titleSource: "user" as const } : {}),
       ...(input.modelId ? { modelId: input.modelId } : {}),
+      ...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
       updatedAt: new Date().toISOString(),
     }
     this.conversations.set(id, next)
@@ -998,6 +1001,12 @@ export class TestRepository implements Repository {
     if (!operations.has(operationId)) {
       operations.set(operationId, grantedByToolCallId)
     }
+  }
+
+  async getConversationApprovalModeByRunId(runId: string): Promise<ConversationApprovalMode> {
+    const run = this.runs.get(runId)
+    if (!run) return "default"
+    return this.conversations.get(run.conversationId)?.approvalMode ?? "default"
   }
 }
 

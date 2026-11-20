@@ -1,4 +1,5 @@
 import type {
+  AIApprovalMode,
   AIAssistantAccess,
   AIConversation,
   AIConversationPage,
@@ -21,9 +22,9 @@ export const aiApi = {
     request<void>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listAIConversations: (params: { page: number, pageSize: number, search?: string }) =>
     request<AIConversationPage>(`/ai/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}`),
-  createAIConversation: (payload: { modelId: string, projectId?: string, title?: string }) =>
+  createAIConversation: (payload: { modelId: string, projectId?: string, title?: string, approvalMode?: AIApprovalMode }) =>
     request<AIConversation>('/ai/conversations', { method: 'POST', body: JSON.stringify(payload) }),
-  updateAIConversation: (conversationId: string, payload: { title?: string, modelId?: string }) =>
+  updateAIConversation: (conversationId: string, payload: { title?: string, modelId?: string, approvalMode?: AIApprovalMode }) =>
     request<AIConversation>(`/ai/conversations/${encodeURIComponent(conversationId)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   renameAIConversation: (conversationId: string, title: string) =>
     aiApi.updateAIConversation(conversationId, { title }),

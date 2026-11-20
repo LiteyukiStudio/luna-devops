@@ -1,4 +1,4 @@
-import type { ApprovalPreview } from "../domain.js"
+import type { ApprovalPreview, ConversationApprovalMode } from "../domain.js"
 import { hashCanonicalJSON } from "../canonical-json.js"
 import { genAIToolCallObject, genAIToolSpanAttributes, redactToolArgumentsForOperation } from "../genai-semconv.js"
 import { createId } from "../id.js"
@@ -15,7 +15,7 @@ import { toolEffect, toolOutcome, type ToolOutcome } from "./outcome.js"
 import { ToolPolicy, type ToolApprovalGrant } from "./policy.js"
 
 export type ToolCallStatus = "proposed" | "awaiting_approval" | "running" | "succeeded" | "failed" | "rejected" | "canceled" | "skipped"
-export type RecordedApprovalDecision = "approve" | "approve_and_remember" | "remembered"
+export type RecordedApprovalDecision = "approve" | "approve_and_remember" | "remembered" | "mode_auto" | "mode_full_access"
 export type ToolCallRecord = {
   id: string
   idempotencyKey: string
@@ -53,6 +53,7 @@ export interface ToolCallStore {
   emit(event: ToolEvent, expectedRunVersion?: number): Promise<void>
   hasRememberedApproval?(runId: string, operationId: string): Promise<boolean>
   rememberApproval?(runId: string, operationId: string, grantedByToolCallId: string): Promise<void>
+  getApprovalMode?(runId: string): Promise<ConversationApprovalMode>
 }
 
 export class ToolInterruption extends Error {
@@ -129,10 +130,16 @@ export class ToolOrchestrator {
       if (!(error instanceof ToolArgumentsInvalidError)) throw error
       return this.rejectInvalidArguments(input, argumentsHash, idempotencyKey, attempt, error, signal)
     }
+    const approvalMode = (await this.store.getApprovalMode?.(input.runId)) ?? "default"
     const effectiveTier = this.policy.effectiveTier(operation, args)
-    const sessionRemembered = effectiveTier === "L1"
+    const sessionRemembered = effectiveTier === "L1" && approvalMode !== "strict"
       ? (await this.store.hasRememberedApproval?.(input.runId, input.operationId)) === true
       : false
+    const initialDecision = this.policy.evaluate(operation, { explicitApproved: false, sessionRemembered, approvalMode }, args)
+    const initialApprovalDecision: RecordedApprovalDecision | undefined = initialDecision.action === "execute"
+      ? (initialDecision.autoDecision ?? (sessionRemembered ? "remembered" : undefined))
+      : undefined
+    const rememberable = effectiveTier === "L1" && approvalMode !== "strict"
     const id = createId("aitool")
     const record: ToolCallRecord = {
       id,
@@ -148,9 +155,9 @@ export class ToolOrchestrator {
       attempt,
       rowVersion: 1,
       executionCount: 0,
-      ...(sessionRemembered ? { approvalDecision: "remembered" as const } : {}),
+      ...(initialApprovalDecision ? { approvalDecision: initialApprovalDecision } : {}),
       approvalTier: effectiveTier,
-      approvalRememberable: effectiveTier === "L1",
+      approvalRememberable: rememberable,
       inputMode,
     }
     signal?.throwIfAborted()
@@ -162,13 +169,18 @@ export class ToolOrchestrator {
       data: {
         operationId: record.operationId,
         approvalTier: effectiveTier,
-        approvalRememberable: effectiveTier === "L1",
+        approvalRememberable: rememberable,
         parameterSummary: redactToolArgumentsForOperation(record.operationId, record.arguments, operation.sensitivePaths),
         ...(record.modelCallId ? { modelCallId: record.modelCallId } : {}),
         ...(record.batchId ? { batchId: record.batchId } : {}),
       },
     })
-    return this.advance(record, { explicitApproved: false, sessionRemembered }, signal)
+    return this.advance(record, {
+      explicitApproved: false,
+      sessionRemembered,
+      approvalMode,
+      ...(initialDecision.action === "execute" && initialDecision.autoDecision ? { modeApproved: initialDecision.autoDecision } : {}),
+    }, signal)
   }
 
   async isCallableOperation(runId: string, operationId: string): Promise<boolean> {
@@ -264,10 +276,16 @@ export class ToolOrchestrator {
           error,
         )
       }
+      const approvalMode = (await this.store.getApprovalMode?.(input.runId)) ?? "default"
       const effectiveTier = this.policy.effectiveTier(operation, args)
-      const sessionRemembered = effectiveTier === "L1"
+      const sessionRemembered = effectiveTier === "L1" && approvalMode !== "strict"
         ? (await this.store.hasRememberedApproval?.(input.runId, input.operationId)) === true
         : false
+      const initialDecision = this.policy.evaluate(operation, { explicitApproved: false, sessionRemembered, approvalMode }, args)
+      const initialApprovalDecision: RecordedApprovalDecision | undefined = initialDecision.action === "execute"
+        ? (initialDecision.autoDecision ?? (sessionRemembered ? "remembered" : undefined))
+        : undefined
+      const rememberable = effectiveTier === "L1" && approvalMode !== "strict"
       const id = createId("aitool")
       const record: ToolCallRecord = {
         id,
@@ -280,9 +298,9 @@ export class ToolOrchestrator {
         attempt: 1,
         rowVersion: 1,
         executionCount: 0,
-        ...(sessionRemembered ? { approvalDecision: "remembered" as const } : {}),
+        ...(initialApprovalDecision ? { approvalDecision: initialApprovalDecision } : {}),
         approvalTier: effectiveTier,
-        approvalRememberable: effectiveTier === "L1",
+        approvalRememberable: rememberable,
         inputMode: "direct",
       }
       await this.store.insert(record)
@@ -293,7 +311,7 @@ export class ToolOrchestrator {
         data: {
           operationId: record.operationId,
           approvalTier: effectiveTier,
-          approvalRememberable: effectiveTier === "L1",
+          approvalRememberable: rememberable,
           parameterSummary: redactToolArgumentsForOperation(record.operationId, record.arguments, operation.sensitivePaths),
         },
       })
@@ -317,20 +335,22 @@ export class ToolOrchestrator {
   ): Promise<{ call: ToolCallRecord, alreadyDecided: boolean }> {
     const call = await this.require(id)
     const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
+    const approvalMode = (await this.store.getApprovalMode?.(call.runId)) ?? "default"
     const alreadyRememberedInSession = call.status === "awaiting_approval"
       ? (await this.store.hasRememberedApproval?.(call.runId, call.operationId)) === true
       : false
-    const effectiveTier = call.approvalTier === "L2" || call.executionCount > 0 || alreadyRememberedInSession
+    const effectiveTier = call.approvalTier === "L2" || call.executionCount > 0 || (approvalMode !== "strict" && alreadyRememberedInSession)
       ? "L2"
       : this.policy.effectiveTier(operation, call.arguments)
-    if (decision === "approve_and_remember" && effectiveTier !== "L1") {
+    const rememberable = effectiveTier === "L1" && approvalMode !== "strict"
+    if (decision === "approve_and_remember" && !rememberable) {
       throw new Error("ai.approval_remember_not_allowed")
     }
     if (
       call.status !== "awaiting_approval"
       && call.status !== "canceled"
       && (
-        (decision === "approve" && (call.approvalDecision === "approve" || call.approvalDecision === "approve_and_remember"))
+        (decision === "approve" && isApprovedDecision(call.approvalDecision))
         || (decision === "approve_and_remember" && call.approvalDecision === "approve_and_remember")
       )
     ) {
@@ -357,14 +377,14 @@ export class ToolOrchestrator {
           decision,
           operationId: call.operationId,
           approvalTier: effectiveTier,
-          approvalRememberable: effectiveTier === "L1",
+          approvalRememberable: rememberable,
           parameterSummary: redact(call.arguments),
         },
       })
-      const rejected = await this.transition({ ...call, approvalTier: effectiveTier, approvalRememberable: effectiveTier === "L1" }, "rejected", {
+      const rejected = await this.transition({ ...call, approvalTier: effectiveTier, approvalRememberable: rememberable }, "rejected", {
         errorCode: "ai.tool_rejected",
         result: { code: "ai.tool_rejected", retryable: false },
-      }, "tool_call.rejected", { decision, approvalTier: effectiveTier, approvalRememberable: effectiveTier === "L1" })
+      }, "tool_call.rejected", { decision, approvalTier: effectiveTier, approvalRememberable: rememberable })
       return { call: rejected, alreadyDecided: false }
     }
     const recordedDecision = decision === "approve_and_remember" ? "approve_and_remember" : "approve"
@@ -372,7 +392,7 @@ export class ToolOrchestrator {
       status: "proposed",
       approvalDecision: recordedDecision,
       approvalTier: effectiveTier,
-      approvalRememberable: effectiveTier === "L1",
+      approvalRememberable: rememberable,
       rowVersion: call.rowVersion + 1,
     })
     await this.store.emit({
@@ -382,11 +402,56 @@ export class ToolOrchestrator {
         decision,
         operationId: call.operationId,
         approvalTier: effectiveTier,
-        approvalRememberable: effectiveTier === "L1",
+        approvalRememberable: rememberable,
         parameterSummary: redact(call.arguments),
       },
     })
-    return { call: { ...approved, approvalTier: effectiveTier, approvalRememberable: effectiveTier === "L1" }, alreadyDecided: false }
+    return { call: { ...approved, approvalTier: effectiveTier, approvalRememberable: rememberable }, alreadyDecided: false }
+  }
+
+  /**
+   * 当用户在会话中途将审批模式切换为 `auto` 或 `full_access` 时，若当前存在处于 `awaiting_approval`
+   * 且在新模式下允许自动放行的挂起工具调用，原子写入模式批准决定并推进回 `proposed` 交由执行器续跑。
+   */
+  async autoApprovePendingForMode(
+    id: string,
+    approvalMode: ConversationApprovalMode,
+  ): Promise<{ call: ToolCallRecord, autoApproved: boolean }> {
+    const call = await this.require(id)
+    if (call.status !== "awaiting_approval") {
+      return { call, autoApproved: false }
+    }
+    const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
+    const decision = this.policy.evaluate(operation, { explicitApproved: false, approvalMode }, call.arguments)
+    if (decision.action !== "execute" || !decision.autoDecision) {
+      return { call, autoApproved: false }
+    }
+    await this.recoverToolBatch(call.runId)
+    agentMetrics.approvals.add(1, { decision: decision.autoDecision, tool: call.operationId })
+    telemetryLog("agent.approval.resolved", "info", {
+      "luna.run.id": call.runId,
+      "tool.name": call.operationId,
+      "decision": decision.autoDecision,
+    })
+    const approved = await this.store.update(call.id, "awaiting_approval", {
+      status: "proposed",
+      approvalDecision: decision.autoDecision,
+      approvalTier: decision.tier,
+      approvalRememberable: false,
+      rowVersion: call.rowVersion + 1,
+    })
+    await this.store.emit({
+      type: "approval.resolved",
+      toolCallId: call.id,
+      data: {
+        decision: decision.autoDecision,
+        operationId: call.operationId,
+        approvalTier: decision.tier,
+        approvalRememberable: false,
+        parameterSummary: redact(call.arguments),
+      },
+    })
+    return { call: { ...approved, approvalTier: decision.tier, approvalRememberable: false }, autoApproved: true }
   }
 
   /**
@@ -402,9 +467,14 @@ export class ToolOrchestrator {
         argumentsHash: call.argumentsHash,
       })
     }
+    const approvalMode = (await this.store.getApprovalMode?.(call.runId)) ?? "default"
     return this.advance(call, {
       explicitApproved: call.approvalDecision === "approve" || call.approvalDecision === "approve_and_remember",
       sessionRemembered: call.approvalDecision === "remembered",
+      approvalMode,
+      ...(call.approvalDecision === "mode_auto" || call.approvalDecision === "mode_full_access"
+        ? { modeApproved: call.approvalDecision }
+        : {}),
     }, signal)
   }
 
@@ -472,11 +542,17 @@ export class ToolOrchestrator {
     const previous = await this.require(id)
     if (previous.status !== "failed") throw new Error("ai.tool_call_not_retryable")
     this.loopGuard.beforePropose({ runId: previous.runId, operationId: previous.operationId, argumentsHash: previous.argumentsHash })
+    const approvalMode = (await this.store.getApprovalMode?.(previous.runId)) ?? "default"
     const retryOperation = (await this.catalogForRun(previous.runId)).get(previous.operationId)
     const retryTier = this.policy.effectiveTier(retryOperation, previous.arguments)
-    const retryRemembered = retryTier === "L1"
+    const retryRemembered = retryTier === "L1" && approvalMode !== "strict"
       ? (await this.store.hasRememberedApproval?.(previous.runId, previous.operationId)) === true
       : false
+    const retryDecision = this.policy.evaluate(retryOperation, { explicitApproved: false, sessionRemembered: retryRemembered, approvalMode }, previous.arguments)
+    const retryApprovalDecision: RecordedApprovalDecision | undefined = retryDecision.action === "execute"
+      ? (retryDecision.autoDecision ?? (retryRemembered ? "remembered" : undefined))
+      : undefined
+    const rememberable = retryTier === "L1" && approvalMode !== "strict"
     const retry: ToolCallRecord = {
       id: createId("aitool"),
       idempotencyKey: previous.idempotencyKey,
@@ -489,9 +565,9 @@ export class ToolOrchestrator {
       attempt: previous.attempt + 1,
       rowVersion: 1,
       executionCount: 0,
-      ...(retryRemembered ? { approvalDecision: "remembered" as const } : {}),
+      ...(retryApprovalDecision ? { approvalDecision: retryApprovalDecision } : {}),
       approvalTier: retryTier,
-      approvalRememberable: retryTier === "L1",
+      approvalRememberable: rememberable,
       ...(previous.inputMode ? { inputMode: previous.inputMode } : {}),
     }
     await this.store.insert(retry)
@@ -501,13 +577,18 @@ export class ToolOrchestrator {
       data: {
         operationId: retry.operationId,
         approvalTier: retryTier,
-        approvalRememberable: retryTier === "L1",
+        approvalRememberable: rememberable,
         parameterSummary: redact(retry.arguments),
         previousToolCallId: previous.id,
         attempt: retry.attempt,
       },
     })
-    return this.advance(retry, { explicitApproved: false, sessionRemembered: retryRemembered }, signal)
+    return this.advance(retry, {
+      explicitApproved: false,
+      sessionRemembered: retryRemembered,
+      approvalMode,
+      ...(retryDecision.action === "execute" && retryDecision.autoDecision ? { modeApproved: retryDecision.autoDecision } : {}),
+    }, signal)
   }
 
   cancelRun(runId: string, reason: unknown = new Error("ai.run_canceled")): boolean {
@@ -560,10 +641,10 @@ export class ToolOrchestrator {
     try {
       const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
       const decision = this.policy.evaluate(operation, grant, call.arguments)
-      const enrichedCall: ToolCallRecord = {
+      let enrichedCall: ToolCallRecord = {
         ...call,
         approvalTier: decision.tier,
-        approvalRememberable: decision.tier === "L1",
+        approvalRememberable: decision.rememberable,
       }
       if (decision.action === "wait_approval") {
         if (decision.tier === "L2" && this.client.preview) {
@@ -576,9 +657,29 @@ export class ToolOrchestrator {
           parameterSummary: redactToolArgumentsForOperation(call.operationId, call.arguments, operation.sensitivePaths),
         })
       }
+      if (decision.tier === "L2" && !enrichedCall.previewLock && this.client.preview) {
+        const previewed = await this.previewBeforeAutoExecute(enrichedCall, operation, decision.autoDecision, execution.signal)
+        if (previewed.status !== "proposed") {
+          return previewed
+        }
+        enrichedCall = previewed
+      }
+      else if (decision.autoDecision && !enrichedCall.approvalDecision) {
+        const updated = await this.store.update(enrichedCall.id, "proposed", {
+          approvalDecision: decision.autoDecision,
+          approvalTier: decision.tier,
+          approvalRememberable: false,
+          rowVersion: enrichedCall.rowVersion + 1,
+        })
+        enrichedCall = {
+          ...updated,
+          approvalTier: decision.tier,
+          approvalRememberable: false,
+        }
+      }
       const approvalGranted = typeof grant === "boolean"
         ? grant
-        : Boolean(grant.explicitApproved || grant.sessionRemembered)
+        : Boolean(grant.explicitApproved || grant.sessionRemembered || decision.autoDecision)
       const result = await this.execute(enrichedCall, approvalGranted, operation, execution.signal)
       return result
     }
@@ -858,6 +959,107 @@ export class ToolOrchestrator {
     )
   }
 
+  private async previewBeforeAutoExecute(
+    call: ToolCallRecord,
+    operation: ReturnType<ToolCatalog["get"]>,
+    autoDecision: "mode_auto" | "mode_full_access" | undefined,
+    signal?: AbortSignal,
+  ): Promise<ToolCallRecord> {
+    const startedAt = performance.now()
+    let previewRes: ToolExecutionResult
+    try {
+      signal?.throwIfAborted()
+      previewRes = await this.client.preview!({
+        runId: call.runId,
+        toolCallId: call.id,
+        operation,
+        arguments: call.arguments,
+        ...(signal ? { signal } : {}),
+      })
+    }
+    catch (error) {
+      if (error instanceof RunStateConflictError) throw error
+      if (signal?.aborted) throw error
+      const errorCode = stableErrorCode(error)
+      return this.fail(call, errorCode, { code: errorCode, retryable: true }, {
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        traceId: "",
+      })
+    }
+
+    const code = extractCode(previewRes.body)
+    const storedResult = redact(withRequestId(previewRes.body, previewRes.requestId))
+    if (previewRes.status < 200 || previewRes.status >= 300) {
+      const errorStoredResult = storedResult && typeof storedResult === "object" && !Array.isArray(storedResult)
+        ? { ...(storedResult as Record<string, unknown>), httpStatus: previewRes.status }
+        : { ...(storedResult === undefined ? {} : { body: storedResult }), httpStatus: previewRes.status }
+      const fallbackCode = previewRes.status === 401 || previewRes.status === 403 ? "ai.tool_forbidden" : "ai.tool_preview_failed"
+      const failed = await this.fail(call, code ?? fallbackCode, errorStoredResult, {
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        traceId: "",
+      })
+      if (isExplicitlyNonRetryable(previewRes.body)) {
+        this.loopGuard.blockNonRetryable({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
+      }
+      return failed
+    }
+
+    const bodyRecord = previewRes.body && typeof previewRes.body === "object" && !Array.isArray(previewRes.body)
+      ? previewRes.body as Record<string, unknown>
+      : {}
+    const previewLock = typeof bodyRecord.previewLock === "string" && bodyRecord.previewLock.trim()
+      ? bodyRecord.previewLock.trim()
+      : undefined
+    const rawPreview = bodyRecord.approvalPreview && typeof bodyRecord.approvalPreview === "object" && !Array.isArray(bodyRecord.approvalPreview)
+      ? redact(bodyRecord.approvalPreview as ApprovalPreview)
+      : undefined
+
+    if (bodyRecord.requiresManualApproval === true && autoDecision !== "mode_full_access") {
+      return this.transition(
+        {
+          ...call,
+          approvalTier: "L2",
+          approvalRememberable: false,
+          ...(previewLock ? { previewLock } : {}),
+          ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+        },
+        "awaiting_approval",
+        {
+          approvalTier: "L2",
+          approvalRememberable: false,
+          clearApprovalDecision: true,
+          ...(previewLock ? { previewLock } : {}),
+          ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+        },
+        "approval.required",
+        {
+          operationId: call.operationId,
+          approvalTier: "L2",
+          approvalRememberable: false,
+          parameterSummary: redactToolArgumentsForOperation(call.operationId, call.arguments, operation.sensitivePaths),
+          ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+        },
+      )
+    }
+
+    const effectiveDecision = call.approvalDecision ?? autoDecision
+    const updated = await this.store.update(call.id, "proposed", {
+      approvalTier: "L2",
+      approvalRememberable: false,
+      ...(effectiveDecision ? { approvalDecision: effectiveDecision } : {}),
+      ...(previewLock ? { previewLock } : {}),
+      ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+      rowVersion: call.rowVersion + 1,
+    })
+    return {
+      ...updated,
+      approvalTier: "L2",
+      approvalRememberable: false,
+      ...(previewLock ? { previewLock } : {}),
+      ...(rawPreview ? { approvalPreview: rawPreview } : {}),
+    }
+  }
+
   private async rejectInvalidArguments(
     input: { runId: string, operationId: string, inputMode?: "model" | "direct" | "verification", modelCallId?: string, batchId?: string },
     argumentsHash: string,
@@ -1004,13 +1206,18 @@ function isSideEffectOperation(catalog: ToolCatalog, operationId: string): boole
 }
 
 function isApprovedDecision(decision: RecordedApprovalDecision | undefined): boolean {
-  return decision === "approve" || decision === "approve_and_remember" || decision === "remembered"
+  return decision === "approve"
+    || decision === "approve_and_remember"
+    || decision === "remembered"
+    || decision === "mode_auto"
+    || decision === "mode_full_access"
 }
 
 export class MemoryToolCallStore implements ToolCallStore {
   readonly records = new Map<string, ToolCallRecord>()
   readonly events: ToolEvent[] = []
   readonly rememberedByScope = new Map<string, Set<string>>()
+  readonly approvalModes = new Map<string, ConversationApprovalMode>()
   async insert(value: ToolCallRecord) { this.records.set(value.id, value) }
   async get(id: string) { return this.records.get(id) }
   async listByRun(runId: string) { return [...this.records.values()].filter(record => record.runId === runId) }
@@ -1040,6 +1247,9 @@ export class MemoryToolCallStore implements ToolCallStore {
     }
     operations.add(operationId)
   }
+  async getApprovalMode(runId: string): Promise<ConversationApprovalMode> {
+    return this.approvalModes.get(runId) ?? "default"
+  }
 }
 
 export class ProjectingToolCallStore implements ToolCallStore {
@@ -1066,6 +1276,9 @@ export class ProjectingToolCallStore implements ToolCallStore {
   }
   rememberApproval(runId: string, operationId: string, grantedByToolCallId: string): Promise<void> {
     return this.repository.rememberToolApproval(runId, operationId, grantedByToolCallId)
+  }
+  getApprovalMode(runId: string): Promise<ConversationApprovalMode> {
+    return this.repository.getConversationApprovalModeByRunId(runId)
   }
   async emit(event: ToolEvent, expectedRunVersion?: number) {
     const call = await this.inner.get(event.toolCallId)

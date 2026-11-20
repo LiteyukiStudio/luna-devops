@@ -137,3 +137,31 @@ func TestRegistryEnforcesL2PreviewAndCrossReferences(t *testing.T) {
 		t.Fatalf("unexpected tokens: %#v", tokens)
 	}
 }
+
+func TestComputeAutoModeExempt(t *testing.T) {
+	cases := []struct {
+		domain    string
+		name      string
+		tier      string
+		adminOnly bool
+		want      bool
+	}{
+		{DomainDelivery, "delivery_get_target", ApprovalTierL0, false, true},
+		{DomainDelivery, "delivery_deploy_target", ApprovalTierL2, false, true},
+		{DomainBuild, "build_trigger_run", ApprovalTierL2, false, true},
+		{DomainNetwork, "network_create_gateway_route", ApprovalTierL2, false, true},
+		{DomainDelivery, "delivery_delete_application", ApprovalTierL2, false, false},
+		{DomainWorkspace, "workspace_remove_member", ApprovalTierL2, false, false},
+		{DomainBuild, "build_unbind_repository", ApprovalTierL2, false, false},
+		{DomainOps, "ops_revoke_my_credential_or_grant", ApprovalTierL2, false, false},
+		{DomainRuntime, "runtime_exec_command", ApprovalTierL2, false, false},
+		{DomainRuntime, "runtime_save_cluster", ApprovalTierL2, false, false},
+		{DomainWorkspace, "workspace_request_billing_transfer", ApprovalTierL2, false, false},
+		{DomainAdmin, "admin_update_system_configs", ApprovalTierL2, true, false},
+	}
+	for _, tc := range cases {
+		if got := ComputeAutoModeExempt(tc.domain, tc.name, tc.tier, tc.adminOnly); got != tc.want {
+			t.Fatalf("ComputeAutoModeExempt(%s, %s) = %v, want %v", tc.domain, tc.name, got, tc.want)
+		}
+	}
+}

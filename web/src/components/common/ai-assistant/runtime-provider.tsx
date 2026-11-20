@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { AIAssistantWorkspaceLocation } from './runtime-context'
 import type { AITimelineInfiniteData, AITimelineQueryData } from './timeline-query'
-import type { AICapabilities, AIUIAction } from '@/api'
+import type { AIApprovalMode, AICapabilities, AIUIAction } from '@/api'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,7 +18,12 @@ import {
   REFRESH_CONVERSATION_RETURN_DURATION_MS,
 } from './conversation-session'
 import { isAIInputWithinLimit } from './input-size'
-import { aiConversationModelKey, resolveAIConversationModel } from './model-selection'
+import {
+  aiConversationModelKey,
+  NEW_CONVERSATION_MODEL_KEY,
+  resolveAIConversationApprovalMode,
+  resolveAIConversationModel,
+} from './model-selection'
 import { buildAIPageContext } from './page-context'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
 import { isAIAssistantRoutePath, readAIAssistantRouteState } from './route-state'
@@ -99,6 +104,16 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [pendingSends, setPendingSends] = useState<Record<string, number>>({})
   const [modelSelectionOverrides, setModelSelectionOverrides] = useState<Record<string, string>>({})
+  const [approvalModeOverrides, setApprovalModeOverrides] = useState<Record<string, AIApprovalMode>>({})
+  const resetNewConversationApprovalMode = useCallback(() => {
+    setApprovalModeOverrides((current) => {
+      if (!(NEW_CONVERSATION_MODEL_KEY in current))
+        return current
+      const next = { ...current }
+      delete next[NEW_CONVERSATION_MODEL_KEY]
+      return next
+    })
+  }, [])
   const [previousEnabled, setPreviousEnabled] = useState(enabled)
   if (previousEnabled !== enabled) {
     setPreviousEnabled(enabled)
@@ -221,6 +236,11 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     undefined,
     modelSelectionOverrides,
   ), [aiModels.data, modelSelectionOverrides])
+  const selectedApprovalMode = useMemo(() => resolveAIConversationApprovalMode(
+    selectedConversationId,
+    timelineConversation?.approvalMode ?? selectedConversation?.approvalMode,
+    approvalModeOverrides,
+  ), [approvalModeOverrides, selectedConversation?.approvalMode, selectedConversationId, timelineConversation?.approvalMode])
   const streamState = timelineData?.state ?? emptyAIAssistantState
   const recoverTimeline = useCallback((conversationId: string) => recoverTimelineOnce(
     timelineRecoveriesRef.current,
@@ -292,8 +312,11 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   }, [enabled, runStreamStates, runSubscriptions, selectedConversationId, syncRunStreams, timelineData])
 
   const createConversation = useMutation({
-    mutationFn: ({ modelId }: { modelId: string }) => api.createAIConversation({ modelId, projectId: pageContext().projectId }),
-    onMutate: () => dispatchConversationSession({ type: 'start_new' }),
+    mutationFn: ({ modelId }: { modelId: string }) => api.createAIConversation({ modelId, projectId: pageContext().projectId, approvalMode: 'default' }),
+    onMutate: () => {
+      resetNewConversationApprovalMode()
+      dispatchConversationSession({ type: 'start_new' })
+    },
     onSuccess: async (conversation) => {
       await queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
       dispatchConversationSession({ type: 'select', conversationId: conversation.id })
@@ -339,6 +362,47 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
       toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.updateModel'))
     },
   })
+  const stalledAttemptsRef = useRef<Record<string, number>>({})
+  const updateConversationApprovalMode = useMutation({
+    mutationFn: ({ conversationId, approvalMode }: { conversationId: string, approvalMode: AIApprovalMode }) =>
+      api.updateAIConversation(conversationId, { approvalMode }),
+    onSuccess: async (_, { conversationId, approvalMode }) => {
+      const waitingRunId = Object.entries(streamState.runStatuses).find(([, status]) => status === 'waiting_approval')?.[0]
+      if (waitingRunId && (approvalMode === 'auto' || approvalMode === 'full_access')) {
+        delete stalledAttemptsRef.current[waitingRunId]
+        reconnectRunStream(waitingRunId)
+        connectRunStream({
+          conversationId,
+          eventsUrl: `/api/v1/ai/runs/${encodeURIComponent(waitingRunId)}/events`,
+          runId: waitingRunId,
+          after: streamState.lastEventSequences[waitingRunId] ?? 0,
+        })
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] }),
+        queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(conversationId) }),
+      ])
+      setApprovalModeOverrides((current) => {
+        const key = aiConversationModelKey(conversationId)
+        if (current[key] !== approvalMode)
+          return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    },
+    onError: (error, { conversationId, approvalMode }) => {
+      setApprovalModeOverrides((current) => {
+        const key = aiConversationModelKey(conversationId)
+        if (current[key] !== approvalMode)
+          return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+      toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.updateApprovalMode'))
+    },
+  })
   const deleteConversations = useMutation({
     mutationFn: async (ids: string[]) => Promise.all(ids.map(id => api.deleteAIConversation(id))),
     onSuccess: async (_, deletedIds) => {
@@ -367,8 +431,13 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
         throw new Error(t('aiAssistant.modelUnavailable'))
       let conversationId = requestedConversationId
       if (!conversationId) {
-        const conversation = await api.createAIConversation({ modelId: selectedModel.id, projectId: pageContext().projectId })
+        const conversation = await api.createAIConversation({
+          modelId: selectedModel.id,
+          projectId: pageContext().projectId,
+          approvalMode: selectedApprovalMode,
+        })
         conversationId = conversation.id
+        resetNewConversationApprovalMode()
         if (isCurrentActionSession(actionGeneration) && !selectedConversationIdRef.current)
           dispatchConversationSession({ type: 'select', conversationId })
       }
@@ -417,7 +486,6 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     onSuccess: (_, { conversationId }) => void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(conversationId) }),
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.stop')),
   })
-  const stalledAttemptsRef = useRef<Record<string, number>>({})
   const submitRunInput = useMutation({
     mutationFn: ({ runId, text, expectedVersion }: { runId: string, conversationId: string, text: string, expectedVersion: number }) => api.submitAIRunInput(runId, {
       text,
@@ -446,6 +514,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   const cancelingSelected = cancelRun.isPending && cancelRun.variables?.runId === activeRunId
   const submittingSelected = submitRunInput.isPending && submitRunInput.variables?.conversationId === selectedConversationId
   const modelChangingSelected = updateConversationModel.isPending && updateConversationModel.variables?.conversationId === selectedConversationId
+  const approvalModeChangingSelected = updateConversationApprovalMode.isPending && updateConversationApprovalMode.variables?.conversationId === selectedConversationId
   const runningConversationIds = useMemo(() => {
     const ids = new Set(runSubscriptions.map(subscription => subscription.conversationId))
     if ((generating || waitingExternal) && selectedConversationId)
@@ -586,6 +655,12 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     if (selectedConversationId)
       updateConversationModel.mutate({ conversationId: selectedConversationId, modelId })
   }
+  const selectApprovalMode = (approvalMode: AIApprovalMode) => {
+    const key = aiConversationModelKey(selectedConversationId)
+    setApprovalModeOverrides(current => ({ ...current, [key]: approvalMode }))
+    if (selectedConversationId)
+      updateConversationApprovalMode.mutate({ conversationId: selectedConversationId, approvalMode })
+  }
   const dismissRefreshReturn = useCallback(() => {
     dispatchConversationSession({ type: 'dismiss_refresh_return' })
   }, [])
@@ -622,8 +697,9 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     dispatchConversationSession({ type: 'select', conversationId })
   }, [])
   const startNewConversation = useCallback(() => {
+    resetNewConversationApprovalMode()
     dispatchConversationSession({ type: 'start_new' })
-  }, [])
+  }, [resetNewConversationApprovalMode])
   const rememberWorkspaceLocation = useCallback((nextLocation: AIAssistantWorkspaceLocation) => {
     if (isAIAssistantRoutePath(nextLocation.pathname))
       return
@@ -669,6 +745,8 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
         closeAssistant,
         composerProps: {
           activeRun: Boolean(activeRunId),
+          approvalMode: selectedApprovalMode,
+          approvalModeChanging: approvalModeChangingSelected,
           canceling: cancelingSelected,
           canCancel: Boolean(activeRunId && selectedConversationId),
           models: aiModels.data ?? [],
@@ -685,6 +763,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
           submitting: submittingSelected,
           waitingExternal,
           waitingInput,
+          onApprovalModeChange: selectApprovalMode,
           onCancel: () => {
             if (activeRunId && selectedConversationId)
               cancelRun.mutate({ runId: activeRunId, conversationId: selectedConversationId })

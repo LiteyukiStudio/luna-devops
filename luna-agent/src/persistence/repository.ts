@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ConversationApprovalMode,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationToolInteraction,
@@ -168,11 +169,11 @@ export type ResolveWaitingExternalRunInput = {
 export interface Repository {
   health(): Promise<boolean>
   readiness(): Promise<RepositoryReadiness>
-  createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string): Promise<Conversation>
+  createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string, approvalMode?: ConversationApprovalMode): Promise<Conversation>
   findEmptyConversation(ownerUserId: string, projectId?: string): Promise<Conversation | undefined>
   listConversations(ownerUserId: string, page: number, pageSize: number, options?: ConversationListOptions): Promise<{ items: Conversation[], total: number }>
   getConversation(ownerUserId: string, conversationId: string): Promise<Conversation | undefined>
-  updateConversation(ownerUserId: string, conversationId: string, input: { title?: string, modelId?: string }): Promise<Conversation | undefined>
+  updateConversation(ownerUserId: string, conversationId: string, input: { title?: string, modelId?: string, approvalMode?: ConversationApprovalMode }): Promise<Conversation | undefined>
   renameConversation(ownerUserId: string, conversationId: string, title: string): Promise<Conversation | undefined>
   renameConversationByAssistant(conversationId: string, title: string, runId?: string): Promise<Conversation | undefined>
   listActiveConversationRuns(ownerUserId: string, conversationId: string): Promise<Run[]>
@@ -242,5 +243,6 @@ export interface Repository {
   getEvents(ownerUserId: string, runId: string, after: number): Promise<RunEvent[]>
   hasRememberedToolApproval(runId: string, operationId: string): Promise<boolean>
   rememberToolApproval(runId: string, operationId: string, grantedByToolCallId: string): Promise<void>
+  getConversationApprovalModeByRunId(runId: string): Promise<ConversationApprovalMode>
   getTimeline(ownerUserId: string, conversationId: string, options?: TimelinePageOptions): Promise<TimelinePage | undefined>
 }

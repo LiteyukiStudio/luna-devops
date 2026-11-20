@@ -389,9 +389,10 @@ func (h *Handler) readAIBody(ctx *gin.Context) ([]byte, bool) {
 
 func validateCreateAIConversation(h *Handler, ctx *gin.Context, user model.User, body []byte) bool {
 	var input struct {
-		ProjectID string `json:"projectId"`
-		ModelID   string `json:"modelId"`
-		Title     string `json:"title"`
+		ProjectID    string `json:"projectId"`
+		ModelID      string `json:"modelId"`
+		Title        string `json:"title"`
+		ApprovalMode string `json:"approvalMode"`
 	}
 	if len(body) == 0 || json.Unmarshal(body, &input) != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid conversation input")
@@ -399,6 +400,10 @@ func validateCreateAIConversation(h *Handler, ctx *gin.Context, user model.User,
 	}
 	if len([]byte(input.Title)) > 200 {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.title_too_large", "conversation title is too large")
+		return false
+	}
+	if input.ApprovalMode != "" && !isValidAIApprovalMode(input.ApprovalMode) {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "invalid conversation approvalMode")
 		return false
 	}
 	if !validateEnabledAIModel(h, ctx, input.ModelID) {
@@ -414,10 +419,11 @@ func validateCreateAIConversation(h *Handler, ctx *gin.Context, user model.User,
 
 func validateUpdateAIConversation(h *Handler, ctx *gin.Context, _ model.User, body []byte) bool {
 	var input struct {
-		Title   *string `json:"title"`
-		ModelID *string `json:"modelId"`
+		Title        *string `json:"title"`
+		ModelID      *string `json:"modelId"`
+		ApprovalMode *string `json:"approvalMode"`
 	}
-	if len(body) == 0 || json.Unmarshal(body, &input) != nil || (input.Title == nil && input.ModelID == nil) {
+	if len(body) == 0 || json.Unmarshal(body, &input) != nil || (input.Title == nil && input.ModelID == nil && input.ApprovalMode == nil) {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid conversation update")
 		return false
 	}
@@ -425,7 +431,20 @@ func validateUpdateAIConversation(h *Handler, ctx *gin.Context, _ model.User, bo
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.title_too_large", "conversation title is invalid")
 		return false
 	}
+	if input.ApprovalMode != nil && !isValidAIApprovalMode(*input.ApprovalMode) {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "invalid conversation approvalMode")
+		return false
+	}
 	return input.ModelID == nil || validateEnabledAIModel(h, ctx, *input.ModelID)
+}
+
+func isValidAIApprovalMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case "strict", "default", "auto", "full_access":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateEnabledAIModel(h *Handler, ctx *gin.Context, modelID string) bool {

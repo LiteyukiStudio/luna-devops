@@ -24,6 +24,7 @@ export function mapConversation(row: ConversationRow): Conversation {
   return {
     id: row.id,
     ownerUserId: row.ownerUserId,
+    approvalMode: row.approvalMode ?? "default",
     title: row.title,
     titleSource: row.titleSource,
     status: row.status,

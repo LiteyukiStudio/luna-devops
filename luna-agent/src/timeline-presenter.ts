@@ -27,6 +27,7 @@ export async function presentTimeline(
       title: snapshot.conversation.title,
       titleSource: snapshot.conversation.titleSource,
       status: snapshot.conversation.status,
+      approvalMode: snapshot.conversation.approvalMode,
       ...(snapshot.conversation.modelId ? { modelId: snapshot.conversation.modelId } : {}),
     },
     ...(snapshot.contextUsage ? {

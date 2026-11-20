@@ -11,6 +11,28 @@ const aiAssistant = {
       unavailableDescription: 'Luna Assistant is not available for this account. Ask an administrator to check feature access and account scope.',
     },
     modelLabel: 'AI model',
+    approvalMode: {
+      label: 'Execution permission mode',
+      fullAccessNotice: 'Full access is active for this conversation: all high-risk and production operations within your permissions run automatically',
+      options: {
+        strict: {
+          label: 'Strict',
+          description: 'Confirm every write manually without session memory',
+        },
+        default: {
+          label: 'Default',
+          description: 'Remember routine writes in this session; confirm deployments and high-risk actions',
+        },
+        auto: {
+          label: 'Auto',
+          description: 'Auto-run non-production builds and deployments; gate deletes, prod, and admin ops',
+        },
+        full_access: {
+          label: 'Full access',
+          description: 'Auto-approve all operations within your account permissions, including prod',
+        },
+      },
+    },
     contextUsage: 'Context {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: 'No Provider usage data',
     modelEmpty: 'No model available',
@@ -646,6 +668,7 @@ const aiAssistant = {
     errors: {
       createConversation: 'Could not create the conversation',
       updateModel: 'Could not switch the model for this conversation',
+      updateApprovalMode: 'Could not switch the execution permission mode for this conversation',
       renameConversation: 'Could not rename the conversation',
       deleteConversation: 'Could not delete the conversation',
       timeline: 'Could not load the conversation',

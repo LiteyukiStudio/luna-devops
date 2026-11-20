@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiConversationModelKey, resolveAIConversationModel } from './model-selection'
+import { aiConversationModelKey, resolveAIConversationApprovalMode, resolveAIConversationModel } from './model-selection'
 
 const models = [
   { id: 'aimod_fast', name: 'Fast', maxContextTokens: 128_000, maxOutputTokens: 16_000 },
@@ -20,5 +20,14 @@ describe('ai conversation model selection', () => {
   it('uses the persisted conversation preference and safely falls back for legacy conversations', () => {
     expect(resolveAIConversationModel(models, 'aicnv_saved', 'aimod_deep', {})?.id).toBe('aimod_deep')
     expect(resolveAIConversationModel(models, 'aicnv_legacy', undefined, {})?.id).toBe('aimod_fast')
+  })
+
+  it('resolves conversation approval modes and defaults new/legacy sessions safely to default', () => {
+    expect(resolveAIConversationApprovalMode(undefined, undefined, {})).toBe('default')
+    expect(resolveAIConversationApprovalMode('aicnv_legacy', undefined, {})).toBe('default')
+    expect(resolveAIConversationApprovalMode('aicnv_auto', 'auto', {})).toBe('auto')
+    expect(resolveAIConversationApprovalMode('aicnv_auto', 'auto', {
+      [aiConversationModelKey('aicnv_auto')]: 'full_access',
+    })).toBe('full_access')
   })
 })

@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { RequestVerifier } from "./auth.js"
 import type { Config } from "./config.js"
 import type { AIModelSnapshot, ActorContext, Run, RunEvent } from "./domain.js"
+import { conversationApprovalModes } from "./domain.js"
 import { RunStateConflictError, type Repository } from "./persistence/repository.js"
 import type { RemoteConfigSource } from "./provider/config-client.js"
 import { createConfiguredProvider, providerDialect } from "./provider/managed.js"
@@ -152,16 +153,21 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       })
       return { ...result, page: query.page, pageSize: query.pageSize, sortBy: query.sortBy, sortOrder: query.sortOrder, totalPages: Math.ceil(result.total / query.pageSize) }
     })
+    const approvalModeSchema = z.enum(conversationApprovalModes)
     secured.post("/internal/v1/conversations", async (request, reply) => {
       const body = z.object({
         projectId: id.optional(),
         modelId: id,
         title: z.string().trim().min(1).max(120).default("新会话"),
+        approvalMode: approvalModeSchema.default("default"),
       }).parse(request.body)
       if (body.title === "新会话") {
         const existing = await input.repository.findEmptyConversation(request.actor.userId, body.projectId)
         if (existing) {
-          const updated = await input.repository.updateConversation(request.actor.userId, existing.id, { modelId: body.modelId })
+          const updated = await input.repository.updateConversation(request.actor.userId, existing.id, {
+            modelId: body.modelId,
+            approvalMode: body.approvalMode,
+          })
           return reply.code(200).send(updated)
         }
       }
@@ -171,6 +177,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         body.projectId,
         body.title === "新会话" ? "default" : "user",
         body.modelId,
+        body.approvalMode,
       )
       return reply.code(201).send(value)
     })
@@ -184,12 +191,35 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       const body = z.object({
         title: z.string().trim().min(1).max(120).optional(),
         modelId: id.optional(),
-      }).refine(value => value.title !== undefined || value.modelId !== undefined).parse(request.body)
+        approvalMode: approvalModeSchema.optional(),
+      }).refine(value => value.title !== undefined || value.modelId !== undefined || value.approvalMode !== undefined).parse(request.body)
       const value = await input.repository.updateConversation(request.actor.userId, conversationId, {
         ...(body.title !== undefined ? { title: body.title } : {}),
         ...(body.modelId !== undefined ? { modelId: body.modelId } : {}),
+        ...(body.approvalMode !== undefined ? { approvalMode: body.approvalMode } : {}),
       })
-      return value ?? reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
+      if (!value) return reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
+      if (body.approvalMode === "auto" || body.approvalMode === "full_access") {
+        const activeRuns = await input.repository.listActiveConversationRuns(request.actor.userId, conversationId)
+        for (const activeRun of activeRuns) {
+          if (activeRun.status !== "waiting_approval") continue
+          const runCalls = await input.tools.listByRun(activeRun.id)
+          let wokePending = false
+          for (const candidate of runCalls) {
+            if (candidate.status !== "awaiting_approval") continue
+            const { autoApproved } = await input.tools.autoApprovePendingForMode(candidate.id, body.approvalMode).catch(() => ({ autoApproved: false }))
+            if (autoApproved) wokePending = true
+          }
+          if (wokePending) {
+            await input.repository.updateRun(activeRun.id, "waiting_approval", "queued").then(() => {
+              input.notifyRunQueued?.()
+            }).catch((updateError) => {
+              if (!(updateError instanceof RunStateConflictError)) throw updateError
+            })
+          }
+        }
+      }
+      return value
     })
     secured.delete("/internal/v1/conversations/:conversationId", async (request, reply) => {
       const { conversationId } = z.object({ conversationId: id }).parse(request.params)

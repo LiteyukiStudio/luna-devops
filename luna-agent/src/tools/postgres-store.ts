@@ -231,6 +231,9 @@ export class PostgresToolCallStore implements ToolCallStore {
   rememberApproval(runId: string, operationId: string, grantedByToolCallId: string): Promise<void> {
     return this.repository.rememberToolApproval(runId, operationId, grantedByToolCallId)
   }
+  getApprovalMode(runId: string) {
+    return this.repository.getConversationApprovalModeByRunId(runId)
+  }
   private map(row: DbToolCall): ToolCallRecord {
     if (!row.arguments_ciphertext)
       throw new Error("ai.tool_arguments_key_unavailable")
@@ -270,7 +273,7 @@ type DbToolCall = {
   id: string; idempotency_key: string; verification_for_tool_call_id: string; run_id: string; operation_id: string; status: ToolCallStatus; input_mode: string; arguments: Record<string, unknown>;
   arguments_ciphertext: string | null;
   arguments_hash: string; attempt: number; row_version: number; execution_count: number;
-  approval_decision: "approve" | "approve_and_remember" | "remembered" | null;
+  approval_decision: "approve" | "approve_and_remember" | "remembered" | "mode_auto" | "mode_full_access" | null;
   preview_lock?: string | null;
   approval_preview?: ApprovalPreview | null;
   result: unknown; error_code: string | null

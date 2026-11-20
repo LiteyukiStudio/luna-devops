@@ -1,6 +1,7 @@
+import type { TFunction } from 'i18next'
 import type { KeyboardEvent, RefObject } from 'react'
-import type { AIContextUsage, AIModelOption } from '@/api'
-import { ArrowUp, Check, ChevronDown, LoaderCircle, MapPin, Square } from 'lucide-react'
+import type { AIApprovalMode, AIContextUsage, AIModelOption } from '@/api'
+import { ArrowUp, Check, ChevronDown, LoaderCircle, MapPin, Shield, ShieldAlert, ShieldCheck, Square, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { UsageRing } from '@/components/common/usage-ring'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,8 @@ import { isAIInputWithinLimit } from './input-size'
 
 export interface AIAssistantComposerProps {
   activeRun: boolean
+  approvalMode?: AIApprovalMode
+  approvalModeChanging?: boolean
   canceling: boolean
   canCancel: boolean
   /** 当前页面上下文提示，例如“当前页面：/projects/…”。 */
@@ -31,10 +34,40 @@ export interface AIAssistantComposerProps {
   surface?: 'page' | 'window'
   waitingExternal?: boolean
   waitingInput: boolean
+  onApprovalModeChange?: (mode: AIApprovalMode) => void
   onCancel: () => void
   onDraftChange: (value: string) => void
   onModelChange?: (modelId: string) => void
   onSubmit: () => void
+}
+
+function getApprovalModeCatalog(t: TFunction) {
+  return [
+    {
+      value: 'strict' as const,
+      icon: ShieldCheck,
+      label: t('aiAssistant.approvalMode.options.strict.label'),
+      description: t('aiAssistant.approvalMode.options.strict.description'),
+    },
+    {
+      value: 'default' as const,
+      icon: Shield,
+      label: t('aiAssistant.approvalMode.options.default.label'),
+      description: t('aiAssistant.approvalMode.options.default.description'),
+    },
+    {
+      value: 'auto' as const,
+      icon: Zap,
+      label: t('aiAssistant.approvalMode.options.auto.label'),
+      description: t('aiAssistant.approvalMode.options.auto.description'),
+    },
+    {
+      value: 'full_access' as const,
+      icon: ShieldAlert,
+      label: t('aiAssistant.approvalMode.options.full_access.label'),
+      description: t('aiAssistant.approvalMode.options.full_access.description'),
+    },
+  ]
 }
 
 function isConfirmingIME(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
@@ -88,6 +121,8 @@ function UnavailableContextUsageRing() {
 
 export function AIAssistantComposer({
   activeRun,
+  approvalMode = 'default',
+  approvalModeChanging = false,
   canceling,
   canCancel,
   contextLabel,
@@ -106,6 +141,7 @@ export function AIAssistantComposer({
   surface = 'window',
   waitingExternal = false,
   waitingInput,
+  onApprovalModeChange,
   onCancel,
   onDraftChange,
   onModelChange,
@@ -124,6 +160,11 @@ export function AIAssistantComposer({
       : `${maxInputBytes} B`
   const submitEnabled = Boolean(normalizedDraft) && !busy && canSubmit && !inputTooLarge
   const selectedModel = models.find(model => model.id === selectedModelId)
+  const approvalModes = getApprovalModeCatalog(t)
+  const selectedApprovalOption = approvalModes.find(option => option.value === approvalMode) ?? approvalModes[1]!
+  const ApprovalIcon = selectedApprovalOption.icon
+  const isFullAccess = approvalMode === 'full_access'
+  const isAutoMode = approvalMode === 'auto'
   const hasReportedUsage = contextUsage?.status === 'reported'
     && contextUsage.modelId === selectedModel?.id
     && typeof contextUsage.usedTokens === 'number'
@@ -141,6 +182,16 @@ export function AIAssistantComposer({
         <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
       </span>
       {modelChanging
+        ? <LoaderCircle className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
+        : <ChevronDown className="size-3 shrink-0 opacity-70" />}
+    </>
+  )
+  const approvalModeValue = (
+    <>
+      <span className="sr-only"><SelectValue /></span>
+      <ApprovalIcon aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className="truncate">{selectedApprovalOption.label}</span>
+      {approvalModeChanging
         ? <LoaderCircle className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
         : <ChevronDown className="size-3 shrink-0 opacity-70" />}
     </>
@@ -213,8 +264,8 @@ export function AIAssistantComposer({
               <SelectTrigger
                 aria-label={t('aiAssistant.modelLabel')}
                 className={page
-                  ? 'group/model !h-11 w-auto min-w-0 max-w-[45%] shrink rounded-control border-0 bg-transparent p-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-ring pointer-fine:!h-7 [&>svg]:hidden'
-                  : '!h-7 w-auto min-w-0 max-w-[45%] shrink gap-1 rounded-control border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&>svg]:hidden'}
+                  ? 'group/model !h-11 w-auto min-w-0 max-w-[38%] shrink rounded-control border-0 bg-transparent p-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-ring pointer-fine:!h-7 [&>svg]:hidden'
+                  : '!h-7 w-auto min-w-0 max-w-[38%] shrink gap-1 rounded-control border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&>svg]:hidden'}
               >
                 {page
                   ? (
@@ -233,6 +284,70 @@ export function AIAssistantComposer({
                     </span>
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select
+              disabled={approvalModeChanging}
+              value={approvalMode}
+              onValueChange={value => onApprovalModeChange?.(value as AIApprovalMode)}
+            >
+              <SelectTrigger
+                aria-label={t('aiAssistant.approvalMode.label')}
+                className={cn(
+                  page
+                    ? 'group/approval !h-11 w-auto min-w-0 max-w-[36%] shrink rounded-control border-0 bg-transparent p-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-ring pointer-fine:!h-7 [&>svg]:hidden'
+                    : '!h-7 w-auto min-w-0 max-w-[36%] shrink gap-1 rounded-control border-0 px-2 text-xs shadow-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:hidden',
+                  !page && (isFullAccess
+                    ? 'bg-warning-subtle font-medium text-warning hover:bg-warning-subtle/80'
+                    : isAutoMode
+                      ? 'bg-info-subtle font-medium text-info hover:bg-info-subtle/80'
+                      : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground'),
+                )}
+                data-ai-approval-mode={approvalMode}
+              >
+                {page
+                  ? (
+                      <span
+                        className={cn(
+                          'flex h-7 min-w-0 max-w-full items-center gap-1 rounded-control px-2.5 text-xs transition-colors',
+                          isFullAccess
+                            ? 'bg-warning-subtle font-medium text-warning group-hover/approval:bg-warning-subtle/80'
+                            : isAutoMode
+                              ? 'bg-info-subtle font-medium text-info group-hover/approval:bg-info-subtle/80'
+                              : 'text-muted-foreground group-hover/approval:bg-muted group-hover/approval:text-foreground',
+                        )}
+                        data-ai-composer-approval-visual
+                      >
+                        {approvalModeValue}
+                      </span>
+                    )
+                  : approvalModeValue}
+              </SelectTrigger>
+              <SelectContent className={cn('w-72', page && '[&_[data-slot=select-item]]:min-h-11 pointer-fine:[&_[data-slot=select-item]]:min-h-0')}>
+                {approvalModes.map((option) => {
+                  const OptionIcon = option.icon
+                  const selected = option.value === approvalMode
+                  return (
+                    <SelectItem key={option.value} value={option.value}>
+                      <span className="flex items-start gap-2 py-0.5">
+                        <OptionIcon
+                          aria-hidden="true"
+                          className={cn(
+                            'mt-0.5 size-3.5 shrink-0',
+                            option.value === 'full_access' ? 'text-warning' : option.value === 'auto' ? 'text-info' : 'text-muted-foreground',
+                          )}
+                        />
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex items-center gap-1.5 font-medium leading-4">
+                            <span>{option.label}</span>
+                            {selected && <Check aria-hidden="true" className="size-3.5 shrink-0" />}
+                          </span>
+                          <span className="whitespace-normal text-[11px] leading-4 text-muted-foreground">{option.description}</span>
+                        </span>
+                      </span>
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
             {contextLabel
@@ -309,7 +424,16 @@ export function AIAssistantComposer({
           </div>
         </div>
         {!modelAvailable && <p className={cn('mt-1.5 px-1 text-danger', page ? 'text-sm' : 'text-xs')}>{t('aiAssistant.modelUnavailable')}</p>}
-        <p className={cn('mt-1.5 truncate px-1 text-center text-muted-foreground', page ? 'text-xs' : 'text-[11px]')}>{t('aiAssistant.securityHint')}</p>
+        <p
+          className={cn(
+            'mt-1.5 truncate px-1 text-center',
+            page ? 'text-xs' : 'text-[11px]',
+            isFullAccess ? 'font-medium text-warning' : 'text-muted-foreground',
+          )}
+          data-ai-full-access-notice={isFullAccess ? 'true' : undefined}
+        >
+          {isFullAccess ? t('aiAssistant.approvalMode.fullAccessNotice') : t('aiAssistant.securityHint')}
+        </p>
       </div>
     </footer>
   )

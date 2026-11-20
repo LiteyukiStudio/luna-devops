@@ -43,6 +43,7 @@ type CatalogOperation struct {
 	GlobalSessionOnly bool                    `json:"globalSessionOnly,omitempty"`
 	ApprovalTier      string                  `json:"approvalTier"`
 	RequiresApproval  bool                    `json:"requiresApproval"`
+	AutoModeExempt    bool                    `json:"autoModeExempt"`
 	Idempotent        bool                    `json:"idempotent"`
 	RequiredScopes    []string                `json:"requiredScopes"`
 	InputSchema       map[string]any          `json:"inputSchema"`

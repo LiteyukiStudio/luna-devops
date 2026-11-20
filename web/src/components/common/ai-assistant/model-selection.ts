@@ -1,4 +1,4 @@
-import type { AIModelOption } from '@/api'
+import type { AIApprovalMode, AIModelOption } from '@/api'
 
 export const NEW_CONVERSATION_MODEL_KEY = '__new__'
 
@@ -14,4 +14,12 @@ export function resolveAIConversationModel(
 ): AIModelOption | undefined {
   const requestedModelId = overrides[aiConversationModelKey(conversationId)] ?? persistedModelId
   return models.find(model => model.id === requestedModelId) ?? models[0]
+}
+
+export function resolveAIConversationApprovalMode(
+  conversationId: string | undefined,
+  persistedMode: AIApprovalMode | undefined,
+  overrides: Record<string, AIApprovalMode>,
+): AIApprovalMode {
+  return overrides[aiConversationModelKey(conversationId)] ?? persistedMode ?? 'default'
 }
