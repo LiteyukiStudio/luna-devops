@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest"
 import { systemPromptFor } from "../src/prompt/system.js"
 
 describe("versioned system prompt", () => {
-  it("ships one deterministic Chinese prompt with the interaction and navigation skills", () => {
+  it("ships one deterministic Chinese prompt with the interaction and navigation guidance", () => {
     const prompt = systemPromptFor("system-v4")
 
     expect(prompt).toMatch(/^你是 Luna DevOps 的内嵌平台助手/)
-    expect(prompt.match(/<LUNA_DEVOPS_INTERACTION_SKILL>/g)).toHaveLength(1)
-    expect(prompt.match(/<LUNA_DEVOPS_NAVIGATION_SKILL>/g)).toHaveLength(1)
-    expect(prompt).toContain("name: luna-devops-interaction")
-    expect(prompt).toContain("name: luna-devops-navigation")
+    expect(prompt.match(/<LUNA_DEVOPS_INTERACTION_GUIDANCE>/g)).toHaveLength(1)
+    expect(prompt.match(/<LUNA_DEVOPS_NAVIGATION_GUIDANCE>/g)).toHaveLength(1)
+    expect(prompt).toContain("# Luna DevOps 交互与推进规程")
+    expect(prompt).toContain("# Luna DevOps 站内导航规程")
     expect(prompt).not.toContain("You are Luna DevOps")
     expect(prompt).not.toContain("<LUNA_DEVOPS_REFERENCE")
   })

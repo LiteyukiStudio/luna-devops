@@ -58,6 +58,36 @@ beforeEach(async () => {
     maxContextTokens: 128_000,
     maxOutputTokens: 8_192,
   }])
+  vi.spyOn(api, 'getProject').mockImplementation(async id => ({
+    id,
+    name: id === 'project-1' ? '核心项目' : '历史项目',
+    identifier: id,
+    kubernetesNamespace: `ns-${id}`,
+    description: '',
+    maxConcurrentBuilds: 2,
+    webConsoleEnabled: false,
+    currentUserRole: 'owner',
+    billingOwnerUserId: currentUser.id,
+    systemKey: '',
+    deleteStatus: 'active',
+    deleteMessage: '',
+    dashboardOrder: 0,
+    useCount: 1,
+    createdAt: '2026-08-25T08:00:00.000Z',
+    updatedAt: '2026-08-25T08:00:00.000Z',
+  }))
+  vi.spyOn(api, 'getApplication').mockImplementation(async (projectId, id) => ({
+    id,
+    projectId,
+    name: 'Web 前端',
+    identifier: id,
+    icon: '',
+    deleteStatus: 'active',
+    deleteMessage: '',
+    deleteCode: '',
+    createdAt: '2026-08-25T08:00:00.000Z',
+    updatedAt: '2026-08-25T08:00:00.000Z',
+  }))
   vi.spyOn(api, 'listAIConversations').mockResolvedValue({
     items: [conversation],
     page: 1,
@@ -98,8 +128,9 @@ describe('ai assistant route page', () => {
     const pageViewport = container.querySelector('[data-ai-page-viewport]')
     expect(pageViewport).toContainElement(container.querySelector('[data-ai-assistant-page]'))
     expect(container.querySelector('[data-ai-assistant-surface="page"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-ai-dot-backdrop]')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
-    expect(screen.getByText(i18next.t('aiAssistant.context', { path: '/projects/project-1/apps/app-1' }))).toBeInTheDocument()
+    expect(await screen.findByText(i18next.t('aiAssistant.contextSummary.application', { projectName: '核心项目', name: 'Web 前端' }))).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: i18next.t('aiAssistant.conversations.title') }))
     expect(container.querySelector('[data-ai-conversation-surface="page"]')).toBeInTheDocument()
@@ -201,7 +232,7 @@ describe('ai assistant route page', () => {
     await screen.findByRole('textbox', { name: i18next.t('aiAssistant.inputLabel') })
 
     expect(observedWorkspacePaths[0]).toBe('/projects/history-project')
-    expect(screen.getByText(i18next.t('aiAssistant.context', { path: '/projects/history-project' }))).toBeInTheDocument()
+    expect(await screen.findByText(i18next.t('aiAssistant.contextSummary.project', { name: '历史项目' }))).toBeInTheDocument()
   })
 })
 

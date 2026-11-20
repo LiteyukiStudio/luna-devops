@@ -222,7 +222,7 @@ export function AIAssistantTimeline({ activeTurnId, blocks, emptyState, error, g
       ref={viewportRef}
       aria-live={page ? undefined : 'polite'}
       className={cn(
-        'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none bg-surface px-4 py-4',
+        'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-4 py-4',
         page && 'py-5 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
       )}
       data-ai-timeline-surface={surface}

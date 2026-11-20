@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-//go:embed luna-devops/SKILL.md domains/*/SKILL.md
+//go:embed luna-devops/SKILL.md luna-devops/references/*.md
 var embeddedFS embed.FS
 
 // DomainSkillIDs defines the canonical order of progressive domain skills
@@ -56,7 +56,7 @@ func ensureLoaded() error {
 		domainByID = make(map[string]SkillEntry, len(DomainSkillIDs))
 		domainInList = make([]SkillEntry, 0, len(DomainSkillIDs))
 		for _, id := range DomainSkillIDs {
-			raw, readErr := embeddedFS.ReadFile(fmt.Sprintf("domains/%s/SKILL.md", id))
+			raw, readErr := embeddedFS.ReadFile(fmt.Sprintf("luna-devops/references/%s.md", id))
 			if readErr != nil {
 				loadErr = fmt.Errorf("read domain skill %s: %w", id, readErr)
 				return

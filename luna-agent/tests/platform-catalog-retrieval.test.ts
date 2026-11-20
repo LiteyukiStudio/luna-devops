@@ -195,7 +195,7 @@ describe("real 166-tool AI Domain Facade Catalog retrieval", () => {
       ...[searchDocsTool, listDocsTool, readDocTool].map(tool => tool.operationId),
     ])
     const facadeOperationPattern = /^(?:delivery|build|runtime|network|workspace|ops|admin)_[a-z0-9]+_[a-z0-9_]+$/
-    const missing = skillMarkdownFiles(new URL("../skills", import.meta.url).pathname)
+    const missing = skillMarkdownFiles(new URL("../../skills/luna-devops", import.meta.url).pathname)
       .flatMap(file => [...readFileSync(file, "utf8").matchAll(/`([a-z][a-z0-9_]+)`/g)].map(match => match[1]!))
       .filter((operationId, index, values) =>
         facadeOperationPattern.test(operationId)

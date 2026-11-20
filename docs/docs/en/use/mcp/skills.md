@@ -25,15 +25,15 @@ Any client connected to `/api/v1/mcp` can load workflow instructions that automa
 
 ## Option 2: Local `SKILL.md` installation (optional)
 
-If your agent supports local `SKILL.md` directories (such as Claude Code, Cursor, Codex, or Antigravity), copy both `skills/luna-devops` and `skills/domains` from [`LiteyukiStudio/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/skills) into your agent's skills folder so the agent knows the progressive routing rules upfront before its first MCP call.
+If your agent supports local `SKILL.md` directories (such as Claude Code, Cursor, Codex, or Antigravity), copy the self-contained `skills/luna-devops` package (including `SKILL.md` and `references/*.md`) from [`LiteyukiStudio/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/skills/luna-devops) into your agent's skills folder so the agent knows the progressive routing rules, state-drift re-grounding invariants, and safety gates upfront before its first MCP call.
 
 For example, to install into Claude Code's user-level `~/.claude/skills` directory (substitute `.cursor/skills`, `~/.codex/skills`, or workspace `.claude/skills` for other clients):
 
 ```bash
 git clone --depth 1 https://github.com/LiteyukiStudio/luna-devops.git /tmp/luna-devops
 mkdir -p ~/.claude/skills
-cp -R /tmp/luna-devops/skills/luna-devops /tmp/luna-devops/skills/domains ~/.claude/skills/
+cp -R /tmp/luna-devops/skills/luna-devops ~/.claude/skills/
 rm -rf /tmp/luna-devops
 ```
 
-Keep `luna-devops/` and `domains/` side by side so relative references (`../domains/<skillId>/SKILL.md`) in `luna-devops/SKILL.md` resolve cleanly. After upgrading your Luna DevOps instance, re-sync this folder or rely on `load_skill` to read the server's bundled version.
+After upgrading your Luna DevOps instance, re-sync this folder or rely on `load_skill` to read the server's bundled version.

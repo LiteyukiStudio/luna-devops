@@ -105,9 +105,9 @@ export function loadDomainSkills(
 }
 
 function resolveDomainSkillURL(skillId: DomainSkillId): URL {
-  const containerPath = new URL(`../../skills/domains/${skillId}/SKILL.md`, import.meta.url)
+  const containerPath = new URL(`../../skills/luna-devops/references/${skillId}.md`, import.meta.url)
   if (existsSync(containerPath)) return containerPath
-  return new URL(`../../../skills/domains/${skillId}/SKILL.md`, import.meta.url)
+  return new URL(`../../../skills/luna-devops/references/${skillId}.md`, import.meta.url)
 }
 
 function loadBundledDomainSkills(): ReadonlyMap<DomainSkillId, DomainSkillEntry> {

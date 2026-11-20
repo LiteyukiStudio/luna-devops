@@ -376,4 +376,34 @@ describe('ai assistant composer keyboard submission', () => {
       i18next.t('aiAssistant.approvalMode.fullAccessNotice'),
     )
   })
+
+  it('renders the workspace context indicator in the outer shell header above the input card', () => {
+    const { container } = render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        contextKind="application"
+        contextLabel="应用：Demo / Web"
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    const shell = container.querySelector('[data-ai-composer-shell]')
+    const contextHeader = container.querySelector('[data-ai-composer-context]')
+    const innerCard = container.querySelector('[data-ai-composer-state]')
+    expect(shell).not.toBeNull()
+    expect(contextHeader).toHaveTextContent('应用：Demo / Web')
+    expect(shell?.firstElementChild).toBe(contextHeader)
+    expect(shell?.lastElementChild).toBe(innerCard)
+  })
 })

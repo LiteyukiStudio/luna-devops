@@ -9,7 +9,7 @@ RUN pnpm install --frozen-lockfile
 WORKDIR /workspace
 COPY docs/docs ./docs/docs
 COPY luna-agent/ ./luna-agent/
-COPY skills/domains ./luna-agent/skills/domains
+COPY skills/luna-devops/references ./skills/luna-devops/references
 WORKDIR /workspace/luna-agent
 RUN pnpm build && pnpm prune --prod
 
@@ -21,7 +21,7 @@ RUN addgroup -S -g 10001 luna && adduser -S -D -H -u 10001 -G luna luna \
 COPY --from=build --chown=luna:luna /workspace/luna-agent/package.json ./package.json
 COPY --from=build --chown=luna:luna /workspace/luna-agent/node_modules ./node_modules
 COPY --from=build --chown=luna:luna /workspace/luna-agent/dist ./dist
-COPY --from=build --chown=luna:luna /workspace/luna-agent/skills ./skills
+COPY --from=build --chown=luna:luna /workspace/skills/luna-devops/references ./skills/luna-devops/references
 COPY --from=build --chown=luna:luna /workspace/luna-agent/knowledge ./knowledge
 USER 10001:10001
 EXPOSE 8091

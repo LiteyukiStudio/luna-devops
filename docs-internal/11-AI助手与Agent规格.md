@@ -151,9 +151,9 @@ Agent 只有在结构化状态、事件和受控日志不足以形成诊断证�
 
 ## 8. 渐进式领域 Skill 与高频诊断聚合
 
-Agent 与 `/api/v1/mcp` 共享根目录单一事实源 `skills/`，内置 Agent 采用“常驻核心交互与站内导航规则 + 按业务域按需加载领域 Skill（内置 `load_skill` 工具）”的两层架构：
-- 常驻层（`luna-devops-interaction`、`luna-devops-navigation`）固定在系统提示前缀中，保证多步工具调用与跨轮对话的 Prompt Cache 前缀稳定，仅维护通用安全边界、卡片/路由契约与 7 大业务域索引（`workspace-iam`、`source-registry-build`、`application-deployment`、`runtime-volumes`、`gateway-topology`、`diagnostics-governance`、`platform-admin`）；外部 MCP 客户端则由 `skills/luna-devops/SKILL.md`（或 `luna://skills/*` 资源）承担统一入口路由。
-- 领域层通过 `load_skill` 在当前 Run 内按需加载 1–3 个业务域规程并自动去重；排障场景优先调用只读诊断聚合工具（`getProjectDiagnostics`、`getDeploymentTargetDiagnostics`）一次性获取实时状态、近期异常构建/发布、异常 Pod、告警事件与网关路由状态，再沿交付链首个异常边界下钻具体日志。
+Agent 与 `/api/v1/mcp` 共享根目录单一事实源 `skills/luna-devops/`（编写规范见不打包进运行环境的 `skills/README.md`），内置 Agent 采用“常驻核心交互与站内导航规则 + 按业务域按需加载领域 Skill（内置 `load_skill` 工具）”的两层架构：
+- 常驻层（`luna-agent/src/prompt/` 内的交互与站内导航规程）固定在内置助手系统提示前缀中，保证多步工具调用与跨轮对话的 Prompt Cache 前缀稳定，仅维护通用安全边界、卡片/路由契约与 7 大业务域索引（`workspace-iam`、`source-registry-build`、`application-deployment`、`runtime-volumes`、`gateway-topology`、`diagnostics-governance`、`platform-admin`）；外部 MCP 客户端则由自包含包 `skills/luna-devops/{SKILL.md,references/*.md}`（或 `luna://skills/*` 资源）承担统一入口路由与单层按需展开。
+- 领域层通过 `load_skill` 在当前 Run 内按需加载 `skills/luna-devops/references/<skillId>.md` 中的 1–3 个业务域规程并自动去重；排障场景优先调用只读诊断聚合工具（`workspace_get_project`、`runtime_get_target_diagnostics`）一次性获取实时状态、近期异常构建/发布、异常 Pod、告警事件与网关路由状态，再沿交付链首个异常边界下钻具体日志。
 
 Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，明确报告"尚未执行"。
 

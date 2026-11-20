@@ -44,6 +44,8 @@ Doc/
 docs/*
 !docs/docs
 !docs/embed.go
+# skills/README.md 仅面向仓库开发者说明 Skill 编写规范，不进入任何运行镜像构建上下文
+skills/README.md
 notes/
 charts/
 tests/

@@ -2,14 +2,17 @@ import type { RefObject } from 'react'
 import type { AISuggestionSet } from './suggestions'
 import type { AIUIAction } from '@/api'
 import { Bug, LoaderCircle, Maximize2, Minimize2, PanelLeft, SquarePen, X } from 'lucide-react'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { AIAssistantMark } from './assistant-mark'
 import { AIAssistantComposer } from './composer'
+import { AIAssistantDotMatrixBackdrop } from './dot-matrix-backdrop'
 import { AIOptionsBar } from './options'
 import { useAIAssistantRuntime } from './runtime-context'
 import { AIAssistantTimeline } from './timeline'
+import { useWorkspaceContextDisplay } from './workspace-context-display'
 
 export interface AIAssistantChatSurfaceProps {
   closeLabel?: string
@@ -38,6 +41,8 @@ export function AIAssistantChatSurface({
 }: AIAssistantChatSurfaceProps) {
   const { t } = useTranslation()
   const runtime = useAIAssistantRuntime()
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const workspaceContext = useWorkspaceContextDisplay(runtime.workspaceLocation)
   const page = surface === 'page'
   const Title = page ? 'h1' : 'h2'
   const resolvedCloseLabel = closeLabel ?? t('common.close')
@@ -48,7 +53,7 @@ export function AIAssistantChatSurface({
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface" data-ai-assistant-surface={surface}>
       <header className={cn(
-        'flex shrink-0 select-none items-center gap-1 border-b border-border pt-[env(safe-area-inset-top)]',
+        'relative z-10 flex shrink-0 select-none items-center gap-1 border-b border-border bg-surface/95 backdrop-blur-xs pt-[env(safe-area-inset-top)]',
         page
           ? 'h-[calc(3.5rem+env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pointer-fine:h-[calc(3rem+env(safe-area-inset-top))]'
           : 'h-12 px-2',
@@ -113,24 +118,28 @@ export function AIAssistantChatSurface({
           </Button>
         )}
       </header>
-      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <AIAssistantTimeline
-          {...runtime.timelineProps}
-          emptyState={(
-            <AIAssistantWelcome
-              suggestions={showSuggestions ? runtime.suggestions : null}
-              surface={surface}
-              onAction={runtime.executeAction}
-            />
-          )}
+      <div ref={bodyRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <AIAssistantDotMatrixBackdrop containerRef={bodyRef} />
+        <div className="relative z-10 flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <AIAssistantTimeline
+            {...runtime.timelineProps}
+            emptyState={(
+              <AIAssistantWelcome
+                suggestions={showSuggestions ? runtime.suggestions : null}
+                surface={surface}
+                onAction={runtime.executeAction}
+              />
+            )}
+            surface={surface}
+          />
+        </div>
+        <AIAssistantComposer
+          {...runtime.composerProps}
+          contextKind={workspaceContext.kind}
+          contextLabel={workspaceContext.label}
           surface={surface}
         />
       </div>
-      <AIAssistantComposer
-        {...runtime.composerProps}
-        contextLabel={t('aiAssistant.context', { path: runtime.workspaceLocation.pathname })}
-        surface={surface}
-      />
     </div>
   )
 }

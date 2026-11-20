@@ -25,15 +25,15 @@ Luna DevOps 使用单一事实源维护领域工作流规程（`skills/`），�
 
 ## 方式二：本地安装 `SKILL.md`（可选）
 
-如果你使用的客户端支持本地 `SKILL.md` 目录（如 Claude Code、Cursor、Codex、Antigravity），可以将官方仓库 [`LiteyukiStudio/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/skills) 中的 `skills/luna-devops` 与 `skills/domains` 一并复制到客户端的 Skills 目录。这样模型在发起第一次 MCP 调用前就能直接识别路由规则与安全门禁。
+如果你使用的客户端支持本地 `SKILL.md` 开放标准目录（如 Claude Code、Cursor、Codex、Antigravity），可以将官方仓库 [`LiteyukiStudio/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/skills/luna-devops) 中自包含的 `skills/luna-devops` 目录直接复制到客户端的 Skills 目录（内含统一入口 `SKILL.md` 与 `references/*.md` 深度操作规程）。这样模型在发起第一次 MCP 调用前就能直接识别路由规则、状态漂移保护与安全门禁。
 
 以 Claude Code 用户级目录 `~/.claude/skills` 为例（其他客户端可将目标路径替换为 `.cursor/skills`、`~/.codex/skills` 或工作区级 `.claude/skills`）：
 
 ```bash
 git clone --depth 1 https://github.com/LiteyukiStudio/luna-devops.git /tmp/luna-devops
 mkdir -p ~/.claude/skills
-cp -R /tmp/luna-devops/skills/luna-devops /tmp/luna-devops/skills/domains ~/.claude/skills/
+cp -R /tmp/luna-devops/skills/luna-devops ~/.claude/skills/
 rm -rf /tmp/luna-devops
 ```
 
-保持 `luna-devops/` 与 `domains/` 同级存放，以便入口 `luna-devops/SKILL.md` 中的相对路径 `../domains/<skillId>/SKILL.md` 能正常解析。平台版本升级后，可重新同步该目录，或直接优先使用 `load_skill` 读取服务端内嵌的最新规程。
+平台版本升级后，可重新同步该目录，或直接优先使用 `load_skill` 读取服务端内嵌的最新规程。
