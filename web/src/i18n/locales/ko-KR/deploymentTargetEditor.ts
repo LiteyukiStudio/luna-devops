@@ -144,6 +144,7 @@ const deploymentTargetEditor = {
   },
   savedButRedeployFailed: '구성은 저장되었지만 재배포에 실패했습니다: {{message}}',
   retryRedeploy: '배포 다시 시도',
+  readyToCreate: '입력 완료 후 배포 구성 생성',
   leaveGuard: {
     title: '저장하지 않은 변경 사항을 버릴까요?',
     description: '페이지를 떠나면 저장하지 않은 배포 구성 변경 사항이 사라집니다.',

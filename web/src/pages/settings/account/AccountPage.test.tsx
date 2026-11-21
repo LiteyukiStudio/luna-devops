@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
@@ -105,6 +106,33 @@ describe('account page tab tools', () => {
 
     fireEvent.click(toolButton)
     expect(screen.getByTestId('oauth-applications-panel')).toHaveAttribute('data-create-dialog-open', 'true')
+  })
+
+  it('shows the floating save bar on profile edits, supports discarding changes, and clears after saving', async () => {
+    const user = userEvent.setup()
+    mocks.session.updateProfile.mockResolvedValue({})
+    renderPage()
+
+    expect(document.querySelector('[data-slot="floating-form-save-bar"]')).toBeNull()
+
+    const nameInput = screen.getByRole('textbox', { name: new RegExp(i18next.t('accountPage.profileName')) })
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Owner Updated')
+
+    const saveBar = document.querySelector('[data-slot="floating-form-save-bar"]') as HTMLElement
+    expect(saveBar).not.toBeNull()
+    expect(within(saveBar).getByText(i18next.t('common.unsavedChanges'))).toBeInTheDocument()
+
+    await user.click(within(saveBar).getByRole('button', { name: i18next.t('common.discardChanges') }))
+    expect(nameInput).toHaveValue('Owner')
+    expect(document.querySelector('[data-slot="floating-form-save-bar"]')).toBeNull()
+
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Owner Saved')
+    await user.click(screen.getByRole('button', { name: i18next.t('accountPage.saveProfile') }))
+
+    await waitFor(() => expect(mocks.session.updateProfile).toHaveBeenCalledWith(expect.objectContaining({ name: 'Owner Saved' })))
+    await waitFor(() => expect(document.querySelector('[data-slot="floating-form-save-bar"]')).toBeNull())
   })
 })
 

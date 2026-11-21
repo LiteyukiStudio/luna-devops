@@ -144,6 +144,7 @@ const deploymentTargetEditor = {
   },
   savedButRedeployFailed: 'Config saved, but redeploy failed: {{message}}',
   retryRedeploy: 'Retry deploy',
+  readyToCreate: 'Ready to create deploy config',
   leaveGuard: {
     title: 'Discard unsaved changes?',
     description: 'Unsaved changes to this deploy config will be lost if you leave.',

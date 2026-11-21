@@ -3,6 +3,8 @@ const common = {
   cancel: 'キャンセル',
   create: '作成',
   save: '保存',
+  unsavedChanges: '未保存の変更があります',
+  discardChanges: '変更を元に戻す',
   edit: '編集',
   delete: '削除',
   remove: '削除',

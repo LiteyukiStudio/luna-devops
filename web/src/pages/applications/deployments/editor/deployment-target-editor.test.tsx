@@ -570,7 +570,7 @@ describe('deployment target editor', { timeout: 15_000 }, () => {
       const actionBar = document.querySelector('[data-slot="editor-action-bar"]')
       expect(actionBar).not.toBeNull()
       expect(actionBar).not.toHaveClass('sticky', 'bottom-0')
-      expect(actionBar).toHaveClass('@lg/workspace:sticky', '@lg/workspace:bottom-0')
+      expect(actionBar).toHaveClass('@lg/workspace:sticky', '@lg/workspace:bottom-4')
 
       const navigation = screen.getByRole('navigation', { name: 'Deploy config sections' })
       const navList = navigation.querySelector('ol') as HTMLOListElement
@@ -681,5 +681,26 @@ describe('deployment target editor', { timeout: 15_000 }, () => {
     })
     scrollChildIntoHorizontalContainer(container, child, 'smooth')
     expect(scrollToSpy).toHaveBeenCalledWith({ behavior: 'smooth', left: 300 })
+  })
+
+  it('shows the floating unsaved-changes capsule only after editing and discards changes in place', async () => {
+    const user = userEvent.setup()
+    const target = imageTarget({ name: 'prod-web' })
+    renderEditor({ target })
+
+    expect(document.querySelector('[data-slot="editor-action-bar"]')).toBeNull()
+
+    const nameInput = screen.getByRole('textbox', { name: /Name/ })
+    await user.clear(nameInput)
+    await user.type(nameInput, 'prod-web-v2')
+
+    const actionBar = document.querySelector('[data-slot="editor-action-bar"]') as HTMLElement
+    expect(actionBar).not.toBeNull()
+    expect(within(actionBar).getByText('Unsaved changes')).toBeInTheDocument()
+    expect(within(actionBar).getByRole('button', { name: 'Save' })).toBeInTheDocument()
+
+    await user.click(within(actionBar).getByRole('button', { name: 'Discard changes' }))
+    expect(nameInput).toHaveValue('prod-web')
+    expect(document.querySelector('[data-slot="editor-action-bar"]')).toBeNull()
   })
 })

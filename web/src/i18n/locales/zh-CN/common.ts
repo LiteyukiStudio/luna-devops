@@ -3,6 +3,8 @@ const common = {
   cancel: '取消',
   create: '创建',
   save: '保存',
+  unsavedChanges: '有未保存的修改',
+  discardChanges: '撤销修改',
   edit: '编辑',
   delete: '删除',
   remove: '移除',

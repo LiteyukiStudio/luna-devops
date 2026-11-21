@@ -7,9 +7,8 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
-import { PageChromeTools } from '@/components/common/page-chrome'
+import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { Surface } from '@/components/common/surface'
-import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 
 type FormValues = AuthRegistrationSettings
 
@@ -45,16 +44,7 @@ export function AuthRegistrationSettingsPanel() {
     return <ErrorState title={t('settings.registration.loadFailedTitle')} description={t('settings.registration.loadFailedDescription')} />
 
   return (
-    <div className="max-w-3xl">
-      <PageChromeTools>
-        <SettingsTabSaveButton
-          disabled={settings.isLoading || !form.formState.isValid || !form.formState.isDirty}
-          label={t('settings.registration.save')}
-          pending={save.isPending}
-          type="button"
-          onClick={() => void form.handleSubmit(values => save.mutate(values))()}
-        />
-      </PageChromeTools>
+    <form className="grid max-w-3xl gap-5" onSubmit={form.handleSubmit(values => save.mutate(values))}>
       <Surface className="grid gap-4 p-6" variant="bordered">
         <div className="grid gap-4">
           <Controller
@@ -86,7 +76,15 @@ export function AuthRegistrationSettingsPanel() {
           />
         </div>
       </Surface>
-    </div>
+      <FloatingFormSaveBar
+        open={form.formState.isDirty}
+        pending={save.isPending}
+        saveDisabled={settings.isLoading || !form.formState.isValid}
+        saveLabel={t('settings.registration.save')}
+        tone={form.formState.isValid ? 'primary' : 'danger'}
+        onDiscard={() => form.reset(settings.data ? settingsToForm(settings.data) : defaultValues)}
+      />
+    </form>
   )
 }
 

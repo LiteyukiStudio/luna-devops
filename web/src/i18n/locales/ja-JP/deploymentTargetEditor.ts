@@ -144,6 +144,7 @@ const deploymentTargetEditor = {
   },
   savedButRedeployFailed: '設定は保存されましたが、再デプロイに失敗しました：{{message}}',
   retryRedeploy: 'デプロイを再試行',
+  readyToCreate: '入力完了後にデプロイ設定を作成',
   leaveGuard: {
     title: '保存していない変更を破棄しますか？',
     description: 'このページを離れると、保存していないデプロイ設定の変更は失われます。',

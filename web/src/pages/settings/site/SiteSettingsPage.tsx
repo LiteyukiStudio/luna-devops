@@ -3,7 +3,7 @@ import type { BillingRateRule, BillingRateRulePayload, ConfigDefinition, DataRet
 import type { DataListColumn } from '@/components/common/data-list'
 import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Settings2, Trash2, TriangleAlert } from 'lucide-react'
+import { Eye, LoaderCircle, Save, Settings2, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
 import { SettingsSkeleton } from '@/components/common/loading-states'
@@ -32,7 +33,6 @@ import { AIAssistantSettingsPanel } from '@/pages/settings/ai/ai-assistant-setti
 import { BrandColorPresetField } from '@/pages/settings/appearance/brand-color-preset-field'
 import { AuthRegistrationSettingsPanel } from '@/pages/settings/identity/auth-registration-settings-panel'
 import { MailSettingsPanel } from '@/pages/settings/mail/mail-settings-panel'
-import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 import { configDefinitionText } from './config-definition-text'
 import { changedConfigValues } from './site-settings-values'
 
@@ -126,11 +126,13 @@ export function SiteSettingsPage() {
     )
   }
 
+  const isConfigFormTab = !['registration', 'mail', 'build', 'ai'].includes(activeTab)
+
   return (
     <PageShell spacing="compact" width="settings">
       {definitions.isError && <ErrorState title={t('settings.configDefinitionsFailedTitle')} description={t('settings.configDefinitionsFailedDescription')} />}
 
-      <div>
+      <div className="grid gap-5">
         <ContentTabs
           tabs={[
             { value: 'brand', label: t('settings.siteConfigTitle') },
@@ -142,17 +144,6 @@ export function SiteSettingsPage() {
             { value: 'retention', label: t('settings.retentionConfigTitle') },
             { value: 'ai', label: t('settings.ai.tab') },
           ]}
-          tools={!['registration', 'mail', 'build', 'ai'].includes(activeTab)
-            ? (
-                <SettingsTabSaveButton
-                  disabled={!form.formState.isValid || !form.formState.isDirty}
-                  label={t('settings.saveConfig')}
-                  pending={save.isPending}
-                  type="button"
-                  onClick={form.handleSubmit(submitChangedValues)}
-                />
-              )
-            : undefined}
           value={activeTab}
           onValueChange={setActiveTab}
         >
@@ -209,6 +200,17 @@ export function SiteSettingsPage() {
             <AIAssistantSettingsPanel />
           </TabsContent>
         </ContentTabs>
+        <FloatingFormSaveBar
+          className="max-w-3xl"
+          open={isConfigFormTab && form.formState.isDirty}
+          pending={save.isPending}
+          saveDisabled={!form.formState.isValid}
+          saveLabel={t('settings.saveConfig')}
+          saveType="button"
+          tone={form.formState.isValid ? 'primary' : 'danger'}
+          onDiscard={() => form.reset(unflattenConfigValues(resolvedValues))}
+          onSave={() => void form.handleSubmit(submitChangedValues)()}
+        />
       </div>
       <BuildEnvironmentEditorDialog
         description={t('buildsPage.globalBuildEnvironmentDescription')}
@@ -576,14 +578,16 @@ function BillingRateRulesSection() {
     <Section
       title={t('settings.billingRateRulesTitle')}
       tools={(
-        <SettingsTabSaveButton
-          disabled={rules.length === 0 || Object.keys(drafts).length === 0}
-          label={t('settings.saveBillingRateRules')}
-          pending={save.isPending}
+        <Button
+          aria-busy={save.isPending}
+          disabled={rules.length === 0 || Object.keys(drafts).length === 0 || save.isPending}
           type="button"
           variant="outline"
           onClick={() => save.mutate(payload)}
-        />
+        >
+          {save.isPending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Save aria-hidden="true" className="size-4" />}
+          {t('settings.saveBillingRateRules')}
+        </Button>
       )}
     >
       <DataList

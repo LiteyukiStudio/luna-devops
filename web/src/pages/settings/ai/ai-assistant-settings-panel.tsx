@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
+import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
 import { PageChromeTools } from '@/components/common/page-chrome'
@@ -19,7 +20,6 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
 import { AIModelManagement } from './ai-model-management'
 
@@ -110,7 +110,7 @@ export function AIAssistantSettingsPanel() {
   const observabilityEnabled = form.watch('observabilityEnabled')
   return (
     <>
-      <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
+      <form className="grid max-w-3xl gap-5" onSubmit={form.handleSubmit(values => save.mutate(values))}>
         <PageChromeTools>
           <Button
             disabled={!runtimeDefaultsReady || save.isPending}
@@ -121,13 +121,6 @@ export function AIAssistantSettingsPanel() {
             <RotateCcw aria-hidden="true" className="size-4" />
             {t('settings.restoreDefaults')}
           </Button>
-          <SettingsTabSaveButton
-            disabled={!form.formState.isDirty || !form.formState.isValid}
-            label={t('settings.saveConfig')}
-            pending={save.isPending}
-            type="button"
-            onClick={() => void form.handleSubmit(values => save.mutate(values))()}
-          />
         </PageChromeTools>
         <Surface className="grid gap-5 p-6" variant="bordered">
           <Controller
@@ -293,6 +286,14 @@ export function AIAssistantSettingsPanel() {
           </ProgressiveSection>
           <p className="text-sm leading-6 text-muted-foreground">{t('settings.ai.securitySummary')}</p>
         </Surface>
+        <FloatingFormSaveBar
+          open={form.formState.isDirty}
+          pending={save.isPending}
+          saveDisabled={!form.formState.isValid}
+          saveLabel={t('settings.saveConfig')}
+          tone={form.formState.isValid ? 'primary' : 'danger'}
+          onDiscard={() => form.reset(configs.data ? aiSettingsFormValues(configs.data) : defaults)}
+        />
       </form>
       <AIModelManagement />
     </>

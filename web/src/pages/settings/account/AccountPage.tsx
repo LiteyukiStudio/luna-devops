@@ -17,8 +17,8 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
+import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
-import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -30,7 +30,6 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { BrandColorPresetField } from '@/pages/settings/appearance/brand-color-preset-field'
-import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 import { AccessTokensPanel } from './access-tokens-panel'
 import { AccountNotificationsPanel } from './account-notifications-panel'
 import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
@@ -141,28 +140,26 @@ function ProfilePanel() {
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
     mode: 'onChange',
-    defaultValues: {
-      avatarUrl: user?.avatarUrl ?? '',
-      brandColorPreset: user?.brandColorPreset ?? '',
-      language: user?.language ?? 'zh-CN',
-      name: user?.name ?? '',
-    },
+    defaultValues: userToProfileForm(user),
   })
 
   useEffect(() => {
     if (!user)
       return
-    form.reset({
-      avatarUrl: user.avatarUrl ?? '',
-      brandColorPreset: user.brandColorPreset ?? '',
-      language: user.language,
-      name: user.name,
-    })
+    form.reset(userToProfileForm(user))
   }, [form, user])
 
   const saveProfile = useMutation({
-    mutationFn: updateProfile,
-    onSuccess: () => toast.success(t('accountPage.profileSaved')),
+    mutationFn: (values: ProfileForm & { avatarUrl: string }) => updateProfile(values),
+    onSuccess: (_result, values) => {
+      form.reset({
+        avatarUrl: values.avatarUrl ?? '',
+        brandColorPreset: values.brandColorPreset ?? '',
+        language: values.language,
+        name: values.name,
+      })
+      toast.success(t('accountPage.profileSaved'))
+    },
     onError: error => toast.error(error.message),
   })
 
@@ -177,85 +174,95 @@ function ProfilePanel() {
   const submitProfile = form.handleSubmit(values => saveProfile.mutate({ ...values, avatarUrl: values.avatarUrl ?? '' }))
 
   return (
-    <Surface className="grid gap-5 p-6" variant="bordered">
-      <PageChromeTools>
-        <SettingsTabSaveButton
-          disabled={!form.formState.isValid || !form.formState.isDirty}
-          label={t('accountPage.saveProfile')}
-          pending={saveProfile.isPending}
-          type="button"
-          onClick={() => void submitProfile()}
-        />
-      </PageChromeTools>
-      <div className="flex flex-col gap-4 border-b border-border pb-5 @lg/workspace:flex-row @lg/workspace:items-center">
-        <UserAvatar className="size-16 text-xl" user={previewUser} />
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold">{user?.name}</h2>
-          <p className="truncate text-sm text-muted-foreground">{user?.email}</p>
+    <form className="grid gap-5" onSubmit={submitProfile}>
+      <Surface className="grid gap-5 p-6" variant="bordered">
+        <div className="flex flex-col gap-4 border-b border-border pb-5 @lg/workspace:flex-row @lg/workspace:items-center">
+          <UserAvatar className="size-16 text-xl" user={previewUser} />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold">{user?.name}</h2>
+            <p className="truncate text-sm text-muted-foreground">{user?.email}</p>
+          </div>
         </div>
-      </div>
 
-      <form className="grid gap-4" onSubmit={submitProfile}>
-        <Field error={form.formState.errors.name?.message} hint={t('accountPage.profileNameHint')} label={t('accountPage.profileName')} required>
-          <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('accountPage.profileNamePlaceholder')} />
-        </Field>
-        <Field error={form.formState.errors.avatarUrl?.message} hint={t('accountPage.avatarUrlHint')} label={t('accountPage.avatarUrl')}>
-          <Input {...form.register('avatarUrl')} aria-invalid={Boolean(form.formState.errors.avatarUrl)} placeholder={t('accountPage.avatarUrlPlaceholder')} />
-        </Field>
-        <Field error={form.formState.errors.language?.message} hint={t('accountPage.languageHint')} label={t('language')} required>
-          {fieldControl => (
-            <Controller
-              control={form.control}
-              name="language"
-              render={({ field }) => (
-                <Select name={field.name} value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="zh-CN">{t('languages.zhCN')}</SelectItem>
-                    <SelectItem value="zh-TW">{t('languages.zhTW')}</SelectItem>
-                    <SelectItem value="en-US">{t('languages.enUS')}</SelectItem>
-                    <SelectItem value="ja-JP">{t('languages.jaJP')}</SelectItem>
-                    <SelectItem value="ko-KR">{t('languages.koKR')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
+        <div className="grid gap-4">
+          <Field error={form.formState.errors.name?.message} hint={t('accountPage.profileNameHint')} label={t('accountPage.profileName')} required>
+            <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('accountPage.profileNamePlaceholder')} />
+          </Field>
+          <Field error={form.formState.errors.avatarUrl?.message} hint={t('accountPage.avatarUrlHint')} label={t('accountPage.avatarUrl')}>
+            <Input {...form.register('avatarUrl')} aria-invalid={Boolean(form.formState.errors.avatarUrl)} placeholder={t('accountPage.avatarUrlPlaceholder')} />
+          </Field>
+          <Field error={form.formState.errors.language?.message} hint={t('accountPage.languageHint')} label={t('language')} required>
+            {fieldControl => (
+              <Controller
+                control={form.control}
+                name="language"
+                render={({ field }) => (
+                  <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="zh-CN">{t('languages.zhCN')}</SelectItem>
+                      <SelectItem value="zh-TW">{t('languages.zhTW')}</SelectItem>
+                      <SelectItem value="en-US">{t('languages.enUS')}</SelectItem>
+                      <SelectItem value="ja-JP">{t('languages.jaJP')}</SelectItem>
+                      <SelectItem value="ko-KR">{t('languages.koKR')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
+          </Field>
+          <Field hint={t('accountPage.appearanceModeHint')} label={t('theme.mode')}>
+            {fieldControl => (
+              <Select
+                value={mode}
+                onValueChange={(next) => {
+                  if (next === 'system' || next === 'light' || next === 'dark')
+                    setMode(next)
+                }}
+              >
+                <SelectTrigger {...fieldControl} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="system">{t('theme.system')}</SelectItem>
+                  <SelectItem value="light">{t('theme.light')}</SelectItem>
+                  <SelectItem value="dark">{t('theme.dark')}</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </Field>
+          <Field error={form.formState.errors.brandColorPreset?.message} hint={t('accountPage.brandColorHint')} label={t('accountPage.brandColor')}>
+            <BrandColorPresetField
+              ariaLabel={t('accountPage.brandColor')}
+              inheritedPreset={configs['site.brandColorPreset']}
+              inheritLabel={t('accountPage.followPlatformBrandColor')}
+              value={form.watch('brandColorPreset')}
+              onValueChange={nextValue => form.setValue('brandColorPreset', nextValue, { shouldDirty: true, shouldValidate: true })}
             />
-          )}
-        </Field>
-        <Field hint={t('accountPage.appearanceModeHint')} label={t('theme.mode')}>
-          {fieldControl => (
-            <Select
-              value={mode}
-              onValueChange={(next) => {
-                if (next === 'system' || next === 'light' || next === 'dark')
-                  setMode(next)
-              }}
-            >
-              <SelectTrigger {...fieldControl} className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="system">{t('theme.system')}</SelectItem>
-                <SelectItem value="light">{t('theme.light')}</SelectItem>
-                <SelectItem value="dark">{t('theme.dark')}</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-        </Field>
-        <Field error={form.formState.errors.brandColorPreset?.message} hint={t('accountPage.brandColorHint')} label={t('accountPage.brandColor')}>
-          <BrandColorPresetField
-            ariaLabel={t('accountPage.brandColor')}
-            inheritedPreset={configs['site.brandColorPreset']}
-            inheritLabel={t('accountPage.followPlatformBrandColor')}
-            value={form.watch('brandColorPreset')}
-            onValueChange={nextValue => form.setValue('brandColorPreset', nextValue, { shouldDirty: true, shouldValidate: true })}
-          />
-        </Field>
-      </form>
-    </Surface>
+          </Field>
+        </div>
+      </Surface>
+      <FloatingFormSaveBar
+        open={form.formState.isDirty}
+        pending={saveProfile.isPending}
+        saveDisabled={!form.formState.isValid}
+        saveLabel={t('accountPage.saveProfile')}
+        tone={form.formState.isValid ? 'primary' : 'danger'}
+        onDiscard={() => form.reset(userToProfileForm(user))}
+      />
+    </form>
   )
+}
+
+function userToProfileForm(user: ReturnType<typeof useSession>['user']): ProfileForm {
+  return {
+    avatarUrl: user?.avatarUrl ?? '',
+    brandColorPreset: (user?.brandColorPreset as ProfileForm['brandColorPreset'] | undefined) ?? '',
+    language: (user?.language as ProfileForm['language'] | undefined) ?? 'zh-CN',
+    name: user?.name ?? '',
+  }
 }
 
 function IdentityBindingsPanel() {

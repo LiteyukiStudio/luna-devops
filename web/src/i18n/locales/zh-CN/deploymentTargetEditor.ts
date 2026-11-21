@@ -144,6 +144,7 @@ const deploymentTargetEditor = {
   },
   savedButRedeployFailed: '配置已保存，重新部署失败：{{message}}',
   retryRedeploy: '重试部署',
+  readyToCreate: '填写完成后创建部署配置',
   leaveGuard: {
     title: '放弃未保存的修改？',
     description: '离开后，本页尚未保存的部署配置修改将会丢失。',

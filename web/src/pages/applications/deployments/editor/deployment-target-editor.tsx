@@ -3,7 +3,7 @@ import type { DeploymentTargetFormValues } from './deployment-target-form'
 import type { ArtifactRegistry, BuildTemplate, DeploymentTarget, Release, RepositoryBinding, RuntimeCluster } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Rocket, RotateCw, Save } from 'lucide-react'
+import { Rocket, RotateCw } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { FormProvider, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, ApiError } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { FloatingFormSaveBar, FloatingFormSaveBarSecondaryButton } from '@/components/common/floating-form-save-bar'
 import { Button } from '@/components/ui/button'
 import { deploymentReleaseKey } from '@/pages/applications/application-config-utils'
 import { latestReleaseByTarget, redeployReleasePayload } from '@/pages/applications/deployments/application-deployments-panel-utils'
@@ -159,6 +160,10 @@ export function DeploymentTargetEditor({
     allowNextNavigation()
     navigate(backTo)
   }
+  const discardChanges = () => {
+    form.reset()
+    setTargetImageRefTouchedByUser(false)
+  }
 
   const save = useMutation({
     mutationFn: async ({ formValues, redeploy }: { formValues: DeploymentTargetFormValues, redeploy: boolean }) => {
@@ -264,6 +269,12 @@ export function DeploymentTargetEditor({
   )
 
   const hasVisibleErrors = isSubmitted && totalErrors > 0
+  const showActionBar = !target || isDirty || showRedeployRetry || hasVisibleErrors || pendingSecretCount > 0 || needsRedeploy
+  const statusTone = (redeployFailure && showRedeployRetry) || hasVisibleErrors
+    ? 'danger'
+    : needsRedeploy
+      ? 'warning'
+      : 'primary'
 
   return (
     <FormProvider {...form}>
@@ -323,67 +334,88 @@ export function DeploymentTargetEditor({
               onOpenChange={setAdvancedOpen}
               onRetryBuildEnvironment={onRetryBuildEnvironment}
             />
-          </div>
-        </div>
-        <div className="flex flex-col gap-3 rounded-container border border-border bg-surface-raised px-4 py-3 shadow-raised @lg/workspace:sticky @lg/workspace:bottom-0 @lg/workspace:z-10 @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-between" data-slot="editor-action-bar">
-          <div aria-live="polite" className="min-w-0 text-sm empty:hidden">
-            {redeployFailure && showRedeployRetry
-              ? (
-                  <p className="text-danger" data-slot="redeploy-failure">
-                    {t('deploymentTargetEditor.savedButRedeployFailed', { message: redeployFailure.message })}
-                  </p>
-                )
-              : hasVisibleErrors
-                ? (
-                    <button className="font-medium text-left text-danger underline-offset-4 hover:underline focus-visible:underline" type="button" onClick={() => focusFirstError(errors)}>
-                      {t('deploymentTargetEditor.fixErrors', { count: totalErrors })}
-                    </button>
-                  )
-                : pendingSecretCount > 0
-                  ? (
-                      <p className="text-foreground">
-                        {t('deploymentTargetEditor.pendingSecretSummary', pendingSecrets)}
-                      </p>
-                    )
-                  : needsRedeploy
+            <FloatingFormSaveBar
+              actions={(
+                <>
+                  {target && !showRedeployRetry
                     ? (
-                        <p className="text-warning">
-                          {t(canRedeploy ? 'deploymentsPage.runtimeChangesNeedRedeployInline' : 'deploymentsPage.runtimeChangesNeedRedeployUnavailableInline')}
-                        </p>
+                        <FloatingFormSaveBarSecondaryButton
+                          disabled={save.isPending || retryRedeploy.isPending}
+                          type="button"
+                          onClick={discardChanges}
+                        >
+                          {t('common.discardChanges')}
+                        </FloatingFormSaveBarSecondaryButton>
                       )
-                    : null}
-          </div>
-          <div className="flex shrink-0 flex-wrap justify-end gap-2">
-            <Button disabled={save.isPending || retryRedeploy.isPending} type="button" variant="outline" onClick={leaveEditor}>
-              {t('common.cancel')}
-            </Button>
-            {redeployFailure && showRedeployRetry && (
-              <Button disabled={retryRedeploy.isPending || save.isPending} type="button" onClick={() => retryRedeploy.mutate(redeployFailure.target)}>
-                <RotateCw className="size-4" />
-                {t('deploymentTargetEditor.retryRedeploy')}
-              </Button>
-            )}
-            {needsRedeploy && !showRedeployRetry && (
-              <Button disabled={save.isPending} type="submit" variant="outline">
-                <Save className="size-4" />
-                {t('deploymentsPage.saveOnly')}
-              </Button>
-            )}
-            {showRedeployRetry
-              ? null
-              : needsRedeploy
-                ? (
-                    <Button disabled={save.isPending || !canRedeploy} type="button" onClick={() => void submit(true)()}>
-                      <Rocket className="size-4" />
-                      {t('deploymentsPage.saveAndRedeploy')}
-                    </Button>
-                  )
-                : (
-                    <Button disabled={save.isPending} type="submit">
-                      <Save className="size-4" />
-                      {target ? t('common.save') : t('deploymentTargetEditor.create')}
+                    : (
+                        <FloatingFormSaveBarSecondaryButton
+                          disabled={save.isPending || retryRedeploy.isPending}
+                          type="button"
+                          onClick={leaveEditor}
+                        >
+                          {t('common.cancel')}
+                        </FloatingFormSaveBarSecondaryButton>
+                      )}
+                  {redeployFailure && showRedeployRetry && (
+                    <Button className="rounded-full px-5" disabled={retryRedeploy.isPending || save.isPending} type="button" onClick={() => retryRedeploy.mutate(redeployFailure.target)}>
+                      <RotateCw className="size-4" />
+                      {t('deploymentTargetEditor.retryRedeploy')}
                     </Button>
                   )}
+                  {needsRedeploy && !showRedeployRetry && (
+                    <Button className="rounded-full px-4" disabled={save.isPending} type="submit" variant="outline">
+                      {t('deploymentsPage.saveOnly')}
+                    </Button>
+                  )}
+                  {showRedeployRetry
+                    ? null
+                    : needsRedeploy
+                      ? (
+                          <Button className="rounded-full px-5" disabled={save.isPending || !canRedeploy} type="button" onClick={() => void submit(true)()}>
+                            <Rocket className="size-4" />
+                            {t('deploymentsPage.saveAndRedeploy')}
+                          </Button>
+                        )
+                      : (
+                          <Button className="rounded-full px-5" disabled={save.isPending} type="submit">
+                            {target ? t('common.save') : t('deploymentTargetEditor.create')}
+                          </Button>
+                        )}
+                </>
+              )}
+              open={showActionBar}
+              slot="editor-action-bar"
+              statusContent={redeployFailure && showRedeployRetry
+                ? (
+                    <p className="m-0 min-w-0 text-danger" data-slot="redeploy-failure">
+                      {t('deploymentTargetEditor.savedButRedeployFailed', { message: redeployFailure.message })}
+                    </p>
+                  )
+                : hasVisibleErrors
+                  ? (
+                      <button className="min-w-0 text-left font-medium text-danger underline-offset-4 hover:underline focus-visible:underline" type="button" onClick={() => focusFirstError(errors)}>
+                        {t('deploymentTargetEditor.fixErrors', { count: totalErrors })}
+                      </button>
+                    )
+                  : pendingSecretCount > 0
+                    ? (
+                        <p className="m-0 min-w-0 text-foreground">
+                          {t('deploymentTargetEditor.pendingSecretSummary', pendingSecrets)}
+                        </p>
+                      )
+                    : needsRedeploy
+                      ? (
+                          <p className="m-0 min-w-0 text-warning">
+                            {t(canRedeploy ? 'deploymentsPage.runtimeChangesNeedRedeployInline' : 'deploymentsPage.runtimeChangesNeedRedeployUnavailableInline')}
+                          </p>
+                        )
+                      : (
+                          <p className="m-0 truncate text-foreground">
+                            {t(target ? 'common.unsavedChanges' : 'deploymentTargetEditor.readyToCreate')}
+                          </p>
+                        )}
+              tone={statusTone}
+            />
           </div>
         </div>
       </form>

@@ -16,9 +16,9 @@ import { CheckboxField, ControlledCheckboxField } from '@/components/common/chec
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
-import { PageChromeTools } from '@/components/common/page-chrome'
 import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -29,7 +29,6 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { NotificationDeliveryDetailSheet } from '@/pages/notifications/notification-delivery-detail-sheet'
-import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 
 const pageSize = 10
 const failureEventTypes = [
@@ -277,55 +276,56 @@ export function AccountNotificationsPanel() {
 
   return (
     <div className="grid gap-4">
-      <PageChromeTools>
-        <SettingsTabSaveButton
-          disabled={!preferenceForm.formState.isDirty || !preferenceForm.formState.isValid}
-          label={t('accountPage.notifications.savePreferences')}
+      <form className="grid gap-4" onSubmit={preferenceForm.handleSubmit(values => savePreferences.mutate(values))}>
+        <Section title={<SectionTitle description={t('accountPage.notifications.preferencesDescription')} title={t('accountPage.notifications.preferencesTitle')} />} variant="bordered">
+          <div className="grid gap-4">
+            <Field hint={t('accountPage.notifications.accountEmailHint')} label={t('accountPage.notifications.accountEmail')}>
+              <Input readOnly value={user?.email ?? ''} type="email" />
+            </Field>
+            <Controller
+              control={preferenceForm.control}
+              name="emailEnabled"
+              render={({ field }) => (
+                <ControlledCheckboxField description={t('accountPage.notifications.emailEnabledHint')} field={field}>
+                  {t('accountPage.notifications.emailEnabled')}
+                </ControlledCheckboxField>
+              )}
+            />
+            <Controller
+              control={preferenceForm.control}
+              name="eventTypes"
+              render={({ field }) => (
+                <fieldset className="grid gap-3 @lg/workspace:grid-cols-2">
+                  <legend className="mb-3 text-sm font-medium">{t('accountPage.notifications.failureEvents')}</legend>
+                  {failureEventTypes.map(eventType => (
+                    <CheckboxField
+                      key={eventType}
+                      checked={field.value.includes(eventType)}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      onCheckedChange={(checked) => {
+                        field.onChange(checked === true
+                          ? [...field.value, eventType]
+                          : field.value.filter(value => value !== eventType))
+                      }}
+                    >
+                      {eventTypeLabel(eventType, t)}
+                    </CheckboxField>
+                  ))}
+                </fieldset>
+              )}
+            />
+          </div>
+        </Section>
+        <FloatingFormSaveBar
+          open={preferenceForm.formState.isDirty}
           pending={savePreferences.isPending}
-          type="button"
-          onClick={() => void preferenceForm.handleSubmit(values => savePreferences.mutate(values))()}
+          saveDisabled={!preferenceForm.formState.isValid}
+          saveLabel={t('accountPage.notifications.savePreferences')}
+          tone={preferenceForm.formState.isValid ? 'primary' : 'danger'}
+          onDiscard={() => preferenceForm.reset(preferences.data ?? { emailEnabled: true, eventTypes: [...failureEventTypes] })}
         />
-      </PageChromeTools>
-      <Section title={<SectionTitle description={t('accountPage.notifications.preferencesDescription')} title={t('accountPage.notifications.preferencesTitle')} />} variant="bordered">
-        <form className="grid gap-4" onSubmit={preferenceForm.handleSubmit(values => savePreferences.mutate(values))}>
-          <Field hint={t('accountPage.notifications.accountEmailHint')} label={t('accountPage.notifications.accountEmail')}>
-            <Input readOnly value={user?.email ?? ''} type="email" />
-          </Field>
-          <Controller
-            control={preferenceForm.control}
-            name="emailEnabled"
-            render={({ field }) => (
-              <ControlledCheckboxField description={t('accountPage.notifications.emailEnabledHint')} field={field}>
-                {t('accountPage.notifications.emailEnabled')}
-              </ControlledCheckboxField>
-            )}
-          />
-          <Controller
-            control={preferenceForm.control}
-            name="eventTypes"
-            render={({ field }) => (
-              <fieldset className="grid gap-3 @lg/workspace:grid-cols-2">
-                <legend className="mb-3 text-sm font-medium">{t('accountPage.notifications.failureEvents')}</legend>
-                {failureEventTypes.map(eventType => (
-                  <CheckboxField
-                    key={eventType}
-                    checked={field.value.includes(eventType)}
-                    name={field.name}
-                    onBlur={field.onBlur}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked === true
-                        ? [...field.value, eventType]
-                        : field.value.filter(value => value !== eventType))
-                    }}
-                  >
-                    {eventTypeLabel(eventType, t)}
-                  </CheckboxField>
-                ))}
-              </fieldset>
-            )}
-          />
-        </form>
-      </Section>
+      </form>
 
       <Section
         title={<SectionTitle description={t('accountPage.notifications.channelsDescription')} title={t('accountPage.notifications.channelsTitle')} />}

@@ -14,6 +14,7 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
+import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
 import { PageShell } from '@/components/common/page-shell'
@@ -27,7 +28,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
-import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 
 const providerSchema = z.object({
   name: z.string().min(1),
@@ -68,6 +68,16 @@ const providerDefaults: ProviderForm = {
   isDefault: false,
 }
 
+const policyDefaults: PolicyForm = {
+  allowLocalLogin: true,
+  allowOidcLogin: true,
+  requireVerifiedOidcEmail: true,
+  allowedEmailDomains: '',
+  allowedOidcGroups: '',
+  invitedEmails: '',
+  defaultRole: PlatformRole.User,
+}
+
 export function AuthProvidersPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -81,15 +91,7 @@ export function AuthProvidersPage() {
   const policyForm = useForm<PolicyForm>({
     resolver: zodResolver(policySchema),
     mode: 'onChange',
-    defaultValues: {
-      allowLocalLogin: true,
-      allowOidcLogin: true,
-      requireVerifiedOidcEmail: true,
-      allowedEmailDomains: '',
-      allowedOidcGroups: '',
-      invitedEmails: '',
-      defaultRole: PlatformRole.User,
-    },
+    defaultValues: policyDefaults,
   })
 
   useEffect(() => {
@@ -114,15 +116,7 @@ export function AuthProvidersPage() {
   useEffect(() => {
     if (!policy.data)
       return
-    policyForm.reset({
-      allowLocalLogin: policy.data.allowLocalLogin,
-      allowOidcLogin: policy.data.allowOidcLogin,
-      requireVerifiedOidcEmail: policy.data.requireVerifiedOidcEmail,
-      allowedEmailDomains: (policy.data.allowedEmailDomains ?? []).join(', '),
-      allowedOidcGroups: (policy.data.allowedOidcGroups ?? []).join(', '),
-      invitedEmails: (policy.data.invitedEmails ?? []).join(', '),
-      defaultRole: policy.data.defaultRole,
-    })
+    policyForm.reset(policyToFormValues(policy.data))
   }, [policy.data, policyForm])
 
   const saveProvider = useMutation({
@@ -155,6 +149,7 @@ export function AuthProvidersPage() {
     onSuccess: (result: AuthAdmissionPolicy) => {
       toast.success(t('authProvidersPage.policySaved'))
       queryClient.setQueryData(['auth-admission-policy'], result)
+      policyForm.reset(policyToFormValues(result))
     },
     onError: error => toast.error(error.message),
   })
@@ -244,15 +239,7 @@ export function AuthProvidersPage() {
                 {t('authProvidersPage.createTitle')}
               </Button>
             )
-          : (
-              <SettingsTabSaveButton
-                disabled={!policyForm.formState.isValid || !policyForm.formState.isDirty}
-                label={t('authProvidersPage.savePolicy')}
-                pending={savePolicy.isPending}
-                type="button"
-                onClick={() => void policyForm.handleSubmit(values => savePolicy.mutate(values))()}
-              />
-            )}
+          : undefined}
         value={activeTab}
         onValueChange={setActiveTab}
       >
@@ -378,8 +365,8 @@ export function AuthProvidersPage() {
           {policy.isError
             ? <ErrorState title={t('authProvidersPage.policyLoadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />
             : (
-                <Surface className="max-w-3xl p-6" variant="bordered">
-                  <form className="grid gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
+                <form className="grid max-w-3xl gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
+                  <Surface className="grid gap-5 p-6" variant="bordered">
                     <div className="grid gap-3 @xl/workspace:grid-cols-2">
                       <Controller
                         control={policyForm.control}
@@ -443,13 +430,33 @@ export function AuthProvidersPage() {
                         />
                       )}
                     </Field>
-                  </form>
-                </Surface>
+                  </Surface>
+                  <FloatingFormSaveBar
+                    open={policyForm.formState.isDirty}
+                    pending={savePolicy.isPending}
+                    saveDisabled={!policyForm.formState.isValid}
+                    saveLabel={t('authProvidersPage.savePolicy')}
+                    tone={policyForm.formState.isValid ? 'primary' : 'danger'}
+                    onDiscard={() => policyForm.reset(policy.data ? policyToFormValues(policy.data) : policyDefaults)}
+                  />
+                </form>
               )}
         </TabsContent>
       </ContentTabs>
     </PageShell>
   )
+}
+
+function policyToFormValues(policy: AuthAdmissionPolicy): PolicyForm {
+  return {
+    allowLocalLogin: policy.allowLocalLogin,
+    allowOidcLogin: policy.allowOidcLogin,
+    requireVerifiedOidcEmail: policy.requireVerifiedOidcEmail,
+    allowedEmailDomains: (policy.allowedEmailDomains ?? []).join(', '),
+    allowedOidcGroups: (policy.allowedOidcGroups ?? []).join(', '),
+    invitedEmails: (policy.invitedEmails ?? []).join(', '),
+    defaultRole: policy.defaultRole,
+  }
 }
 
 function splitText(value: string) {

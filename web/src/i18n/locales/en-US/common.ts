@@ -3,6 +3,8 @@ const common = {
   cancel: 'Cancel',
   create: 'Create',
   save: 'Save',
+  unsavedChanges: 'Unsaved changes',
+  discardChanges: 'Discard changes',
   edit: 'Edit',
   delete: 'Delete',
   remove: 'Remove',
