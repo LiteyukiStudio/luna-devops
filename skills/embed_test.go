@@ -38,8 +38,14 @@ func TestEmbeddedSkillsLoadAndStayUniversal(t *testing.T) {
 		"request_input",
 		"request_choice",
 		"navigate_to_route",
+		"wait_for_task",
 		"luna deployment exec",
 		"luna-cli",
+	}
+	for _, forbidden := range webOnlyTokens {
+		if strings.Contains(entry.Instructions, forbidden) {
+			t.Errorf("entry SKILL.md contains host-coupled or deprecated token %q", forbidden)
+		}
 	}
 	for _, skill := range domains {
 		got, ok, err := GetDomainSkill(skill.ID)

@@ -9,14 +9,14 @@ description: 管理应用生命周期、从零上线新服务闭环、应用市�
 - [1. 核心入口、双模寻址与自由度边界](#1-核心入口双模寻址与自由度边界)
 - [2. SOP 1：从零上线新服务跨领域端到端 Checklist](#2-sop-1从零上线新服务跨领域端到端-checklist)
 - [3. SOP 2：纯增量配置、密钥隔离与合并发版范式](#3-sop-2纯增量配置密钥隔离与合并发版范式)
-- [4. SOP 3：应用市场模板安装、扩缩容与回滚门禁](#4-sop-3应用市场模板安装扩缩容与回滚门禁)
+- [4. SOP 3：模板安装、运行控制与回滚/取消高频陷阱](#4-sop-3模板安装运行控制与回滚取消高频陷阱)
 - [5. 状态漂移与错误恢复速查表](#5-状态漂移与错误恢复速查表)
 
 ---
 
 ## 1. 核心入口、双模寻址与自由度边界
 
-- **高频入口工具**：`delivery_list_applications`、`delivery_get_target`、`delivery_create_application`、`delivery_create_target`、`delivery_update_target_runtime`、`delivery_configure_target_config`、`delivery_configure_target_volumes`、`delivery_deploy_target`、`delivery_scale_target`、`delivery_rollback_target`、`delivery_get_release`。
+- **高频入口工具**：`delivery_list_applications`、`delivery_get_target`、`delivery_create_application`、`delivery_create_target`、`delivery_update_target_runtime`、`delivery_configure_target_config`、`delivery_configure_config_set`、`delivery_configure_target_volumes`、`delivery_deploy_target`、`delivery_scale_target`、`delivery_restart_target`、`delivery_rollback_target`、`delivery_cancel_release`、`delivery_get_release`。
 - **扁平双模寻址**：
   - `project`：项目 ID（`prj_xxx`）或唯一英文 `identifier`；
   - `application`：应用 ID（`app_xxx`）、唯一英文 `identifier` 或唯一名称；
@@ -62,21 +62,27 @@ description: 管理应用生命周期、从零上线新服务闭环、应用市�
 }
 ```
 
-3. **切换内网专属（`internalOnly: true`）的前置清理门禁**：
+3. **共享运行配置集（`ConfigSet`）绑定模式与冲突门禁**：
+   - 调用 `delivery_configure_config_set` 修改项目共享配置集后，以 **`live` 模式**绑定该配置集的部署目标**不会自动热更新线上容器**，需对受影响目标执行 `delivery_deploy_target` 下发；以 **`snapshot` 模式**绑定的目标仍锁定旧快照，重发版前需同步更新目标的 `configSetBindings`。
+   - 任何普通/加密变量名不得与活跃 `ServiceBinding` 自动注入变量撞名（否则报 `service_binding.env_conflict`）；明文 `configFiles`、加密 `secretFiles` 与数据卷 `mountPath` 之间严禁同路径或父子目录前缀嵌套（否则报 `deployment.runtime_config_mount_conflict`）。
+4. **切换内网专属（`internalOnly: true`）的前置清理门禁**：
    - 若要通过 `delivery_update_target_runtime` 将目标改为 `internalOnly: true`，必须先调 `network_list_gateway_routes` 检查并删除绑定在该目标上的所有公网网关路由，否则因安全互斥被服务端拒绝。
 
 ---
 
-## 4. SOP 3：应用市场模板安装、扩缩容与回滚门禁
+## 4. SOP 3：模板安装、运行控制与回滚/取消高频陷阱
 
 - **应用市场两阶段安装（`L2`）**：
   1. 先调 `delivery_list_templates` 检索模板，**必须再调 `delivery_get_template`** 查看参数表（区分普通参数 `values` 与敏感参数 `secretValues`、哪些支持 `autoGenerate`）及组件卷要求。
   2. 调用 `delivery_install_template` 时：**单组件模板**挂载已有卷使用顶层 `projectVolume`；**多组件模板**使用 `componentVolumes` 按组件 `key` 分别映射独立数据卷（二者互斥）。
-- **扩缩容、停机与重启分流**：
-  - 调整在线副本数或停机缩容至 `0` 使用 `delivery_scale_target`（**注意**：目标已开启 HPA 自动扩缩容时禁止手动设置固定副本，需先调整自动扩缩容策略）；
-  - 不改配置仅滚动重建 Pod 使用 `delivery_restart_target`；
-  - 同应用跨阶段复制配置优先用 `delivery_create_target` 的 `cloneFromStage`；涉及 `initContainers`、`sidecarContainers`、`tolerations`、`affinity` 或跨项目 Bundle 导入导出时，引导用户在 Web 控制台完成。
-- **生产回滚闭环**：调用 `delivery_get_target` 或发布记录确认历史稳定可回滚版本后执行 `delivery_rollback_target`，并必须跟进验证实时 Pod 恢复 `Ready`。
+- **四类运行控制动作严格分流（切勿混用）**：
+  - **停机释放算力 / 调整副本（`delivery_scale_target`）**：传 `replicas: 0` 才会真正停止线上 Pod 释放计费算力；而修改 `governance.enabled: false` **仅禁止新建发布，绝不会停止已在运行的 Pod**！注意：目标已启用 HPA，或挂载了 `ReadWriteOnce`（`RWO`）单节点云盘的无状态 `Deployment` 不宜盲目扩至多副本（跨节点调度会触发 `Multi-Attach` 死锁）。
+  - **原地滚动重启 vs. 下发草稿（`delivery_restart_target` vs. `delivery_deploy_target`）**：`delivery_restart_target` 仅向集群已有工作负载写入 `restartedAt` 注解重建旧配置 Pod，**绝不会下发数据库中未发布的配置/密钥改动**；要让新配置生效必须调 `delivery_deploy_target`。
+  - **浮动镜像 Tag 重拉取**：外部重推同名浮动标签（如 `:latest`）要求更新线上实例时，调用 `delivery_deploy_target` 必须显式传 `forceImagePull: true`，否则节点命中本地缓存会导致“发布成功但仍跑旧代码”。
+  - **跨阶段克隆卷隔离（`cloneFromStage`）**：调 `delivery_create_target` 克隆已有环境时，若源环境含持久化卷，必须传 `volumeOverrides` 绑定新环境独占卷或设 `omitProjectVolumes: true`，严禁两套环境争抢同一 `RWO` 数据卷。
+- **回滚与取消发布的核心边界（高频生产事故点）**：
+  - **`delivery_rollback_target` 只回滚镜像，不回滚配置！** 该工具仅恢复历史成功 Release 的 `imageRef` 与 `buildRunId`，**不会回退当前的环境变量、Secret、ConfigSet、数据卷或端口规格**。若故障是由刚改坏的配置/密钥引起，单调 `delivery_rollback_target` 会带着错误配置重发旧镜像继续崩溃——必须先增量修回正确配置再调 `delivery_deploy_target`。
+  - **`delivery_cancel_release` 不等于回滚集群**：取消已进入 `running` 阶段（K8s 清单已下发集群）的发布，仅终止平台侧 Rollout 等待任务，**不会自动将线上 Deployment 退回旧镜像**；取消后必须调 `runtime_get_target_diagnostics` 核实实时 Pod，若新坏实例已下发需补调 `delivery_rollback_target`。
 
 ---
 
@@ -84,8 +90,11 @@ description: 管理应用生命周期、从零上线新服务闭环、应用市�
 
 | 现象或错误码 | 根因 | 标准恢复动作（含禁止行为） |
 | --- | --- | --- |
-| 修改了环境变量/密钥但线上容器内未生效 | 配置工具只更新数据库期望草稿（返回 `requiresRelease: true`），尚未创建新发布 | 禁止重复提交相同配置；确认全部草稿改动齐备后执行一次 `delivery_deploy_target` |
-| `delivery_scale_target` 被拒绝（HPA 已启用） | 开启自动扩缩容时固定副本字段由 HPA 接管 | 禁止强行重试固定扩缩容；先调 `delivery_get_target` 查看 HPA 配置，按用户意图修改扩缩容上下限或关闭 HPA |
-| 切换 `internalOnly: true` 报存在关联路由冲突 | 目标仍绑定对外暴露的 `GatewayRoute` | 先调 `network_list_gateway_routes` 定位并经确认删除关联路由，再更新 `internalOnly: true` |
-| `delivery_install_template` 报 `app_template.value_required` 或参数分类错误 | 必填参数缺失，或把 `secret=true` 参数塞进了明文 `values`（反之亦然） | 调用 `delivery_get_template` 对照每个参数的 `secret` 与 `required` 标记，拆分至 `values` 与 `secretValues` |
-| `ai.preview_conflict` | 审批期间目标配置、镜像或最新 Release 已被他人并发更改 | 禁止重放旧锁；调用 `delivery_get_target` 核对最新草稿后重新 `preview_tool` |
+| 修改了配置/配置集，或调了 `delivery_restart_target` 后线上仍未生效 | 配置工具仅改数据库草稿，`delivery_restart_target` 不下发草稿，`ConfigSet` 不热更新运行容器 | 禁止反复提交配置或反复重启；对目标（或 `live` 绑定该配置集的目标）执行一次 `delivery_deploy_target` |
+| 执行 `delivery_rollback_target` 后新 Pod 依然报配置错误崩溃 | `delivery_rollback_target` 仅回退镜像引用，保留了当前损坏的环境变量/密钥/规格 | **禁止继续往更早版本盲目回滚**；先调 `delivery_get_target` 定位损坏配置并增量修正，再调 `delivery_deploy_target` |
+| 取消 `running` 中的发布后线上仍存在崩溃的新版 Pod | `delivery_cancel_release` 只停止平台等待工作流，不回退已 Apply 到 K8s 的模板 | 调 `runtime_get_target_diagnostics` 核实；若集群已切至问题版本，继续执行 `delivery_rollback_target` 恢复 |
+| 重推 `:latest` 等同名 Tag 并 `deploy` 成功，但线上代码未变 | 默认拉取策略命中节点本地旧镜像缓存 | 重新调用 `delivery_deploy_target` 并显式传入 `"forceImagePull": true` |
+| `delivery_scale_target` 被拒（HPA 冲突）或扩容后新 Pod 卡 `Multi-Attach` | 开启 HPA 时禁止手动固定副本；`Deployment` 挂载 `RWO` 卷跨节点多副本互斥 | HPA 场景改调 `delivery_update_target_runtime` 调整 `autoScaling`；`RWO` 卷保持单副本或改用 `RWX` / `StatefulSet` |
+| `service_binding.env_conflict` 或 `deployment.runtime_config_mount_conflict` | 变量名与出站 `ServiceBinding` 注入键冲突，或挂载文件/卷路径重叠及父子前缀嵌套 | 更换变量名或调整 `ServiceBinding`；确保 `configFiles`、`secretFiles` 与卷 `mountPath` 路径互不重叠嵌套 |
+| `delivery_install_template` 报 `app_template.value_required` 或参数分类错误 | 必填项缺失，或把 `secret=true` 参数误放进明文 `values`（反之亦然） | 调用 `delivery_get_template` 对照每个参数的 `secret` 与 `required` 标记，拆分至 `values` 与 `secretValues` |
+| `ai.preview_conflict` 或 `billing.insufficient_balance` | 审批期间目标状态被并发修改，或项目计费主体余额不足触发门禁冻结 | `preview_conflict` 重读 `delivery_get_target` 后重新预检；欠费**禁止重试**，引导核查 `ops_get_billing_summary` |

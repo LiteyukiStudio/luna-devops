@@ -691,4 +691,16 @@ func TestDeliveryAndPipelineToolsPreserveExistingStateAndPreviewLocks(t *testing
 	if diagOut.MetricsAvailable || diagTC.ResponseHeaders.Get("Cache-Control") != "no-store" {
 		t.Fatalf("expected metricsAvailable=false and no-store, got %+v", diagOut)
 	}
+
+	// 7. runtime_exec_command returns actionable Hint when web console policy is disabled
+	if err := db.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("web_console_policy", "disabled").Error; err != nil {
+		t.Fatal(err)
+	}
+	execTool, _ := reg.Get("runtime_exec_command")
+	_, execDisabledErr := execTool.Preview(newTC("", nil), json.RawMessage(`{
+		"project":"demo-proj","application":"api-svc","target":"prod","command":"env"
+	}`))
+	if te, ok := aitool.AsToolError(execDisabledErr); !ok || te.Status != 403 || te.Code != "runtime.web_console_disabled" || !strings.Contains(te.Hint, "runtime_get_target_diagnostics") {
+		t.Fatalf("expected 403 runtime.web_console_disabled with Hint, got %+v (%v)", te, execDisabledErr)
+	}
 }

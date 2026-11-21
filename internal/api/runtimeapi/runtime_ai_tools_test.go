@@ -520,22 +520,26 @@ func TestConfigSetAIToolsLifecyclePatchAndLiveConflictValidation(t *testing.T) {
 		t.Fatalf("expected 409 deployment.runtime_environment_key_conflict, got %v", err)
 	}
 
-	// 2) Live-bound ServiceBinding env conflict -> 409 service_binding.env_conflict
+	// 2) Live-bound ServiceBinding env conflict -> 409 service_binding.env_conflict with Hint
 	if _, err := patchTool.Preview(tc, json.RawMessage(`{
 		"project": "demo",
 		"configSet": "shared-cfg",
 		"setPublicEnv": [{"key": "REDIS_URL", "value": "redis://custom"}]
-	}`)); err == nil || !strings.Contains(err.Error(), "service_binding.env_conflict") {
-		t.Fatalf("expected 409 service_binding.env_conflict, got %v", err)
+	}`)); err == nil {
+		t.Fatalf("expected 409 service_binding.env_conflict")
+	} else if te, ok := aitool.AsToolError(err); !ok || te.Code != "service_binding.env_conflict" || !strings.Contains(te.Hint, "network_save_service_binding") {
+		t.Fatalf("expected service_binding.env_conflict with Hint, got %+v (%v)", te, err)
 	}
 
-	// 3) Volume mount prefix conflict -> 409 deployment.runtime_config_mount_conflict
+	// 3) Volume mount prefix conflict -> 409 deployment.runtime_config_mount_conflict with Hint
 	if _, err := patchTool.Preview(tc, json.RawMessage(`{
 		"project": "demo",
 		"configSet": "shared-cfg",
 		"upsertConfigFiles": [{"path": "/var/lib/data/seed.sql", "content": "SELECT 1;"}]
-	}`)); err == nil || !strings.Contains(err.Error(), "deployment.runtime_config_mount_conflict") {
-		t.Fatalf("expected 409 deployment.runtime_config_mount_conflict, got %v", err)
+	}`)); err == nil {
+		t.Fatalf("expected 409 deployment.runtime_config_mount_conflict")
+	} else if te, ok := aitool.AsToolError(err); !ok || te.Code != "deployment.runtime_config_mount_conflict" || !strings.Contains(te.Hint, "mountPath") {
+		t.Fatalf("expected deployment.runtime_config_mount_conflict with Hint, got %+v (%v)", te, err)
 	}
 
 	// 4) Pure incremental patch: add CACHE_TTL without wiping APP_ENV, DB_PASSWORD, JWT_SECRET, or /etc/app/tls.key!

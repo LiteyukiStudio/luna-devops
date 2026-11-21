@@ -756,13 +756,28 @@ func (h *Handler) executeRuntimeGetPodLogs(
 		Timestamps: boolVal(in.Timestamps, true),
 	})
 	if errors.Is(logErr, kubeprovider.ErrRuntimePodNotFound) {
-		return runtimeGetPodLogsOutput{}, aitool.NotFound("runtime.pod_not_found", "runtime pod not found for this deployment target")
+		return runtimeGetPodLogsOutput{}, aitool.NewErrorWithHint(
+			http.StatusNotFound,
+			"runtime.pod_not_found",
+			"runtime pod not found for this deployment target",
+			"The Pod may have been replaced by a rolling update, scaled down, or evicted. Do not retry the same `pod` name; omit `pod` in `runtime_get_pod_logs` or call `runtime_get_target_diagnostics` to re-align with current Pods.",
+		)
 	}
 	if errors.Is(logErr, kubeprovider.ErrRuntimeContainerNotStarted) {
-		return runtimeGetPodLogsOutput{}, aitool.Conflict("runtime.container_not_started", "runtime container has not started; no logs are available yet")
+		return runtimeGetPodLogsOutput{}, aitool.NewErrorWithHint(
+			http.StatusConflict,
+			"runtime.container_not_started",
+			"runtime container has not started; no logs are available yet",
+			"Do not retry logs on the same unstarted container. Call `runtime_get_target_diagnostics` to inspect waiting reasons/events; if an initContainer failed (`Init:*`), pass its name in `container` to read its logs.",
+		)
 	}
 	if errors.Is(logErr, kubeprovider.ErrRuntimePreviousLogNotFound) {
-		return runtimeGetPodLogsOutput{}, aitool.Conflict("runtime.previous_log_not_found", "runtime container has no previous terminated logs")
+		return runtimeGetPodLogsOutput{}, aitool.NewErrorWithHint(
+			http.StatusConflict,
+			"runtime.previous_log_not_found",
+			"runtime container has no previous terminated logs",
+			"Do not retry with `previous: true`. Retry once with `previous: false` (or omit `previous`) to read current logs, or call `runtime_get_target_diagnostics` to inspect container waiting events.",
+		)
 	}
 	if logErr != nil {
 		return runtimeGetPodLogsOutput{}, aitool.NewError(http.StatusBadGateway, "runtime.logs_failed", logErr.Error())
@@ -883,7 +898,12 @@ func (h *Handler) prepareRuntimeExecPlan(tc *aitool.ToolContext, in runtimeExecC
 		return preparedRuntimeExecPlan{}, err
 	}
 	if !runtimeWebConsoleEnabled(project, target) {
-		return preparedRuntimeExecPlan{}, aitool.Forbidden("runtime.web_console_disabled", "web console / container exec is disabled by project or target governance policy")
+		return preparedRuntimeExecPlan{}, aitool.NewErrorWithHint(
+			http.StatusForbidden,
+			"runtime.web_console_disabled",
+			"web console / container exec is disabled by project or target governance policy",
+			"Do not retry `runtime_exec_command`. Troubleshoot via `runtime_get_target_diagnostics` and `runtime_get_pod_logs`, or ask a project owner/admin to enable Web Console policy first.",
+		)
 	}
 
 	scratchCtx, rec := newScratchGin(tc)
@@ -950,7 +970,12 @@ func (h *Handler) executeRuntimeExecCommand(tc *aitool.ToolContext, in runtimeEx
 	})
 	if errors.Is(execErr, kubeprovider.ErrRuntimePodNotFound) {
 		h.auditWithContext(plan.user.ID, "release_runtime.exec", plan.release.ID, false, execErr.Error(), ctx)
-		return runtimeExecCommandOutput{}, aitool.NotFound("runtime.pod_not_found", "runtime pod not found for this deployment target")
+		return runtimeExecCommandOutput{}, aitool.NewErrorWithHint(
+			http.StatusNotFound,
+			"runtime.pod_not_found",
+			"runtime pod not found for this deployment target",
+			"The target Pod may have been replaced by a rolling update or scaled to zero. Do not retry the stale `pod` name; call `runtime_get_target_diagnostics` to check live Pods or omit `pod` in a fresh preview.",
+		)
 	}
 	if execErr != nil {
 		h.auditWithContext(plan.user.ID, "release_runtime.exec", plan.release.ID, false, execErr.Error(), ctx)

@@ -54,22 +54,23 @@ description: 通过 Luna DevOps MCP Server（/api/v1/mcp）管理项目空间、
 
 在真实并发控制面中，集群与配置在对话期间可能随时被滚动更新、自动扩缩容或他人操作改变。必须严格遵守以下四条全局通则：
 
-### 3.1 稳定锚点 vs. 易失句柄（`Re-ground, Never Retry` 铁律）
+### 3.1 稳定锚点 vs. 易失句柄（`Re-ground, Never Retry` 与新旧并存识别）
 - **稳定锚点（Stable Anchor）**：`project`（ID 或英文 `identifier`）、`application`（ID 或 `identifier`）、`target`（`dplt_xxx`、`stage` 或唯一名称）、`GatewayRoute`（`gwr_xxx` 或唯一 `host`）。
 - **易失快照句柄（Ephemeral Handle）**：具体 `pod` 名称（带随机后缀，随滚动发版/缩容/节点驱逐随时销毁）、`previewLock`、资源乐观锁 `revision`。
-- **零原地重试规则**：凡针对易失句柄收到 `not_found`（如排查中途应用触发滚动更新导致旧 Pod 消失，返回 `runtime.pod_not_found`）或 `conflict`（如 `ai.preview_conflict`、`runtime.previous_log_not_found`），**原地重试次数强制为 `0`**：
+- **零原地重试规则**：凡针对易失句柄收到 `not_found`（如排查中途应用触发滚动更新导致旧 Pod 消失，返回 `runtime.pod_not_found`）或 `conflict`（如 `ai.preview_conflict`、`runtime.previous_log_not_found`、`runtime.container_not_started`），**原地重试次数强制为 `0`**：
   1. 立即放弃失效句柄，退回父级**稳定锚点**重新观测（如重调 `runtime_get_target_diagnostics` 或重新执行 `preview_tool`）；
-  2. 对比最新 `release` / 新一代 Pod 状态：若新滚动出的实例已 `Ready` 正常，说明旧异常已被新版本覆盖，直接向用户如实汇报最新状态结案，严禁拿着已消亡的旧 Pod 标识反复重试。
+  2. 同时警惕**新旧两代实例并存（Mixed-Generation Rollout）**：滚动更新卡住时，旧版 `Ready` Pod 仍在线接客而新版 Pod 正在崩溃；必须对照 `recentReleases[0]` 与目标 `releaseId` 判断是“新发版已恢复健康”还是“新版本正卡在滚动异常中”。
 
-### 3.2 异步最终一致性与有界等待（Bounded Feedback Loop）
-- **入队不等于就绪**：`build_trigger_run` 返回 `buildRunId`、`delivery_deploy_target` 返回 `releaseId`，仅代表异步任务已入队；`GatewayRoute` 刚创建处于 `progressing` 代表网关控制器或 ACME 证书正在异步对账。
-- **有界等待策略**：
-  - 若当前运行环境提供 `wait_for_task` 工具（平台内置助手），调用 `wait_for_task` 挂起等待构建或发布终态；
-  - 若为外部 MCP 客户端（无 `wait_for_task`），采用退避间隔（建议 `5s → 10s → 15s`）调用 `build_get_run` 或 `delivery_get_release` 检查，**单轮最多轮询 6 次**；仍未结束时向用户汇报当前阶段、已完成步骤与最新状态，交由用户决定是否继续等待，严禁无休止紧循环刷接口。
+### 3.2 异步最终一致性与有界等待（宿主无关通则）
+- **受理态与终态分离**：`build_trigger_run` 返回 `buildRunId`、`delivery_deploy_target` 返回 `releaseId` 仅代表任务已入队；`GatewayRoute` 初建处于 `progressing` 代表网关/ACME 正在异步对账；`runtime_create_volume_export` 进入 `ready` 代表归档已打包完毕正等待人工浏览器下载（下载后才变 `succeeded`）。
+- **单步触发 vs. 串联门禁**：
+  - 用户仅要求单步触发异步任务时，返回受理 ID 与当前状态即可收口（遵循当前宿主异步进度展示规则），**不要紧循环轮询**；
+  - 仅当存在强依赖下游动作（如“构建成功后继续部署上线”）时才等待终态：若宿主提供异步任务挂起能力则优先使用，否则按 `5s → 10s → 15s` 退避节奏调用 `build_get_run` / `delivery_get_release` **单轮最多检查 6 次**，未完成则汇报阶段进度交由用户决定是否继续等待。
 
-### 3.3 纯增量 Patch 与连续变更合并发版
+### 3.3 纯增量 Patch、合并发版与计费冻结门禁
 - 平台所有配置类写工具均为**纯增量补丁**（未传字段保持原值，绝不全量覆盖已有配置）。严禁为了改一个变量去拼凑重传整套存量配置。
-- 当连续执行多项期望配置变更（如修改环境变量、挂载数据卷、保存 `ServiceBinding`）均返回 `requiresRelease: true` 时，必须等所有期望配置修改落库后**合并触发一次 `delivery_deploy_target`**，避免产生多次冗余滚动重启。
+- 当连续执行多项期望配置变更（如修改环境变量、挂载数据卷、保存 `ServiceBinding`）均返回 `requiresRelease: true` 时，必须等所有期望配置修改落库后**合并触发一次 `delivery_deploy_target`**（注意 `delivery_restart_target` 仅原地重建现有 Pod，**不会**下发未发布的配置草稿）。
+- 若构建、发布、扩容或数据卷操作返回 `billing.insufficient_balance`，属于计费主体余额门禁拦截而非集群故障，**禁止重试**，直接引导核查 `ops_get_billing_summary` 或项目计费主体。
 
 ### 3.4 实时观测诚实性
 - 副本健康度、Pod 状态、监控指标与证书状态均在请求时实时读取外部集群。若返回 `status: unavailable` 与稳定 `observationCode`，必须如实说明集群或监控上游暂不可达，**严禁伪装成“0 副本”或“运行正常”**。

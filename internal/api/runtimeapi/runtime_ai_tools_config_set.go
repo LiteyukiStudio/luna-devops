@@ -1112,20 +1112,30 @@ func (h *Handler) validateLiveBoundTargetsForConfigSet(
 			}
 			for _, envKey := range injected {
 				if envKey != "" && effectiveEnvKeys[envKey] {
-					return 0, aitool.Conflict("service_binding.env_conflict",
+					return 0, aitool.NewErrorWithHint(
+						http.StatusConflict,
+						"service_binding.env_conflict",
 						fmt.Sprintf("environment variable %q conflicts with active outbound ServiceBinding %s on deployment target %s (%s)",
-							envKey, sb.ID, target.Name, target.Stage))
+							envKey, sb.ID, target.Name, target.Stage),
+						"Choose a non-conflicting variable name, or update/delete the outbound ServiceBinding via `network_save_service_binding` / `network_delete_service_binding`.",
+					)
 				}
 			}
 		}
+
+		mountConflictHint := "Ensure plaintext `configFiles`, encrypted `secretFiles`, and volume `mountPath` values use distinct non-overlapping container paths without parent-child directory nesting."
 
 		// (2a) Heterogeneous configFiles <-> secretFiles same-path conflict -> 409
 		allMountedFilePaths := make([]string, 0, len(effectiveConfigPaths)+len(effectiveSecretPaths))
 		for p := range effectiveConfigPaths {
 			if effectiveSecretPaths[p] {
-				return 0, aitool.Conflict("deployment.runtime_config_mount_conflict",
+				return 0, aitool.NewErrorWithHint(
+					http.StatusConflict,
+					"deployment.runtime_config_mount_conflict",
 					fmt.Sprintf("path %q conflicts between configFiles and secretFiles on deployment target %s (%s)",
-						p, target.Name, target.Stage))
+						p, target.Name, target.Stage),
+					mountConflictHint,
+				)
 			}
 			allMountedFilePaths = append(allMountedFilePaths, p)
 		}
@@ -1138,9 +1148,13 @@ func (h *Handler) validateLiveBoundTargetsForConfigSet(
 		for i := 0; i < len(allMountedFilePaths); i++ {
 			for j := i + 1; j < len(allMountedFilePaths); j++ {
 				if pathsHavePrefixConflict(allMountedFilePaths[i], allMountedFilePaths[j]) {
-					return 0, aitool.Conflict("deployment.runtime_config_mount_conflict",
+					return 0, aitool.NewErrorWithHint(
+						http.StatusConflict,
+						"deployment.runtime_config_mount_conflict",
 						fmt.Sprintf("mounted file paths %q and %q have a parent-child prefix conflict on deployment target %s (%s)",
-							allMountedFilePaths[i], allMountedFilePaths[j], target.Name, target.Stage))
+							allMountedFilePaths[i], allMountedFilePaths[j], target.Name, target.Stage),
+						mountConflictHint,
+					)
 				}
 			}
 		}
@@ -1156,9 +1170,13 @@ func (h *Handler) validateLiveBoundTargetsForConfigSet(
 			}
 			for _, fp := range allMountedFilePaths {
 				if fp == volPath || pathsHavePrefixConflict(fp, volPath) {
-					return 0, aitool.Conflict("deployment.runtime_config_mount_conflict",
+					return 0, aitool.NewErrorWithHint(
+						http.StatusConflict,
+						"deployment.runtime_config_mount_conflict",
 						fmt.Sprintf("mounted file path %q conflicts with volume mount %q (%s) on deployment target %s (%s)",
-							fp, volPath, m.LogicalName, target.Name, target.Stage))
+							fp, volPath, m.LogicalName, target.Name, target.Stage),
+						mountConflictHint,
+					)
 				}
 			}
 		}

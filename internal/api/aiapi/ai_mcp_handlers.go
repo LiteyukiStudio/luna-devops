@@ -285,7 +285,7 @@ func (h *Handler) handleMCPInitialize(rawParams json.RawMessage) map[string]any 
 			"name":    "luna-devops",
 			"version": h.host.AppVersion(),
 		},
-		"instructions": "Luna DevOps MCP 采用渐进式领域门面：先按目标业务域调用 load_skill 加载工作流规程，再用简短单域关键词调用 search_tools 发现工具、用 get_tool_details 查看精确 Schema 与风险分级。L0 只读工具直接调用 execute_tool；L1 需传 confirmed: true；L2 变更必须先调用 preview_tool 获取 before/after Diff 向用户确认后，再携带返回的 previewLock 调用 execute_tool。",
+		"instructions": "Luna DevOps MCP 采用渐进式领域门面：1) 先按业务域调 load_skill 加载 SOP，再用单域短词调 search_tools 发现工具、写前调 get_tool_details 确认 Schema 与风险分级，涉及内置变量/模板/计费规则先调 search_docs + read_doc；2) L0 直接调 execute_tool，L1 传 confirmed: true，L2 及 stage=prod 强制先调 preview_tool 向用户确认 Diff 后携 previewLock 调 execute_tool；3) 对 pod、previewLock、revision 等易失句柄收到 not_found 或 conflict 时原地重试次数强制为 0，必须退回 project/application/target 稳定锚点（如 runtime_get_target_diagnostics）重对齐；4) 配置写工具均为纯增量补丁，多项 requiresRelease=true 改动须攒齐后合并单次 delivery_deploy_target，观测返回 status=unavailable 时如实报告集群不可达，异步任务按退避节奏有界查询严禁死循环。",
 	}
 }
 

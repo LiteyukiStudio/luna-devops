@@ -205,7 +205,7 @@ func TestStreamableHTTPMCPGatewayContract(t *testing.T) {
 	if rec := postMCP(`{"jsonrpc":"2.0","method":"notifications/initialized"}`); rec.Code != http.StatusAccepted {
 		t.Fatalf("notification = %d, want 202", rec.Code)
 	}
-	if rec := postMCP(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"luna-devops"`) {
+	if rec := postMCP(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"luna-devops"`) || !strings.Contains(rec.Body.String(), "runtime_get_target_diagnostics") || !strings.Contains(rec.Body.String(), "delivery_deploy_target") {
 		t.Fatalf("initialize = %d %s", rec.Code, rec.Body.String())
 	}
 

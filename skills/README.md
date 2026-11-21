@@ -18,7 +18,7 @@
 | **工具输入/输出契约** | Go `internal/aitool` 注册表（经 `search_tools` / `get_tool_details` 实时输出） | 仅点名**核心入口工具**与**低自由度复合写操作的最小正确 JSON 骨架** | 严禁大段枚举某领域全部工具名，严禁复制完整字段表或枚举字典 |
 | **产品规则与语法细节** | `docs/docs/` 公开文档（经 `search_docs` / `read_doc` 按版本内嵌检索） | 写出何时必须先查文档（如计费单价、内置变量名、Dockerfile 模板渲染细节） | 严禁把长篇产品手册正文粘贴进 Skill |
 | **工作流与控制面约束** | **本目录 `SKILL.md` + `references/*.md`** | 跨工具先后顺序、硬门禁（Gate）、并发状态漂移重对齐（Re-grounding）、异步假象识别与错误恢复表 | 严禁科普通用 Kubernetes / Docker / HTTP / TLS 基础概念（默认模型已具备） |
-| **Web 专属 UI 卡片/路由** | `luna-agent/src/prompt/` | **完全不写**（保持宿主无关性） | 严禁出现 `present_card`、`request_input`、`request_choice`、`navigate_to_route` 等管理台内部工具 |
+| **Web / 宿主专属内部工具** | `luna-agent/src/prompt/` | **完全不写**（保持宿主无关性，区分“单步触发收口”与“串联依赖等待”） | 严禁出现 `present_card`、`request_input`、`request_choice`、`navigate_to_route`、`wait_for_task` 等管理台宿主内部工具名 |
 
 ---
 
@@ -65,11 +65,12 @@ skills/
 ### 3.2 `Plan → Gate → Execute → Verify` 与 Checklist
 - 跨 3 个以上工具的端到端流程必须提供可复制核对的 `- [ ]` Checklist，并在异步或高危衔接处标明 **`Gate（硬门禁）`**——前置终态未满足时明确要求转入排障或停机汇报，禁止跳步执行下游工具。
 
-### 3.3 防范系统性失效：稳定锚点与 Re-grounding 通则
-不要用零散特例去修补动态环境变化，统一按三类控制面通则编写：
-1. **稳定锚点 vs. 易失句柄（State Drift）**：区分稳定锚点（`project` / `application` / `target` / `route`）与随时消亡的快照句柄（`pod`、`previewLock`、`revision`）。对易失句柄收到 `not_found` 或 `conflict` 时，**原地重试次数强制为 `0`**，必须退回父级稳定锚点重新观测当前状态（例如滚动更新期间旧 Pod 消失，立即重读 `runtime_get_target_diagnostics`）。
-2. **异步最终一致性假象（Async Illusions）**：明确标注哪些状态属于正常异步收敛而非故障（如 `WaitForFirstConsumer` 数据卷首次挂载前 `Pending`、新建 `GatewayRoute` 短期 `progressing`、`buildRunId`/`releaseId` 入队受理）。
-3. **有界反馈循环（Bounded Feedback Loops）**：所有等待或重试指引必须给出明确的停止条件（最大轮询次数与退避节奏），严禁无上限循环调用。
+### 3.3 防范系统性失效：SOP 通则 + ACI 报错 `Hint` 双层防线
+不要用零散特例去修补动态环境变化，统一采用 **“Skill 状态机通则 + Go 工具报错现场 `Hint`（`aitool.NewErrorWithHint`）+ MCP `initialize.instructions` 握手不变量”** 联动防御：
+1. **稳定锚点 vs. 易失句柄（State Drift & Mixed-Generation Rollout）**：区分稳定锚点（`project` / `application` / `target` / `route`）与随时消亡的快照句柄（`pod`、`previewLock`、`revision`）。对易失句柄收到 `not_found` 或 `conflict` 时，**原地重试次数强制为 `0`**，退回父级稳定锚点重新观测；同时防范滚动更新卡住时**新旧两代 Pod 并存**（老 Pod `Ready` 接客或高 `restartCount` 抢占默认日志选择，需传 `releaseId` 锚定新版）及 `InitContainer`/`Sidecar` 崩溃时需显式传 `container` 名称。
+2. **部分回滚与假动作边界（Partial Effect Traps）**：明确揭露反直觉的控制面动作边界——例如 `delivery_rollback_target` 只回退镜像不回退配置/密钥、`delivery_cancel_release` 只终止等待不回滚已下发集群的 Pod、`delivery_restart_target` 不下发未发布的配置草稿、`governance.enabled: false` 不停止运行计费中的 Pod。
+3. **异步最终一致性假象与人工交接终态（Async Illusions）**：明确标注正常收敛态与人工交接态（如 `WaitForFirstConsumer` 数据卷首次挂载前 `Pending`、新建 `GatewayRoute` 短期 `progressing`、数据卷归档导出 `state: "ready"` 代表已就绪等待浏览器下载而非未完成）。
+4. **有界反馈循环（Bounded Feedback Loops）**：区分单步异步触发（直接返回受理状态收口）与多步串联依赖（有界退避检查最多 6 次），严禁无上限循环调用；对易触发死循环的 4xx 状态冲突必须在 Go 工具层同步提供英文恢复 `Hint`。
 
 ### 3.4 高密度恢复表优于长段落叮嘱
 每个 `reference` 末尾统一维护结构化的 **`异常 / 状态漂移与错误恢复速查表`**（`现象或错误码 | 根因 | 标准恢复动作（含禁止行为）`）。
