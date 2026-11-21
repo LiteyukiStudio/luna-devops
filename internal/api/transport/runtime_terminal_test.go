@@ -236,6 +236,7 @@ func TestRuntimeTerminalInputRequiresBinaryFrames(t *testing.T) {
 		err   error
 	}
 	result := make(chan pumpResult, 1)
+	resizeReceived := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		upgrader := RuntimeTerminalUpgrader(func(string) bool { return true })
 		conn, err := upgrader.Upgrade(writer, request, nil)
@@ -258,6 +259,7 @@ func TestRuntimeTerminalInputRequiresBinaryFrames(t *testing.T) {
 			return
 		}
 		size := queue.Next()
+		close(resizeReceived)
 		pumpErr := <-inputDone
 		if size == nil {
 			result <- pumpResult{err: errors.New("resize control did not reach the size queue")}
@@ -281,6 +283,7 @@ func TestRuntimeTerminalInputRequiresBinaryFrames(t *testing.T) {
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"resize","cols":132,"rows":43}`)); err != nil {
 		t.Fatal(err)
 	}
+	<-resizeReceived
 	if err := conn.WriteMessage(websocket.TextMessage, []byte("text is not stdin")); err != nil {
 		t.Fatal(err)
 	}
