@@ -1,6 +1,6 @@
 import type { AgentObservabilityToolCall, AgentObservabilityToolSummary } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
 import i18next from '@/i18n'
@@ -8,7 +8,14 @@ import { AgentToolDetailSheet } from './agent-tool-detail-sheet'
 
 vi.mock('@/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api')>()
-  return { ...actual, api: { ...actual.api, listAgentObservabilityToolCalls: vi.fn() } }
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      listAgentObservabilityToolCalls: vi.fn(),
+      getAgentObservabilityTrace: vi.fn(),
+    },
+  }
 })
 
 const summary: AgentObservabilityToolSummary = {
@@ -29,6 +36,7 @@ const call: AgentObservabilityToolCall = {
   result: { code: 'application.list_failed' },
   errorCode: 'application.list_failed',
   durationMs: 42,
+  traceId: 'trace-tool-1',
   runId: 'run-1',
   turnId: 'turn-1',
   turnIndex: 1,
@@ -64,5 +72,34 @@ describe('agent tool detail sheet', () => {
     expect(await screen.findByText('Deployment diagnosis')).toBeInTheDocument()
     expect(screen.getByText(/"projectId": "project-1"/)).toBeInTheDocument()
     expect(screen.getAllByText('application.list_failed').length).toBeGreaterThan(0)
+
+    vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue({
+      traceId: 'trace-tool-1',
+      durationMs: 42,
+      spanCount: 1,
+      errorCount: 1,
+      usage: null,
+      spans: [{
+        spanId: 'tool-span-1',
+        parentSpanId: '',
+        name: 'execute_tool listApplications',
+        serviceName: 'luna-agent',
+        kind: 'internal',
+        status: 'error',
+        startTimeUnixNano: '100',
+        startOffsetMs: 0,
+        durationMs: 42,
+        attributes: {
+          'gen_ai.operation.name': 'execute_tool',
+          'gen_ai.tool.name': 'listApplications',
+          'gen_ai.tool.call.id': 'tool-1',
+        },
+        events: [],
+        raw: { spanId: 'tool-span-1' },
+      }],
+    })
+    fireEvent.click(screen.getByRole('button', { name: '查看工具调用链' }))
+    expect(await screen.findByText('trace-tool-1')).toBeInTheDocument()
+    expect(await screen.findByText('tool-span-1')).toBeInTheDocument()
   })
 })

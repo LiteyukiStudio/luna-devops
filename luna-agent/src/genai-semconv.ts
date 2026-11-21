@@ -47,6 +47,11 @@ type GenAIToolCallPart = { type: "tool_call", name: string, id?: string, argumen
 type GenAIToolCallResponsePart = { type: "tool_call_response", response: unknown, id?: string }
 type GenAIMessagePart = GenAITextPart | GenAIReasoningPart | GenAIToolCallPart | GenAIToolCallResponsePart
 
+export type GenAISystemInstruction = {
+  type: "text"
+  content: string
+}
+
 export type GenAIInputMessage = {
   role: ModelMessage["role"]
   parts: GenAIMessagePart[]
@@ -126,6 +131,13 @@ export function genAIToolSpanAttributes(input: {
     ...(input.callId ? { "gen_ai.tool.call.id": input.callId } : {}),
     ...(input.description ? { "gen_ai.tool.description": input.description } : {}),
   }
+}
+
+export function genAISystemInstructions(messages: ModelMessage[]): GenAISystemInstruction[] {
+  return messages.flatMap((message) => {
+    if (message.role !== "system" || !message.content) return []
+    return [{ type: "text" as const, content: redact(message.content) }]
+  })
 }
 
 export function genAIInputMessages(

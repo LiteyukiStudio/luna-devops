@@ -20,6 +20,12 @@ export interface AgentModelOutput {
   toolCalls?: unknown
 }
 
+export interface AgentToolDefinitionItem {
+  name: string
+  description?: string
+  parameters?: unknown
+}
+
 const contentAttributeKinds: Record<string, AgentSpanContentKind> = {
   'gen_ai.system_instructions': 'systemInstructions',
   'gen_ai.input.messages': 'modelInput',
@@ -94,6 +100,20 @@ export function agentModelOutput(value: unknown): AgentModelOutput {
     ...(reasoningSummary ? { reasoningSummary } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
   }
+}
+
+export function agentToolDefinitions(value: unknown): AgentToolDefinitionItem[] {
+  if (!Array.isArray(value))
+    return []
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.name !== 'string' || !entry.name.trim())
+      return []
+    return [{
+      name: entry.name.trim(),
+      ...(typeof entry.description === 'string' && entry.description.trim() ? { description: entry.description.trim() } : {}),
+      ...(entry.parameters !== undefined ? { parameters: entry.parameters } : {}),
+    }]
+  })
 }
 
 export function formatSpanJSON(value: unknown) {

@@ -51,7 +51,7 @@ const detail: AgentObservabilityTraceDetail = {
   ],
 }
 
-describe('agent turn detail diagnostic actions', () => {
+describe('agent turn detail explorer', () => {
   beforeEach(async () => {
     await i18next.changeLanguage('zh-CN')
     vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue(detail)
@@ -70,7 +70,7 @@ describe('agent turn detail diagnostic actions', () => {
 
   it('shows only typed usage for the current trace and never falls back to the turn snapshot', async () => {
     const { unmount } = renderSheet()
-    expect(await screen.findByText('唤起 Agent')).toBeInTheDocument()
+    expect((await screen.findAllByText('唤起 Agent')).length).toBeGreaterThan(0)
     expect(usageValue('输入')).toBe('100')
     expect(usageValue('缓存读取')).toBe('25')
     expect(usageValue('缓存命中率')).toBe('25%')
@@ -78,7 +78,7 @@ describe('agent turn detail diagnostic actions', () => {
 
     vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue({ ...detail, usage: null })
     renderSheet()
-    expect(await screen.findByText('唤起 Agent')).toBeInTheDocument()
+    expect((await screen.findAllByText('唤起 Agent')).length).toBeGreaterThan(0)
     expect(usageValue('输入')).toBe('—')
     expect(usageValue('输出')).toBe('—')
     expect(usageValue('缓存读取')).toBe('—')
@@ -87,13 +87,13 @@ describe('agent turn detail diagnostic actions', () => {
     expect(usageValue('缓存命中率')).toBe('—')
   })
 
-  it('copies every span even when external services remain hidden', async () => {
+  it('copies every span even when infrastructure spans are hidden in AI execution flow view', async () => {
     const writeText = vi.fn(async (_value: string) => {})
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     renderSheet()
 
-    expect(await screen.findByText('唤起 Agent')).toBeInTheDocument()
-    expect(screen.queryByText('访问外部服务')).not.toBeInTheDocument()
+    expect((await screen.findAllByText('唤起 Agent')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('http.request')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '复制诊断 JSON' }))
 
     await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
@@ -157,6 +157,128 @@ describe('agent turn detail diagnostic actions', () => {
     expect(screen.getByText('不可用')).toBeInTheDocument()
     expect(screen.getByText('用量不可用原因')).toBeInTheDocument()
     expect(screen.getByText('上游未返回用量')).toBeInTheDocument()
+  })
+
+  it('renders baseline context once at the top and inspects per-step delta vs full context on demand', async () => {
+    vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue({
+      ...detail,
+      spans: [
+        ...detail.spans,
+        {
+          spanId: 'llm-2',
+          parentSpanId: 'root',
+          name: 'chat deepseek-chat',
+          serviceName: 'luna-agent',
+          kind: 'client',
+          status: 'ok',
+          startTimeUnixNano: '30',
+          startOffsetMs: 30,
+          durationMs: 18,
+          attributes: {
+            'gen_ai.operation.name': 'chat',
+            'gen_ai.system_instructions': '[{"type":"text","content":"你是 Luna DevOps 平台助手"}]',
+            'gen_ai.input.messages': JSON.stringify([
+              { role: 'user', parts: [{ type: 'text', content: '上一轮历史提问' }] },
+              { role: 'assistant', parts: [{ type: 'text', content: '上一轮历史回答' }] },
+              { role: 'user', parts: [{ type: 'text', content: '排查 user-api 重启' }] },
+              { role: 'assistant', parts: [{ type: 'tool_call', id: 'call_1', name: 'listApplications', arguments: {} }] },
+              { role: 'tool', parts: [{ type: 'tool_call_response', id: 'call_1', response: { status: 'OOMKilled' } }] },
+            ]),
+            'gen_ai.tool.definitions': JSON.stringify([
+              { type: 'function', name: 'getDeploymentTargetLogs', description: '读取部署目标日志', parameters: { type: 'object', properties: { tailLines: { type: 'integer' } } } },
+            ]),
+          },
+          events: [],
+          raw: { spanId: 'llm-2' },
+        },
+      ],
+      flow: {
+        contentCaptured: true,
+        payloadBreakdown: {
+          systemBytes: 400,
+          toolSchemaBytes: 800,
+          historyBytes: 1200,
+          userInputBytes: 200,
+          toolResultBytes: 600,
+          modelOutputBytes: 300,
+        },
+        initialContext: {
+          systemInstructions: '你是 Luna DevOps 平台助手',
+          pageContext: { projectId: 'proj_core' },
+          historyTurnCount: 1,
+          historyMessages: [
+            { role: 'user', text: '上一轮历史提问' },
+            { role: 'assistant', text: '上一轮历史回答' },
+          ],
+          initialTools: ['listApplications'],
+        },
+        nodes: [
+          {
+            spanId: 'root',
+            parentNodeId: '',
+            depth: 0,
+            kind: 'agent',
+            name: 'Luna Agent',
+            spanName: 'invoke_agent Luna Agent',
+            status: 'ok',
+            startTimeUnixNano: '10',
+            startOffsetMs: 10,
+            durationMs: 40,
+            inputPreview: { role: 'user', text: '排查 user-api 重启' },
+            outputPreview: { role: 'assistant', text: '已定位 OOMKilled' },
+          },
+          {
+            spanId: 'llm-2',
+            parentNodeId: 'root',
+            depth: 1,
+            kind: 'llm',
+            stepIndex: 2,
+            purpose: 'assistant',
+            name: 'deepseek-chat',
+            spanName: 'chat deepseek-chat',
+            status: 'ok',
+            startTimeUnixNano: '30',
+            startOffsetMs: 30,
+            durationMs: 18,
+            inputTokens: 1600,
+            outputTokens: 90,
+            omittedPrefixCount: 4,
+            inputPreview: { role: 'tool', toolNames: ['listApplications'], text: 'OOMKilled', itemCount: 1 },
+            outputPreview: { role: 'assistant', text: '已定位 OOMKilled' },
+            deltaMessages: [
+              { role: 'tool', toolCallId: 'call_1', toolName: 'listApplications', toolResult: { status: 'OOMKilled' } },
+            ],
+            outputMessage: {
+              role: 'assistant',
+              reasoning: '分析 Pod 退出码 137',
+              text: '已定位 OOMKilled，建议调高内存配额。',
+            },
+            addedTools: ['getDeploymentTargetLogs'],
+          },
+        ],
+      },
+    })
+
+    renderSheet()
+
+    // Initial context banner is collapsed at top by default (history is NOT dumped into step delta!)
+    expect(await screen.findByText('本轮初始上下文基线')).toBeInTheDocument()
+    expect(screen.queryByText('上一轮历史提问')).not.toBeInTheDocument()
+    expect(screen.getByText('已省略前序 4 条未变更上下文消息')).toBeInTheDocument()
+    expect(screen.getByText('分析 Pod 退出码 137')).toBeInTheDocument()
+
+    // Expand initial context banner once at the top
+    fireEvent.click(screen.getByRole('button', { name: /本轮初始上下文基线/ }))
+    expect(screen.getByText('上一轮历史提问')).toBeInTheDocument()
+
+    // Switch inspector to Full Context & expand omitted prefix + single tool schema on demand
+    fireEvent.click(screen.getByRole('button', { name: '完整上下文' }))
+    fireEvent.click(screen.getByRole('button', { name: '展开前序 4 条前置上下文消息' }))
+    expect(screen.getAllByText(/排查 user-api 重启/).length).toBeGreaterThan(0)
+
+    // Switch to Span Waterfall view to inspect underlying HTTP span
+    fireEvent.click(screen.getByRole('button', { name: 'Span 瀑布图' }))
+    expect(screen.getByText('http.request')).toBeInTheDocument()
   })
 })
 

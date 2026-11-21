@@ -183,11 +183,14 @@ describe("OpenAI Chat Completions spans", () => {
     configureAIContentCapture(true)
 
     const result = await new OpenAIChatCompletionsProvider(providerOptions).complete({
-      messages: [{
-        role: "assistant",
-        content: "",
-        toolCalls: [{ id: "call_input", operationId, arguments: argumentsValue }],
-      }],
+      messages: [
+        { role: "system", content: "System rule only once" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_input", operationId, arguments: argumentsValue }],
+        },
+      ],
       tools: catalog.modelTools([operationId]),
       maxOutputTokens: 100,
     })
@@ -201,6 +204,8 @@ describe("OpenAI Chat Completions spans", () => {
     expect(argumentsValue.body.command).toBe(rawCommand)
 
     const span = telemetryState.spans.at(-1)
+    expect(span?.attributes["gen_ai.system_instructions"]).toBe(JSON.stringify([{ type: "text", content: "System rule only once" }]))
+    expect(span?.attributes["gen_ai.input.messages"]).not.toContain("System rule only once")
     expect(span?.attributes["gen_ai.input.messages"]).toContain("[REDACTED]")
     expect(span?.attributes["gen_ai.output.messages"]).toContain("[REDACTED]")
     expect(span?.attributes["gen_ai.input.messages"]).toContain("api")

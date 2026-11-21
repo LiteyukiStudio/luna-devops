@@ -183,6 +183,7 @@ func (h *Handler) GetAgentObservabilityTrace(ctx *gin.Context) {
 	traceContext, contextErr := agentobservability.NewConversationStore(h.dbFor(ctx)).FindTraceContext(ctx.Request.Context(), detail.TraceID)
 	if contextErr == nil {
 		detail.Context = traceContext
+		detail.Flow = agentobservability.BuildExecutionFlow(detail.Spans, traceContext)
 	}
 	h.auditWithContext(user.ID, "ai.observability.trace.view", detail.TraceID, true, "Agent observability trace viewed", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, detail)

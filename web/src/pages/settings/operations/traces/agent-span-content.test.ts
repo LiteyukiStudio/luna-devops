@@ -1,6 +1,6 @@
 import type { AgentObservabilityTraceSpan } from '@/api'
 import { describe, expect, it } from 'vitest'
-import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages } from './agent-span-content'
+import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages, agentToolDefinitions } from './agent-span-content'
 
 const baseSpan: AgentObservabilityTraceSpan = {
   spanId: 'model',
@@ -60,5 +60,11 @@ describe('agent span content', () => {
       toolCalls: [{ type: 'tool_call', id: 'call-1', name: 'getProject', arguments: { projectId: 'proj-1' } }],
     })
     expect(agentModelOutput({ text: 'legacy' })).toEqual({})
+    expect(agentToolDefinitions([
+      { type: 'function', name: 'getProject', description: 'Read project', parameters: { type: 'object' } },
+      { invalid: true },
+    ])).toEqual([
+      { name: 'getProject', description: 'Read project', parameters: { type: 'object' } },
+    ])
   })
 })

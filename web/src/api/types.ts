@@ -62,6 +62,89 @@ export interface AgentObservabilityUsage {
   reasoningOutputTokens: number | null
   cacheHitRate: number | null
 }
+export interface AgentObservabilityFlowToolCall {
+  id?: string
+  name: string
+  arguments: Record<string, unknown>
+}
+export interface AgentObservabilityFlowMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  text?: string
+  reasoning?: string
+  toolCalls?: AgentObservabilityFlowToolCall[]
+  toolCallId?: string
+  toolName?: string
+  toolResult?: unknown
+  turnIndex?: number
+}
+export interface AgentObservabilityFlowKVPreview {
+  key: string
+  value: string
+}
+export interface AgentObservabilityFlowIOPreview {
+  role?: string
+  text?: string
+  reasoning?: string
+  toolNames?: string[]
+  kvItems?: AgentObservabilityFlowKVPreview[]
+  errorCode?: string
+  itemCount?: number
+}
+export interface AgentObservabilityExecutionInitialContext {
+  systemInstructions?: string
+  pageContext?: Record<string, unknown>
+  historyTurnCount: number
+  compactedSummary?: string
+  historyMessages: AgentObservabilityFlowMessage[]
+  initialTools: string[]
+  compressionOutcome?: string
+}
+export interface AgentObservabilityPayloadBreakdown {
+  systemBytes: number
+  toolSchemaBytes: number
+  historyBytes: number
+  userInputBytes: number
+  toolResultBytes: number
+  modelOutputBytes: number
+}
+export interface AgentObservabilityFlowNode {
+  spanId: string
+  parentNodeId: string
+  depth: number
+  kind: 'agent' | 'llm' | 'tool'
+  stepIndex?: number
+  purpose?: string
+  name: string
+  spanName: string
+  status: string
+  startTimeUnixNano: string
+  startOffsetMs: number
+  durationMs: number
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadInputTokens?: number
+  reasoningOutputTokens?: number
+  compacted?: boolean
+  finishReason?: string
+  inputPreview: AgentObservabilityFlowIOPreview
+  outputPreview: AgentObservabilityFlowIOPreview
+  omittedPrefixCount?: number
+  deltaMessages?: AgentObservabilityFlowMessage[]
+  outputMessage?: AgentObservabilityFlowMessage
+  toolNames?: string[]
+  addedTools?: string[]
+  removedTools?: string[]
+  toolCallId?: string
+  toolArguments?: Record<string, unknown>
+  toolResult?: unknown
+  payloadBytes?: number
+}
+export interface AgentObservabilityExecutionFlow {
+  contentCaptured: boolean
+  initialContext?: AgentObservabilityExecutionInitialContext
+  payloadBreakdown?: AgentObservabilityPayloadBreakdown
+  nodes: AgentObservabilityFlowNode[]
+}
 export interface AgentObservabilityTraceDetail {
   traceId: string
   durationMs: number
@@ -70,6 +153,7 @@ export interface AgentObservabilityTraceDetail {
   usage: AgentObservabilityUsage | null
   spans: AgentObservabilityTraceSpan[]
   context?: AgentObservabilityTraceContext
+  flow?: AgentObservabilityExecutionFlow
 }
 export interface AgentObservabilityConversationUser {
   id: string

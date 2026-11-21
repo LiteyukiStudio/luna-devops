@@ -1,5 +1,6 @@
-import type { AgentObservabilityRange, AgentObservabilityToolCall as AgentObservabilityToolCallItem, AgentObservabilityToolSummary, AgentObservabilityTrace } from '@/api'
+import type { AgentObservabilityRange, AgentObservabilityToolCall as AgentObservabilityToolCallItem, AgentObservabilityToolSummary } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
+import type { AgentTraceFocusTarget } from '@/pages/settings/operations/turns/agent-turn-detail-sheet'
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, CircleGauge, CircleX, Clock3, UserRound, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -10,7 +11,7 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { AgentTraceDetailSheet } from '@/pages/settings/operations/traces/agent-trace-detail-sheet'
+import { AgentTurnDetailSheet } from '@/pages/settings/operations/turns/agent-turn-detail-sheet'
 import { AgentObservabilityToolCall } from './agent-observability-tool-call'
 
 export function AgentToolDetailSheet({ range, summary, onOpenChange }: {
@@ -21,7 +22,7 @@ export function AgentToolDetailSheet({ range, summary, onOpenChange }: {
   const { t, i18n } = useTranslation()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [selectedTrace, setSelectedTrace] = useState<AgentObservabilityTrace | null>(null)
+  const [selectedTraceTarget, setSelectedTraceTarget] = useState<AgentTraceFocusTarget | null>(null)
   const calls = useQuery({
     queryKey: ['agent-observability-tool-calls', summary?.operationId, range, page, pageSize],
     queryFn: () => api.listAgentObservabilityToolCalls(summary!.operationId, { range, page, pageSize }),
@@ -44,7 +45,14 @@ export function AgentToolDetailSheet({ range, summary, onOpenChange }: {
           <span>{formatDateTime(call.createdAt, i18n.language)}</span>
           <span className="font-mono">{call.runId}</span>
         </div>
-        <AgentObservabilityToolCall call={call} onViewTrace={setSelectedTrace} />
+        <AgentObservabilityToolCall
+          call={call}
+          onInspectCall={item => item.traceId && setSelectedTraceTarget({
+            traceId: item.traceId,
+            focusToolCallId: item.id,
+            focusToolName: item.operationId,
+          })}
+        />
       </div>
     ),
   }], [i18n.language, t])
@@ -100,7 +108,11 @@ export function AgentToolDetailSheet({ range, summary, onOpenChange }: {
           </div>
         </SheetContent>
       </Sheet>
-      <AgentTraceDetailSheet trace={selectedTrace} onOpenChange={open => !open && setSelectedTrace(null)} />
+      <AgentTurnDetailSheet
+        key={selectedTraceTarget ? `${selectedTraceTarget.traceId}-${selectedTraceTarget.focusToolCallId ?? ''}` : 'trace-closed'}
+        traceTarget={selectedTraceTarget}
+        onOpenChange={open => !open && setSelectedTraceTarget(null)}
+      />
     </>
   )
 }

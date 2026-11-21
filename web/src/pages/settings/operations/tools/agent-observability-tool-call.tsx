@@ -1,4 +1,4 @@
-import type { AgentObservabilityConversationToolCall, AgentObservabilityTrace } from '@/api'
+import type { AgentObservabilityConversationToolCall } from '@/api'
 import { ChevronRight, Network } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CopyableCodeBlock } from '@/components/common/ai-assistant/copyable-code-block'
@@ -9,10 +9,9 @@ import { StatusGlyph } from '@/components/common/status-indicator'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 
-export function AgentObservabilityToolCall({ call, onViewTrace, onSelectToolCall }: {
+export function AgentObservabilityToolCall({ call, onInspectCall }: {
   call: AgentObservabilityConversationToolCall
-  onViewTrace: (trace: AgentObservabilityTrace) => void
-  onSelectToolCall?: (call: AgentObservabilityConversationToolCall) => void
+  onInspectCall: (call: AgentObservabilityConversationToolCall) => void
 }) {
   const { t, i18n } = useTranslation()
   return (
@@ -30,7 +29,7 @@ export function AgentObservabilityToolCall({ call, onViewTrace, onSelectToolCall
         {call.errorCode && <p className="m-0 break-all rounded-control bg-danger-subtle px-3 py-2 text-xs text-danger">{call.errorCode}</p>}
         {call.traceId && (
           <div className="flex justify-end">
-            <Button size="sm" variant="outline" onClick={() => onSelectToolCall ? onSelectToolCall(call) : onViewTrace(toolTrace(call))}>
+            <Button size="sm" variant="outline" onClick={() => onInspectCall(call)}>
               <Network className="size-4" />
               {t('operationsDashboardPage.conversationDetail.viewToolTrace')}
             </Button>
@@ -69,8 +68,4 @@ function formatJSON(value: unknown) {
   catch {
     return String(value)
   }
-}
-
-function toolTrace(call: AgentObservabilityConversationToolCall): AgentObservabilityTrace {
-  return { traceId: call.traceId ?? '', rootServiceName: 'luna-agent', rootTraceName: `execute_tool ${call.operationId}`, startTimeUnixNano: '0', durationMs: call.durationMs ?? 0 }
 }

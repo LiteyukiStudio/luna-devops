@@ -8,6 +8,7 @@ import {
   genAIModelSpan,
   genAIOutputMessages,
   genAISchemaURL,
+  genAISystemInstructions,
   genAIToolCallObject,
   genAIToolDefinitions,
   genAIToolSpanAttributes,
@@ -63,14 +64,18 @@ describe("OpenTelemetry GenAI semantic conventions", () => {
     expect(genAIAgentSpanAttributes("conversation-1")).not.toHaveProperty("gen_ai.agent.version")
   })
 
-  it("emits model content in the official input and output message shapes", () => {
-    expect(genAIInputMessages([
+  it("emits model content in the official input, system instruction, and output message shapes", () => {
+    expect(genAISystemInstructions([
       { role: "system", content: "You are Luna" },
+      { role: "user", content: "Deploy it" },
+    ])).toEqual([
+      { type: "text", content: "You are Luna" },
+    ])
+    expect(genAIInputMessages([
       { role: "user", content: "Deploy it" },
       { role: "assistant", content: "", toolCalls: [{ id: "call-1", operationId: "deployApplication", arguments: { deploymentId: "dep-1" } }] },
       { role: "tool", content: "{\"ok\":true}", toolCallId: "call-1" },
     ])).toEqual([
-      { role: "system", parts: [{ type: "text", content: "You are Luna" }] },
       { role: "user", parts: [{ type: "text", content: "Deploy it" }] },
       { role: "assistant", parts: [{ type: "tool_call", id: "call-1", name: "deployApplication", arguments: { deploymentId: "dep-1" } }] },
       { role: "tool", parts: [{ type: "tool_call_response", id: "call-1", response: { ok: true } }] },

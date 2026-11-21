@@ -9,6 +9,7 @@ import {
   genAIInputMessages,
   genAIModelSpan,
   genAIOutputMessages,
+  genAISystemInstructions,
   genAIToolDefinitions,
   redactToolArgumentsForOperation,
 } from "../genai-semconv.js"
@@ -557,9 +558,10 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
 
   private recordRequest(span: Span, request: ModelRequest): void {
     span.setAttribute("luna.gen_ai.channel_affinity.applied", Boolean(this.channelAffinityKey(request)))
-    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages(request.messages, request.tools))
-    const system = request.messages.filter(message => message.role === "system")
-    if (system.length) recordAIContent(span, "luna.gen_ai.content.system_instructions", "gen_ai.system_instructions", genAIInputMessages(system))
+    const system = genAISystemInstructions(request.messages)
+    const inputMessages = request.messages.filter(message => message.role !== "system")
+    if (inputMessages.length) recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages(inputMessages, request.tools))
+    if (system.length) recordAIContent(span, "luna.gen_ai.content.system_instructions", "gen_ai.system_instructions", system)
     if (request.tools?.length) recordAIContent(span, "luna.gen_ai.content.tools", "gen_ai.tool.definitions", genAIToolDefinitions(request.tools))
   }
 

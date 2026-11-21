@@ -78,13 +78,14 @@ type TraceSummary struct {
 }
 
 type TraceDetail struct {
-	TraceID    string        `json:"traceId"`
-	DurationMS float64       `json:"durationMs"`
-	SpanCount  int           `json:"spanCount"`
-	ErrorCount int           `json:"errorCount"`
-	Usage      *TokenUsage   `json:"usage"`
-	Spans      []TraceSpan   `json:"spans"`
-	Context    *TraceContext `json:"context,omitempty"`
+	TraceID    string         `json:"traceId"`
+	DurationMS float64        `json:"durationMs"`
+	SpanCount  int            `json:"spanCount"`
+	ErrorCount int            `json:"errorCount"`
+	Usage      *TokenUsage    `json:"usage"`
+	Spans      []TraceSpan    `json:"spans"`
+	Context    *TraceContext  `json:"context,omitempty"`
+	Flow       *ExecutionFlow `json:"flow,omitempty"`
 }
 
 type TraceSpan struct {
@@ -419,6 +420,8 @@ var traceAttributeAllowlist = map[string]struct{}{
 	"luna.tool_call.id": {}, "luna.tool_call.count": {}, "luna.ai.content.truncated": {},
 	"luna.gen_ai.request.purpose": {}, "luna.gen_ai.usage.status": {}, "luna.gen_ai.usage.unavailable_reason": {},
 	"luna.gen_ai.response.error_body": {}, "luna.operation.name": {},
+	"luna.context.compression.outcome": {}, "luna.context.compression.trigger": {},
+	"luna.context.history.turn_count": {}, "luna.context.recent.turn_count": {},
 	"http.request.method": {}, "http.response.status_code": {},
 	"db.system.name": {}, "error.type": {}, "luna.run.outcome": {},
 }
@@ -485,6 +488,7 @@ func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 		detail.Spans[index].StartOffsetMS = float64(start-earliest) / 1e6
 	}
 	detail.Usage = aggregateTraceTokenUsage(detail.Spans)
+	detail.Flow = BuildExecutionFlow(detail.Spans, nil)
 	return detail
 }
 

@@ -12334,6 +12334,105 @@ components:
             - { $ref: "#/components/schemas/AgentObservabilityTraceUsage" }
         spans: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpan" } }
         context: { $ref: "#/components/schemas/AgentObservabilityTraceContext" }
+        flow: { $ref: "#/components/schemas/AgentObservabilityExecutionFlow" }
+    AgentObservabilityExecutionFlow:
+      type: object
+      required: [contentCaptured, nodes]
+      properties:
+        contentCaptured: { type: boolean, description: Whether OpenTelemetry GenAI prompt or tool payload attributes were captured on spans in this trace. }
+        initialContext: { $ref: "#/components/schemas/AgentObservabilityExecutionInitialContext" }
+        payloadBreakdown: { $ref: "#/components/schemas/AgentObservabilityPayloadBreakdown" }
+        nodes: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityFlowNode" } }
+    AgentObservabilityExecutionInitialContext:
+      type: object
+      required: [historyTurnCount, historyMessages, initialTools]
+      properties:
+        systemInstructions: { type: string }
+        pageContext: { type: object, additionalProperties: true }
+        historyTurnCount: { type: integer, minimum: 0 }
+        compactedSummary: { type: string }
+        historyMessages: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityFlowMessage" } }
+        initialTools: { type: array, items: { type: string } }
+        compressionOutcome: { type: string }
+    AgentObservabilityPayloadBreakdown:
+      type: object
+      required: [systemBytes, toolSchemaBytes, historyBytes, userInputBytes, toolResultBytes, modelOutputBytes]
+      properties:
+        systemBytes: { type: integer, format: int64, minimum: 0 }
+        toolSchemaBytes: { type: integer, format: int64, minimum: 0 }
+        historyBytes: { type: integer, format: int64, minimum: 0 }
+        userInputBytes: { type: integer, format: int64, minimum: 0 }
+        toolResultBytes: { type: integer, format: int64, minimum: 0 }
+        modelOutputBytes: { type: integer, format: int64, minimum: 0 }
+    AgentObservabilityFlowToolCall:
+      type: object
+      required: [name, arguments]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        arguments: { type: object, additionalProperties: true }
+    AgentObservabilityFlowMessage:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [system, user, assistant, tool] }
+        text: { type: string }
+        reasoning: { type: string }
+        toolCalls: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityFlowToolCall" } }
+        toolCallId: { type: string }
+        toolName: { type: string }
+        toolResult: {}
+        turnIndex: { type: integer }
+    AgentObservabilityFlowKVPreview:
+      type: object
+      required: [key, value]
+      properties:
+        key: { type: string }
+        value: { type: string }
+    AgentObservabilityFlowIOPreview:
+      type: object
+      properties:
+        role: { type: string }
+        text: { type: string }
+        reasoning: { type: string }
+        toolNames: { type: array, items: { type: string } }
+        kvItems: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityFlowKVPreview" } }
+        errorCode: { type: string }
+        itemCount: { type: integer }
+    AgentObservabilityFlowNode:
+      type: object
+      required: [spanId, parentNodeId, depth, kind, name, spanName, status, startTimeUnixNano, startOffsetMs, durationMs, inputPreview, outputPreview]
+      properties:
+        spanId: { type: string }
+        parentNodeId: { type: string }
+        depth: { type: integer, minimum: 0 }
+        kind: { type: string, enum: [agent, llm, tool] }
+        stepIndex: { type: integer, minimum: 1 }
+        purpose: { type: string }
+        name: { type: string }
+        spanName: { type: string }
+        status: { type: string, enum: [unset, ok, error] }
+        startTimeUnixNano: { type: string }
+        startOffsetMs: { type: number, format: double }
+        durationMs: { type: number, format: double }
+        inputTokens: { type: integer, format: int64, minimum: 0 }
+        outputTokens: { type: integer, format: int64, minimum: 0 }
+        cacheReadInputTokens: { type: integer, format: int64, minimum: 0 }
+        reasoningOutputTokens: { type: integer, format: int64, minimum: 0 }
+        compacted: { type: boolean }
+        finishReason: { type: string }
+        inputPreview: { $ref: "#/components/schemas/AgentObservabilityFlowIOPreview" }
+        outputPreview: { $ref: "#/components/schemas/AgentObservabilityFlowIOPreview" }
+        omittedPrefixCount: { type: integer, minimum: 0 }
+        deltaMessages: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityFlowMessage" } }
+        outputMessage: { $ref: "#/components/schemas/AgentObservabilityFlowMessage" }
+        toolNames: { type: array, items: { type: string } }
+        addedTools: { type: array, items: { type: string } }
+        removedTools: { type: array, items: { type: string } }
+        toolCallId: { type: string }
+        toolArguments: { type: object, additionalProperties: true }
+        toolResult: {}
+        payloadBytes: { type: integer, format: int64, minimum: 0 }
     AgentObservabilityConversationUser:
       type: object
       required: [id, name, email, avatarUrl]
