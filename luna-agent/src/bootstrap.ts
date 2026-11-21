@@ -3,6 +3,7 @@ import { listDocsTool, readDocTool, searchDocsTool } from "./tools/docs-tools.js
 import { BffHmacRequestVerifier, DevelopmentRequestVerifier } from "./auth.js"
 import type { RuntimeConfig } from "./config.js"
 import { RunExecutor } from "./executor/index.js"
+import { HeadlessInferenceRunner } from "./headless-inference.js"
 import { ContextCompiler } from "./context/compiler.js"
 import { ModelRuntime } from "./model-runtime.js"
 import { PayloadCipher } from "./payload-cipher.js"
@@ -88,11 +89,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     ...(config.AI_RUN_MAX_TOOL_CALLS !== undefined ? { runMaxToolCalls: config.AI_RUN_MAX_TOOL_CALLS } : {}),
   }
   const runtime = runtimeSettingsFromRemote(initialRemoteConfig.runtime, budgetOverrides)
-  const tools = new ToolOrchestrator(async (runId) => {
-    const state = await repository.getRunToolState(runId)
-    if (!state) throw new Error("ai.run_not_found")
-    return resolveCatalog(state.toolCatalogDigest)
-  }, new HttpLunaApiToolClient(
+  const lunaApiToolClient = new HttpLunaApiToolClient(
     config.LUNA_API_BASE_URL,
     internalKeys.callbackServiceToken,
     () => {
@@ -100,7 +97,12 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
       if (!current) throw new Error("ai.provider_config_unavailable")
       return current.runtime.maxRequestRetries
     },
-  ), toolStore)
+  )
+  const tools = new ToolOrchestrator(async (runId) => {
+    const state = await repository.getRunToolState(runId)
+    if (!state) throw new Error("ai.run_not_found")
+    return resolveCatalog(state.toolCatalogDigest)
+  }, lunaApiToolClient, toolStore)
   tools.setRunMaxToolCalls(runtime.runMaxToolCalls)
   const contextCompiler = new ContextCompiler(repository, provider, {
     recentTurnCount: runtime.contextRecentTurnCount,
@@ -174,6 +176,15 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
       }
     },
   }, contextCompiler)
+  const docsKnowledge = loadBundledDocsKnowledge(config.AI_DOCS_BASE_URL)
+  const headlessInference = new HeadlessInferenceRunner({
+    repository,
+    provider,
+    remoteConfig,
+    catalogRegistry,
+    toolClient: lunaApiToolClient,
+    docsKnowledge,
+  })
   const executor = new RunExecutor({
     repository,
     modelRuntime,
@@ -182,7 +193,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     initialRuntimeSettings: runtime,
     catalogRegistry,
     streamBus,
-    docsKnowledge: loadBundledDocsKnowledge(config.AI_DOCS_BASE_URL),
+    docsKnowledge,
     taskStatusClient: new HttpLunaApiTaskStatusClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken),
   })
   const server = buildServer({
@@ -194,6 +205,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     tools,
     remoteConfig,
     streamBus,
+    headlessInference,
   })
 
   remoteConfig.start()

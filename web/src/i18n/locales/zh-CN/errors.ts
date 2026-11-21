@@ -107,6 +107,9 @@ const errors = {
     delete_cleanup_failed: '清理部署配置的运行资源失败，请检查运行集群后重试删除。',
     delete_finalize_failed: '运行资源已清理，但删除记录未能完成，请稍后重试删除。',
     delete_enqueue_failed: '部署配置删除任务暂时无法投递，请确认 Worker 队列可用后重试。',
+    repository_binding_required: '请先选择代码仓库绑定。',
+    subpath_invalid: '代码子目录格式无效。',
+    repository_binding_not_found: '代码仓库绑定不存在或已被删除。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes 同名资源属于其他资源生命周期，平台不会自动接管，请先处理残留资源。',
@@ -203,6 +206,7 @@ const errors = {
     model_context_insufficient: '当前请求超过所选模型的上下文窗口，请缩短输入或清理会话历史。',
     model_output_limit_invalid: '模型目录的输出上限无效，请联系平台管理员检查模型配置。',
     wallet_balance_insufficient: '个人钱包可用余额不足，模型调用未发送。',
+    structured_output_invalid: '模型未返回符合预期的结构化结果，请稍后重试。',
     conversation_not_found: '会话不存在或已被删除。',
     run_not_found: '运行记录不存在或已被删除。',
     run_not_resumable: '当前任务状态已变化，无法继续此操作。',

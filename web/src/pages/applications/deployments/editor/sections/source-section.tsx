@@ -10,6 +10,7 @@ export function SourceSection({
   applicationId,
   editing,
   followsImageTemplate,
+  onExpandAdvanced,
   onTargetImageRefManualChange,
   projectId,
   registries,
@@ -19,6 +20,7 @@ export function SourceSection({
   applicationId: string
   editing: boolean
   followsImageTemplate: boolean
+  onExpandAdvanced?: () => void
   onTargetImageRefManualChange: () => void
   projectId: string
   registries: ArtifactRegistry[]
@@ -51,6 +53,7 @@ export function SourceSection({
         registries={registries}
         repositoryBindings={repositoryBindings}
         resolvedTemplateImageRef={resolvedTemplateImageRef}
+        onExpandAdvanced={onExpandAdvanced}
         onTargetImageRefManualChange={onTargetImageRefManualChange}
       />
     </EditorSection>

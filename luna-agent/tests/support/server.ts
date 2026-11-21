@@ -29,5 +29,6 @@ export function buildTestServer(input: TestServerDependencies) {
     toolCatalogDigest: input.toolCatalogDigest ?? (() => catalog.digest),
     streamBus,
     ...(input.streamHubLimits ? { streamHubLimits: input.streamHubLimits } : {}),
+    ...(input.headlessInference ? { headlessInference: input.headlessInference } : {}),
   })
 }

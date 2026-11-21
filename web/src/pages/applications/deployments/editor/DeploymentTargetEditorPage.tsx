@@ -110,7 +110,7 @@ export function DeploymentTargetEditorPage() {
     <PageShell width="content">
       <PageChromeHeading description={t('deploymentTargetEditor.pageDescription')} title={target ? `${title} · ${target.name}` : title} />
       <ReadyEditor
-        key={targetId ?? 'new'}
+        key={`${projectId}:${applicationId}:${targetId ?? 'new'}`}
         applicationId={applicationId}
         buildEnvironmentAvailable={!editing || buildEnvironment.isSuccess}
         buildEnvironmentRetrying={buildEnvironment.isFetching}

@@ -3604,6 +3604,58 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { description: Export failed with the stable code deployment_bundle.export_failed; internal diagnostics are never returned., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-config-inference:
+    post:
+      operationId: inferDeploymentTargetConfig
+      tags: [Deployments]
+      summary: Infer recommended deployment target configuration from a bound Git repository
+      description: Reads bounded repository manifest and Dockerfile files via the bound Git provider and runs a single-shot headless AI inference billed to the caller's personal wallet. Never mutates durable deployment state.
+      x-luna-cli:
+        requiredScopes: ["deployment:update"]
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Interactive Web editor draft assistant; AI agents inspect repositories directly via git_discover_build_options and git_read_file.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeploymentTargetConfigInferenceInput" }
+      responses:
+        "200":
+          description: Structured configuration draft inferred from repository files.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTargetConfigInferenceOutput" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: Personal wallet balance is insufficient (`ai.wallet_balance_insufficient`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Upstream AI provider rate limit exceeded (`ai.provider_rate_limited`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "502":
+          description: Upstream Git or AI provider returned an invalid or failed response.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: AI assistant runtime is unavailable (`ai.agent_unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-imports/preview:
     post:
       operationId: previewDeploymentTargetBundleImport
@@ -14947,6 +14999,92 @@ components:
           type: boolean
           description: Desired webhook configuration. Current webhook availability is observed from the Git provider.
       required: [applicationId, gitAccountId, owner, repo]
+    DeploymentTargetConfigInferenceInput:
+      type: object
+      additionalProperties: false
+      properties:
+        repositoryBindingId: { type: string }
+        ref: { type: string }
+        subpath: { type: string }
+        stage: { type: string }
+      required: [repositoryBindingId]
+    DeploymentTargetConfigInferenceOutput:
+      type: object
+      additionalProperties: false
+      properties:
+        summary: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+        buildDefinitionMode: { type: string, enum: [repository_dockerfile, template] }
+        dockerfilePath: { type: string }
+        buildContext: { type: string }
+        buildDirectory: { type: string }
+        buildTemplateId: { type: string }
+        buildTemplateVersion: { type: string }
+        buildTemplateValues:
+          type: object
+          additionalProperties: { type: string }
+        buildArgs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              key: { type: string }
+              value: { type: string }
+            required: [key, value]
+        servicePorts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              name: { type: string }
+              port: { type: integer, minimum: 1, maximum: 65535 }
+              appProtocol: { type: string }
+            required: [name, port, appProtocol]
+        environmentVariables:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              key: { type: string }
+              secret: { type: boolean }
+              placeholder: { type: string }
+            required: [key, secret, placeholder]
+        cpuRequest: { type: string }
+        memoryRequest: { type: string }
+        containerCommand:
+          type: array
+          items: { type: string }
+        containerArgs:
+          type: array
+          items: { type: string }
+        notes:
+          type: array
+          items: { type: string }
+        inspectedFiles:
+          type: array
+          items: { type: string }
+      required:
+        - summary
+        - confidence
+        - buildDefinitionMode
+        - dockerfilePath
+        - buildContext
+        - buildDirectory
+        - buildTemplateId
+        - buildTemplateVersion
+        - buildTemplateValues
+        - buildArgs
+        - servicePorts
+        - environmentVariables
+        - cpuRequest
+        - memoryRequest
+        - containerCommand
+        - containerArgs
+        - notes
+        - inspectedFiles
     UpdateConfigsInput:
       type: object
       properties:

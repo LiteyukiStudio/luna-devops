@@ -6,6 +6,8 @@ import type {
   AppTemplateComponent,
   AppTemplateConfigFile,
   AppTemplateSummary,
+  DeploymentTargetConfigInferenceInput,
+  DeploymentTargetConfigInferenceOutput,
   DeploymentTargetMetrics,
   DeploymentTargetPodMetrics,
   PlatformAppTemplate,
@@ -21,6 +23,8 @@ describe('application list transport contracts', () => {
     expectTypeOf<Application['primaryAccessUrl']>().toEqualTypeOf<components['schemas']['ApplicationListItem']['primaryAccessUrl']>()
     expectTypeOf<DeploymentTargetPodMetrics>().toEqualTypeOf<components['schemas']['DeploymentTargetPodMetrics']>()
     expectTypeOf<DeploymentTargetMetrics>().toEqualTypeOf<components['schemas']['DeploymentTargetMetrics']>()
+    expectTypeOf<DeploymentTargetConfigInferenceInput>().toEqualTypeOf<components['schemas']['DeploymentTargetConfigInferenceInput']>()
+    expectTypeOf<DeploymentTargetConfigInferenceOutput>().toEqualTypeOf<components['schemas']['DeploymentTargetConfigInferenceOutput']>()
   })
 
   it('keeps the app template featured flag, source, and platform schemas bound to OpenAPI', () => {

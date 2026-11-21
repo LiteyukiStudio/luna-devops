@@ -7,10 +7,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
 	"github.com/LiteyukiStudio/devops/internal/api/deploymentapi"
+	"github.com/LiteyukiStudio/devops/internal/api/gitapi"
 	"github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	registryprovider "github.com/LiteyukiStudio/devops/internal/provider/registry"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -115,6 +118,15 @@ func (host deploymentHost) DeploymentTargetRuntimeTerminalAuthorizationAllowed(c
 }
 func (host deploymentHost) FindProject(ctx *gin.Context) (model.Project, bool) {
 	return host.handlers.findProject(ctx)
+}
+func (host deploymentHost) GitClientForUserBinding(ctx *gin.Context, user model.User, binding model.RepositoryBinding) (gitprovider.Client, bool) {
+	return host.handlers.domains.git.GitClientForUserBinding(ctx, user, binding)
+}
+func (deploymentHost) WriteGitUpstreamError(ctx *gin.Context, err error) {
+	gitapi.WriteGitUpstreamError(ctx, err)
+}
+func (host deploymentHost) RunHeadlessInferenceForUser(ctx *gin.Context, user model.User, input aiagent.HeadlessInferenceRequest) (*aiagent.HeadlessInferenceResponse, bool) {
+	return host.handlers.domains.ai.RunHeadlessInferenceForUser(ctx, user, input)
 }
 
 type deploymentTargetResponse = deploymentapi.DeploymentTargetResponse

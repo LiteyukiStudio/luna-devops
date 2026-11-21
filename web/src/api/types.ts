@@ -1810,6 +1810,51 @@ export interface DeploymentTargetBundlePreview {
   warnings: string[]
 }
 
+export interface DeploymentTargetConfigInferenceInput {
+  repositoryBindingId: string
+  ref?: string
+  subpath?: string
+  stage?: string
+}
+
+export interface InferredBuildArg {
+  key: string
+  value: string
+}
+
+export interface InferredServicePort {
+  name: string
+  port: number
+  appProtocol: string
+}
+
+export interface InferredEnvironmentVariable {
+  key: string
+  secret: boolean
+  placeholder: string
+}
+
+export interface DeploymentTargetConfigInferenceOutput {
+  summary: string
+  confidence: 'high' | 'medium' | 'low'
+  buildDefinitionMode: 'repository_dockerfile' | 'template'
+  dockerfilePath: string
+  buildContext: string
+  buildDirectory: string
+  buildTemplateId: string
+  buildTemplateVersion: string
+  buildTemplateValues: Record<string, string>
+  buildArgs: InferredBuildArg[]
+  servicePorts: InferredServicePort[]
+  environmentVariables: InferredEnvironmentVariable[]
+  cpuRequest: string
+  memoryRequest: string
+  containerCommand: string[]
+  containerArgs: string[]
+  notes: string[]
+  inspectedFiles: string[]
+}
+
 export type ApplicationPayload = Pick<Application, 'name' | 'identifier' | 'icon'>
 
 export interface BuildJob {

@@ -107,6 +107,9 @@ const errors = {
     delete_cleanup_failed: 'Cleaning up the deployment target runtime resources failed. Check the runtime cluster and delete again.',
     delete_finalize_failed: 'Runtime resources were cleaned up, but the deletion record could not be finished. Delete again later.',
     delete_enqueue_failed: 'The deployment target deletion task could not be queued. Make sure the Worker queue is available and try again.',
+    repository_binding_required: 'Select a repository binding first.',
+    subpath_invalid: 'The repository subpath format is invalid.',
+    repository_binding_not_found: 'The repository binding does not exist or has been deleted.',
   },
   kubernetes: {
     resource_ownership_conflict: 'A same-name Kubernetes resource belongs to another lifecycle. The platform will not adopt it automatically. Handle the retained resource first.',
@@ -203,6 +206,7 @@ const errors = {
     model_context_insufficient: 'This request exceeds the selected model context window. Shorten the input or clear conversation history.',
     model_output_limit_invalid: 'The model catalog output limit is invalid. Ask a platform administrator to check the model configuration.',
     wallet_balance_insufficient: 'Your personal wallet has insufficient available credits. The model request was not sent.',
+    structured_output_invalid: 'The model did not return a valid structured result. Try again later.',
     conversation_not_found: 'The conversation does not exist or has been deleted.',
     run_not_found: 'The run does not exist or has been deleted.',
     run_not_resumable: 'The run state has changed and cannot be resumed.',

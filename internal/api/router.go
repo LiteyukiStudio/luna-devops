@@ -57,6 +57,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 	router.GET("/internal/v1/ai/provider-config", domains.ai.GetAIProviderConfigInternal)
 	router.POST("/internal/v1/ai/tools/preview", domains.ai.PreviewAIToolInternal)
 	router.POST("/internal/v1/ai/tools/execute", domains.ai.ExecuteAIToolInternal)
+	router.POST("/internal/v1/ai/tools/execute-headless", domains.ai.ExecuteHeadlessAIToolInternal)
 	router.GET("/internal/v1/ai/runs/:runId/tasks/:projectId/:taskType/:taskId", domains.ai.GetAITaskStatusInternal)
 
 	v1 := router.Group("/api/v1")
@@ -353,6 +354,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-target-imports/preview", domains.deployment.PreviewDeploymentTargetBundleImport)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-target-imports/reference-candidates", domains.deployment.ListDeploymentTargetBundleReferenceCandidates)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-target-imports", domains.deployment.ImportDeploymentTargetBundle)
+		v1.POST("/projects/:projectId/applications/:applicationId/deployment-target-config-inference", domains.deployment.InferDeploymentTargetConfig)
 		v1.PUT("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", domains.deployment.UpdateDeploymentTarget)
 		v1.PUT("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/runtime-secrets", domains.deployment.UpdateDeploymentTargetRuntimeSecrets)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/runtime-secrets", domains.deployment.GetDeploymentTargetRuntimeSecretsSummary)

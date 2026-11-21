@@ -107,6 +107,9 @@ const errors = {
     delete_cleanup_failed: 'デプロイ設定の実行リソースのクリーンアップに失敗しました。実行クラスターを確認してから再度削除してください。',
     delete_finalize_failed: '実行リソースはクリーンアップされましたが、削除記録を完了できませんでした。しばらくしてから再度削除してください。',
     delete_enqueue_failed: 'デプロイ設定の削除タスクをキューに投入できませんでした。Worker キューが利用可能か確認してから再試行してください。',
+    repository_binding_required: '先にコードリポジトリ連携を選択してください。',
+    subpath_invalid: 'リポジトリのサブパス形式が無効です。',
+    repository_binding_not_found: 'コードリポジトリ連携が存在しないか削除されています。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes の同名リソースは他のリソースライフサイクルに属しています。プラットフォームは自動的に引き継ぎません。先に残留リソースを処理してください。',
@@ -203,6 +206,7 @@ const errors = {
     model_context_insufficient: '現在のリクエストが選択したモデルのコンテキストウィンドウを超えています。入力を短くするか、会話履歴をクリアしてください。',
     model_output_limit_invalid: 'モデルカタログの出力上限が無効です。プラットフォーム管理者に連絡してモデル設定を確認してください。',
     wallet_balance_insufficient: '個人ウォレットの利用可能残高が不足しています。モデル呼び出しは送信されませんでした。',
+    structured_output_invalid: 'モデルから有効な構造化結果が返されませんでした。後ほど再試行してください。',
     conversation_not_found: '会話が存在しないか、削除されました。',
     run_not_found: '実行記録が存在しないか、削除されました。',
     run_not_resumable: 'タスクの状態が変更されたため、この操作を続行できません。',

@@ -1,9 +1,11 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import type { ArtifactRegistry, BuildConcurrencyPolicy, RepositoryBinding } from '@/api'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RotateCw } from 'lucide-react'
+import type { ArtifactRegistry, BuildConcurrencyPolicy, DeploymentTargetConfigInferenceOutput, RepositoryBinding } from '@/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Loader2, RotateCw, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { Controller, useFormContext, useFormState, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { api } from '@/api'
 import { FormField } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
@@ -23,6 +25,8 @@ import { ChoiceCard, EditorGroup } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
 import { buildConcurrencyPolicies, deploymentTargetAdvancedItemFields } from '../deployment-target-form'
 import { dockerfileBuildDefaults, repositoryBuildOptionsQuery } from '../deployment-target-queries'
+import { AiInferConfigDialog } from './ai-infer-config-dialog'
+import { buildAiInferDraftPlan } from './ai-infer-config-utils'
 import { ApplicationBuildTemplateFields } from './application-build-template-fields'
 import { RepositoryBindingField } from './repository-binding-field'
 
@@ -42,6 +46,7 @@ export function SourceFields({
   applicationId,
   editing,
   followsImageTemplate,
+  onExpandAdvanced,
   onTargetImageRefManualChange,
   projectId,
   registries,
@@ -51,6 +56,7 @@ export function SourceFields({
   applicationId: string
   editing: boolean
   followsImageTemplate: boolean
+  onExpandAdvanced?: () => void
   onTargetImageRefManualChange: () => void
   projectId: string
   registries: ArtifactRegistry[]
@@ -79,6 +85,81 @@ export function SourceFields({
   const targetImageRefError = useFieldError('targetImageRef')
   const dockerfileError = useFieldError('dockerfilePath')
   const buildContextError = useFieldError('buildContext')
+  const inferAbortRef = useRef<AbortController | null>(null)
+  const [inferredPreview, setInferredPreview] = useState<DeploymentTargetConfigInferenceOutput | null>(null)
+
+  useEffect(() => () => inferAbortRef.current?.abort(), [])
+
+  const inferConfig = useMutation({
+    mutationFn: async (targetBinding: RepositoryBinding) => {
+      inferAbortRef.current?.abort()
+      const controller = new AbortController()
+      inferAbortRef.current = controller
+      const current = getValues()
+      const rawContext = current.buildContext.trim()
+      const subpath = rawContext && rawContext !== '.' ? rawContext : undefined
+      const result = await api.inferDeploymentTargetConfig(
+        projectId,
+        applicationId,
+        {
+          repositoryBindingId: targetBinding.id,
+          ref: targetBinding.defaultBranch || undefined,
+          subpath,
+          stage: current.stage || undefined,
+        },
+        controller.signal,
+      )
+      return { appId: applicationId, bindingId: targetBinding.id, prjId: projectId, result }
+    },
+    onSuccess: ({ appId, bindingId, prjId, result }) => {
+      if (
+        prjId !== projectId
+        || appId !== applicationId
+        || getValues('sourceType') !== 'repository'
+        || getValues('repositoryBindingId') !== bindingId
+      ) {
+        return
+      }
+      setInferredPreview(result)
+    },
+    onError: (error) => {
+      if (error instanceof Error && error.name === 'AbortError')
+        return
+      toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
+    },
+  })
+
+  const cancelInFlightInference = () => {
+    inferAbortRef.current?.abort()
+    inferAbortRef.current = null
+    inferConfig.reset()
+    setInferredPreview(null)
+  }
+
+  const inferPlan = inferredPreview
+    ? buildAiInferDraftPlan(getValues(), inferredPreview, t)
+    : null
+
+  const applyInferredDraft = () => {
+    if (!inferPlan)
+      return
+    const entries = Object.entries(inferPlan.patch) as Array<[keyof DeploymentTargetFormValues, DeploymentTargetFormValues[keyof DeploymentTargetFormValues]]>
+    for (const [key, value] of entries) {
+      if (value !== undefined) {
+        setValue(key, value as never, {
+          shouldDirty: true,
+          shouldTouch: key !== 'environmentVariables',
+          shouldValidate: false,
+        })
+      }
+    }
+    if (isSubmitted)
+      void trigger()
+    if (inferPlan.needsAdvancedExpand)
+      onExpandAdvanced?.()
+    setInferredPreview(null)
+    toast.success(t('deploymentTargetEditor.aiInfer.appliedToast'))
+  }
 
   const policyOptions: Record<BuildConcurrencyPolicy, { hint: string, label: string }> = {
     queue: { label: t('deploymentTargetEditor.buildConcurrencyPolicies.queue'), hint: t('deploymentTargetEditor.buildConcurrencyPolicyHints.queue') },
@@ -100,6 +181,7 @@ export function SourceFields({
   }
 
   const changeRepository = async (nextBinding: RepositoryBinding | undefined) => {
+    cancelInFlightInference()
     const currentDockerfile = getValues('dockerfilePath').trim()
     if (editing || !nextBinding || (currentDockerfile && currentDockerfile !== 'Dockerfile'))
       return
@@ -121,6 +203,7 @@ export function SourceFields({
             value={field.value}
             onValueChange={(value) => {
               const nextSource = value === 'image' ? 'image' : 'repository'
+              cancelInFlightInference()
               field.onChange(nextSource)
               if (nextSource === 'image') {
                 clearErrors([...repositoryOnlyFields])
@@ -208,7 +291,25 @@ export function SourceFields({
                 </div>
               )}
 
-              <EditorGroup title={t('deploymentTargetEditor.buildTitle')}>
+              <EditorGroup
+                title={t('deploymentTargetEditor.buildTitle')}
+                tools={(
+                  <Button
+                    disabled={!binding || inferConfig.isPending}
+                    size="sm"
+                    title={!binding ? t('deploymentTargetEditor.aiInfer.disabledHint') : undefined}
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (binding)
+                        inferConfig.mutate(binding)
+                    }}
+                  >
+                    {inferConfig.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                    {inferConfig.isPending ? t('deploymentTargetEditor.aiInfer.loading') : t('deploymentTargetEditor.aiInfer.button')}
+                  </Button>
+                )}
+              >
                 <div className="grid gap-4 @xl/workspace:grid-cols-2">
                   <ApplicationBuildTemplateFields
                     dockerfileSuggestions={dockerfiles}
@@ -290,6 +391,16 @@ export function SourceFields({
               <ImagePullPolicyField />
             </div>
           )}
+      <AiInferConfigDialog
+        inferred={inferredPreview}
+        open={Boolean(inferredPreview)}
+        plan={inferPlan}
+        onApply={applyInferredDraft}
+        onOpenChange={(open) => {
+          if (!open)
+            setInferredPreview(null)
+        }}
+      />
     </div>
   )
 }

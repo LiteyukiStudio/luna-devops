@@ -36,14 +36,15 @@ type ActorContext struct {
 }
 
 type Request struct {
-	Method         string
-	Path           string
-	Query          url.Values
-	Body           []byte
-	ContentType    string
-	LastEventID    string
-	IdempotencyKey string
-	Stream         bool
+	Method             string
+	Path               string
+	Query              url.Values
+	Body               []byte
+	ContentType        string
+	LastEventID        string
+	IdempotencyKey     string
+	Stream             bool
+	UseContextDeadline bool
 }
 
 type Response struct {
@@ -136,7 +137,7 @@ func (c *HTTPClient) Do(ctx context.Context, actor ActorContext, input Request) 
 	request.Header.Set("X-Luna-Actor-Signature", signature)
 
 	client := c.httpClient
-	if input.Stream {
+	if input.Stream || input.UseContextDeadline {
 		client = c.streamClient
 	}
 	response, err := client.Do(request)

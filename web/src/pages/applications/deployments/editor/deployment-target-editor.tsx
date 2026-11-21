@@ -315,6 +315,7 @@ export function DeploymentTargetEditor({
               registries={registries}
               repositoryBindings={repositoryBindings}
               resolvedTemplateImageRef={imageTemplate.data?.targetImageRef}
+              onExpandAdvanced={() => setAdvancedOpen(true)}
               onTargetImageRefManualChange={() => setTargetImageRefTouchedByUser(true)}
             />
             <RuntimeSection

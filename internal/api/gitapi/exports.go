@@ -71,3 +71,15 @@ func NormalizeRepositoryBindingRepo(value string) string {
 func FirstNonEmpty(values ...string) string { return firstNonEmpty(values...) }
 
 func PositiveInt(value string, fallbackValue int) int { return positiveInt(value, fallbackValue) }
+
+func (h *Handler) GitClientForUserBinding(ctx *gin.Context, user model.User, binding model.RepositoryBinding) (gitprovider.Client, bool) {
+	client, err := h.gitClientForUserBinding(ctx, user, binding, true)
+	if err != nil {
+		return gitprovider.Client{}, false
+	}
+	return client, true
+}
+
+func WriteGitUpstreamError(ctx *gin.Context, err error) {
+	writeGitUpstreamError(ctx, err)
+}

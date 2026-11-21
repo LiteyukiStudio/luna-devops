@@ -198,9 +198,11 @@ export class TestRepository implements Repository {
   }
 
   readonly userRoles = new Map<string, string>()
+  readonly disabledUsers = new Set<string>()
 
   async resolveLiveActorRole(userId: string): Promise<string | undefined> {
-    return this.userRoles.get(userId)
+    if (this.disabledUsers.has(userId)) return undefined
+    return this.userRoles.get(userId) ?? "user"
   }
 
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {

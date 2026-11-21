@@ -15,7 +15,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var ErrAIUsageSettlementFailed = errors.New("billing.ai_usage_settlement_failed")
+var (
+	ErrAIUsageSettlementFailed     = errors.New("billing.ai_usage_settlement_failed")
+	ErrAIWalletBalanceInsufficient = errors.New("ai.wallet_balance_insufficient")
+)
 
 const (
 	ReasonAIUsage              = "ai.usage"
@@ -74,6 +77,42 @@ func (s Service) SettleAIModelUsage(input AIModelUsageInput) error {
 	}
 	records := aiUsageRecords(input, periodStart, input.EventID)
 	return s.debitUserUsages(records, ReasonAIUsage, "AI model token usage", "system", input.UserID)
+}
+
+// EnsureAIAvailableBalance verifies that userID's personal wallet has strictly
+// positive available credits after subtracting pending billing usage records and
+// unsettled ai.model_usages. AI usage never charges project billing owners.
+func (s Service) EnsureAIAvailableBalance(ctx context.Context, userID string) error {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return ErrAIWalletBalanceInsufficient
+	}
+	db := s.DB.WithContext(ctx)
+	var wallet model.UserWallet
+	if err := db.First(&wallet, "user_id = ?", trimmedUserID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrAIWalletBalanceInsufficient
+		}
+		return err
+	}
+	var pendingBilling struct {
+		Credits decimal.Decimal `gorm:"column:credits"`
+	}
+	if err := db.Model(&model.BillingUsageRecord{}).
+		Where("billed_user_id = ? AND status = ?", trimmedUserID, "pending").
+		Select("COALESCE(SUM(amount_credits), 0) AS credits").
+		Scan(&pendingBilling).Error; err != nil {
+		return err
+	}
+	pendingAI, err := pendingAIModelUsageCredits(db, []string{trimmedUserID})
+	if err != nil {
+		return err
+	}
+	available := wallet.BalanceCredits.Sub(pendingBilling.Credits).Sub(pendingAI)
+	if available.LessThanOrEqual(decimal.Zero) {
+		return ErrAIWalletBalanceInsufficient
+	}
+	return nil
 }
 
 func validateReportedUsage(input AIModelUsageInput) error {

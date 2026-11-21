@@ -22,6 +22,14 @@ func (h *Handler) ValidateAIConfigValues(values map[string]string) error {
 
 func (h *Handler) AIAccessAllowed(role string) bool { return h.aiAccessAllowed(role) }
 
+func (h *Handler) RunHeadlessInferenceForUser(
+	ctx *gin.Context,
+	user model.User,
+	input aiagent.HeadlessInferenceRequest,
+) (*aiagent.HeadlessInferenceResponse, bool) {
+	return h.runHeadlessInferenceForUser(ctx, user, input)
+}
+
 func ProviderSelectConfig(values map[string]string, key string, definitionForKey func(string) *ConfigDefinition) string {
 	return aiProviderSelectConfig(values, key, definitionForKey)
 }

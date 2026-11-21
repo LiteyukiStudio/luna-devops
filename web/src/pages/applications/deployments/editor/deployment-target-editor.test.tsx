@@ -22,6 +22,7 @@ vi.mock('@/api', async (importOriginal) => {
       createRelease: vi.fn(),
       getGitRepositoryBuildOptions: vi.fn(),
       getRegistryImageTemplateDefault: vi.fn(),
+      inferDeploymentTargetConfig: vi.fn(),
       listBuildTemplates: vi.fn(),
       listProjectHooks: vi.fn(),
       listProjectRuntimeConfigSets: vi.fn(),
@@ -702,5 +703,72 @@ describe('deployment target editor', { timeout: 15_000 }, () => {
     await user.click(within(actionBar).getByRole('button', { name: 'Discard changes' }))
     expect(nameInput).toHaveValue('prod-web')
     expect(document.querySelector('[data-slot="editor-action-bar"]')).toBeNull()
+  })
+
+  it('disables AI config inference when no repository binding is selected', () => {
+    renderEditor({ values: { repositoryBindingId: '' } })
+    const inferButton = screen.getByRole('button', { name: 'AI Infer Config' })
+    expect(inferButton).toBeDisabled()
+  })
+
+  it('previews AI inferred config diffs and populates form draft on confirm without auto-submitting', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.inferDeploymentTargetConfig).mockResolvedValue({
+      summary: 'Detected Node.js service with Dockerfile exposing port 3000.',
+      confidence: 'high',
+      buildDefinitionMode: 'repository_dockerfile',
+      dockerfilePath: 'apps/api/Dockerfile',
+      buildContext: 'apps/api',
+      buildDirectory: '',
+      buildTemplateId: '',
+      buildTemplateVersion: '',
+      buildTemplateValues: {},
+      buildArgs: [{ key: 'NODE_ENV', value: 'production' }],
+      servicePorts: [{ name: 'http', port: 3000, appProtocol: 'http' }],
+      environmentVariables: [
+        { key: 'EXISTING_KEY', secret: false, placeholder: 'ignored' },
+        { key: 'LOG_LEVEL', secret: false, placeholder: 'info' },
+        { key: 'JWT_SECRET', secret: true, placeholder: '' },
+      ],
+      cpuRequest: '1000m',
+      memoryRequest: '1Gi',
+      containerCommand: ['node', 'dist/server.js'],
+      containerArgs: [],
+      notes: ['Ensure JWT_SECRET is filled before saving.'],
+      inspectedFiles: ['apps/api/Dockerfile', 'apps/api/package.json'],
+    })
+
+    renderEditor({
+      values: {
+        name: 'api-prod',
+        environmentVariables: [
+          { key: 'EXISTING_KEY', mode: 'public', value: 'keep-me', stored: 'none', secretAction: 'keep' },
+        ],
+      },
+    })
+
+    const inferButton = screen.getByRole('button', { name: 'AI Infer Config' })
+    expect(inferButton).toBeEnabled()
+    await user.click(inferButton)
+
+    const dialog = await screen.findByRole('dialog', { name: /AI Inferred Deploy Config/i })
+    expect(within(dialog).getByText('Detected Node.js service with Dockerfile exposing port 3000.')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('apps/api/Dockerfile').length).toBeGreaterThanOrEqual(2)
+    expect(within(dialog).getByText('apps/api/package.json')).toBeInTheDocument()
+    expect(within(dialog).getByText('High confidence')).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Apply to form draft' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /AI Inferred Deploy Config/i })).not.toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('combobox', { name: /Dockerfile path/i })).toHaveValue('apps/api/Dockerfile')
+    expect(screen.getByRole('combobox', { name: /Build context/i })).toHaveValue('apps/api')
+    expect(screen.getByDisplayValue('keep-me')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('LOG_LEVEL')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('JWT_SECRET')).toBeInTheDocument()
+    expect(api.createDeploymentTarget).not.toHaveBeenCalled()
+    expect(api.updateDeploymentTarget).not.toHaveBeenCalled()
   })
 })

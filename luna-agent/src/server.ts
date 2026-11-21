@@ -14,6 +14,7 @@ import type { RunStreamBus } from "./run-stream-bus.js"
 import { RunStreamHubManager } from "./run-stream-hub.js"
 import { maximumRequestBodyBytes, maximumTurnInputBytes, utf8ByteLength } from "./input-limits.js"
 import { createId } from "./id.js"
+import { type HeadlessInferenceRunner, headlessInferenceInputSchema } from "./headless-inference.js"
 import { agentLogger, agentMetrics, captureTraceContext, errorDiagnostic, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 declare module "fastify" {
@@ -55,6 +56,7 @@ export type BuildServerDependencies = {
   toolCatalogDigest: (platformRole?: string) => string
   streamBus: RunStreamBus
   streamHubLimits?: { perRun: number, perInstance: number, pendingEvents?: number, pendingBytes?: number }
+  headlessInference?: HeadlessInferenceRunner
 }
 
 export function buildServer(input: BuildServerDependencies): FastifyInstance {
@@ -137,6 +139,19 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         capabilities: provider.capabilities(),
         ...(health.requestId ? { providerRequestId: health.requestId } : {}),
       }
+    })
+
+    secured.post("/internal/v1/inference", async (request, reply) => {
+      reply.header("cache-control", "no-store")
+      if (!input.headlessInference) {
+        return reply.code(503).send(errorBody("ai.not_configured", request.id))
+      }
+      const body = headlessInferenceInputSchema.parse(request.body)
+      const abort = new AbortController()
+      request.raw.on("close", () => {
+        if (!reply.sent) abort.abort(new Error("ai.run_canceled"))
+      })
+      return input.headlessInference.run(request.actor, body, abort.signal)
     })
 
     secured.get("/internal/v1/conversations", async request => {
@@ -633,26 +648,50 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
 
   app.setErrorHandler((error, request, reply) => {
     const normalized = error instanceof Error ? error : new Error("ai.internal_error")
-    const code = normalized instanceof z.ZodError ? "invalid_request" : stableCode(normalized.message)
-    const status = code === "ai.unauthorized"
+    if (normalized.name === "AbortError" || normalized.message === "ai.run_canceled") {
+      telemetryLog("agent.http.request_aborted", "warn", {
+        "operation": "agent.http.request",
+        "outcome": "cancelled",
+        "http.request.method": request.method,
+        "http.route": request.routeOptions.url,
+        "http.response.status_code": 499,
+        "request_id": request.id,
+      })
+      void reply.header("cache-control", "no-store").code(499).send(errorBody("ai.run_canceled", request.id))
+      return
+    }
+    const rawCode = normalized instanceof z.ZodError ? "invalid_request" : stableCode(normalized.message)
+    const code = rawCode === "ai.provider_context_length_exceeded" ? "ai.model_context_insufficient" : rawCode
+    const status = code === "ai.unauthorized" || code === "ai.actor_context_invalid" || code === "ai.actor_context_expired"
       ? 401
-      : code.endsWith("_not_found")
-        ? 404
-        : code === "ai.wallet_balance_insufficient"
-          ? 422
-          : code === "ai.provider_usage_unavailable"
-            ? 502
-            : code === "ai.stream_subscriber_limit" || code === "ai.provider_rate_limited"
-              ? 429
-              : code === "ai.stream_transport_unavailable" || code === "ai.provider_unavailable" || code === "ai.provider_config_unavailable" || code === "ai.persistence_unavailable"
-                ? 503
-                : code === "ai.provider_timeout"
-                  ? 504
-                  : code === "idempotency_conflict" || code === "ai.run_state_conflict" || code === "ai.not_configured" || code === "ai.model_not_available" || code === "ai.approval_remember_not_allowed"
-                    ? 409
-                    : code === "ai.internal_error"
-                      ? 500
-                      : 400
+      : code === "ai.project_scope_mismatch" || code === "ai.user_not_allowed" || code === "ai.tool_permission_denied"
+        ? 403
+        : code.endsWith("_not_found")
+          ? 404
+          : code === "ai.wallet_balance_insufficient"
+            ? 422
+            : code === "ai.provider_usage_unavailable"
+              || code === "ai.structured_output_invalid"
+              || code === "ai.tool_outcome_unknown"
+              || code === "ai.provider_auth_failed"
+              || code === "ai.provider_quota_exhausted"
+              || code === "ai.provider_request_failed"
+              || code === "ai.provider_request_invalid"
+              || code === "ai.provider_response_invalid"
+              || code === "ai.provider_stream_invalid"
+              || code === "ai.provider_empty_stream"
+              ? 502
+              : code === "ai.stream_subscriber_limit" || code === "ai.provider_rate_limited"
+                ? 429
+                : code === "ai.stream_transport_unavailable" || code === "ai.provider_unavailable" || code === "ai.provider_config_unavailable" || code === "ai.persistence_unavailable"
+                  ? 503
+                  : code === "ai.provider_timeout"
+                    ? 504
+                    : code === "idempotency_conflict" || code === "ai.run_state_conflict" || code === "ai.not_configured" || code === "ai.model_not_available" || code === "ai.approval_remember_not_allowed"
+                      ? 409
+                      : code === "ai.internal_error"
+                        ? 500
+                        : 400
     telemetryLog("agent.http.request_failed", status >= 500 ? "error" : "warn", {
       "operation": "agent.http.request",
       "outcome": status >= 500 ? "failed" : "rejected",

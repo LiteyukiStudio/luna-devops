@@ -107,6 +107,9 @@ const errors = {
     delete_cleanup_failed: '배포 구성의 실행 리소스 정리에 실패했습니다. 실행 클러스터를 확인한 후 다시 삭제하세요.',
     delete_finalize_failed: '실행 리소스는 정리되었지만 삭제 기록을 완료하지 못했습니다. 잠시 후 다시 삭제하세요.',
     delete_enqueue_failed: '배포 구성 삭제 작업을 대기열에 넣지 못했습니다. Worker 대기열을 사용할 수 있는지 확인한 후 다시 시도하세요.',
+    repository_binding_required: '먼저 코드 저장소 연결을 선택하세요.',
+    subpath_invalid: '저장소 하위 경로 형식이 잘못되었습니다.',
+    repository_binding_not_found: '코드 저장소 연결이 존재하지 않거나 삭제되었습니다.',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes의 동일한 이름의 리소스는 다른 리소스 수명 주기에 속합니다. 플랫폼은 자동으로 인수하지 않습니다. 먼저 잔여 리소스를 처리하세요.',
@@ -203,6 +206,7 @@ const errors = {
     model_context_insufficient: '현재 요청이 선택한 모델의 컨텍스트 윈도우를 초과합니다. 입력을 줄이거나 대화 기록을 정리하세요.',
     model_output_limit_invalid: '모델 카탈로그의 출력 상한이 유효하지 않습니다. 플랫폼 관리자에게 문의하여 모델 설정을 확인하세요.',
     wallet_balance_insufficient: '개인 지갑의 사용 가능 잔액이 부족합니다. 모델 호출이 전송되지 않았습니다.',
+    structured_output_invalid: '모델이 유효한 구조화 결과를 반환하지 않았습니다. 잠시 후 다시 시도하세요.',
     conversation_not_found: '대화가 존재하지 않거나 삭제되었습니다.',
     run_not_found: '실행 기록이 존재하지 않거나 삭제되었습니다.',
     run_not_resumable: '작업 상태가 변경되어 계속할 수 없습니다.',

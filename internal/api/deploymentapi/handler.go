@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
 	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
 	"github.com/LiteyukiStudio/devops/internal/api/projectapi"
@@ -15,6 +16,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/api/volumeapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	registryprovider "github.com/LiteyukiStudio/devops/internal/provider/registry"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -76,6 +78,9 @@ type Host interface {
 	FindProject(ctx *gin.Context) (model.Project, bool)
 	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
 	ObserveGatewayRouteDiagnostics(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute
+	GitClientForUserBinding(ctx *gin.Context, user model.User, binding model.RepositoryBinding) (gitprovider.Client, bool)
+	WriteGitUpstreamError(ctx *gin.Context, err error)
+	RunHeadlessInferenceForUser(ctx *gin.Context, user model.User, input aiagent.HeadlessInferenceRequest) (*aiagent.HeadlessInferenceResponse, bool)
 }
 
 type Handler struct {

@@ -111,6 +111,13 @@ function AdvancedItemRow({ children, configured, errorCount, summary, title }: {
   title: string
 }) {
   const [expanded, setExpanded] = useState(configured > 0)
+  const [prevConfigured, setPrevConfigured] = useState(configured)
+  if (configured !== prevConfigured) {
+    const wasEmpty = prevConfigured === 0
+    setPrevConfigured(configured)
+    if (wasEmpty && configured > 0)
+      setExpanded(true)
+  }
   const [prevErrorCount, setPrevErrorCount] = useState(errorCount)
   if (errorCount !== prevErrorCount) {
     setPrevErrorCount(errorCount)

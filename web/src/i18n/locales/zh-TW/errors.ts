@@ -107,6 +107,9 @@ const errors = {
     delete_cleanup_failed: '清理部署配置的執行資源失敗，請檢查執行叢集後重試刪除。',
     delete_finalize_failed: '執行資源已清理，但刪除記錄未能完成，請稍後重試刪除。',
     delete_enqueue_failed: '部署配置刪除任務暫時無法投遞，請確認 Worker 佇列可用後重試。',
+    repository_binding_required: '請先選擇程式碼倉庫綁定。',
+    subpath_invalid: '程式碼子目錄格式無效。',
+    repository_binding_not_found: '程式碼倉庫綁定不存在或已被刪除。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes 同名資源屬於其他資源生命週期，平臺不會自動接管，請先處理殘留資源。',
@@ -203,6 +206,7 @@ const errors = {
     model_context_insufficient: '當前請求超過所選模型的上下文視窗，請縮短輸入或清理會話歷史。',
     model_output_limit_invalid: '模型目錄的輸出上限無效，請聯絡平臺管理員檢查模型配置。',
     wallet_balance_insufficient: '個人錢包可用餘額不足，模型呼叫未傳送。',
+    structured_output_invalid: '模型未回傳符合預期的結構化結果，請稍後再試。',
     conversation_not_found: '會話不存在或已被刪除。',
     run_not_found: '執行記錄不存在或已被刪除。',
     run_not_resumable: '當前任務狀態已變化，無法繼續此操作。',

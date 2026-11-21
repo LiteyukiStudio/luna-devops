@@ -1,4 +1,4 @@
-import type { Application, ApplicationDeletionPreview, ApplicationListParams, ApplicationPayload, ApplicationTopology, DeploymentBundleReferenceCandidateListRequest, DeploymentBundleReferenceCandidatePage, DeploymentTarget, DeploymentTargetBundle, DeploymentTargetBundleImportRequest, DeploymentTargetBundlePreview, DeploymentTargetBundlePreviewRequest, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload } from '../types'
+import type { Application, ApplicationDeletionPreview, ApplicationListParams, ApplicationPayload, ApplicationTopology, DeploymentBundleReferenceCandidateListRequest, DeploymentBundleReferenceCandidatePage, DeploymentTarget, DeploymentTargetBundle, DeploymentTargetBundleImportRequest, DeploymentTargetBundlePreview, DeploymentTargetBundlePreviewRequest, DeploymentTargetConfigInferenceInput, DeploymentTargetConfigInferenceOutput, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload } from '../types'
 import { paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -40,6 +40,8 @@ export const applicationsApi = {
     request<DeploymentBundleReferenceCandidatePage>(`/projects/${projectId}/applications/${applicationId}/deployment-target-imports/reference-candidates?${paginationQuery(params)}`, { method: 'POST', body: JSON.stringify(payload) }),
   importDeploymentTargetBundle: (projectId: string, applicationId: string, payload: DeploymentTargetBundleImportRequest) =>
     request<DeploymentTarget>(`/projects/${projectId}/applications/${applicationId}/deployment-target-imports`, { method: 'POST', body: JSON.stringify(payload) }),
+  inferDeploymentTargetConfig: (projectId: string, applicationId: string, payload: DeploymentTargetConfigInferenceInput, signal?: AbortSignal) =>
+    request<DeploymentTargetConfigInferenceOutput>(`/projects/${projectId}/applications/${applicationId}/deployment-target-config-inference`, { method: 'POST', body: JSON.stringify(payload), signal }),
   restartDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>
     request<void>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/restart`, { method: 'POST' }),
   deleteDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>
