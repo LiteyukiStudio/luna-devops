@@ -135,11 +135,24 @@ func ensureProjectMutableForAI(project model.Project) error {
 }
 
 func mapInboxToolError(err error) error {
+	if te, ok := aitool.AsToolError(err); ok && te != nil {
+		return te
+	}
 	switch {
 	case errors.Is(err, inbox.ErrInvalidInput), errors.Is(err, inbox.ErrInvalidDeepLink):
 		return aitool.BadRequest("inbox.request_invalid", "inbox request is invalid")
 	case errors.Is(err, inbox.ErrNotFound):
 		return aitool.NotFound("inbox.not_found", "inbox resource was not found")
+	case errors.Is(err, inbox.ErrSelfHealSessionRequired):
+		return aitool.Forbidden("inbox.self_heal_requires_ui_confirmation", "runtime self-healing proposals must be confirmed in the Inbox UI")
+	case errors.Is(err, inbox.ErrSelfHealForbidden):
+		return aitool.Forbidden("inbox.self_heal_forbidden", "runtime self-heal action is forbidden")
+	case errors.Is(err, inbox.ErrSelfHealStateDrifted):
+		return aitool.Conflict("inbox.self_heal_state_drifted", "runtime self-heal target state has drifted")
+	case errors.Is(err, inbox.ErrActionRequestStale):
+		return aitool.Conflict("inbox.action_request_stale", "inbox action request version is stale; refresh with ops_list_inbox")
+	case errors.Is(err, inbox.ErrActionRequestExpired):
+		return aitool.NewError(http.StatusGone, "inbox.action_request_expired", "inbox action request has expired")
 	case errors.Is(err, projectservice.ErrBillingOwnerTransferInvalid):
 		return aitool.BadRequest("inbox.billing_owner_transfer_invalid", "billing owner transfer input is invalid")
 	case errors.Is(err, projectservice.ErrBillingOwnerTransferForbidden):

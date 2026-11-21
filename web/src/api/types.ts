@@ -2162,6 +2162,8 @@ export interface AIDeliveryDiagnosisView {
   deploymentTargetId?: string
 }
 
+export type AISelfHealMode = 'suggest_only' | 'auto_l1' | 'auto_l2'
+
 export interface ProjectAIAutomationConfig {
   projectId: string
   deliveryDiagnosisEnabled: boolean
@@ -2169,6 +2171,16 @@ export interface ProjectAIAutomationConfig {
   deliveryBillingUserName: string
   deliveryCooldownSeconds: number
   deliveryDailyLimit: number
+  runtimeDiagnosisEnabled: boolean
+  runtimeBillingUserId: string
+  runtimeBillingUserName: string
+  runtimeCooldownSeconds: number
+  runtimeDailyLimit: number
+  selfHealMode: AISelfHealMode
+  stageSelfHealModes: Record<string, AISelfHealMode>
+  allowedAutoHealTools: string[]
+  maxConsecutiveAutoHeals: number
+  circuitBreakerWindowSeconds: number
   updatedBy: string
   updatedAt: string
 }
@@ -2178,6 +2190,15 @@ export interface UpdateProjectAIAutomationConfigInput {
   deliveryBillingUserId?: string
   deliveryCooldownSeconds?: number
   deliveryDailyLimit?: number
+  runtimeDiagnosisEnabled?: boolean
+  runtimeBillingUserId?: string
+  runtimeCooldownSeconds?: number
+  runtimeDailyLimit?: number
+  selfHealMode?: AISelfHealMode
+  stageSelfHealModes?: Record<string, AISelfHealMode>
+  allowedAutoHealTools?: string[]
+  maxConsecutiveAutoHeals?: number
+  circuitBreakerWindowSeconds?: number
 }
 
 export interface AIActionProposalPreviewOutput {
@@ -2593,6 +2614,30 @@ export type InboxFilter = 'all' | 'unread' | 'action'
 export type InboxActionRequestStatus = 'pending' | 'processing' | 'completed' | 'rejected' | 'cancelled' | 'expired' | 'failed'
 export type InboxDecision = 'accept' | 'reject'
 
+export interface InboxSelfHealProposal {
+  incidentId?: string
+  applicationId?: string
+  deploymentTargetId?: string
+  toolName: string
+  arguments: Record<string, unknown>
+  expectedSummary: string
+  createdAt?: string
+}
+
+export interface InboxSelfHealPreviewOutput {
+  toolName: string
+  approvalTier: 'L0' | 'L1' | 'L2'
+  approvalPreview: {
+    summary?: string
+    targetResource?: string
+    warnings?: string[]
+    changes?: Array<{ field: string, before?: unknown, after?: unknown }>
+  } & Record<string, unknown>
+  previewLock: string
+  stateDrifted: boolean
+  driftReason?: string
+}
+
 export interface InboxActionRequestSummary {
   id: string
   type: string
@@ -2600,6 +2645,7 @@ export interface InboxActionRequestSummary {
   rowVersion: number
   expiresAt?: string | null
   allowedDecisions: InboxDecision[]
+  proposal?: InboxSelfHealProposal
 }
 
 export interface InboxActionRequest {

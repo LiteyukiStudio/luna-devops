@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 )
 
 func TestClassifyRuntimeObservationAndDebounceRules(t *testing.T) {
@@ -208,8 +210,11 @@ func (n *noopNotificationDeliveryEnqueuer) EnqueueNotificationDeliver(_ context.
 }
 
 func TestPatrolRuntimeWorkloadsEndToEndWithInboxCoalescingAndRecovery(t *testing.T) {
-	db := testdb.Open(t, testdb.Options{
+	db := testdb.OpenDatabase(t, testdb.Options{
 		SchemaPrefix: "runtime_alert_patrol_test",
+		Migrate: func(db *gorm.DB) error {
+			return database.MigrateContext(context.Background(), db)
+		},
 	})
 	ctx := context.Background()
 
@@ -270,13 +275,14 @@ func TestPatrolRuntimeWorkloadsEndToEndWithInboxCoalescingAndRecovery(t *testing
 	}
 
 	channel := model.NotificationChannel{
-		ID:          "nch_rt_proj",
-		Name:        "Feishu Ops",
-		Scope:       "project",
-		ProjectID:   project.ID,
-		AdapterKind: notification.AdapterKindWebhook,
-		ConfigJSON:  `{"method":"POST","url":"https://open.feishu.cn/open-apis/bot/v2/hook/demo"}`,
-		Enabled:     true,
+		ID:             "nch_rt_proj",
+		Name:           "Feishu Ops",
+		Scope:          "project",
+		ProjectID:      project.ID,
+		AdapterKind:    notification.AdapterKindWebhook,
+		ConfigJSON:     `{"method":"POST","url":"https://open.feishu.cn/open-apis/bot/v2/hook/demo"}`,
+		SecretRefsJSON: `{}`,
+		Enabled:        true,
 	}
 	if err := db.Create(&channel).Error; err != nil {
 		t.Fatalf("create channel: %v", err)
@@ -294,8 +300,9 @@ func TestPatrolRuntimeWorkloadsEndToEndWithInboxCoalescingAndRecovery(t *testing
 		ProjectID:             project.ID,
 		Name:                  "Runtime Alerts",
 		EventTypesJSON:        `["runtime.pod_oom_killed","runtime.pod_crash_loop"]`,
-		FilterJSON:            `{"scope":"project"}`,
+		FilterJSON:            `{"scope":"all"}`,
 		ChannelIDsJSON:        `["nch_rt_proj"]`,
+		ChannelTargetsJSON:    `{}`,
 		RemindIntervalMinutes: 60,
 		MaxReminders:          2,
 		NotifyOnRecovery:      true,

@@ -29,9 +29,17 @@ func buildWorker(raw workerEnvironment, shared Shared, decodeErr error) (WorkerC
 		BuildJobTTLSeconds:          int64(raw.BuildJobTTLSeconds),
 		DeployRolloutTimeoutSeconds: int64(raw.DeployRolloutTimeout),
 		CertManagerClusterIssuer:    strings.TrimSpace(raw.CertManagerClusterIssuer),
+		InternalAPIBaseURL:          strings.TrimRight(strings.TrimSpace(raw.LunaAPIBaseURL), "/"),
 	}
 
 	var errs []error
+	if cfg.InternalAPIBaseURL != "" {
+		errs = appendError(errs, validateHTTPURL("LUNA_API_BASE_URL", cfg.InternalAPIBaseURL))
+	} else if shared.Mode == "production" && raw.AIAssistantAvailable {
+		errs = append(errs, errors.New("LUNA_API_BASE_URL is required by Worker in production when AI_ASSISTANT_AVAILABLE=true"))
+	} else if shared.Mode != "production" {
+		cfg.InternalAPIBaseURL = "http://127.0.0.1:8080"
+	}
 	if shared.Mode == "production" && shared.PublicBaseURL == "" {
 		errs = append(errs, errors.New("PUBLIC_BASE_URL is required by Worker in production"))
 	}

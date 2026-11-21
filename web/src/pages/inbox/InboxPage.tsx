@@ -1,12 +1,14 @@
-import type { InboxDecision, InboxFilter, InboxMessage } from '@/api'
+import type { InboxDecision, InboxFilter, InboxMessage, InboxSelfHealPreviewOutput } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, Bell, CheckCheck } from 'lucide-react'
+import { AlertTriangle, Archive, Bell, CheckCheck, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { ApiError } from '@/api/core'
+import { toolDisplayName } from '@/components/common/ai-assistant/tool-display-name'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
@@ -21,6 +23,39 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton'
 
 const filters: InboxFilter[] = ['all', 'unread', 'action']
+const RUNTIME_SELF_HEAL_TYPE = 'runtime.self_heal'
+
+function formatArgScalar(value: unknown): string {
+  if (value === undefined)
+    return '-'
+  if (typeof value === 'string')
+    return value || '""'
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null)
+    return String(value)
+  return JSON.stringify(value)
+}
+
+function isStateDriftOrLockError(error: unknown): boolean {
+  if (!(error instanceof ApiError))
+    return false
+  return (
+    error.code === 'inbox.self_heal_state_drifted'
+    || error.code === 'ai.preview_lock_mismatch'
+    || error.code === 'ai.preview_lock_expired'
+    || error.code === 'ai.preview_lock_invalid'
+  )
+}
+
+function isStaleOrExpiredActionError(error: unknown): boolean {
+  if (!(error instanceof ApiError))
+    return false
+  return (
+    error.code === 'inbox.action_request_stale'
+    || error.code === 'inbox.action_request_expired'
+    || error.code === 'inbox.billing_owner_transfer_stale'
+    || error.code === 'inbox.billing_owner_transfer_expired'
+  )
+}
 
 export function InboxPage() {
   const { t } = useTranslation()
@@ -54,13 +89,17 @@ export function InboxPage() {
     },
   })
   const decide = useMutation({
-    mutationFn: ({ decision, expectedVersion, requestId }: { decision: InboxDecision, expectedVersion: number, requestId: string }) =>
-      api.decideInboxActionRequest(requestId, decision, expectedVersion),
+    mutationFn: ({ decision, expectedVersion, previewLock, requestId }: { decision: InboxDecision, expectedVersion: number, previewLock?: string, requestId: string }) =>
+      api.decideInboxActionRequest(requestId, decision, expectedVersion, previewLock),
     onSuccess: async () => {
       toast.success(t('inbox.decision.success'))
       await invalidateInbox(queryClient)
     },
-    onError: error => toast.error(error instanceof Error ? error.message : t('errors.request.failed')),
+    onError: (error) => {
+      if (isStaleOrExpiredActionError(error))
+        void invalidateInbox(queryClient)
+      toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
+    },
   })
   const openDetails = useCallback((message: InboxMessage) => {
     setSearchParams((current) => {
@@ -185,17 +224,18 @@ export function InboxPage() {
           archivePending={archive.isPending}
           decisionPending={decide.isPending}
           error={selectedMessage.isError}
+          key={`${selectedMessageId}:${selectedMessage.data?.actionRequest?.id ?? ''}:${selectedMessage.data?.actionRequest?.rowVersion ?? 0}`}
           message={selectedMessage.data}
           open={Boolean(selectedMessageId)}
           pending={selectedMessage.isLoading}
           retrying={selectedMessage.isFetching}
           onArchive={messageId => archive.mutate(messageId)}
           onClose={closeDetails}
-          onDecision={async (message, decision) => {
+          onDecision={async (message, decision, previewLock) => {
             const request = message.actionRequest
             if (!request)
               return
-            await decide.mutateAsync({ decision, expectedVersion: request.rowVersion, requestId: request.id })
+            await decide.mutateAsync({ decision, expectedVersion: request.rowVersion, previewLock, requestId: request.id })
           }}
           onRetry={() => void selectedMessage.refetch()}
         />
@@ -204,17 +244,90 @@ export function InboxPage() {
   )
 }
 
-function InboxDetail({ archivePending, decisionPending, error, message, open, pending, retrying, onArchive, onClose, onDecision, onRetry }: { archivePending: boolean, decisionPending: boolean, error: boolean, message?: InboxMessage, open: boolean, pending: boolean, retrying: boolean, onArchive: (messageId: string) => void, onClose: () => void, onDecision: (message: InboxMessage, decision: InboxDecision) => Promise<void>, onRetry: () => void }) {
+function InboxDetail({
+  archivePending,
+  decisionPending,
+  error,
+  message,
+  open,
+  pending,
+  retrying,
+  onArchive,
+  onClose,
+  onDecision,
+  onRetry,
+}: {
+  archivePending: boolean
+  decisionPending: boolean
+  error: boolean
+  message?: InboxMessage
+  open: boolean
+  pending: boolean
+  retrying: boolean
+  onArchive: (messageId: string) => void
+  onClose: () => void
+  onDecision: (message: InboxMessage, decision: InboxDecision, previewLock?: string) => Promise<void>
+  onRetry: () => void
+}) {
   const { t } = useTranslation()
   const [decision, setDecision] = useState<InboxDecision | null>(null)
-  const text = message ? inboxMessageText(message, t) : null
+  const [stateDrifted, setStateDrifted] = useState(false)
+  const [repreviewOutput, setRepreviewOutput] = useState<InboxSelfHealPreviewOutput | null>(null)
+
   const actionRequest = message?.actionRequest
+  const isRuntimeSelfHeal = actionRequest?.type === RUNTIME_SELF_HEAL_TYPE
   const actionable = actionRequest?.status === 'pending'
+
+  const queryClient = useQueryClient()
+  const repreviewMutation = useMutation({
+    mutationFn: (requestId: string) => api.previewInboxSelfHealAction(requestId),
+    onSuccess: (output) => {
+      setRepreviewOutput(output)
+      setStateDrifted(output.stateDrifted)
+    },
+    onError: (err) => {
+      if (isStaleOrExpiredActionError(err))
+        void invalidateInbox(queryClient)
+      toast.error(err instanceof Error ? err.message : t('errors.request.failed'))
+    },
+  })
+
+  const text = message ? inboxMessageText(message, t) : null
+  const params = message?.params ?? {}
+  const aiRootCauseSummary = typeof params.aiRootCauseSummary === 'string' ? params.aiRootCauseSummary.trim() : ''
+  const aiSuggestions = Array.isArray(params.aiSuggestions)
+    ? params.aiSuggestions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
+  const aiAutoHealSummary = typeof params.aiAutoHealSummary === 'string' ? params.aiAutoHealSummary.trim() : ''
+  const aiCircuitBreakerTripped = params.aiCircuitBreakerTripped === true
+  const proposal = isRuntimeSelfHeal ? actionRequest?.proposal : undefined
+  const proposalEntries = proposal?.arguments
+    ? Object.entries(proposal.arguments).filter(([, val]) => val !== undefined)
+    : []
+
+  const handleConfirmDecision = async () => {
+    if (!message || !decision)
+      return
+    try {
+      const lockToPass = decision === 'accept' && isRuntimeSelfHeal ? repreviewOutput?.previewLock : undefined
+      await onDecision(message, decision, lockToPass)
+      setDecision(null)
+      setStateDrifted(false)
+      setRepreviewOutput(null)
+    }
+    catch (err) {
+      setDecision(null)
+      if (isRuntimeSelfHeal && isStateDriftOrLockError(err)) {
+        setStateDrifted(true)
+        setRepreviewOutput(null)
+      }
+    }
+  }
 
   return (
     <>
       <Sheet open={open} onOpenChange={value => !value && onClose()}>
-        <SheetContent className="w-[min(92vw,32rem)] max-w-none gap-0 overflow-y-auto p-0 sm:max-w-none" side="right">
+        <SheetContent className="w-[min(92vw,34rem)] max-w-none gap-0 overflow-y-auto p-0 sm:max-w-none" side="right">
           <SheetHeader className="border-b border-border p-6 pr-14">
             <SheetTitle>{text?.title ?? t('inbox.detail.title')}</SheetTitle>
             <SheetDescription>{message ? formatAbsoluteDateTime(message.createdAt) : pending ? t('common.loading') : ''}</SheetDescription>
@@ -239,8 +352,116 @@ function InboxDetail({ archivePending, decisionPending, error, message, open, pe
                   </div>
                 )
               : message && text && (
-                <div className="space-y-6 p-6">
+                <div className="space-y-5 p-6">
                   <p className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">{text.content}</p>
+
+                  {aiCircuitBreakerTripped && (
+                    <div className="flex items-start gap-2.5 rounded-control border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive" role="alert">
+                      <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                      <span>{t('inbox.selfHeal.circuitBreakerBanner')}</span>
+                    </div>
+                  )}
+
+                  {aiRootCauseSummary && (
+                    <div className="space-y-2.5 rounded-control border border-border bg-surface-subtle/50 p-3.5 text-sm">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <Sparkles aria-hidden="true" className="size-3.5 text-primary" />
+                        <span>{t('inbox.selfHeal.aiDiagnosisTitle')}</span>
+                      </div>
+                      <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">{aiRootCauseSummary}</p>
+                      {aiSuggestions.length > 0 && (
+                        <div className="space-y-1 pt-1">
+                          <div className="text-[11px] font-medium text-muted-foreground">{t('inbox.selfHeal.suggestionsTitle')}</div>
+                          <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                            {aiSuggestions.map(item => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {aiAutoHealSummary && (
+                        <div className="rounded-control border border-border bg-background/80 p-2.5 text-xs">
+                          <div className="font-medium text-foreground">{t('inbox.selfHeal.autoHealExecutedTitle')}</div>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{aiAutoHealSummary}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {isRuntimeSelfHeal && proposal && (
+                    <div className="space-y-3 rounded-control border border-border bg-background p-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-foreground">{t('inbox.selfHeal.proposalTitle')}</span>
+                        <StatusBadge tone="info">{toolDisplayName(t, proposal.toolName)}</StatusBadge>
+                      </div>
+                      {proposal.expectedSummary && (
+                        <p className="text-xs leading-relaxed text-muted-foreground">{proposal.expectedSummary}</p>
+                      )}
+                      {proposalEntries.length > 0 && (
+                        <dl className="grid gap-1 rounded-control border border-border bg-surface-subtle/40 p-2.5 text-xs">
+                          {proposalEntries.map(([key, val]) => (
+                            <div className="flex items-baseline justify-between gap-3" key={key}>
+                              <dt className="font-mono text-muted-foreground">{key}</dt>
+                              <dd className="min-w-0 break-all font-mono text-foreground">{formatArgScalar(val)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )}
+
+                      {stateDrifted && !repreviewOutput && (
+                        <div className="space-y-2.5 rounded-control border border-warning/40 bg-warning/5 p-3 text-xs" role="alert">
+                          <div className="flex items-start gap-2 font-medium text-foreground">
+                            <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+                            <span>{t('inbox.selfHeal.stateDriftedTitle')}</span>
+                          </div>
+                          <p className="leading-relaxed text-muted-foreground">{t('inbox.selfHeal.stateDriftedDescription')}</p>
+                          {actionable && actionRequest && (
+                            <Button
+                              disabled={repreviewMutation.isPending}
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                              onClick={() => repreviewMutation.mutate(actionRequest.id)}
+                            >
+                              {repreviewMutation.isPending
+                                ? <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" />
+                                : <RefreshCw className="size-3.5" />}
+                              {t('inbox.selfHeal.repreviewAction')}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {repreviewOutput && (
+                        <div className="space-y-2 rounded-control border border-border bg-surface-subtle/60 p-3 text-xs">
+                          <div className="font-medium text-foreground">{t('inbox.selfHeal.repreviewSummaryTitle')}</div>
+                          {repreviewOutput.approvalPreview.summary && (
+                            <p className="text-muted-foreground">{repreviewOutput.approvalPreview.summary}</p>
+                          )}
+                          {Array.isArray(repreviewOutput.approvalPreview.changes) && repreviewOutput.approvalPreview.changes.length > 0 && (
+                            <dl className="grid gap-1 pt-1">
+                              {repreviewOutput.approvalPreview.changes.map(ch => (
+                                <div className="flex items-baseline justify-between gap-2" key={ch.field}>
+                                  <dt className="font-mono text-muted-foreground">{ch.field}</dt>
+                                  <dd className="font-mono text-foreground">
+                                    {ch.before !== undefined ? `${formatArgScalar(ch.before)} -> ${formatArgScalar(ch.after)}` : formatArgScalar(ch.after)}
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
+                          {Array.isArray(repreviewOutput.approvalPreview.warnings) && repreviewOutput.approvalPreview.warnings.length > 0 && (
+                            <ul className="list-disc space-y-1 pl-4 text-warning">
+                              {repreviewOutput.approvalPreview.warnings.map(warning => (
+                                <li key={warning}>{warning}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-2">
                     <StatusBadge>{t(`inbox.categories.${message.category}`)}</StatusBadge>
                     {actionRequest && <StatusBadge tone={actionable ? 'warning' : 'neutral'}>{t(`inbox.states.${actionRequest.status}`)}</StatusBadge>}
@@ -259,8 +480,18 @@ function InboxDetail({ archivePending, decisionPending, error, message, open, pe
                       {t('inbox.actions.archive')}
                     </Button>
                     {message.deepLink && <Button asChild variant="outline"><Link to={message.deepLink}>{t('inbox.actions.openResource')}</Link></Button>}
-                    {actionable && actionRequest.allowedDecisions.includes('reject') && <Button variant="outline" onClick={() => setDecision('reject')}>{t('inbox.actions.reject')}</Button>}
-                    {actionable && actionRequest.allowedDecisions.includes('accept') && <Button onClick={() => setDecision('accept')}>{t('inbox.actions.accept')}</Button>}
+                    {actionable && actionRequest.allowedDecisions.includes('reject') && (
+                      <Button variant="outline" onClick={() => setDecision('reject')}>
+                        {isRuntimeSelfHeal ? t('inbox.selfHeal.ignoreAction') : t('inbox.actions.reject')}
+                      </Button>
+                    )}
+                    {actionable && actionRequest.allowedDecisions.includes('accept') && (!stateDrifted || Boolean(repreviewOutput)) && (
+                      <Button onClick={() => setDecision('accept')}>
+                        {isRuntimeSelfHeal
+                          ? (repreviewOutput ? t('inbox.selfHeal.confirmWithLockAction') : t('inbox.selfHeal.confirmAction'))
+                          : t('inbox.actions.accept')}
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -268,13 +499,21 @@ function InboxDetail({ archivePending, decisionPending, error, message, open, pe
       </Sheet>
       <ConfirmDialog
         cancelText={t('common.cancel')}
-        confirmText={t(decision === 'accept' ? 'inbox.actions.accept' : 'inbox.actions.reject')}
+        confirmText={isRuntimeSelfHeal
+          ? (decision === 'accept'
+              ? (repreviewOutput ? t('inbox.selfHeal.confirmWithLockAction') : t('inbox.selfHeal.confirmAction'))
+              : t('inbox.selfHeal.ignoreAction'))
+          : t(decision === 'accept' ? 'inbox.actions.accept' : 'inbox.actions.reject')}
         confirmVariant="default"
-        description={t(`inbox.decision.${decision === 'accept' ? 'acceptDescription' : 'rejectDescription'}`)}
+        description={isRuntimeSelfHeal
+          ? t(decision === 'accept' ? 'inbox.selfHeal.confirmDialogDescription' : 'inbox.selfHeal.ignoreDialogDescription')
+          : t(`inbox.decision.${decision === 'accept' ? 'acceptDescription' : 'rejectDescription'}`)}
         open={decision !== null}
         pending={decisionPending}
-        title={t(`inbox.decision.${decision === 'accept' ? 'acceptTitle' : 'rejectTitle'}`)}
-        onConfirm={() => message && decision ? onDecision(message, decision) : undefined}
+        title={isRuntimeSelfHeal
+          ? t(decision === 'accept' ? 'inbox.selfHeal.confirmDialogTitle' : 'inbox.selfHeal.ignoreDialogTitle')
+          : t(`inbox.decision.${decision === 'accept' ? 'acceptTitle' : 'rejectTitle'}`)}
+        onConfirm={handleConfirmDecision}
         onOpenChange={value => !value && setDecision(null)}
       />
     </>

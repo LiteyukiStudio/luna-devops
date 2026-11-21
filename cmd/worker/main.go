@@ -110,6 +110,7 @@ func run(ctx context.Context, cfg worker.Config) error {
 		VolumeTransferJobImage:      cfg.VolumeTransferJobImage,
 		VolumeTransferMaxBytes:      cfg.VolumeTransferMaxBytes,
 		SecretCodec:                 cfg.SecretCodec,
+		InternalAPIBaseURL:          cfg.InternalAPIBaseURL,
 		AIAgent:                     cfg.AIAgent,
 	}
 	telemetry.Logger().InfoContext(ctx, "worker service starting",

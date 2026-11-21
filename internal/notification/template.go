@@ -175,16 +175,26 @@ func templateDetails(event Event, locale string) string {
 		aiHeader := "AI Diagnosis"
 		causeLabel := "Root cause"
 		suggestLabel := "Suggestions"
+		healLabel := "Auto-healing"
 		proposeLabel := "Proposed action"
+		cbNotice := "Anti-flapping circuit breaker tripped; downgraded to manual confirmation."
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "zh") {
 			aiHeader = "AI 诊断摘要"
 			causeLabel = "根因分析"
 			suggestLabel = "修复建议"
+			healLabel = "自动自愈"
 			proposeLabel = "建议操作"
+			cbNotice = "已触发防震荡熔断，本次已自动降级为人工确认。"
 		}
 		lines = append(lines, "", aiHeader, fmt.Sprintf("- %s: %s", causeLabel, strings.TrimSpace(event.AIDiagnosis.RootCauseSummary)))
 		if len(event.AIDiagnosis.Suggestions) > 0 {
 			lines = append(lines, fmt.Sprintf("- %s: %s", suggestLabel, strings.Join(event.AIDiagnosis.Suggestions, "; ")))
+		}
+		if strings.TrimSpace(event.AIDiagnosis.AutoHealSummary) != "" {
+			lines = append(lines, fmt.Sprintf("- %s: %s", healLabel, strings.TrimSpace(event.AIDiagnosis.AutoHealSummary)))
+		}
+		if event.AIDiagnosis.CircuitBreakerTripped {
+			lines = append(lines, fmt.Sprintf("- %s: %s", healLabel, cbNotice))
 		}
 		if strings.TrimSpace(event.AIDiagnosis.ProposedActionSummary) != "" {
 			lines = append(lines, fmt.Sprintf("- %s: %s", proposeLabel, strings.TrimSpace(event.AIDiagnosis.ProposedActionSummary)))

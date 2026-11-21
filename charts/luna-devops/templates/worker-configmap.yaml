@@ -18,3 +18,4 @@ data:
   AI_ASSISTANT_AVAILABLE: {{ .Values.ai.enabled | quote }}
   AI_AGENT_BASE_URL: {{ default (printf "http://%s:%v" (include "luna-devops.agentName" .) .Values.ai.agent.service.port) .Values.ai.agentAddress | quote }}
   AI_AGENT_TIMEOUT: {{ .Values.ai.agentTimeout | quote }}
+  LUNA_API_BASE_URL: {{ printf "http://%s:%v" (include "luna-devops.apiName" .) .Values.api.service.port | quote }}

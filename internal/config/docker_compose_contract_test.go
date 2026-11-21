@@ -62,7 +62,7 @@ func TestDockerComposeApplicationEnvironmentAllowlist(t *testing.T) {
 		"AI_INTERNAL_SECRET":                      allApplicationServices("${AI_INTERNAL_SECRET:-}"),
 		"AI_INTERNAL_SECRET_PREVIOUS":             allApplicationServices("${AI_INTERNAL_SECRET_PREVIOUS:-}"),
 		"AUTH_MODE":                               agentOnly("bff-hmac"),
-		"LUNA_API_BASE_URL":                       agentOnly("http://api:8080"),
+		"LUNA_API_BASE_URL":                       {"worker": "http://api:8080", "agent": "http://api:8080"},
 		"OTEL_SERVICE_VERSION":                    agentOnly("${DEVOPS_IMAGE_TAG:-nightly}"),
 		"AI_OBSERVABILITY_CAPTURE_CONTENT":        agentOnly("${AI_OBSERVABILITY_CAPTURE_CONTENT:-false}"),
 		"AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS": agentOnly("${AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS:-false}"),

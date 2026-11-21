@@ -62,14 +62,17 @@ type ruleAlertNotificationState struct {
 }
 
 type runtimeAlertDecision struct {
-	Incident             model.RuntimeAlertIncident
-	ShouldEmitAlert      bool
-	ShouldUpdateInbox    bool
-	MarkInboxUnread      bool
-	IsReminder           bool
-	ReminderCount        int
-	EligibleRuleIDs      []string
-	IncludePersonalOwner bool
+	Incident                     model.RuntimeAlertIncident
+	PreEmitRuleNotificationsJSON string
+	PreEmitNotificationCount     int
+	PreEmitLastNotifiedAt        *time.Time
+	ShouldEmitAlert              bool
+	ShouldUpdateInbox            bool
+	MarkInboxUnread              bool
+	IsReminder                   bool
+	ReminderCount                int
+	EligibleRuleIDs              []string
+	IncludePersonalOwner         bool
 }
 
 func (r *Runner) runtimeObserver(ctx context.Context, target model.DeploymentTarget) (runtimeWorkloadObserver, error) {
@@ -111,6 +114,8 @@ func (r *Runner) patrolRuntimeWorkloadsAt(ctx context.Context, now time.Time) er
 		return err
 	}
 
+	const maxCumulativeInlineWaitPerPass = 30 * time.Second
+	remainingInlineBudget := maxCumulativeInlineWaitPerPass
 	projectsByID := map[string]model.Project{}
 	appsByID := map[string]model.Application{}
 	for _, target := range targets {
@@ -128,7 +133,14 @@ func (r *Runner) patrolRuntimeWorkloadsAt(ctx context.Context, now time.Time) er
 			}
 			appsByID[target.ApplicationID] = application
 		}
-		r.patrolSingleDeploymentTarget(ctx, target, project, application, now)
+		targetStart := time.Now()
+		r.patrolSingleDeploymentTarget(ctx, target, project, application, now, remainingInlineBudget)
+		elapsed := time.Since(targetStart)
+		if elapsed >= remainingInlineBudget {
+			remainingInlineBudget = 0
+		} else {
+			remainingInlineBudget -= elapsed
+		}
 	}
 	return nil
 }
@@ -139,6 +151,7 @@ func (r *Runner) patrolSingleDeploymentTarget(
 	project model.Project,
 	application model.Application,
 	now time.Time,
+	inlineWaitBudget time.Duration,
 ) {
 	observer, err := r.runtimeObserver(ctx, target)
 	if err != nil || observer == nil {
@@ -200,28 +213,26 @@ func (r *Runner) patrolSingleDeploymentTarget(
 	}
 
 	decision := evaluateRuntimeIncidentAnomaly(currentPtr, target, *anomaly, matchingRules, now)
+	preEmitIncident := decision.Incident
+	if decision.ShouldEmitAlert {
+		preEmitIncident.RuleNotificationsJSON = decision.PreEmitRuleNotificationsJSON
+		preEmitIncident.NotificationCount = decision.PreEmitNotificationCount
+		preEmitIncident.LastNotifiedAt = decision.PreEmitLastNotifiedAt
+	}
 	if hasOpen {
-		if saveErr := db.Save(&decision.Incident).Error; saveErr != nil {
+		if saveErr := db.Save(&preEmitIncident).Error; saveErr != nil {
 			telemetry.RecordError(ctx, "runtime.patrol_save_incident_failed", saveErr)
 			return
 		}
 	} else {
-		if createErr := db.Create(&decision.Incident).Error; createErr != nil {
+		if createErr := db.Create(&preEmitIncident).Error; createErr != nil {
 			telemetry.RecordError(ctx, "runtime.patrol_create_incident_failed", createErr)
 			return
 		}
 	}
 
-	if decision.ShouldEmitAlert {
-		eventID := r.emitRuntimeAnomalyNotification(ctx, decision, target, project, application, *anomaly, now)
-		if eventID != "" {
-			_ = db.Model(&model.RuntimeAlertIncident{}).
-				Where("id = ?", decision.Incident.ID).
-				Update("last_event_id", eventID).Error
-		}
-	}
-	if decision.ShouldUpdateInbox {
-		r.publishRuntimeAnomalyInbox(ctx, decision, target, project, application, *anomaly)
+	if decision.ShouldEmitAlert || decision.ShouldUpdateInbox {
+		r.dispatchRuntimeAnomalyAlertAndInbox(ctx, decision, target, project, application, observation, *anomaly, now, inlineWaitBudget)
 	}
 }
 
@@ -247,6 +258,7 @@ func (r *Runner) resolveRuntimeIncident(
 	if !wasActive {
 		return
 	}
+	r.expirePendingRuntimeSelfHealRequests(ctx, target.ProjectID, incident.ID, now)
 
 	durationSecs := int64(0)
 	if !incident.FirstDetectedAt.IsZero() && now.After(incident.FirstDetectedAt) {
@@ -408,6 +420,13 @@ func evaluateRuntimeIncidentAnomaly(
 
 	firstConfirmation := incident.Status != "active"
 	incident.Status = "active"
+	preEmitRuleNotificationsJSON := incident.RuleNotificationsJSON
+	preEmitNotificationCount := incident.NotificationCount
+	var preEmitLastNotifiedAt *time.Time
+	if incident.LastNotifiedAt != nil {
+		copied := *incident.LastNotifiedAt
+		preEmitLastNotifiedAt = &copied
+	}
 
 	states := decodeRuleNotificationStates(incident.RuleNotificationsJSON)
 	eligibleRuleIDs := make([]string, 0, len(matchingRules))
@@ -464,14 +483,17 @@ func evaluateRuntimeIncidentAnomaly(
 	}
 
 	return runtimeAlertDecision{
-		Incident:             incident,
-		ShouldEmitAlert:      shouldEmit,
-		ShouldUpdateInbox:    firstConfirmation || escalated || shouldEmit,
-		MarkInboxUnread:      firstConfirmation || escalated,
-		IsReminder:           isReminder,
-		ReminderCount:        maxReminderCount,
-		EligibleRuleIDs:      eligibleRuleIDs,
-		IncludePersonalOwner: includePersonal,
+		Incident:                     incident,
+		PreEmitRuleNotificationsJSON: preEmitRuleNotificationsJSON,
+		PreEmitNotificationCount:     preEmitNotificationCount,
+		PreEmitLastNotifiedAt:        preEmitLastNotifiedAt,
+		ShouldEmitAlert:              shouldEmit,
+		ShouldUpdateInbox:            firstConfirmation || escalated || shouldEmit,
+		MarkInboxUnread:              firstConfirmation || escalated,
+		IsReminder:                   isReminder,
+		ReminderCount:                maxReminderCount,
+		EligibleRuleIDs:              eligibleRuleIDs,
+		IncludePersonalOwner:         includePersonal,
 	}
 }
 
@@ -704,6 +726,7 @@ func (r *Runner) emitRuntimeAnomalyNotification(
 	application model.Application,
 	anomaly runtimeDetectedAnomaly,
 	now time.Time,
+	aiDiag *notification.AIDiagnosisContext,
 ) string {
 	projectRef, appRef, targetRef := notificationEntityRefs(target.ProjectID, target.ApplicationID, target.ID, project, application, target)
 	firstDetected := decision.Incident.FirstDetectedAt
@@ -716,10 +739,14 @@ func (r *Runner) emitRuntimeAnomalyNotification(
 	if decision.IsReminder {
 		dedupSuffix = "reminder:" + strconv.Itoa(decision.ReminderCount)
 	}
+	severity := anomaly.Severity
+	if aiDiag != nil && aiDiag.CircuitBreakerTripped {
+		severity = notification.SeverityError
+	}
 	event := notification.Event{
 		ID:               eventID,
 		Type:             anomaly.EventType,
-		Severity:         anomaly.Severity,
+		Severity:         severity,
 		Project:          projectRef,
 		Application:      appRef,
 		DeploymentTarget: targetRef,
@@ -740,6 +767,7 @@ func (r *Runner) emitRuntimeAnomalyNotification(
 			Summary:          anomaly.Summary,
 			DiagnosticDetail: anomaly.DiagnosticDetail,
 		},
+		AIDiagnosis:         aiDiag,
 		ResourceOwnerUserID: ownerUserID,
 		EligibleRuleIDs:     decision.EligibleRuleIDs,
 		CorrelationID:       decision.Incident.ID,
@@ -760,49 +788,7 @@ func (r *Runner) publishRuntimeAnomalyInbox(
 	application model.Application,
 	anomaly runtimeDetectedAnomaly,
 ) {
-	priority := inbox.PriorityHigh
-	if anomaly.EventType == "runtime.pod_oom_killed" || anomaly.EventType == "runtime.pod_crash_loop" {
-		priority = inbox.PriorityCritical
-	}
-	titleKey := "inbox.runtime.degraded.title"
-	switch anomaly.EventType {
-	case "runtime.pod_oom_killed":
-		titleKey = "inbox.runtime.oomKilled.title"
-	case "runtime.pod_crash_loop":
-		titleKey = "inbox.runtime.crashLoop.title"
-	case "runtime.pod_start_failed":
-		titleKey = "inbox.runtime.startFailed.title"
-	}
-	coalesceKey := firstNonEmpty(decision.Incident.InboxCoalesceKey, "runtime_incident:"+decision.Incident.ID)
-	_ = inbox.NewService(r.db).PublishCoalescedToProjectRoles(
-		ctx,
-		target.ProjectID,
-		[]string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper},
-		inbox.PublishInput{
-			Type:       anomaly.EventType,
-			Category:   inbox.CategoryDelivery,
-			Priority:   priority,
-			TitleKey:   titleKey,
-			ContentKey: "inbox.runtime.anomaly.body",
-			Params: map[string]any{
-				"projectName":     firstNonEmpty(project.Name, project.Identifier),
-				"applicationName": firstNonEmpty(application.Name, application.Identifier),
-				"targetName":      firstNonEmpty(target.Name, target.Stage),
-				"podName":         anomaly.PodName,
-				"reason":          anomaly.Reason,
-				"restartCount":    anomaly.RestartCount,
-				"readyReplicas":   anomaly.ReadyReplicas,
-				"desiredReplicas": anomaly.DesiredReplicas,
-				"occurrenceCount": decision.Incident.ConsecutiveFailures,
-			},
-			ProjectID:    target.ProjectID,
-			ResourceType: "deployment_target",
-			ResourceID:   target.ID,
-			DeepLink:     runtimeTargetActionLink(target.ProjectID, target.ApplicationID, target.ID),
-			DedupKey:     coalesceKey,
-		},
-		decision.MarkInboxUnread,
-	)
+	r.publishRuntimeAnomalyInboxWithAI(ctx, decision, target, project, application, anomaly, nil, nil, "")
 }
 
 func runtimeTargetActionLink(projectID string, applicationID string, targetID string) string {

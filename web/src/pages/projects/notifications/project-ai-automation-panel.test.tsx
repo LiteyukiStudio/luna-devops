@@ -54,6 +54,16 @@ describe('project AI automation panel', () => {
       deliveryBillingUserName: '',
       deliveryCooldownSeconds: 300,
       deliveryDailyLimit: 20,
+      runtimeDiagnosisEnabled: false,
+      runtimeBillingUserId: '',
+      runtimeBillingUserName: '',
+      runtimeCooldownSeconds: 300,
+      runtimeDailyLimit: 20,
+      selfHealMode: 'suggest_only',
+      stageSelfHealModes: {},
+      allowedAutoHealTools: [],
+      maxConsecutiveAutoHeals: 2,
+      circuitBreakerWindowSeconds: 1800,
       updatedBy: '',
       updatedAt: '2026-04-17T00:00:00Z',
     })
@@ -64,6 +74,16 @@ describe('project AI automation panel', () => {
       deliveryBillingUserName: 'Alice Ops',
       deliveryCooldownSeconds: payload.deliveryCooldownSeconds ?? 300,
       deliveryDailyLimit: payload.deliveryDailyLimit ?? 20,
+      runtimeDiagnosisEnabled: Boolean(payload.runtimeDiagnosisEnabled),
+      runtimeBillingUserId: payload.runtimeBillingUserId ?? '',
+      runtimeBillingUserName: payload.runtimeBillingUserId ? 'Alice Ops' : '',
+      runtimeCooldownSeconds: payload.runtimeCooldownSeconds ?? 300,
+      runtimeDailyLimit: payload.runtimeDailyLimit ?? 20,
+      selfHealMode: payload.selfHealMode ?? 'suggest_only',
+      stageSelfHealModes: payload.stageSelfHealModes ?? {},
+      allowedAutoHealTools: payload.allowedAutoHealTools ?? [],
+      maxConsecutiveAutoHeals: payload.maxConsecutiveAutoHeals ?? 2,
+      circuitBreakerWindowSeconds: payload.circuitBreakerWindowSeconds ?? 1800,
       updatedBy: 'usr_self',
       updatedAt: '2026-04-17T00:05:00Z',
     }))
@@ -79,21 +99,69 @@ describe('project AI automation panel', () => {
     await user.click(toggle)
     expect(screen.getByText('Alice Ops')).toBeInTheDocument()
 
-    const cooldownInput = screen.getByRole('spinbutton', { name: /Cooldown window \(seconds\)/i })
-    await user.clear(cooldownInput)
+    const cooldownInputs = screen.getAllByRole('spinbutton', { name: /Cooldown window \(seconds\)/i })
+    await user.clear(cooldownInputs[0]!)
     expect(await screen.findByText(i18next.t('errors.ai_automation.cooldown_invalid'))).toBeInTheDocument()
-    await user.type(cooldownInput, '600')
+    await user.type(cooldownInputs[0]!, '600')
 
     const saveButton = screen.getByRole('button', { name: i18next.t('common.save') })
     expect(saveButton).toBeEnabled()
     await user.click(saveButton)
 
-    await waitFor(() => expect(mocks.updateProjectAIAutomationConfig).toHaveBeenCalledWith('prj_1', {
+    await waitFor(() => expect(mocks.updateProjectAIAutomationConfig).toHaveBeenCalledWith('prj_1', expect.objectContaining({
       deliveryDiagnosisEnabled: true,
       deliveryCooldownSeconds: 600,
       deliveryDailyLimit: 20,
       deliveryBillingUserId: 'usr_self',
-    }))
+      selfHealMode: 'suggest_only',
+    })))
+  })
+
+  it('requires high-risk secondary confirmation before saving auto_l2 runtime self-healing', async () => {
+    mocks.getProjectAIAutomationConfig.mockResolvedValue({
+      projectId: 'prj_1',
+      deliveryDiagnosisEnabled: false,
+      deliveryBillingUserId: '',
+      deliveryBillingUserName: '',
+      deliveryCooldownSeconds: 300,
+      deliveryDailyLimit: 20,
+      runtimeDiagnosisEnabled: true,
+      runtimeBillingUserId: 'usr_self',
+      runtimeBillingUserName: 'Alice Ops',
+      runtimeCooldownSeconds: 300,
+      runtimeDailyLimit: 20,
+      selfHealMode: 'auto_l2',
+      stageSelfHealModes: { prod: 'auto_l2' },
+      allowedAutoHealTools: [],
+      maxConsecutiveAutoHeals: 2,
+      circuitBreakerWindowSeconds: 1800,
+      updatedBy: 'usr_self',
+      updatedAt: '2026-04-17T00:00:00Z',
+    })
+
+    const user = userEvent.setup()
+    renderPanel(true)
+
+    const restartCheckbox = await screen.findByRole('checkbox', { name: /delivery_restart_target/i })
+    await user.click(restartCheckbox)
+
+    const saveButton = screen.getByRole('button', { name: i18next.t('common.save') })
+    await user.click(saveButton)
+
+    // Must NOT save before explicit secondary confirmation!
+    expect(mocks.updateProjectAIAutomationConfig).not.toHaveBeenCalled()
+    expect(await screen.findByText(i18next.t('aiAssistant.projectAutomation.autoL2ConfirmTitle'))).toBeInTheDocument()
+
+    const confirmButton = screen.getByRole('button', { name: i18next.t('aiAssistant.projectAutomation.autoL2ConfirmAction') })
+    await user.click(confirmButton)
+
+    await waitFor(() => expect(mocks.updateProjectAIAutomationConfig).toHaveBeenCalledWith('prj_1', expect.objectContaining({
+      runtimeDiagnosisEnabled: true,
+      runtimeBillingUserId: 'usr_self',
+      selfHealMode: 'auto_l2',
+      stageSelfHealModes: { prod: 'auto_l2' },
+      allowedAutoHealTools: ['delivery_restart_target'],
+    })))
   })
 
   it('disables controls and hides save button when user is read-only', async () => {

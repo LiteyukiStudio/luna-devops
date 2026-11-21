@@ -125,6 +125,17 @@ func (s *Service) PublishOrUpdate(ctx context.Context, input PublishInput, markU
 	if s == nil || s.db == nil {
 		return model.InboxMessage{}, false, ErrInvalidInput
 	}
+	if message.ActionRequestID != "" {
+		var count int64
+		if err = s.db.WithContext(ctx).Model(&model.InboxActionRequest{}).
+			Where("id = ? AND recipient_user_id = ?", message.ActionRequestID, message.RecipientUserID).
+			Count(&count).Error; err != nil {
+			return model.InboxMessage{}, false, err
+		}
+		if count == 0 {
+			return model.InboxMessage{}, false, ErrInvalidInput
+		}
+	}
 	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&message)
 	if result.Error != nil {
 		return model.InboxMessage{}, false, result.Error
@@ -137,9 +148,29 @@ func (s *Service) PublishOrUpdate(ctx context.Context, input PublishInput, markU
 	}
 
 	now := time.Now()
+	effectiveCategory := message.Category
+	clearActionReq := input.ClearActionRequest || message.Type == "runtime.recovered"
+	if !clearActionReq && message.ActionRequestID == "" {
+		var existingMsg model.InboxMessage
+		if err := s.db.WithContext(ctx).
+			Select("id", "action_request_id").
+			Where("recipient_user_id = ? AND dedup_key = ?", message.RecipientUserID, *message.DedupKey).
+			First(&existingMsg).Error; err == nil && strings.TrimSpace(existingMsg.ActionRequestID) != "" {
+			var activeReqCount int64
+			if err := s.db.WithContext(ctx).Model(&model.InboxActionRequest{}).
+				Where("id = ? AND recipient_user_id = ? AND status IN ?",
+					existingMsg.ActionRequestID,
+					message.RecipientUserID,
+					[]string{ActionRequestStatusPending, ActionRequestStatusProcessing},
+				).Count(&activeReqCount).Error; err == nil && activeReqCount > 0 {
+				effectiveCategory = CategoryAction
+			}
+		}
+	}
+
 	updates := map[string]any{
 		"type":        message.Type,
-		"category":    message.Category,
+		"category":    effectiveCategory,
 		"priority":    message.Priority,
 		"title_key":   message.TitleKey,
 		"content_key": message.ContentKey,
@@ -148,6 +179,9 @@ func (s *Service) PublishOrUpdate(ctx context.Context, input PublishInput, markU
 		"group_key":   message.GroupKey,
 		"archived_at": nil,
 		"updated_at":  now,
+	}
+	if message.ActionRequestID != "" || clearActionReq {
+		updates["action_request_id"] = message.ActionRequestID
 	}
 	if markUnread {
 		updates["read_at"] = nil
@@ -194,6 +228,9 @@ func (s *Service) PublishCoalescedToProjectRoles(ctx context.Context, projectID 
 		memberInput := input
 		memberInput.RecipientUserID = uid
 		memberInput.ProjectID = projectID
+		if baseDedup := strings.TrimSpace(input.DedupKey); baseDedup != "" {
+			memberInput.DedupKey = uid + ":" + baseDedup
+		}
 		if _, _, err := s.PublishOrUpdate(ctx, memberInput, markUnread); err != nil {
 			errs = append(errs, err)
 		}
@@ -355,7 +392,7 @@ func newActionRequest(input CreateActionRequestInput) (model.InboxActionRequest,
 	if requestType == "" || requesterUserID == "" || recipientUserID == "" {
 		return model.InboxActionRequest{}, ErrInvalidInput
 	}
-	if requestType != ActionRequestTypeBillingOwnerTransfer {
+	if requestType != ActionRequestTypeBillingOwnerTransfer && requestType != ActionRequestTypeRuntimeSelfHeal {
 		return model.InboxActionRequest{}, ErrInvalidInput
 	}
 	payloadJSON, err := marshalObject(input.Payload)

@@ -77,6 +77,13 @@ if helm template luna-devops "$chart_dir" --namespace luna-devops \
 fi
 assert_contains "$worker_api_env_error" 'API_ADDR is managed by the chart and cannot be set through worker.extraEnv' 'Worker accepts API-managed variables through extraEnv'
 
+worker_luna_api_url_error="$tmp_dir/worker-luna-api-url.err"
+if helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set-string worker.extraEnv.LUNA_API_BASE_URL=http://must-not-override > /dev/null 2> "$worker_luna_api_url_error"; then
+  fail 'worker.extraEnv must not override managed LUNA_API_BASE_URL'
+fi
+assert_contains "$worker_luna_api_url_error" 'LUNA_API_BASE_URL is managed by the chart and cannot be set through worker.extraEnv' 'Worker accepts LUNA_API_BASE_URL through extraEnv'
+
 api_database_env_error="$tmp_dir/api-database-env.err"
 if helm template luna-devops "$chart_dir" --namespace luna-devops \
   --set-string api.extraEnv.WORKER_DB_MAX_OPEN_CONNS=99 > /dev/null 2> "$api_database_env_error"; then

@@ -58,6 +58,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 	router.POST("/internal/v1/ai/tools/preview", domains.ai.PreviewAIToolInternal)
 	router.POST("/internal/v1/ai/tools/execute", domains.ai.ExecuteAIToolInternal)
 	router.POST("/internal/v1/ai/tools/execute-headless", domains.ai.ExecuteHeadlessAIToolInternal)
+	router.POST("/internal/v1/ai/tools/auto-heal", domains.ai.ExecuteAutoHealInternal)
 	router.GET("/internal/v1/ai/runs/:runId/tasks/:projectId/:taskType/:taskId", domains.ai.GetAITaskStatusInternal)
 
 	v1 := router.Group("/api/v1")
@@ -103,6 +104,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.POST("/inbox/read-all", domains.notification.MarkAllInboxMessagesRead)
 		v1.POST("/inbox/:messageId/archive", domains.notification.ArchiveInboxMessage)
 		v1.POST("/inbox/action-requests/:requestId/decision", domains.notification.DecideInboxActionRequest)
+		v1.POST("/inbox/action-requests/:requestId/self-heal-preview", domains.ai.PreviewInboxSelfHealAction)
 		v1.POST("/telemetry/v1/traces", domains.platform.RelayBrowserTraces)
 		v1.POST("/mcp", domains.ai.PostMCPStreamableHTTP)
 		v1.GET("/mcp", domains.ai.GetMCPStreamableHTTP)

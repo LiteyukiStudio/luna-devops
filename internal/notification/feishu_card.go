@@ -283,16 +283,26 @@ func renderFeishuInteractiveCardJSON(event Event, locale string, timeZone string
 	if event.AIDiagnosis != nil && strings.TrimSpace(event.AIDiagnosis.RootCauseSummary) != "" {
 		aiTitle := "AI Root Cause Diagnosis"
 		suggestPrefix := "Suggestions: "
+		healPrefix := "Auto-healed: "
 		proposePrefix := "Proposed action: "
+		cbLine := "Warning: Anti-flapping circuit breaker tripped; downgraded to manual confirmation."
 		if isZH {
-			aiTitle = "AI 临终诊断"
+			aiTitle = "AI 智能诊断"
 			suggestPrefix = "修复建议："
+			healPrefix = "自动自愈："
 			proposePrefix = "待确认提案："
+			cbLine = "提示：已触发防震荡熔断，已降级为人工确认。"
 		}
 		var mdLines []string
 		mdLines = append(mdLines, fmt.Sprintf("**%s**\n%s", aiTitle, sanitizeLarkMarkdownValue(event.AIDiagnosis.RootCauseSummary)))
 		if len(event.AIDiagnosis.Suggestions) > 0 {
 			mdLines = append(mdLines, sanitizeLarkMarkdownValue(suggestPrefix+strings.Join(event.AIDiagnosis.Suggestions, "；")))
+		}
+		if strings.TrimSpace(event.AIDiagnosis.AutoHealSummary) != "" {
+			mdLines = append(mdLines, sanitizeLarkMarkdownValue(healPrefix+event.AIDiagnosis.AutoHealSummary))
+		}
+		if event.AIDiagnosis.CircuitBreakerTripped {
+			mdLines = append(mdLines, sanitizeLarkMarkdownValue(cbLine))
 		}
 		if strings.TrimSpace(event.AIDiagnosis.ProposedActionSummary) != "" {
 			mdLines = append(mdLines, sanitizeLarkMarkdownValue(proposePrefix+event.AIDiagnosis.ProposedActionSummary))

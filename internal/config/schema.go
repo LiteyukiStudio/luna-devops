@@ -68,6 +68,7 @@ type workerEnvironment struct {
 	AIAssistantAvailable     bool                    `env:"AI_ASSISTANT_AVAILABLE" envDefault:"false"`
 	AIAgentTimeout           time.Duration           `env:"AI_AGENT_TIMEOUT" envDefault:"10s"`
 	AIAgentBaseURL           string                  `env:"AI_AGENT_BASE_URL"`
+	LunaAPIBaseURL           string                  `env:"LUNA_API_BASE_URL"`
 	AIInternalSecret         string                  `env:"AI_INTERNAL_SECRET"`
 	AIInternalSecretPrevious string                  `env:"AI_INTERNAL_SECRET_PREVIOUS"`
 }

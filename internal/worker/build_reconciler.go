@@ -171,6 +171,7 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	_ = workerStage(ctx, "ai.reconcile_delivery_diagnoses", r.reconcileAIDeliveryDiagnoses)
+	_ = workerStage(ctx, "ai.reconcile_runtime_diagnoses", r.reconcileAIRuntimeDiagnoses)
 	_ = workerStage(ctx, "runtime.patrol_workloads", r.patrolRuntimeWorkloads)
 	_ = workerStage(ctx, "gateway.patrol_certificates", r.patrolGatewayCertificates)
 	return nil

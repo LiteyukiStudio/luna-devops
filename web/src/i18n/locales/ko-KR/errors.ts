@@ -178,6 +178,11 @@ const errors = {
     billing_owner_transfer_stale: '프로젝트 스페이스 상태가 변경되었습니다. 새로고침한 후 다시 시작하세요.',
     billing_owner_transfer_not_found: '청구 귀속 이전 요청이 존재하지 않거나 삭제되었습니다.',
     billing_owner_transfer_expired: '청구 귀속 이전 요청이 만료되었습니다. 발의자에게 다시 본낼 것을 요청하세요.',
+    self_heal_forbidden: '현재 계정에는 이 런타임 자가 치유 작업을 실행할 권한이 없습니다.',
+    self_heal_state_drifted: '배포 대상 상태가 변경되었습니다. 다시 사전 검증한 후 확인 실행하세요.',
+    self_heal_requires_ui_confirmation: '런타임 자가 치유 작업은 메시지함 화면에서 직접 확인해야 합니다.',
+    action_request_stale: '이 처리 대기 요청은 이미 변경되었거나 다른 멤버가 처리했습니다. 새로고침하여 확인하세요.',
+    action_request_expired: '이 자가 치유 제안이 만료되었습니다.',
   },
   config: {
     admin: { required: '현재 계정에 플랫폼 관리자 권한이 있는지 확인하세요.' },
@@ -229,6 +234,9 @@ const errors = {
     daily_limit_invalid: '일일 한도는 1에서 500회 사이여야 합니다.',
     billing_user_must_be_self: '백그라운드 AI 과금 담당자는 본인의 개인 지갑으로만 연결할 수 있습니다.',
     billing_user_invalid: '선택한 과금 담당자가 유효하지 않거나 현재 프로젝트 스페이스 멤버가 아닙니다.',
+    self_heal_mode_invalid: '자가 치유 등급 설정이 올바르지 않습니다(운영 환경은 자동 L1 미지원).',
+    auto_heal_tool_invalid: '자동 자가 치유 도구 화이트리스트에 지원되지 않는 도구가 포함되어 있습니다.',
+    circuit_breaker_invalid: '연속 자동 치유 임계값은 1–10회, 집계 시간은 60–86400초여야 합니다.',
   },
   request: {
     failed: '요청 처리에 실패했습니다. 잠시 후 다시 시도하세요',

@@ -1,6 +1,7 @@
 package projectapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -14,21 +15,40 @@ import (
 )
 
 type ProjectAIAutomationConfigResponse struct {
-	ProjectID                string    `json:"projectId"`
-	DeliveryDiagnosisEnabled bool      `json:"deliveryDiagnosisEnabled"`
-	DeliveryBillingUserID    string    `json:"deliveryBillingUserId"`
-	DeliveryBillingUserName  string    `json:"deliveryBillingUserName"`
-	DeliveryCooldownSeconds  int       `json:"deliveryCooldownSeconds"`
-	DeliveryDailyLimit       int       `json:"deliveryDailyLimit"`
-	UpdatedBy                string    `json:"updatedBy"`
-	UpdatedAt                time.Time `json:"updatedAt"`
+	ProjectID                   string            `json:"projectId"`
+	DeliveryDiagnosisEnabled    bool              `json:"deliveryDiagnosisEnabled"`
+	DeliveryBillingUserID       string            `json:"deliveryBillingUserId"`
+	DeliveryBillingUserName     string            `json:"deliveryBillingUserName"`
+	DeliveryCooldownSeconds     int               `json:"deliveryCooldownSeconds"`
+	DeliveryDailyLimit          int               `json:"deliveryDailyLimit"`
+	RuntimeDiagnosisEnabled     bool              `json:"runtimeDiagnosisEnabled"`
+	RuntimeBillingUserID        string            `json:"runtimeBillingUserId"`
+	RuntimeBillingUserName      string            `json:"runtimeBillingUserName"`
+	RuntimeCooldownSeconds      int               `json:"runtimeCooldownSeconds"`
+	RuntimeDailyLimit           int               `json:"runtimeDailyLimit"`
+	SelfHealMode                string            `json:"selfHealMode"`
+	StageSelfHealModes          map[string]string `json:"stageSelfHealModes"`
+	AllowedAutoHealTools        []string          `json:"allowedAutoHealTools"`
+	MaxConsecutiveAutoHeals     int               `json:"maxConsecutiveAutoHeals"`
+	CircuitBreakerWindowSeconds int               `json:"circuitBreakerWindowSeconds"`
+	UpdatedBy                   string            `json:"updatedBy"`
+	UpdatedAt                   time.Time         `json:"updatedAt"`
 }
 
 type UpdateProjectAIAutomationConfigInput struct {
-	DeliveryDiagnosisEnabled *bool   `json:"deliveryDiagnosisEnabled"`
-	DeliveryBillingUserID    *string `json:"deliveryBillingUserId"`
-	DeliveryCooldownSeconds  *int    `json:"deliveryCooldownSeconds"`
-	DeliveryDailyLimit       *int    `json:"deliveryDailyLimit"`
+	DeliveryDiagnosisEnabled    *bool              `json:"deliveryDiagnosisEnabled"`
+	DeliveryBillingUserID       *string            `json:"deliveryBillingUserId"`
+	DeliveryCooldownSeconds     *int               `json:"deliveryCooldownSeconds"`
+	DeliveryDailyLimit          *int               `json:"deliveryDailyLimit"`
+	RuntimeDiagnosisEnabled     *bool              `json:"runtimeDiagnosisEnabled"`
+	RuntimeBillingUserID        *string            `json:"runtimeBillingUserId"`
+	RuntimeCooldownSeconds      *int               `json:"runtimeCooldownSeconds"`
+	RuntimeDailyLimit           *int               `json:"runtimeDailyLimit"`
+	SelfHealMode                *string            `json:"selfHealMode"`
+	StageSelfHealModes          *map[string]string `json:"stageSelfHealModes"`
+	AllowedAutoHealTools        *[]string          `json:"allowedAutoHealTools"`
+	MaxConsecutiveAutoHeals     *int               `json:"maxConsecutiveAutoHeals"`
+	CircuitBreakerWindowSeconds *int               `json:"circuitBreakerWindowSeconds"`
 }
 
 func (h *Handler) GetProjectAIAutomationConfig(ctx *gin.Context) {
@@ -82,66 +102,162 @@ func (h *Handler) UpdateProjectAIAutomationConfig(ctx *gin.Context) {
 		}
 		next.DeliveryDailyLimit = *input.DeliveryDailyLimit
 	}
-
 	if input.DeliveryBillingUserID != nil {
-		requestedBillingUser := strings.TrimSpace(*input.DeliveryBillingUserID)
-		if requestedBillingUser != "" &&
-			requestedBillingUser != user.ID &&
-			requestedBillingUser != existing.DeliveryBillingUserID {
-			// Prevent binding another user's personal wallet without their own action.
+		requested := strings.TrimSpace(*input.DeliveryBillingUserID)
+		if requested != "" && requested != user.ID && requested != strings.TrimSpace(existing.DeliveryBillingUserID) {
 			writeErrorCode(ctx, http.StatusForbidden, "ai_automation.billing_user_must_be_self", "background AI billing owner can only be bound to your own personal wallet")
 			return
 		}
-		next.DeliveryBillingUserID = requestedBillingUser
+		next.DeliveryBillingUserID = requested
 	}
 	if next.DeliveryDiagnosisEnabled && strings.TrimSpace(next.DeliveryBillingUserID) == "" {
 		next.DeliveryBillingUserID = user.ID
 	}
 
-	escalatesSpend := (!existing.DeliveryDiagnosisEnabled && next.DeliveryDiagnosisEnabled) ||
+	if input.RuntimeDiagnosisEnabled != nil {
+		next.RuntimeDiagnosisEnabled = *input.RuntimeDiagnosisEnabled
+	}
+	if input.RuntimeCooldownSeconds != nil {
+		if *input.RuntimeCooldownSeconds < 0 || *input.RuntimeCooldownSeconds > 86400 {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.cooldown_invalid", "runtimeCooldownSeconds must be between 0 and 86400")
+			return
+		}
+		next.RuntimeCooldownSeconds = *input.RuntimeCooldownSeconds
+	}
+	if input.RuntimeDailyLimit != nil {
+		if *input.RuntimeDailyLimit < 1 || *input.RuntimeDailyLimit > 500 {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.daily_limit_invalid", "runtimeDailyLimit must be between 1 and 500")
+			return
+		}
+		next.RuntimeDailyLimit = *input.RuntimeDailyLimit
+	}
+	if input.RuntimeBillingUserID != nil {
+		requested := strings.TrimSpace(*input.RuntimeBillingUserID)
+		if requested != "" && requested != user.ID && requested != strings.TrimSpace(existing.RuntimeBillingUserID) {
+			writeErrorCode(ctx, http.StatusForbidden, "ai_automation.billing_user_must_be_self", "runtime AI billing owner can only be bound to your own personal wallet")
+			return
+		}
+		next.RuntimeBillingUserID = requested
+	}
+	if next.RuntimeDiagnosisEnabled && strings.TrimSpace(next.RuntimeBillingUserID) == "" {
+		next.RuntimeBillingUserID = user.ID
+	}
+
+	if input.SelfHealMode != nil {
+		mode := strings.TrimSpace(*input.SelfHealMode)
+		if !model.IsValidAISelfHealMode(mode) {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.self_heal_mode_invalid", "selfHealMode must be suggest_only, auto_l1, or auto_l2")
+			return
+		}
+		next.SelfHealMode = mode
+	}
+	if input.StageSelfHealModes != nil {
+		cleanMap := map[string]string{}
+		for rawStage, rawMode := range *input.StageSelfHealModes {
+			stage := strings.ToLower(strings.TrimSpace(rawStage))
+			mode := strings.TrimSpace(rawMode)
+			if stage == "" || mode == "" {
+				continue
+			}
+			if !isAllowedStageKey(stage) || !model.IsValidAISelfHealMode(mode) {
+				writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.self_heal_mode_invalid", "stageSelfHealModes contains an invalid stage or self-heal mode")
+				return
+			}
+			if (stage == "prod" || stage == "production") && mode == model.AISelfHealModeAutoL1 {
+				writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.self_heal_mode_invalid", "auto_l1 cannot be configured for production stage")
+				return
+			}
+			cleanMap[stage] = mode
+		}
+		encoded, _ := json.Marshal(cleanMap)
+		next.StageSelfHealModesJSON = string(encoded)
+	}
+	if input.AllowedAutoHealTools != nil {
+		cleanTools := make([]string, 0, len(*input.AllowedAutoHealTools))
+		seen := map[string]struct{}{}
+		for _, rawTool := range *input.AllowedAutoHealTools {
+			name := strings.TrimSpace(rawTool)
+			if name == "" {
+				continue
+			}
+			if !model.IsAllowedAIRuntimeHealTool(name) {
+				writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.auto_heal_tool_invalid", "allowedAutoHealTools contains an unsupported tool")
+				return
+			}
+			if _, exists := seen[name]; !exists {
+				seen[name] = struct{}{}
+				cleanTools = append(cleanTools, name)
+			}
+		}
+		encoded, _ := json.Marshal(cleanTools)
+		next.AllowedAutoHealToolsJSON = string(encoded)
+	}
+	if input.MaxConsecutiveAutoHeals != nil {
+		if *input.MaxConsecutiveAutoHeals < 1 || *input.MaxConsecutiveAutoHeals > 10 {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.circuit_breaker_invalid", "maxConsecutiveAutoHeals must be between 1 and 10")
+			return
+		}
+		next.MaxConsecutiveAutoHeals = *input.MaxConsecutiveAutoHeals
+	}
+	if input.CircuitBreakerWindowSeconds != nil {
+		if *input.CircuitBreakerWindowSeconds < 60 || *input.CircuitBreakerWindowSeconds > 86400 {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.circuit_breaker_invalid", "circuitBreakerWindowSeconds must be between 60 and 86400")
+			return
+		}
+		next.CircuitBreakerWindowSeconds = *input.CircuitBreakerWindowSeconds
+	}
+
+	escalatesDeliverySpend := (!existing.DeliveryDiagnosisEnabled && next.DeliveryDiagnosisEnabled) ||
 		next.DeliveryCooldownSeconds < existing.DeliveryCooldownSeconds ||
 		next.DeliveryDailyLimit > existing.DeliveryDailyLimit
-	bindsNewWallet := strings.TrimSpace(next.DeliveryBillingUserID) != "" &&
-		strings.TrimSpace(next.DeliveryBillingUserID) != strings.TrimSpace(existing.DeliveryBillingUserID)
+	escalatesRuntimeSpendOrHeal := (!existing.RuntimeDiagnosisEnabled && next.RuntimeDiagnosisEnabled) ||
+		next.RuntimeCooldownSeconds < existing.RuntimeCooldownSeconds ||
+		next.RuntimeDailyLimit > existing.RuntimeDailyLimit ||
+		selfHealExposureIncreased(existing, next)
 
-	// Binding/changing a personal wallet or escalating spend exposure requires an interactive browser session, not a notification-only PAT/OAuth token.
-	if bindsNewWallet || escalatesSpend {
+	bindsNewDeliveryWallet := strings.TrimSpace(next.DeliveryBillingUserID) != "" &&
+		strings.TrimSpace(next.DeliveryBillingUserID) != strings.TrimSpace(existing.DeliveryBillingUserID)
+	bindsNewRuntimeWallet := strings.TrimSpace(next.RuntimeBillingUserID) != "" &&
+		strings.TrimSpace(next.RuntimeBillingUserID) != strings.TrimSpace(existing.RuntimeBillingUserID)
+
+	if bindsNewDeliveryWallet || bindsNewRuntimeWallet || escalatesDeliverySpend || escalatesRuntimeSpendOrHeal {
 		if _, hasSession := h.currentSessionFromCookie(ctx); !hasSession {
-			writeErrorCode(ctx, http.StatusUnauthorized, "auth.session.missing", "a browser session is required to bind or escalate personal wallet AI spend")
+			writeErrorCode(ctx, http.StatusUnauthorized, "auth.session.missing", "a browser session is required to bind a personal wallet or escalate AI automation")
 			return
 		}
 	}
 
-	// Prevent a co-manager from re-enabling or increasing spend exposure on another user's already-bound personal wallet.
+	// Configuring or activating auto_l1 / auto_l2 requires deployment write permission in addition to notification:manage.
+	if maxConfiguredSelfHealRank(next) > 0 && (selfHealExposureIncreased(existing, next) || bindsNewRuntimeWallet || (!existing.RuntimeDiagnosisEnabled && next.RuntimeDiagnosisEnabled)) {
+		allowed, roleErr := h.ProjectRoleActionAllowed(ctx.Request.Context(), user, project.ID, authz.ActionDeploymentUpdate)
+		if roleErr != nil || !allowed {
+			writeErrorKey(ctx, http.StatusForbidden, requestLanguage(ctx), "auth.permission.denied")
+			return
+		}
+	}
+
 	if existingOwner := strings.TrimSpace(existing.DeliveryBillingUserID); existingOwner != "" &&
 		existingOwner != user.ID &&
 		strings.TrimSpace(next.DeliveryBillingUserID) == existingOwner &&
-		escalatesSpend {
+		escalatesDeliverySpend {
 		writeErrorCode(ctx, http.StatusForbidden, "ai_automation.billing_user_must_be_self", "rebind deliveryBillingUserId to your own personal wallet before enabling or increasing AI spend limits")
 		return
 	}
 
-	if strings.TrimSpace(next.DeliveryBillingUserID) != "" {
-		validOwner := true
-		var billingUser model.User
-		if err := h.dbFor(ctx).First(&billingUser, "id = ? AND disabled = ?", next.DeliveryBillingUserID, false).Error; err != nil {
-			validOwner = false
-		} else if !authz.IsPlatformAdmin(billingUser.Role) {
-			var memberCount int64
-			if err := h.dbFor(ctx).Model(&model.ProjectMember{}).
-				Where("project_id = ? AND user_id = ?", project.ID, billingUser.ID).
-				Count(&memberCount).Error; err != nil || memberCount == 0 {
-				validOwner = false
-			}
-		}
-		if !validOwner {
-			if next.DeliveryDiagnosisEnabled {
-				writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.billing_user_invalid", "billing user must be an active member of this project")
-				return
-			}
-			// Allow disabling AI diagnosis cleanly even if the previously bound owner left or was disabled.
-			next.DeliveryBillingUserID = ""
-		}
+	if existingRuntimeOwner := strings.TrimSpace(existing.RuntimeBillingUserID); existingRuntimeOwner != "" &&
+		existingRuntimeOwner != user.ID &&
+		strings.TrimSpace(next.RuntimeBillingUserID) == existingRuntimeOwner &&
+		escalatesRuntimeSpendOrHeal {
+		writeErrorCode(ctx, http.StatusForbidden, "ai_automation.billing_user_must_be_self", "rebind runtimeBillingUserId to your own personal wallet before enabling or escalating runtime AI self-healing")
+		return
+	}
+
+	if ok := h.validateOrClearBillingOwner(ctx, project.ID, &next.DeliveryBillingUserID, next.DeliveryDiagnosisEnabled, false); !ok {
+		return
+	}
+	requireDeployPerm := maxConfiguredSelfHealRank(next) > 0
+	if ok := h.validateOrClearBillingOwner(ctx, project.ID, &next.RuntimeBillingUserID, next.RuntimeDiagnosisEnabled, requireDeployPerm); !ok {
+		return
 	}
 
 	now := time.Now().UTC()
@@ -158,6 +274,15 @@ func (h *Handler) UpdateProjectAIAutomationConfig(ctx *gin.Context) {
 			"delivery_billing_user_id",
 			"delivery_cooldown_seconds",
 			"delivery_daily_limit",
+			"runtime_diagnosis_enabled",
+			"runtime_billing_user_id",
+			"runtime_cooldown_seconds",
+			"runtime_daily_limit",
+			"self_heal_mode",
+			"stage_self_heal_modes_json",
+			"allowed_auto_heal_tools_json",
+			"max_consecutive_auto_heals",
+			"circuit_breaker_window_seconds",
 			"updated_by",
 			"updated_at",
 		}),
@@ -166,8 +291,104 @@ func (h *Handler) UpdateProjectAIAutomationConfig(ctx *gin.Context) {
 		return
 	}
 
-	h.auditWithContext(user.ID, "project.ai_automation_config.update", project.ID, true, next.DeliveryBillingUserID, ctx.Request.Context())
+	auditDetail := "deliveryOwner=" + next.DeliveryBillingUserID + ",runtimeOwner=" + next.RuntimeBillingUserID + ",selfHealMode=" + next.SelfHealMode
+	h.auditWithContext(user.ID, "project.ai_automation_config.update", project.ID, true, auditDetail, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, h.presentAIAutomationConfig(ctx, next))
+}
+
+func isAllowedStageKey(stage string) bool {
+	switch stage {
+	case "dev", "test", "staging", "prod":
+		return true
+	default:
+		return false
+	}
+}
+
+func maxConfiguredSelfHealRank(cfg model.ProjectAIAutomationConfig) int {
+	maxRank := model.SelfHealModeRank(cfg.SelfHealMode)
+	for _, mode := range cfg.StageSelfHealModes() {
+		if r := model.SelfHealModeRank(mode); r > maxRank {
+			maxRank = r
+		}
+	}
+	return maxRank
+}
+
+func selfHealExposureIncreased(prev, next model.ProjectAIAutomationConfig) bool {
+	if model.SelfHealModeRank(next.SelfHealMode) > model.SelfHealModeRank(prev.SelfHealMode) {
+		return true
+	}
+	stageSet := map[string]struct{}{
+		"dev":     {},
+		"test":    {},
+		"staging": {},
+		"prod":    {},
+	}
+	for stage := range prev.StageSelfHealModes() {
+		stageSet[stage] = struct{}{}
+	}
+	for stage := range next.StageSelfHealModes() {
+		stageSet[stage] = struct{}{}
+	}
+	for stage := range stageSet {
+		if model.SelfHealModeRank(next.EffectiveSelfHealModeForStage(stage)) > model.SelfHealModeRank(prev.EffectiveSelfHealModeForStage(stage)) {
+			return true
+		}
+	}
+	if maxConfiguredSelfHealRank(next) > 0 {
+		if next.MaxConsecutiveAutoHeals > prev.MaxConsecutiveAutoHeals ||
+			next.CircuitBreakerWindowSeconds < prev.CircuitBreakerWindowSeconds {
+			return true
+		}
+		prevTools := prev.AllowedAutoHealTools()
+		nextTools := next.AllowedAutoHealTools()
+		if len(prevTools) > 0 && len(nextTools) == 0 {
+			return true
+		}
+		for _, tool := range nextTools {
+			if !prev.AllowsAutoHealTool(tool) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (h *Handler) validateOrClearBillingOwner(
+	ctx *gin.Context,
+	projectID string,
+	ownerUserID *string,
+	enabled bool,
+	requireDeployPerm bool,
+) bool {
+	uid := strings.TrimSpace(*ownerUserID)
+	if uid == "" {
+		return true
+	}
+	valid := true
+	var billingUser model.User
+	if err := h.dbFor(ctx).First(&billingUser, "id = ? AND disabled = ?", uid, false).Error; err != nil {
+		valid = false
+	} else if !authz.IsPlatformAdmin(billingUser.Role) {
+		var member model.ProjectMember
+		if err := h.dbFor(ctx).First(&member, "project_id = ? AND user_id = ?", projectID, billingUser.ID).Error; err != nil {
+			valid = false
+		} else if requireDeployPerm {
+			allowed, err := h.ProjectRoleActionAllowed(ctx.Request.Context(), billingUser, projectID, authz.ActionDeploymentUpdate)
+			if err != nil || !allowed {
+				valid = false
+			}
+		}
+	}
+	if !valid {
+		if enabled {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai_automation.billing_user_invalid", "billing user must be an active authorized member of this project")
+			return false
+		}
+		*ownerUserID = ""
+	}
+	return true
 }
 
 func (h *Handler) loadOrDefaultAIAutomationConfig(ctx *gin.Context, projectID string) (model.ProjectAIAutomationConfig, error) {
@@ -184,22 +405,39 @@ func (h *Handler) loadOrDefaultAIAutomationConfig(ctx *gin.Context, projectID st
 
 func (h *Handler) presentAIAutomationConfig(ctx *gin.Context, cfg model.ProjectAIAutomationConfig) ProjectAIAutomationConfigResponse {
 	resp := ProjectAIAutomationConfigResponse{
-		ProjectID:                cfg.ProjectID,
-		DeliveryDiagnosisEnabled: cfg.DeliveryDiagnosisEnabled,
-		DeliveryBillingUserID:    cfg.DeliveryBillingUserID,
-		DeliveryCooldownSeconds:  cfg.DeliveryCooldownSeconds,
-		DeliveryDailyLimit:       cfg.DeliveryDailyLimit,
-		UpdatedBy:                cfg.UpdatedBy,
-		UpdatedAt:                cfg.UpdatedAt,
+		ProjectID:                   cfg.ProjectID,
+		DeliveryDiagnosisEnabled:    cfg.DeliveryDiagnosisEnabled,
+		DeliveryBillingUserID:       cfg.DeliveryBillingUserID,
+		DeliveryCooldownSeconds:     cfg.DeliveryCooldownSeconds,
+		DeliveryDailyLimit:          cfg.DeliveryDailyLimit,
+		RuntimeDiagnosisEnabled:     cfg.RuntimeDiagnosisEnabled,
+		RuntimeBillingUserID:        cfg.RuntimeBillingUserID,
+		RuntimeCooldownSeconds:      cfg.RuntimeCooldownSeconds,
+		RuntimeDailyLimit:           cfg.RuntimeDailyLimit,
+		SelfHealMode:                cfg.EffectiveSelfHealModeForStage(""),
+		StageSelfHealModes:          cfg.StageSelfHealModes(),
+		AllowedAutoHealTools:        cfg.AllowedAutoHealTools(),
+		MaxConsecutiveAutoHeals:     cfg.MaxConsecutiveAutoHeals,
+		CircuitBreakerWindowSeconds: cfg.CircuitBreakerWindowSeconds,
+		UpdatedBy:                   cfg.UpdatedBy,
+		UpdatedAt:                   cfg.UpdatedAt,
 	}
 	if strings.TrimSpace(cfg.DeliveryBillingUserID) != "" {
-		var u model.User
-		if err := h.dbFor(ctx).Select("id", "name", "email").First(&u, "id = ?", cfg.DeliveryBillingUserID).Error; err == nil {
-			resp.DeliveryBillingUserName = strings.TrimSpace(u.Name)
-			if resp.DeliveryBillingUserName == "" {
-				resp.DeliveryBillingUserName = strings.TrimSpace(u.Email)
-			}
-		}
+		resp.DeliveryBillingUserName = h.lookupUserDisplayName(ctx, cfg.DeliveryBillingUserID)
+	}
+	if strings.TrimSpace(cfg.RuntimeBillingUserID) != "" {
+		resp.RuntimeBillingUserName = h.lookupUserDisplayName(ctx, cfg.RuntimeBillingUserID)
 	}
 	return resp
+}
+
+func (h *Handler) lookupUserDisplayName(ctx *gin.Context, userID string) string {
+	var u model.User
+	if err := h.dbFor(ctx).Select("id", "name", "email").First(&u, "id = ?", strings.TrimSpace(userID)).Error; err == nil {
+		if name := strings.TrimSpace(u.Name); name != "" {
+			return name
+		}
+		return strings.TrimSpace(u.Email)
+	}
+	return ""
 }

@@ -178,6 +178,11 @@ const errors = {
     billing_owner_transfer_stale: '项目空间状态已变化，请刷新后重新发起。',
     billing_owner_transfer_not_found: '计费归属转移请求不存在或已被删除。',
     billing_owner_transfer_expired: '计费归属转移请求已过期，请让发起人重新发送。',
+    self_heal_forbidden: '当前账号没有执行该运行时自愈操作的权限。',
+    self_heal_state_drifted: '部署目标状态已发生变化，请重新预检后再确认执行。',
+    self_heal_requires_ui_confirmation: '运行时自愈操作必须在消息盒子界面人工确认。',
+    action_request_stale: '该待处理请求状态已更新或已被其他项目成员处理，请刷新查看。',
+    action_request_expired: '该自愈建议已过期。',
   },
   config: {
     admin: { required: '请确认当前账号具有平台管理员权限。' },
@@ -229,6 +234,9 @@ const errors = {
     daily_limit_invalid: '每日上限必须在 1 到 500 次之间。',
     billing_user_must_be_self: '后台 AI 计费负责人只能绑定为你本人的个人钱包。',
     billing_user_invalid: '所选计费负责人无效或不属于当前项目空间。',
+    self_heal_mode_invalid: '自愈等级配置无效（生产环境不支持设为自动 L1）。',
+    auto_heal_tool_invalid: '自动自愈工具白名单包含不支持的工具。',
+    circuit_breaker_invalid: '连续自动自愈阈值需为 1–10 次，统计窗口需为 60–86400 秒。',
   },
   request: {
     failed: '请求处理失败，请稍后重试',

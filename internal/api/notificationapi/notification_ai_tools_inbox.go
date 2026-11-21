@@ -368,13 +368,27 @@ func (h *Handler) validateInboxDecisionState(tc *aitool.ToolContext, user model.
 	if boundProj := strings.TrimSpace(tc.ConversationProjectID); boundProj != "" && strings.TrimSpace(actionReq.ProjectID) != boundProj {
 		return model.InboxActionRequest{}, aitool.Forbidden("ai.project_scope_mismatch", "inbox action request belongs to another project")
 	}
+	if actionReq.Type == inbox.ActionRequestTypeRuntimeSelfHeal && decision == "accept" {
+		return model.InboxActionRequest{}, aitool.Forbidden(
+			"inbox.self_heal_requires_ui_confirmation",
+			"runtime self-healing proposals must be confirmed in the Inbox UI",
+		)
+	}
 	if actionReq.ExpiresAt != nil && !actionReq.ExpiresAt.After(time.Now()) {
-		return model.InboxActionRequest{}, aitool.NewError(http.StatusGone, "inbox.billing_owner_transfer_expired", "inbox action request has expired")
+		expiredCode := "inbox.billing_owner_transfer_expired"
+		if actionReq.Type == inbox.ActionRequestTypeRuntimeSelfHeal {
+			expiredCode = "inbox.action_request_expired"
+		}
+		return model.InboxActionRequest{}, aitool.NewError(http.StatusGone, expiredCode, "inbox action request has expired")
 	}
 	if actionReq.Status != "pending" || actionReq.RowVersion != in.ExpectedVersion {
+		staleCode := "inbox.billing_owner_transfer_stale"
+		if actionReq.Type == inbox.ActionRequestTypeRuntimeSelfHeal {
+			staleCode = "inbox.action_request_stale"
+		}
 		return model.InboxActionRequest{}, aitool.NewErrorWithHint(
 			http.StatusConflict,
-			"inbox.billing_owner_transfer_stale",
+			staleCode,
 			fmt.Sprintf("action request %s status=%q rowVersion=%d does not match expected pending version %d", actionReq.ID, actionReq.Status, actionReq.RowVersion, in.ExpectedVersion),
 			"Call ops_list_inbox to inspect the latest status and rowVersion before retrying.",
 		)

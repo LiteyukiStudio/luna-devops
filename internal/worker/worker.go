@@ -3,7 +3,9 @@ package worker
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
@@ -17,6 +19,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/hibiken/asynq"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"gorm.io/gorm"
 )
 
@@ -51,6 +54,13 @@ type Runner struct {
 	notificationDeliveryEnqueuer   notification.DeliveryEnqueuer
 	aiAgent                        aiagent.Client
 	aiAgentAvailable               bool
+	internalAPIBaseURL             string
+	aiServiceToken                 string
+	aiCallbackServiceToken         string
+	aiActorSigningKey              string
+	internalAutoHealHTTPClient     *http.Client
+	runtimeDiagnosisInlineTimeout  time.Duration
+	runtimeDiagnosisAsyncWG        *sync.WaitGroup
 	aiDeliveryDiagnosisEnqueuer    aiDeliveryDiagnosisEnqueuer
 }
 
@@ -71,6 +81,7 @@ type Options struct {
 	VolumeTransferJobImage      string
 	VolumeTransferMaxBytes      int64
 	SecretCodec                 secret.Codec
+	InternalAPIBaseURL          string
 	AIAgent                     aiagent.Config
 }
 
@@ -119,6 +130,7 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	runner.networkPolicyReconcileEnqueuer = runner.taskClient
 	runner.aiDeliveryDiagnosisEnqueuer = runner.taskClient
 	defer runner.taskClient.Close()
+	defer runner.WaitRuntimeDiagnosisAsync()
 	go runner.syncBuildJobStatus(ctx)
 
 	return server.Run(mux)
@@ -195,6 +207,15 @@ func newRunner(db *gorm.DB, options Options) *Runner {
 		volumeTransferMaxBytes:      options.VolumeTransferMaxBytes,
 		aiAgent:                     aiClient,
 		aiAgentAvailable:            options.AIAgent.Available && aiClient != nil,
+		internalAPIBaseURL:          strings.TrimRight(strings.TrimSpace(options.InternalAPIBaseURL), "/"),
+		aiServiceToken:              strings.TrimSpace(options.AIAgent.ServiceToken),
+		aiCallbackServiceToken:      strings.TrimSpace(options.AIAgent.CallbackServiceToken),
+		aiActorSigningKey:           strings.TrimSpace(options.AIAgent.ActorSigningKey),
+		internalAutoHealHTTPClient: &http.Client{
+			Timeout:   runtimeAutoHealRequestTimeout,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
+		runtimeDiagnosisAsyncWG: &sync.WaitGroup{},
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {
 			return kubeprovider.NewClientFromKubeconfig(kubeconfig)
 		},

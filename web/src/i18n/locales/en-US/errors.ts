@@ -178,6 +178,11 @@ const errors = {
     billing_owner_transfer_stale: 'The project state has changed. Refresh and create a new request.',
     billing_owner_transfer_not_found: 'The billing ownership transfer request was not found.',
     billing_owner_transfer_expired: 'The billing ownership transfer request has expired. Ask the requester to send it again.',
+    self_heal_forbidden: 'You do not have permission to execute this runtime self-healing action.',
+    self_heal_state_drifted: 'The deployment target state has changed. Re-preview the live state before confirming.',
+    self_heal_requires_ui_confirmation: 'Runtime self-healing proposals must be confirmed in the Inbox UI.',
+    action_request_stale: 'This action request has already been updated or handled by another member. Refresh to inspect.',
+    action_request_expired: 'This self-healing proposal has expired.',
   },
   config: {
     admin: { required: 'Confirm that the current account has platform administrator permission.' },
@@ -229,6 +234,9 @@ const errors = {
     daily_limit_invalid: 'Daily limit must be between 1 and 500.',
     billing_user_must_be_self: 'Background AI billing can only be bound to your own personal wallet.',
     billing_user_invalid: 'The billing owner is invalid or is not a member of this project space.',
+    self_heal_mode_invalid: 'Invalid self-healing tier configuration (prod cannot use Auto L1).',
+    auto_heal_tool_invalid: 'The auto-heal tool whitelist contains an unsupported tool.',
+    circuit_breaker_invalid: 'Max consecutive auto-heals must be 1–10 and window must be 60–86400 seconds.',
   },
   request: {
     failed: 'The request failed. Try again later',

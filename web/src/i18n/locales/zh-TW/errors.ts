@@ -178,6 +178,11 @@ const errors = {
     billing_owner_transfer_stale: '專案空間狀態已變化，請重新整理後重新發起。',
     billing_owner_transfer_not_found: '計費歸屬轉移請求不存在或已被刪除。',
     billing_owner_transfer_expired: '計費歸屬轉移請求已過期，請讓發起人重新傳送。',
+    self_heal_forbidden: '目前帳號沒有執行該執行時自癒操作的權限。',
+    self_heal_state_drifted: '部署目標狀態已發生變化，請重新預檢後再確認執行。',
+    self_heal_requires_ui_confirmation: '執行時自癒操作必須在訊息盒子介面人工確認。',
+    action_request_stale: '該待處理請求狀態已更新或已被其他專案成員處理，請重新整理查看。',
+    action_request_expired: '該自癒建議已過期。',
   },
   config: {
     admin: { required: '請確認當前賬號具有平臺管理員許可權。' },
@@ -229,6 +234,9 @@ const errors = {
     daily_limit_invalid: '每日上限必須介於 1 到 500 次之間。',
     billing_user_must_be_self: '背景 AI 計費負責人只能綁定為你本人的個人錢包。',
     billing_user_invalid: '所選計費負責人無效或不屬於目前專案空間。',
+    self_heal_mode_invalid: '自癒等級配置無效（正式環境不支援設為自動 L1）。',
+    auto_heal_tool_invalid: '自動自癒工具白名單包含不支援的工具。',
+    circuit_breaker_invalid: '連續自動自癒閾值需為 1–10 次，統計視窗需為 60–86400 秒。',
   },
   request: {
     failed: '請求處理失敗，請稍後重試',

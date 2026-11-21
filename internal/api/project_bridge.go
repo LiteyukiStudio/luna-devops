@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/api/notificationapi"
 	"github.com/LiteyukiStudio/devops/internal/api/projectapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/gin-gonic/gin"
@@ -164,6 +167,26 @@ func sortedProjectIDs(projectIDs []string) []string { return projectapi.SortedPr
 func normalizeHookPhase(value string) string { return projectapi.NormalizeHookPhase(value) }
 
 func (h *Handlers) decideInboxAction(ctx context.Context, user model.User, requestID, decision string, expectedVersion int64) error {
+	db := h.dbWithContext(ctx)
+	if db != nil && h.domains != nil && h.domains.ai != nil {
+		request, err := inbox.NewService(db).GetActionRequest(ctx, user.ID, requestID)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(request.Type) == inbox.ActionRequestTypeRuntimeSelfHeal {
+			notifiedUsers, decideErr := h.domains.ai.DecideRuntimeSelfHealInboxAction(ctx, db, user, request, decision, expectedVersion)
+			if decideErr != nil {
+				return decideErr
+			}
+			broker := notificationapi.DefaultInboxBroker()
+			for _, uid := range notifiedUsers {
+				if trimmed := strings.TrimSpace(uid); trimmed != "" {
+					broker.Notify(trimmed, "")
+				}
+			}
+			return nil
+		}
+	}
 	return h.domains.project.DecideInboxAction(ctx, user, requestID, decision, expectedVersion)
 }
 

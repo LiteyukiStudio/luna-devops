@@ -178,6 +178,11 @@ const errors = {
     billing_owner_transfer_stale: 'プロジェクトスペースの状態が変化しました。更新してから再開してください。',
     billing_owner_transfer_not_found: '請求帰属移転リクエストが存在しないか、削除されました。',
     billing_owner_transfer_expired: '請求帰属移転リクエストが期限切れです。発起人に再送信を依頼してください。',
+    self_heal_forbidden: 'このランタイム自己修復操作を実行する権限がありません。',
+    self_heal_state_drifted: 'デプロイターゲットの状態が変化しました。再プレビューしてから確認実行してください。',
+    self_heal_requires_ui_confirmation: 'ランタイム自己修復操作は受信箱画面から手動で確認する必要があります。',
+    action_request_stale: 'このリクエストは既に更新されたか、他のメンバーにより処理されました。更新して確認してください。',
+    action_request_expired: 'この自己修復提案は有効期限切れです。',
   },
   config: {
     admin: { required: '現在のアカウントにプラットフォーム管理者権限があることを確認してください。' },
@@ -229,6 +234,9 @@ const errors = {
     daily_limit_invalid: '1 日あたりの上限は 1〜500 回の間で指定してください。',
     billing_user_must_be_self: 'バックグラウンド AI 課金担当者は自身の個人ウォレットのみ設定できます。',
     billing_user_invalid: '課金担当者が無効であるか、このプロジェクトスペースのメンバーではありません。',
+    self_heal_mode_invalid: '自己修復レベルの設定が無効です（本番環境には自動 L1 を設定できません）。',
+    auto_heal_tool_invalid: '自動自己修復ツールのホワイトリストに未対応のツールが含まれています。',
+    circuit_breaker_invalid: '連続自動修復閾値は 1〜10 回、集計ウィンドウは 60〜86400 秒で指定してください。',
   },
   request: {
     failed: 'リクエスト処理に失敗しました。後ほど再試行してください',

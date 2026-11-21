@@ -74,7 +74,9 @@ type AIDiagnosisContext struct {
 	RootCauseSummary      string   `json:"rootCauseSummary,omitempty"`
 	Confidence            string   `json:"confidence,omitempty"`
 	Suggestions           []string `json:"suggestions,omitempty"`
+	AutoHealSummary       string   `json:"autoHealSummary,omitempty"`
 	ProposedActionSummary string   `json:"proposedActionSummary,omitempty"`
+	CircuitBreakerTripped bool     `json:"circuitBreakerTripped,omitempty"`
 }
 
 type EntityRef struct {

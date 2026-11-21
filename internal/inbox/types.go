@@ -1,6 +1,7 @@
 package inbox
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -29,31 +30,54 @@ const (
 	ActionRequestStatusFailed     = "failed"
 
 	ActionRequestTypeBillingOwnerTransfer = "project.billing_owner_transfer"
+	ActionRequestTypeRuntimeSelfHeal      = "runtime.self_heal"
 )
 
 var (
-	ErrInvalidInput    = errors.New("inbox input is invalid")
-	ErrInvalidDeepLink = errors.New("inbox deep link is invalid")
-	ErrNotFound        = errors.New("inbox resource not found")
+	ErrInvalidInput            = errors.New("inbox input is invalid")
+	ErrInvalidDeepLink         = errors.New("inbox deep link is invalid")
+	ErrNotFound                = errors.New("inbox resource not found")
+	ErrActionRequestStale      = errors.New("inbox action request is stale")
+	ErrActionRequestExpired    = errors.New("inbox action request has expired")
+	ErrSelfHealSessionRequired = errors.New("a browser session is required to confirm runtime self-healing")
+	ErrSelfHealForbidden       = errors.New("runtime self-heal action is forbidden")
+	ErrSelfHealStateDrifted    = errors.New("runtime self-heal target state has drifted")
 )
 
+type decisionMetaKey struct{}
+
+type DecisionMeta struct {
+	RequestCarrier any
+	PreviewLock    string
+}
+
+func WithDecisionMeta(ctx context.Context, meta DecisionMeta) context.Context {
+	return context.WithValue(ctx, decisionMetaKey{}, meta)
+}
+
+func DecisionMetaFromContext(ctx context.Context) (DecisionMeta, bool) {
+	meta, ok := ctx.Value(decisionMetaKey{}).(DecisionMeta)
+	return meta, ok
+}
+
 type PublishInput struct {
-	RecipientUserID string
-	Type            string
-	Category        string
-	Priority        string
-	ActorID         string
-	ProjectID       string
-	ResourceType    string
-	ResourceID      string
-	TitleKey        string
-	ContentKey      string
-	Params          map[string]any
-	ActionRequestID string
-	DeepLink        string
-	GroupKey        string
-	DedupKey        string
-	ExpiresAt       *time.Time
+	RecipientUserID    string
+	Type               string
+	Category           string
+	Priority           string
+	ActorID            string
+	ProjectID          string
+	ResourceType       string
+	ResourceID         string
+	TitleKey           string
+	ContentKey         string
+	Params             map[string]any
+	ActionRequestID    string
+	ClearActionRequest bool
+	DeepLink           string
+	GroupKey           string
+	DedupKey           string
+	ExpiresAt          *time.Time
 }
 
 type CreateActionRequestInput struct {

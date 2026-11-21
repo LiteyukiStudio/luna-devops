@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
@@ -29,13 +30,24 @@ var inboxCategories = map[string]struct{}{
 	"system":   {},
 }
 
+type InboxSelfHealProposalView struct {
+	IncidentID         string         `json:"incidentId,omitempty"`
+	ApplicationID      string         `json:"applicationId,omitempty"`
+	DeploymentTargetID string         `json:"deploymentTargetId,omitempty"`
+	ToolName           string         `json:"toolName"`
+	Arguments          map[string]any `json:"arguments"`
+	ExpectedSummary    string         `json:"expectedSummary"`
+	CreatedAt          string         `json:"createdAt,omitempty"`
+}
+
 type InboxActionRequestResponse struct {
-	ID               string     `json:"id"`
-	Type             string     `json:"type"`
-	Status           string     `json:"status"`
-	RowVersion       int64      `json:"rowVersion"`
-	ExpiresAt        *time.Time `json:"expiresAt"`
-	AllowedDecisions []string   `json:"allowedDecisions"`
+	ID               string                     `json:"id"`
+	Type             string                     `json:"type"`
+	Status           string                     `json:"status"`
+	RowVersion       int64                      `json:"rowVersion"`
+	ExpiresAt        *time.Time                 `json:"expiresAt"`
+	AllowedDecisions []string                   `json:"allowedDecisions"`
+	Proposal         *InboxSelfHealProposalView `json:"proposal,omitempty"`
 }
 
 type InboxMessageResponse struct {
@@ -63,6 +75,7 @@ type InboxMessageResponse struct {
 type inboxDecisionInput struct {
 	Decision        string `json:"decision"`
 	ExpectedVersion int64  `json:"expectedVersion"`
+	PreviewLock     string `json:"previewLock,omitempty"`
 }
 
 func (h *Handler) ListInboxMessages(ctx *gin.Context) {
@@ -209,7 +222,11 @@ func (h *Handler) DecideInboxActionRequest(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "inbox.request_id_required", "requestId is required")
 		return
 	}
-	if err := h.decideInboxAction(ctx.Request.Context(), user, requestID, input.Decision, input.ExpectedVersion); err != nil {
+	decisionCtx := inbox.WithDecisionMeta(ctx.Request.Context(), inbox.DecisionMeta{
+		RequestCarrier: ctx,
+		PreviewLock:    strings.TrimSpace(input.PreviewLock),
+	})
+	if err := h.decideInboxAction(decisionCtx, user, requestID, input.Decision, input.ExpectedVersion); err != nil {
 		if errors.Is(err, ErrInboxDecisionUnavailable) {
 			writeErrorCode(ctx, http.StatusServiceUnavailable, "inbox.decision_unavailable", "inbox decision handler is unavailable")
 			return
@@ -298,6 +315,16 @@ func InboxActionRequestResponseFor(request model.InboxActionRequest) InboxAction
 	if request.Status == "pending" {
 		allowed = []string{"accept", "reject"}
 	}
+	var proposal *InboxSelfHealProposalView
+	if request.Type == inbox.ActionRequestTypeRuntimeSelfHeal && strings.TrimSpace(request.PayloadJSON) != "" {
+		var decoded InboxSelfHealProposalView
+		if json.Unmarshal([]byte(request.PayloadJSON), &decoded) == nil && strings.TrimSpace(decoded.ToolName) != "" {
+			if decoded.Arguments == nil {
+				decoded.Arguments = map[string]any{}
+			}
+			proposal = &decoded
+		}
+	}
 	return InboxActionRequestResponse{
 		ID:               request.ID,
 		Type:             request.Type,
@@ -305,6 +332,7 @@ func InboxActionRequestResponseFor(request model.InboxActionRequest) InboxAction
 		RowVersion:       request.RowVersion,
 		ExpiresAt:        request.ExpiresAt,
 		AllowedDecisions: allowed,
+		Proposal:         proposal,
 	}
 }
 
@@ -335,11 +363,29 @@ func normalizedInboxPagination(ctx *gin.Context) paginationParams {
 }
 
 func WriteInboxError(ctx *gin.Context, err error) {
+	if te, ok := aitool.AsToolError(err); ok && te != nil {
+		status := te.Status
+		if status < http.StatusBadRequest || status > 599 {
+			status = http.StatusBadRequest
+		}
+		writeErrorCode(ctx, status, te.Code, te.Message)
+		return
+	}
 	switch {
 	case errors.Is(err, inbox.ErrInvalidInput), errors.Is(err, inbox.ErrInvalidDeepLink):
 		writeErrorCode(ctx, http.StatusBadRequest, "inbox.request_invalid", "inbox request is invalid")
 	case errors.Is(err, inbox.ErrNotFound):
 		writeErrorCode(ctx, http.StatusNotFound, "inbox.not_found", "inbox resource was not found")
+	case errors.Is(err, inbox.ErrSelfHealSessionRequired):
+		writeErrorCode(ctx, http.StatusUnauthorized, "auth.session.missing", "a browser session is required")
+	case errors.Is(err, inbox.ErrSelfHealForbidden):
+		writeErrorCode(ctx, http.StatusForbidden, "inbox.self_heal_forbidden", "runtime self-heal action is forbidden")
+	case errors.Is(err, inbox.ErrSelfHealStateDrifted):
+		writeErrorCode(ctx, http.StatusConflict, "inbox.self_heal_state_drifted", "runtime self-heal target state has drifted; re-run preview before confirming")
+	case errors.Is(err, inbox.ErrActionRequestStale):
+		writeErrorCode(ctx, http.StatusConflict, "inbox.action_request_stale", "inbox action request is stale")
+	case errors.Is(err, inbox.ErrActionRequestExpired):
+		writeErrorCode(ctx, http.StatusGone, "inbox.action_request_expired", "inbox action request has expired")
 	case errors.Is(err, projectservice.ErrBillingOwnerTransferInvalid):
 		writeErrorCode(ctx, http.StatusBadRequest, "inbox.billing_owner_transfer_invalid", "billing owner transfer input is invalid")
 	case errors.Is(err, projectservice.ErrBillingOwnerTransferForbidden):
@@ -351,7 +397,7 @@ func WriteInboxError(ctx *gin.Context, err error) {
 	case errors.Is(err, projectservice.ErrBillingOwnerTransferNotFound):
 		writeErrorCode(ctx, http.StatusNotFound, "inbox.billing_owner_transfer_not_found", "billing owner transfer request was not found")
 	case errors.Is(err, projectservice.ErrBillingOwnerTransferExpired):
-		writeErrorCode(ctx, http.StatusGone, "inbox.billing_owner_transfer_expired", "billing owner transfer request expired")
+		writeErrorCode(ctx, http.StatusGone, "inbox.billing_owner_transfer_expired", "inbox action request expired")
 	default:
 		writeErrorCode(ctx, http.StatusInternalServerError, "inbox.operation_failed", "inbox operation failed")
 	}

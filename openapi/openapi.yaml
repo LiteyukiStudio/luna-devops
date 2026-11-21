@@ -7380,6 +7380,38 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/inbox/action-requests/{requestId}/self-heal-preview:
+    post:
+      operationId: previewInboxSelfHealAction
+      tags: [Inbox]
+      summary: Live-preview a runtime self-heal inbox proposal as the current user
+      description: Runs a live preview of the proposed runtime remediation tool under the current user's identity and project RBAC, checks for state drift, and mints a user-bound previewLock.
+      x-luna-cli:
+        requiredScopes: ["user:write"]
+        hidden: true
+        exclusionReason: Interactive runtime self-healing preview requires a browser session.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/InboxRequestId"
+      responses:
+        "200":
+          description: Live self-heal preview output with user-bound previewLock.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxSelfHealPreviewOutput"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410":
+          description: The action request has expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/telemetry/v1/traces:
     post:
       operationId: relayBrowserTraces
@@ -12848,6 +12880,35 @@ components:
           type: integer
           format: int64
           minimum: 1
+        previewLock:
+          type: string
+    InboxSelfHealProposal:
+      type: object
+      additionalProperties: false
+      required: [toolName, arguments, expectedSummary]
+      properties:
+        incidentId: { type: string }
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        toolName: { type: string }
+        arguments:
+          type: object
+          additionalProperties: true
+        expectedSummary: { type: string }
+        createdAt: { type: string }
+    InboxSelfHealPreviewOutput:
+      type: object
+      additionalProperties: false
+      required: [toolName, approvalTier, approvalPreview, previewLock, stateDrifted]
+      properties:
+        toolName: { type: string }
+        approvalTier: { type: string, enum: [L0, L1, L2] }
+        approvalPreview:
+          type: object
+          additionalProperties: true
+        previewLock: { type: string }
+        stateDrifted: { type: boolean }
+        driftReason: { type: string }
     BillingOwnerTransferRequestInput:
       type: object
       additionalProperties: false
@@ -12864,7 +12925,7 @@ components:
         id: { type: string }
         type:
           type: string
-          enum: [project.billing_owner_transfer]
+          enum: [project.billing_owner_transfer, runtime.self_heal]
         status:
           $ref: "#/components/schemas/InboxActionRequestStatus"
         rowVersion:
@@ -12880,6 +12941,8 @@ components:
           uniqueItems: true
           items:
             $ref: "#/components/schemas/InboxDecision"
+        proposal:
+          $ref: "#/components/schemas/InboxSelfHealProposal"
     InboxActionRequest:
       type: object
       additionalProperties: false
@@ -12888,7 +12951,7 @@ components:
         id: { type: string }
         type:
           type: string
-          enum: [project.billing_owner_transfer]
+          enum: [project.billing_owner_transfer, runtime.self_heal]
         requesterUserId: { type: string }
         recipientUserId: { type: string }
         projectId: { type: string }
@@ -16913,7 +16976,25 @@ components:
     ProjectAIAutomationConfig:
       type: object
       additionalProperties: false
-      required: [projectId, deliveryDiagnosisEnabled, deliveryBillingUserId, deliveryBillingUserName, deliveryCooldownSeconds, deliveryDailyLimit, updatedBy, updatedAt]
+      required:
+        - projectId
+        - deliveryDiagnosisEnabled
+        - deliveryBillingUserId
+        - deliveryBillingUserName
+        - deliveryCooldownSeconds
+        - deliveryDailyLimit
+        - runtimeDiagnosisEnabled
+        - runtimeBillingUserId
+        - runtimeBillingUserName
+        - runtimeCooldownSeconds
+        - runtimeDailyLimit
+        - selfHealMode
+        - stageSelfHealModes
+        - allowedAutoHealTools
+        - maxConsecutiveAutoHeals
+        - circuitBreakerWindowSeconds
+        - updatedBy
+        - updatedAt
       properties:
         projectId: { type: string }
         deliveryDiagnosisEnabled: { type: boolean }
@@ -16921,6 +17002,24 @@ components:
         deliveryBillingUserName: { type: string }
         deliveryCooldownSeconds: { type: integer, minimum: 0, maximum: 86400 }
         deliveryDailyLimit: { type: integer, minimum: 1, maximum: 500 }
+        runtimeDiagnosisEnabled: { type: boolean }
+        runtimeBillingUserId: { type: string }
+        runtimeBillingUserName: { type: string }
+        runtimeCooldownSeconds: { type: integer, minimum: 0, maximum: 86400 }
+        runtimeDailyLimit: { type: integer, minimum: 1, maximum: 500 }
+        selfHealMode:
+          type: string
+          enum: [suggest_only, auto_l1, auto_l2]
+        stageSelfHealModes:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [suggest_only, auto_l1, auto_l2]
+        allowedAutoHealTools:
+          type: array
+          items: { type: string }
+        maxConsecutiveAutoHeals: { type: integer, minimum: 1, maximum: 10 }
+        circuitBreakerWindowSeconds: { type: integer, minimum: 60, maximum: 86400 }
         updatedBy: { type: string }
         updatedAt: { type: string, format: date-time }
     UpdateProjectAIAutomationConfigInput:
@@ -16931,6 +17030,23 @@ components:
         deliveryBillingUserId: { type: string }
         deliveryCooldownSeconds: { type: integer, minimum: 0, maximum: 86400 }
         deliveryDailyLimit: { type: integer, minimum: 1, maximum: 500 }
+        runtimeDiagnosisEnabled: { type: boolean }
+        runtimeBillingUserId: { type: string }
+        runtimeCooldownSeconds: { type: integer, minimum: 0, maximum: 86400 }
+        runtimeDailyLimit: { type: integer, minimum: 1, maximum: 500 }
+        selfHealMode:
+          type: string
+          enum: [suggest_only, auto_l1, auto_l2]
+        stageSelfHealModes:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [suggest_only, auto_l1, auto_l2]
+        allowedAutoHealTools:
+          type: array
+          items: { type: string }
+        maxConsecutiveAutoHeals: { type: integer, minimum: 1, maximum: 10 }
+        circuitBreakerWindowSeconds: { type: integer, minimum: 60, maximum: 86400 }
     AIActionProposalPreviewInput:
       type: object
       additionalProperties: false

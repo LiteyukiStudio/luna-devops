@@ -106,12 +106,21 @@ func (h *Handler) ExecuteHeadlessAIToolInternal(ctx *gin.Context) {
 		return
 	}
 
+	actorSessionID := "headless:" + user.ID
+	requestCtx := h.host.WithAIPlatformActor(ctx.Request.Context(), PlatformActor{
+		UserID:    user.ID,
+		SessionID: actorSessionID,
+		ProjectID: projectID,
+	})
+	restore := replaceRequestContext(ctx, requestCtx)
+	defer restore()
+
 	h.host.SetCurrentUser(ctx, user)
 	tc := aitool.NewToolContext(
 		ctx,
 		h.dbFor(ctx),
 		user,
-		"headless:"+user.ID,
+		actorSessionID,
 		"headless",
 		projectID,
 		runID,

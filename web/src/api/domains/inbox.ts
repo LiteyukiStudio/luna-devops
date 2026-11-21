@@ -1,4 +1,4 @@
-import type { InboxDecision, InboxListParams, InboxMessage, InboxUnreadCount, PaginatedResponse } from '../types'
+import type { InboxActionRequestSummary, InboxDecision, InboxListParams, InboxMessage, InboxSelfHealPreviewOutput, InboxUnreadCount, PaginatedResponse } from '../types'
 import { paginationQuery, request } from '../core'
 
 function inboxQuery(params: InboxListParams) {
@@ -20,9 +20,14 @@ export const inboxApi = {
   markAllInboxMessagesRead: () => request<void>('/inbox/read-all', { method: 'POST' }),
   archiveInboxMessage: (messageId: string) =>
     request<void>(`/inbox/${encodeURIComponent(messageId)}/archive`, { method: 'POST' }),
-  decideInboxActionRequest: (requestId: string, decision: InboxDecision, expectedVersion: number) =>
-    request<void>(`/inbox/action-requests/${encodeURIComponent(requestId)}/decision`, {
+  decideInboxActionRequest: (requestId: string, decision: InboxDecision, expectedVersion: number, previewLock?: string) =>
+    request<InboxActionRequestSummary>(`/inbox/action-requests/${encodeURIComponent(requestId)}/decision`, {
       method: 'POST',
-      body: JSON.stringify({ decision, expectedVersion }),
+      body: JSON.stringify(previewLock ? { decision, expectedVersion, previewLock } : { decision, expectedVersion }),
+    }),
+  previewInboxSelfHealAction: (requestId: string, signal?: AbortSignal) =>
+    request<InboxSelfHealPreviewOutput>(`/inbox/action-requests/${encodeURIComponent(requestId)}/self-heal-preview`, {
+      method: 'POST',
+      signal,
     }),
 }
