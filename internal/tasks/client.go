@@ -32,6 +32,7 @@ const (
 	TypeBillingRuntime          = "billing:runtime"
 	TypeBillingAI               = "billing:ai"
 	TypeRetentionRun            = "retention:run"
+	TypeAIDeliveryDiagnosis     = "ai:delivery_diagnosis"
 
 	QueueDeploy = "deploy"
 	QueueBuild  = "build"
@@ -88,6 +89,13 @@ type NotificationReconcilePayload struct{}
 
 type GitAccountRefreshPayload struct {
 	ActorID string `json:"actorId"`
+}
+
+type AIDeliveryDiagnosisPayload struct {
+	DiagnosisID string `json:"diagnosisId"`
+	ProjectID   string `json:"projectId"`
+	SubjectType string `json:"subjectType"`
+	SubjectID   string `json:"subjectId"`
 }
 
 type Client struct {
@@ -220,6 +228,15 @@ func (c *Client) EnqueueGitAccountRefresh(ctx context.Context, payload GitAccoun
 	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeGitAccountRefresh))
 }
 
+func (c *Client) EnqueueAIDeliveryDiagnosis(ctx context.Context, payload AIDeliveryDiagnosisPayload) (*asynq.TaskInfo, error) {
+	task, err := NewAIDeliveryDiagnosisTask(payload)
+	if err != nil {
+		return nil, err
+	}
+	taskID := "ai-delivery-diag:" + strings.TrimSpace(payload.SubjectType) + ":" + strings.TrimSpace(payload.SubjectID)
+	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeAIDeliveryDiagnosis), asynq.TaskID(taskID))
+}
+
 func (c *Client) enqueueWithPolicy(ctx context.Context, task *asynq.Task, policy EnqueuePolicy, options ...asynq.Option) (*asynq.TaskInfo, error) {
 	options = append([]asynq.Option{
 		asynq.Queue(policy.Queue),
@@ -344,6 +361,8 @@ func PolicyForType(taskType string) EnqueuePolicy {
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: time.Minute}
 	case TypeVolumeTransferCleanup:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 5 * time.Minute}
+	case TypeAIDeliveryDiagnosis:
+		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 0, Timeout: 2 * time.Minute, Retention: 24 * time.Hour, Unique: 10 * time.Minute}
 	default:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 1, Timeout: 5 * time.Minute, Retention: 24 * time.Hour, Unique: 1 * time.Minute}
 	}
@@ -474,4 +493,15 @@ func NewGitAccountRefreshTask(payload GitAccountRefreshPayload) (*asynq.Task, er
 		return nil, err
 	}
 	return asynq.NewTask(TypeGitAccountRefresh, data), nil
+}
+
+func NewAIDeliveryDiagnosisTask(payload AIDeliveryDiagnosisPayload) (*asynq.Task, error) {
+	if strings.TrimSpace(payload.DiagnosisID) == "" || strings.TrimSpace(payload.ProjectID) == "" || strings.TrimSpace(payload.SubjectType) == "" || strings.TrimSpace(payload.SubjectID) == "" {
+		return nil, errors.New("ai delivery diagnosis identity is incomplete")
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeAIDeliveryDiagnosis, data), nil
 }

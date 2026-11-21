@@ -123,7 +123,7 @@ func (r *Runner) reclaimExpiredBuildJobs(ctx context.Context) error {
 	}
 	for _, item := range reclaimed {
 		r.recordBuildRunMetrics(ctx, item.run)
-		r.emitBuildFailed(ctx, item.run, item.code)
+		r.onBuildFailureTerminal(ctx, item.run, item.code)
 		if item.job.Status == "running" {
 			_ = workerStage(ctx, "build.reclaim_job", func(stageCtx context.Context) error {
 				return r.releaseExpiredBuildJob(stageCtx, item.job, item.run)
@@ -170,6 +170,7 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 	if err := workerStage(ctx, "cleanup.recover_stale", r.recoverStaleResourceCleanups); err != nil {
 		return err
 	}
+	_ = workerStage(ctx, "ai.reconcile_delivery_diagnoses", r.reconcileAIDeliveryDiagnoses)
 	_ = workerStage(ctx, "runtime.patrol_workloads", r.patrolRuntimeWorkloads)
 	_ = workerStage(ctx, "gateway.patrol_certificates", r.patrolGatewayCertificates)
 	return nil

@@ -171,6 +171,25 @@ func templateDetails(event Event, locale string) string {
 			fmt.Sprintf("- %s: %s", labels.DetailMessage, fallbackText(event.Gateway.Message)),
 		)
 	}
+	if event.AIDiagnosis != nil && strings.TrimSpace(event.AIDiagnosis.RootCauseSummary) != "" {
+		aiHeader := "AI Diagnosis"
+		causeLabel := "Root cause"
+		suggestLabel := "Suggestions"
+		proposeLabel := "Proposed action"
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "zh") {
+			aiHeader = "AI 诊断摘要"
+			causeLabel = "根因分析"
+			suggestLabel = "修复建议"
+			proposeLabel = "建议操作"
+		}
+		lines = append(lines, "", aiHeader, fmt.Sprintf("- %s: %s", causeLabel, strings.TrimSpace(event.AIDiagnosis.RootCauseSummary)))
+		if len(event.AIDiagnosis.Suggestions) > 0 {
+			lines = append(lines, fmt.Sprintf("- %s: %s", suggestLabel, strings.Join(event.AIDiagnosis.Suggestions, "; ")))
+		}
+		if strings.TrimSpace(event.AIDiagnosis.ProposedActionSummary) != "" {
+			lines = append(lines, fmt.Sprintf("- %s: %s", proposeLabel, strings.TrimSpace(event.AIDiagnosis.ProposedActionSummary)))
+		}
+	}
 	if link := templateLink(event.Links, "primary"); link != "" {
 		lines = append(lines, "", fmt.Sprintf("%s: %s", labels.DetailLink, link))
 	}

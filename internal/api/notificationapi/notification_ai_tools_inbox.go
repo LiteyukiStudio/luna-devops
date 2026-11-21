@@ -365,6 +365,9 @@ func (h *Handler) validateInboxDecisionState(tc *aitool.ToolContext, user model.
 	if err != nil {
 		return model.InboxActionRequest{}, mapInboxToolError(err)
 	}
+	if boundProj := strings.TrimSpace(tc.ConversationProjectID); boundProj != "" && strings.TrimSpace(actionReq.ProjectID) != boundProj {
+		return model.InboxActionRequest{}, aitool.Forbidden("ai.project_scope_mismatch", "inbox action request belongs to another project")
+	}
 	if actionReq.ExpiresAt != nil && !actionReq.ExpiresAt.After(time.Now()) {
 		return model.InboxActionRequest{}, aitool.NewError(http.StatusGone, "inbox.billing_owner_transfer_expired", "inbox action request has expired")
 	}

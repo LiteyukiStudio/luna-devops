@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 140
+	latestMigrationVersion   = 141
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -102,6 +102,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000139_ai_conversation_approval_mode.down.sql":              false,
 		"000140_reconcile_legacy_baseline_schema.up.sql":             false,
 		"000140_reconcile_legacy_baseline_schema.down.sql":           false,
+		"000141_add_delivery_ai_diagnoses.up.sql":                    false,
+		"000141_add_delivery_ai_diagnoses.down.sql":                  false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {

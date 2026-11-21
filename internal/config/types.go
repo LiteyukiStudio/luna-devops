@@ -73,6 +73,7 @@ type WorkerConfig struct {
 	BuildJobTTLSeconds          int64
 	DeployRolloutTimeoutSeconds int64
 	CertManagerClusterIssuer    string
+	AIAgent                     aiagent.Config
 }
 
 func (c Shared) RedisOptions() redisconfig.Options {

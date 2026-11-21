@@ -124,7 +124,7 @@ export function ApplicationConfigPage() {
     queryFn: () => api.listBuildRuns(projectId, applicationId),
     enabled: Boolean(projectId && applicationId),
     refetchInterval: query => pollsWorkflowStatus
-      ? statusRefetchInterval((query.state.data ?? []).some(run => run.status === 'queued' || run.status === 'running'))
+      ? statusRefetchInterval((query.state.data ?? []).some(run => run.status === 'queued' || run.status === 'running' || run.aiDiagnosis?.status === 'running'))
       : false,
   })
   const buildJobs = useQuery({
@@ -140,7 +140,7 @@ export function ApplicationConfigPage() {
     queryFn: () => api.listReleases(projectId, applicationId),
     enabled: Boolean(projectId && applicationId),
     refetchInterval: query => activeTab === 'deployments' || activeTab === 'overview'
-      ? statusRefetchInterval((query.state.data ?? []).some(release => release.status === 'pending' || release.status === 'running'))
+      ? statusRefetchInterval((query.state.data ?? []).some(release => release.status === 'pending' || release.status === 'running' || release.aiDiagnosis?.status === 'running'))
       : false,
   })
   const deploymentTargets = useQuery({

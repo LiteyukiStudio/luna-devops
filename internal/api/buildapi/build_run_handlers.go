@@ -58,6 +58,8 @@ func (h *Handlers) ListBuildRuns(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	attachBuildRunAIDiagnoses(h.dbFor(ctx), ctx.Param("projectId"), runs)
+	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, paginatedResponse(runs, total, pagination))
 }
 
@@ -80,7 +82,39 @@ func (h *Handlers) GetBuildRun(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	ctx.JSON(http.StatusOK, run)
+	runs := []model.BuildRun{run}
+	attachBuildRunAIDiagnoses(h.dbFor(ctx), run.ProjectID, runs)
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, runs[0])
+}
+
+func attachBuildRunAIDiagnoses(db *gorm.DB, projectID string, runs []model.BuildRun) {
+	if db == nil || len(runs) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(runs))
+	for _, r := range runs {
+		if r.Status == "failed" || r.Status == "timeout" {
+			ids = append(ids, r.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	var rows []model.AIDeliveryDiagnosis
+	if err := db.Where("project_id = ? AND subject_type = ? AND subject_id IN ?", projectID, model.AIDeliverySubjectBuildRun, ids).Find(&rows).Error; err != nil || len(rows) == 0 {
+		return
+	}
+	bySubject := make(map[string]model.AIDeliveryDiagnosisView, len(rows))
+	for _, row := range rows {
+		bySubject[row.SubjectID] = row.ToView()
+	}
+	for idx := range runs {
+		if view, found := bySubject[runs[idx].ID]; found {
+			v := view
+			runs[idx].AIDiagnosis = &v
+		}
+	}
 }
 
 func buildRunStatusAllowed(status string) bool {

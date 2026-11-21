@@ -3604,6 +3604,100 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { description: Export failed with the stable code deployment_bundle.export_failed; internal diagnostics are never returned., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
+  /api/v1/projects/{projectId}/ai-automation-config:
+    get:
+      operationId: getProjectAIAutomationConfig
+      tags: [Projects]
+      summary: Get project-level AI diagnosis and automation settings
+      x-luna-cli:
+        requiredScopes: ["notification:read"]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Current project AI automation configuration.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectAIAutomationConfig" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateProjectAIAutomationConfig
+      tags: [Projects]
+      summary: Update project-level AI diagnosis and automation settings
+      x-luna-cli:
+        requiredScopes: ["notification:manage"]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProjectAIAutomationConfigInput" }
+      responses:
+        "200":
+          description: Updated project AI automation configuration.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectAIAutomationConfig" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/projects/{projectId}/ai-action-proposals/preview:
+    post:
+      operationId: previewProjectAIActionProposal
+      tags: [AI Assistant]
+      summary: Preview a proposed AI remediation action under the current user's live RBAC
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIActionProposalPreviewInput" }
+      responses:
+        "200":
+          description: Live preview summary and user-bound previewLock.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIActionProposalPreviewOutput" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/projects/{projectId}/ai-action-proposals/execute:
+    post:
+      operationId: executeProjectAIActionProposal
+      tags: [AI Assistant]
+      summary: Execute a preview-locked AI remediation action under the current user's live RBAC
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIActionProposalExecuteInput" }
+      responses:
+        "200":
+          description: Tool execution output.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIActionProposalExecuteOutput" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-config-inference:
     post:
       operationId: inferDeploymentTargetConfig
@@ -16730,6 +16824,7 @@ components:
           enum: ["", canceled_by_user, superseded, timeout, queue_timeout, dispatch_failed, project_unavailable, deployment_target_unavailable, cluster_unavailable, capacity_check_failed, namespace_failed, task_resolve_failed, job_start_failed, job_failed, observation_failed, internal_error]
         imageRef: { type: string }
         imageDigest: { type: string }
+        aiDiagnosis: { $ref: "#/components/schemas/AIDeliveryDiagnosisView" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     AgentGatewayRouteResult:
@@ -16781,8 +16876,98 @@ components:
         startedAt: { type: string, format: date-time, nullable: true }
         finishedAt: { type: string, format: date-time, nullable: true }
         createdBy: { type: string }
+        aiDiagnosis: { $ref: "#/components/schemas/AIDeliveryDiagnosisView" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    AIProposedAction:
+      type: object
+      additionalProperties: false
+      required: [toolName, arguments, summary]
+      properties:
+        toolName: { type: string }
+        arguments:
+          type: object
+          additionalProperties: true
+        summary: { type: string }
+    AIDeliveryDiagnosisView:
+      type: object
+      additionalProperties: false
+      required: [id, subjectType, subjectId, status, failureCode, rootCauseSummary, confidence, suggestions, createdAt]
+      properties:
+        id: { type: string }
+        subjectType: { type: string, enum: [build_run, release] }
+        subjectId: { type: string }
+        status: { type: string, enum: [running, succeeded, failed] }
+        failureCode: { type: string }
+        rootCauseSummary: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+        suggestions:
+          type: array
+          items: { type: string }
+        proposedAction: { $ref: "#/components/schemas/AIProposedAction" }
+        errorCode: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        billedUserId: { type: string }
+        deploymentTargetId: { type: string }
+    ProjectAIAutomationConfig:
+      type: object
+      additionalProperties: false
+      required: [projectId, deliveryDiagnosisEnabled, deliveryBillingUserId, deliveryBillingUserName, deliveryCooldownSeconds, deliveryDailyLimit, updatedBy, updatedAt]
+      properties:
+        projectId: { type: string }
+        deliveryDiagnosisEnabled: { type: boolean }
+        deliveryBillingUserId: { type: string }
+        deliveryBillingUserName: { type: string }
+        deliveryCooldownSeconds: { type: integer, minimum: 0, maximum: 86400 }
+        deliveryDailyLimit: { type: integer, minimum: 1, maximum: 500 }
+        updatedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+    UpdateProjectAIAutomationConfigInput:
+      type: object
+      additionalProperties: false
+      properties:
+        deliveryDiagnosisEnabled: { type: boolean }
+        deliveryBillingUserId: { type: string }
+        deliveryCooldownSeconds: { type: integer, minimum: 0, maximum: 86400 }
+        deliveryDailyLimit: { type: integer, minimum: 1, maximum: 500 }
+    AIActionProposalPreviewInput:
+      type: object
+      additionalProperties: false
+      required: [toolName, arguments]
+      properties:
+        toolName: { type: string }
+        arguments:
+          type: object
+          additionalProperties: true
+    AIActionProposalPreviewOutput:
+      type: object
+      additionalProperties: false
+      required: [toolName, approvalTier, approvalPreview, previewLock]
+      properties:
+        toolName: { type: string }
+        approvalTier: { type: string, enum: [L0, L1, L2] }
+        approvalPreview:
+          type: object
+          additionalProperties: true
+        previewLock: { type: string }
+    AIActionProposalExecuteInput:
+      type: object
+      additionalProperties: false
+      required: [toolName, arguments, previewLock]
+      properties:
+        toolName: { type: string }
+        arguments:
+          type: object
+          additionalProperties: true
+        previewLock: { type: string }
+    AIActionProposalExecuteOutput:
+      type: object
+      additionalProperties: false
+      required: [toolName, result]
+      properties:
+        toolName: { type: string }
+        result: {}
     RuntimeContainerStateSnapshot:
       type: object
       additionalProperties: false

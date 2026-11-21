@@ -18,6 +18,10 @@ spec:
             matchLabels:
               {{- include "luna-devops.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              {{- include "luna-devops.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: worker
       ports:
         - protocol: TCP
           port: {{ .Values.ai.agent.service.port }}

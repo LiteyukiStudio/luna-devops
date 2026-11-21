@@ -1,9 +1,10 @@
 import type { Release } from '@/api'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, History } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, ApiError } from '@/api'
+import { AIDeliveryDiagnosisCard } from '@/components/common/ai-delivery-diagnosis-card'
 import { LogViewer } from '@/components/common/log-viewer'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -37,6 +38,7 @@ export function ApplicationReleaseLogsPanel({
   onClose: () => void
 }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const containerSelectId = useId()
   const tailSelectId = useId()
   const [logView, setLogView] = useState<'deployment' | 'runtime'>(initialView)
@@ -101,6 +103,24 @@ export function ApplicationReleaseLogsPanel({
       titleAccessory={<StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />}
       onClose={onClose}
     >
+      {release.aiDiagnosis && (
+        <div className="shrink-0 border-b border-border p-4">
+          <AIDeliveryDiagnosisCard
+            applicationId={release.applicationId}
+            deploymentTargetId={release.deploymentTargetId}
+            diagnosis={release.aiDiagnosis}
+            projectId={projectId}
+            onActionExecuted={() => {
+              void queryClient.invalidateQueries({ queryKey: ['build-runs', projectId] })
+              void queryClient.invalidateQueries({ queryKey: ['build-runs-page', projectId] })
+              void queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
+              void queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, release.applicationId] })
+              void queryClient.invalidateQueries({ queryKey: ['application-runtime', projectId, release.applicationId] })
+            }}
+            onNavigateEditTarget={onClose}
+          />
+        </div>
+      )}
       <Tabs className="min-h-0 flex-1 gap-0" value={logView} onValueChange={value => setLogView(value as 'deployment' | 'runtime')}>
         <div className="shrink-0 border-b border-border px-4">
           <TabsList className="border-b-0">

@@ -30,6 +30,7 @@ type Event struct {
 	Certificate         CertificateContext     `json:"certificate"`
 	Runtime             RuntimeIncidentContext `json:"runtime"`
 	ServiceBinding      ServiceBindingContext  `json:"serviceBinding"`
+	AIDiagnosis         *AIDiagnosisContext    `json:"aiDiagnosis,omitempty"`
 	Actor               ActorContext           `json:"actor"`
 	ResourceOwnerUserID string                 `json:"resourceOwnerUserId"`
 	EligibleRuleIDs     []string               `json:"eligibleRuleIds,omitempty"`
@@ -67,6 +68,13 @@ type ServiceBindingContext struct {
 	SourceDeploymentTargetID string `json:"sourceDeploymentTargetId"`
 	TargetApplicationID      string `json:"targetApplicationId"`
 	TargetDeploymentTargetID string `json:"targetDeploymentTargetId"`
+}
+
+type AIDiagnosisContext struct {
+	RootCauseSummary      string   `json:"rootCauseSummary,omitempty"`
+	Confidence            string   `json:"confidence,omitempty"`
+	Suggestions           []string `json:"suggestions,omitempty"`
+	ProposedActionSummary string   `json:"proposedActionSummary,omitempty"`
 }
 
 type EntityRef struct {

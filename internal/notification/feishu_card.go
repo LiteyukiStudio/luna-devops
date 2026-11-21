@@ -280,6 +280,32 @@ func renderFeishuInteractiveCardJSON(event Event, locale string, timeZone string
 		})
 	}
 
+	if event.AIDiagnosis != nil && strings.TrimSpace(event.AIDiagnosis.RootCauseSummary) != "" {
+		aiTitle := "AI Root Cause Diagnosis"
+		suggestPrefix := "Suggestions: "
+		proposePrefix := "Proposed action: "
+		if isZH {
+			aiTitle = "AI 临终诊断"
+			suggestPrefix = "修复建议："
+			proposePrefix = "待确认提案："
+		}
+		var mdLines []string
+		mdLines = append(mdLines, fmt.Sprintf("**%s**\n%s", aiTitle, sanitizeLarkMarkdownValue(event.AIDiagnosis.RootCauseSummary)))
+		if len(event.AIDiagnosis.Suggestions) > 0 {
+			mdLines = append(mdLines, sanitizeLarkMarkdownValue(suggestPrefix+strings.Join(event.AIDiagnosis.Suggestions, "；")))
+		}
+		if strings.TrimSpace(event.AIDiagnosis.ProposedActionSummary) != "" {
+			mdLines = append(mdLines, sanitizeLarkMarkdownValue(proposePrefix+event.AIDiagnosis.ProposedActionSummary))
+		}
+		elements = append(elements, feishuCardWidget{
+			Tag: "div",
+			Text: &feishuCardText{
+				Tag:     "lark_md",
+				Content: strings.Join(mdLines, "\n"),
+			},
+		})
+	}
+
 	if primaryURL := absoluteHTTPURL(templateLink(event.Links, "primary")); primaryURL != "" {
 		ctaLabel := "View Details"
 		if isZH {

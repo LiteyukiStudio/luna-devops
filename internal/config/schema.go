@@ -65,4 +65,9 @@ type workerEnvironment struct {
 	BuildJobTTLSeconds       int                     `env:"BUILD_JOB_TTL_SECONDS" envDefault:"3600"`
 	DeployRolloutTimeout     int                     `env:"DEPLOY_ROLLOUT_TIMEOUT_SECONDS" envDefault:"600"`
 	CertManagerClusterIssuer string                  `env:"CERT_MANAGER_CLUSTER_ISSUER" envDefault:"letsencrypt-http01"`
+	AIAssistantAvailable     bool                    `env:"AI_ASSISTANT_AVAILABLE" envDefault:"false"`
+	AIAgentTimeout           time.Duration           `env:"AI_AGENT_TIMEOUT" envDefault:"10s"`
+	AIAgentBaseURL           string                  `env:"AI_AGENT_BASE_URL"`
+	AIInternalSecret         string                  `env:"AI_INTERNAL_SECRET"`
+	AIInternalSecretPrevious string                  `env:"AI_INTERNAL_SECRET_PREVIOUS"`
 }

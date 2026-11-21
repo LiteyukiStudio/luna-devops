@@ -1514,6 +1514,7 @@ export interface BuildRun {
   /** 来源提交的完整消息；旧构建或尚未检出时为空。 */
   sourceCommitMessage: string
   sourceAuthorEmail: string
+  aiDiagnosis?: AIDeliveryDiagnosisView
   createdAt: string
 }
 
@@ -2134,7 +2135,66 @@ export interface Release {
   startedAt?: string
   finishedAt?: string
   createdBy: string
+  aiDiagnosis?: AIDeliveryDiagnosisView
   createdAt: string
+}
+
+export interface AIProposedAction {
+  toolName: string
+  arguments: Record<string, unknown>
+  summary: string
+}
+
+export interface AIDeliveryDiagnosisView {
+  id: string
+  subjectType: 'build_run' | 'release'
+  subjectId: string
+  status: 'running' | 'succeeded' | 'failed'
+  failureCode: string
+  rootCauseSummary: string
+  confidence: 'high' | 'medium' | 'low'
+  suggestions: string[]
+  proposedAction?: AIProposedAction
+  errorCode?: string
+  createdAt: string
+  finishedAt?: string | null
+  billedUserId?: string
+  deploymentTargetId?: string
+}
+
+export interface ProjectAIAutomationConfig {
+  projectId: string
+  deliveryDiagnosisEnabled: boolean
+  deliveryBillingUserId: string
+  deliveryBillingUserName: string
+  deliveryCooldownSeconds: number
+  deliveryDailyLimit: number
+  updatedBy: string
+  updatedAt: string
+}
+
+export interface UpdateProjectAIAutomationConfigInput {
+  deliveryDiagnosisEnabled?: boolean
+  deliveryBillingUserId?: string
+  deliveryCooldownSeconds?: number
+  deliveryDailyLimit?: number
+}
+
+export interface AIActionProposalPreviewOutput {
+  toolName: string
+  approvalTier: 'L0' | 'L1' | 'L2'
+  approvalPreview: {
+    summary?: string
+    targetResource?: string
+    warnings?: string[]
+    changes?: Array<{ field: string, before?: unknown, after?: unknown }>
+  } & Record<string, unknown>
+  previewLock: string
+}
+
+export interface AIActionProposalExecuteOutput {
+  toolName: string
+  result: unknown
 }
 
 export interface ReleaseLog {

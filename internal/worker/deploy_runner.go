@@ -573,7 +573,11 @@ func (r *Runner) finishDeployRelease(ctx context.Context, release model.Release,
 	release.Message = firstNonEmpty(message, "Deployment "+status)
 	release.FinishedAt = &finishedAt
 	r.recordReleaseMetrics(ctx, release)
-	r.emitReleaseEvent(ctx, release, status, message)
+	if status == "failed" {
+		r.onReleaseFailureTerminal(ctx, release, message)
+	} else {
+		r.emitReleaseEvent(ctx, release, status, message)
+	}
 	return true, nil
 }
 

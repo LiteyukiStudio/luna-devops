@@ -260,7 +260,7 @@ func (r *Runner) finishBuildJobUnsuccessfully(ctx context.Context, job model.Bui
 		run.FailureCode = code
 		run.FinishedAt = &finishedAt
 		r.recordBuildRunMetrics(ctx, run)
-		r.emitBuildFailed(ctx, run, firstNonEmpty(message, code))
+		r.onBuildFailureTerminal(ctx, run, firstNonEmpty(message, code))
 	}
 	return err
 }

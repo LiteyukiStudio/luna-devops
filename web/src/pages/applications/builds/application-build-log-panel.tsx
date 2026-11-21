@@ -1,16 +1,30 @@
-import type { BuildJob } from '@/api'
+import type { BuildJob, BuildRun } from '@/api'
 import { useTranslation } from 'react-i18next'
+import { AIDeliveryDiagnosisCard } from '@/components/common/ai-delivery-diagnosis-card'
 import { LogViewer } from '@/components/common/log-viewer'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { StatusIndicator } from '@/components/common/status-indicator'
 import { shortBuildId } from '@/pages/applications/application-config-utils'
 
-export function ApplicationBuildLogPanel({ content, job, loading, onClose }: {
+export function ApplicationBuildLogPanel({
+  applicationId,
+  content,
+  job,
+  loading,
+  onActionExecuted,
+  onClose,
+  projectId,
+  run,
+}: {
+  applicationId: string
   content: string
   job: BuildJob | null
   loading: boolean
+  onActionExecuted?: () => void
   onClose: () => void
+  projectId: string
+  run?: BuildRun
 }) {
   const { t } = useTranslation()
   if (!job)
@@ -22,6 +36,18 @@ export function ApplicationBuildLogPanel({ content, job, loading, onClose }: {
       titleAccessory={<StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={job.status} />}
       onClose={onClose}
     >
+      {run?.aiDiagnosis && (
+        <div className="shrink-0 border-b border-border p-4">
+          <AIDeliveryDiagnosisCard
+            applicationId={applicationId}
+            deploymentTargetId={run.deploymentTargetId}
+            diagnosis={run.aiDiagnosis}
+            projectId={projectId}
+            onActionExecuted={onActionExecuted}
+            onNavigateEditTarget={onClose}
+          />
+        </div>
+      )}
       <LogViewer
         className="flex-1"
         content={content}

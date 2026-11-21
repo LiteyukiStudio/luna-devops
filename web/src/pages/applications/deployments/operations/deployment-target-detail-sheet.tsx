@@ -1,8 +1,10 @@
 import type { DeploymentTargetRow } from './application-deployment-targets-list'
 import type { DeploymentTarget, Release } from '@/api'
+import { useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { AIDeliveryDiagnosisCard } from '@/components/common/ai-delivery-diagnosis-card'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DescriptionListItem } from '@/components/common/description-list-item'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
@@ -99,6 +101,7 @@ function DeploymentTargetDetailBody({
   onViewPodLogs?: (release: Release, pod: string, previous: boolean) => void
 }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
   const [warningOnly, setWarningOnly] = useState(false)
 
@@ -192,6 +195,22 @@ function DeploymentTargetDetailBody({
             warningCount={diagnostics.warningCount}
             onViewEvents={handleViewWarningEvents}
           />
+
+          {release?.aiDiagnosis && (
+            <AIDeliveryDiagnosisCard
+              applicationId={applicationId}
+              deploymentTargetId={target.id}
+              diagnosis={release.aiDiagnosis}
+              projectId={projectId}
+              onActionExecuted={() => {
+                void queryClient.invalidateQueries({ queryKey: ['build-runs', projectId] })
+                void queryClient.invalidateQueries({ queryKey: ['build-runs-page', projectId] })
+                void queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
+                void queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })
+                void queryClient.invalidateQueries({ queryKey: ['application-runtime', projectId, applicationId] })
+              }}
+            />
+          )}
 
           <section className="grid gap-4 rounded-container border border-border bg-surface-raised p-4 shadow-surface-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">

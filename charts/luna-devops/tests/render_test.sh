@@ -201,8 +201,9 @@ assert_contains "$worker_config_render" '^  WORKER_DB_MAX_OPEN_CONNS: "20"$' 'th
 assert_contains "$worker_config_render" '^  WORKER_DB_CONN_MAX_LIFETIME: "30m"$' 'the Worker database-pool lifetime is missing'
 assert_contains "$worker_config_render" '^  BUILD_EXECUTOR_IMAGE:' 'the build executor is missing from Worker configuration'
 assert_contains "$worker_config_render" '^  BUILD_JOB_TIMEOUT_SECONDS:' 'the build job timeout is missing from Worker configuration'
+assert_contains "$worker_config_render" '^  AI_AGENT_BASE_URL:' 'the Agent URL is missing from Worker configuration'
 assert_not_contains "$worker_config_render" 'BUILD_EGRESS_MODE|BUILD_PRIVATE_EGRESS|BUILD_BLOCKED_EGRESS' 'build egress moved to runtime cluster configuration'
-assert_not_contains "$worker_config_render" 'API_DB_|API_ADDR|APP_CORS_ORIGINS|TRUSTED_PROXY_CIDRS|AI_AGENT_' 'API settings leaked into Worker configuration'
+assert_not_contains "$worker_config_render" 'API_DB_|API_ADDR|APP_CORS_ORIGINS|TRUSTED_PROXY_CIDRS' 'API settings leaked into Worker configuration'
 
 custom_database_render="$tmp_dir/custom-database-config.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops \
@@ -322,8 +323,8 @@ assert_contains "$agent_render" '^[[:space:]]+- name: OTEL_SERVICE_VERSION$' 'Ag
 assert_contains "$agent_render" '^[[:space:]]+- name: AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS$' 'Agent database-span diagnostic setting is missing'
 assert_contains "$agent_render" '^[[:space:]]+value: "false"$' 'Agent database-span diagnostics are not disabled by default'
 assert_count "$agent_render" '^[[:space:]]+checksum\.luna\.devops/managed-secrets:' 5 'Agent does not carry the managed Secret checksum'
-assert_count "$agent_render" '^[[:space:]]+- name: AI_INTERNAL_SECRET_PREVIOUS$' 2 'API and Agent must both mount optional AI_INTERNAL_SECRET_PREVIOUS'
-assert_count "$agent_render" '^[[:space:]]+key: ai-internal-secret-previous$' 2 'AI_INTERNAL_SECRET_PREVIOUS key reference is missing'
+assert_count "$agent_render" '^[[:space:]]+- name: AI_INTERNAL_SECRET_PREVIOUS$' 3 'API, Worker, and Agent must mount optional AI_INTERNAL_SECRET_PREVIOUS'
+assert_count "$agent_render" '^[[:space:]]+key: ai-internal-secret-previous$' 3 'AI_INTERNAL_SECRET_PREVIOUS key reference is missing'
 
 agent_diagnostics_render="$tmp_dir/agent-diagnostics.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops \

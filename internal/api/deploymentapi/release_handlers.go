@@ -45,6 +45,8 @@ func (h *Handlers) ListReleases(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	attachReleaseAIDiagnoses(h.dbFor(ctx), ctx.Param("projectId"), releases)
+	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, paginatedResponse(releases, total, pagination))
 }
 
@@ -56,8 +58,39 @@ func (h *Handlers) GetRelease(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	releases := []model.Release{release}
+	attachReleaseAIDiagnoses(h.dbFor(ctx), release.ProjectID, releases)
 	ctx.Header("Cache-Control", "no-store")
-	ctx.JSON(http.StatusOK, release)
+	ctx.JSON(http.StatusOK, releases[0])
+}
+
+func attachReleaseAIDiagnoses(db *gorm.DB, projectID string, releases []model.Release) {
+	if db == nil || len(releases) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(releases))
+	for _, rel := range releases {
+		if rel.Status == "failed" {
+			ids = append(ids, rel.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	var rows []model.AIDeliveryDiagnosis
+	if err := db.Where("project_id = ? AND subject_type = ? AND subject_id IN ?", projectID, model.AIDeliverySubjectRelease, ids).Find(&rows).Error; err != nil || len(rows) == 0 {
+		return
+	}
+	bySubject := make(map[string]model.AIDeliveryDiagnosisView, len(rows))
+	for _, row := range rows {
+		bySubject[row.SubjectID] = row.ToView()
+	}
+	for idx := range releases {
+		if view, found := bySubject[releases[idx].ID]; found {
+			v := view
+			releases[idx].AIDiagnosis = &v
+		}
+	}
 }
 
 func (h *Handlers) CreateRelease(ctx *gin.Context) {

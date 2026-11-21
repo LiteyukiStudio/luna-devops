@@ -207,6 +207,10 @@ const errors = {
     model_output_limit_invalid: '模型目录的输出上限无效，请联系平台管理员检查模型配置。',
     wallet_balance_insufficient: '个人钱包可用余额不足，模型调用未发送。',
     structured_output_invalid: '模型未返回符合预期的结构化结果，请稍后重试。',
+    tool_preview_lock_required: '请先执行实时预检并确认变更后再提交执行。',
+    preview_lock_expired: '预检结果已过期，请重新预检后再确认执行。',
+    preview_lock_mismatch: '当前操作人或目标参数与预检锁不一致，请重新预检。',
+    preview_lock_invalid: '预检签名无效，请重新预检后再试。',
     conversation_not_found: '会话不存在或已被删除。',
     run_not_found: '运行记录不存在或已被删除。',
     run_not_resumable: '当前任务状态已变化，无法继续此操作。',
@@ -219,6 +223,12 @@ const errors = {
     quota: {
       user_concurrent_runs_exceeded: '当前账号同时运行的助手任务已达上限，请等待进行中的任务完成后再试。',
     },
+  },
+  ai_automation: {
+    cooldown_invalid: '冷却时间必须在 0 到 86400 秒之间。',
+    daily_limit_invalid: '每日上限必须在 1 到 500 次之间。',
+    billing_user_must_be_self: '后台 AI 计费负责人只能绑定为你本人的个人钱包。',
+    billing_user_invalid: '所选计费负责人无效或不属于当前项目空间。',
   },
   request: {
     failed: '请求处理失败，请稍后重试',

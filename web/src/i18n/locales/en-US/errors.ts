@@ -207,6 +207,10 @@ const errors = {
     model_output_limit_invalid: 'The model catalog output limit is invalid. Ask a platform administrator to check the model configuration.',
     wallet_balance_insufficient: 'Your personal wallet has insufficient available credits. The model request was not sent.',
     structured_output_invalid: 'The model did not return a valid structured result. Try again later.',
+    tool_preview_lock_required: 'Run a live preflight preview before executing this proposal.',
+    preview_lock_expired: 'The preview lock has expired. Run preflight again before confirming.',
+    preview_lock_mismatch: 'The preview lock does not match the current operator or arguments. Run preflight again.',
+    preview_lock_invalid: 'The preview lock signature is invalid. Run preflight again.',
     conversation_not_found: 'The conversation does not exist or has been deleted.',
     run_not_found: 'The run does not exist or has been deleted.',
     run_not_resumable: 'The run state has changed and cannot be resumed.',
@@ -219,6 +223,12 @@ const errors = {
     quota: {
       user_concurrent_runs_exceeded: 'You have reached the maximum number of concurrent assistant runs. Wait for active runs to finish.',
     },
+  },
+  ai_automation: {
+    cooldown_invalid: 'Cooldown seconds must be between 0 and 86400.',
+    daily_limit_invalid: 'Daily limit must be between 1 and 500.',
+    billing_user_must_be_self: 'Background AI billing can only be bound to your own personal wallet.',
+    billing_user_invalid: 'The billing owner is invalid or is not a member of this project space.',
   },
   request: {
     failed: 'The request failed. Try again later',

@@ -340,6 +340,10 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.DELETE("/projects/:projectId/notifications/rules/:ruleId", domains.notification.DeleteProjectNotificationRule)
 		v1.GET("/projects/:projectId/notifications/deliveries", domains.notification.ListProjectNotificationDeliveries)
 		v1.POST("/projects/:projectId/notifications/deliveries/:deliveryId/retry", domains.notification.RetryProjectNotificationDelivery)
+		v1.GET("/projects/:projectId/ai-automation-config", domains.project.GetProjectAIAutomationConfig)
+		v1.PUT("/projects/:projectId/ai-automation-config", domains.project.UpdateProjectAIAutomationConfig)
+		v1.POST("/projects/:projectId/ai-action-proposals/preview", domains.ai.PreviewProjectAIActionProposal)
+		v1.POST("/projects/:projectId/ai-action-proposals/execute", domains.ai.ExecuteProjectAIActionProposal)
 
 		v1.GET("/projects/:projectId/applications", domains.application.ListApplications)
 		v1.POST("/projects/:projectId/applications", domains.application.CreateApplication)

@@ -207,6 +207,10 @@ const errors = {
     model_output_limit_invalid: 'モデルカタログの出力上限が無効です。プラットフォーム管理者に連絡してモデル設定を確認してください。',
     wallet_balance_insufficient: '個人ウォレットの利用可能残高が不足しています。モデル呼び出しは送信されませんでした。',
     structured_output_invalid: 'モデルから有効な構造化結果が返されませんでした。後ほど再試行してください。',
+    tool_preview_lock_required: '実行する前にライブ事前検証を行ってください。',
+    preview_lock_expired: '事前検証の有効期限が切れました。再度検証してから確定してください。',
+    preview_lock_mismatch: '現在の操作ユーザーまたは引数が事前検証ロックと一致しません。再度検証してください。',
+    preview_lock_invalid: '事前検証ロックの署名が正しくありません。再度検証してください。',
     conversation_not_found: '会話が存在しないか、削除されました。',
     run_not_found: '実行記録が存在しないか、削除されました。',
     run_not_resumable: 'タスクの状態が変更されたため、この操作を続行できません。',
@@ -219,6 +223,12 @@ const errors = {
     quota: {
       user_concurrent_runs_exceeded: '同時実行中のアシスタントタスク数が上限に達しました。進行中のタスクが完了してから再試行してください。',
     },
+  },
+  ai_automation: {
+    cooldown_invalid: 'クールダウン時間は 0〜86400 秒の間で指定してください。',
+    daily_limit_invalid: '1 日あたりの上限は 1〜500 回の間で指定してください。',
+    billing_user_must_be_self: 'バックグラウンド AI 課金担当者は自身の個人ウォレットのみ設定できます。',
+    billing_user_invalid: '課金担当者が無効であるか、このプロジェクトスペースのメンバーではありません。',
   },
   request: {
     failed: 'リクエスト処理に失敗しました。後ほど再試行してください',

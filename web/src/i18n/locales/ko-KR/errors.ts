@@ -207,6 +207,10 @@ const errors = {
     model_output_limit_invalid: '모델 카탈로그의 출력 상한이 유효하지 않습니다. 플랫폼 관리자에게 문의하여 모델 설정을 확인하세요.',
     wallet_balance_insufficient: '개인 지갑의 사용 가능 잔액이 부족합니다. 모델 호출이 전송되지 않았습니다.',
     structured_output_invalid: '모델이 유효한 구조화 결과를 반환하지 않았습니다. 잠시 후 다시 시도하세요.',
+    tool_preview_lock_required: '제안을 실행하기 전에 실시간 사전 점검을 먼저 수행하세요.',
+    preview_lock_expired: '사전 점검 결과가 만료되었습니다. 다시 점검한 후 확인하세요.',
+    preview_lock_mismatch: '현재 작업자 또는 인자가 사전 점검 잠금과 일치하지 않습니다. 다시 점검하세요.',
+    preview_lock_invalid: '사전 점검 서명이 유효하지 않습니다. 다시 점검하세요.',
     conversation_not_found: '대화가 존재하지 않거나 삭제되었습니다.',
     run_not_found: '실행 기록이 존재하지 않거나 삭제되었습니다.',
     run_not_resumable: '작업 상태가 변경되어 계속할 수 없습니다.',
@@ -219,6 +223,12 @@ const errors = {
     quota: {
       user_concurrent_runs_exceeded: '동시에 실행 중인 어시스턴트 작업 수가 한도에 도달했습니다. 진행 중인 작업이 완료된 후 다시 시도하세요.',
     },
+  },
+  ai_automation: {
+    cooldown_invalid: '쿨다운 시간은 0에서 86400초 사이여야 합니다.',
+    daily_limit_invalid: '일일 한도는 1에서 500회 사이여야 합니다.',
+    billing_user_must_be_self: '백그라운드 AI 과금 담당자는 본인의 개인 지갑으로만 연결할 수 있습니다.',
+    billing_user_invalid: '선택한 과금 담당자가 유효하지 않거나 현재 프로젝트 스페이스 멤버가 아닙니다.',
   },
   request: {
     failed: '요청 처리에 실패했습니다. 잠시 후 다시 시도하세요',

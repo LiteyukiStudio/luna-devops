@@ -9,51 +9,52 @@ import (
 )
 
 type BuildRun struct {
-	ID                      string         `gorm:"primaryKey" json:"id"`
-	ProjectID               string         `gorm:"index;not null" json:"projectId"`
-	ApplicationID           string         `gorm:"index" json:"applicationId"`
-	DeploymentTargetID      string         `gorm:"index" json:"deploymentTargetId"`
-	BuildVariableSetIDs     string         `gorm:"type:text" json:"buildVariableSetIds"`
-	BuildVariablesSnapshot  string         `gorm:"type:text;not null;default:'{}'" json:"-"`
-	BuildSecretRefsSnapshot string         `gorm:"type:text;not null;default:'{}'" json:"-"`
-	Status                  string         `gorm:"index;not null;default:queued" json:"status"`
-	FailureCode             string         `gorm:"not null;default:''" json:"failureCode"`
-	TriggerType             string         `gorm:"not null;default:manual" json:"triggerType"`
-	SourceBranch            string         `json:"sourceBranch"`
-	SourceTag               string         `json:"sourceTag"`
-	SourceCommit            string         `json:"sourceCommit"`
-	BuildDefinitionMode     string         `gorm:"not null;default:repository_dockerfile" json:"buildDefinitionMode"`
-	BuildTemplateID         string         `gorm:"index;not null;default:''" json:"buildTemplateId"`
-	BuildTemplateVersion    string         `gorm:"not null;default:''" json:"buildTemplateVersion"`
-	BuildTemplateValues     string         `gorm:"type:text;not null;default:'{}'" json:"buildTemplateValues"`
-	BuildTemplateDockerfile string         `gorm:"type:text;not null;default:''" json:"-"`
-	BuildTemplateChecksum   string         `gorm:"not null;default:''" json:"buildTemplateChecksum"`
-	DockerfilePath          string         `gorm:"not null;default:Dockerfile" json:"dockerfilePath"`
-	BuildContext            string         `gorm:"not null;default:." json:"buildContext"`
-	BuildDirectory          string         `json:"buildDirectory"`
-	BuildArgs               string         `gorm:"type:text;not null;default:''" json:"buildArgs"`
-	BuildEnvironmentID      string         `gorm:"index;not null;default:''" json:"buildEnvironmentId"`
-	BuildCPURequest         string         `gorm:"not null;default:'2'" json:"buildCpuRequest"`
-	BuildMemoryRequest      string         `gorm:"not null;default:'4Gi'" json:"buildMemoryRequest"`
-	BuildTimeoutSeconds     int            `gorm:"not null;default:1800" json:"buildTimeoutSeconds"`
-	TargetRegistryID        string         `gorm:"index" json:"targetRegistryId"`
-	TargetRepository        string         `json:"targetRepository"`
-	TargetTag               string         `json:"targetTag"`
-	ImageRef                string         `json:"imageRef"`
-	ImageDigest             string         `json:"imageDigest"`
-	StartedAt               *time.Time     `json:"startedAt"`
-	FinishedAt              *time.Time     `json:"finishedAt"`
-	CreatedBy               string         `gorm:"index" json:"createdBy"`
-	IdempotencyKey          string         `gorm:"not null;default:''" json:"-"`
-	IdempotencyRequestHash  string         `gorm:"not null;default:''" json:"-"`
-	TriggeredByName         string         `json:"triggeredByName"`
-	TriggeredByEmail        string         `json:"triggeredByEmail"`
-	SourceAuthorName        string         `json:"sourceAuthorName"`
-	SourceAuthorEmail       string         `json:"sourceAuthorEmail"`
-	SourceCommitMessage     string         `gorm:"type:text;not null;default:''" json:"sourceCommitMessage"`
-	CreatedAt               time.Time      `json:"createdAt"`
-	UpdatedAt               time.Time      `json:"updatedAt"`
-	DeletedAt               gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                      string                   `gorm:"primaryKey" json:"id"`
+	ProjectID               string                   `gorm:"index;not null" json:"projectId"`
+	ApplicationID           string                   `gorm:"index" json:"applicationId"`
+	DeploymentTargetID      string                   `gorm:"index" json:"deploymentTargetId"`
+	BuildVariableSetIDs     string                   `gorm:"type:text" json:"buildVariableSetIds"`
+	BuildVariablesSnapshot  string                   `gorm:"type:text;not null;default:'{}'" json:"-"`
+	BuildSecretRefsSnapshot string                   `gorm:"type:text;not null;default:'{}'" json:"-"`
+	Status                  string                   `gorm:"index;not null;default:queued" json:"status"`
+	FailureCode             string                   `gorm:"not null;default:''" json:"failureCode"`
+	TriggerType             string                   `gorm:"not null;default:manual" json:"triggerType"`
+	SourceBranch            string                   `json:"sourceBranch"`
+	SourceTag               string                   `json:"sourceTag"`
+	SourceCommit            string                   `json:"sourceCommit"`
+	BuildDefinitionMode     string                   `gorm:"not null;default:repository_dockerfile" json:"buildDefinitionMode"`
+	BuildTemplateID         string                   `gorm:"index;not null;default:''" json:"buildTemplateId"`
+	BuildTemplateVersion    string                   `gorm:"not null;default:''" json:"buildTemplateVersion"`
+	BuildTemplateValues     string                   `gorm:"type:text;not null;default:'{}'" json:"buildTemplateValues"`
+	BuildTemplateDockerfile string                   `gorm:"type:text;not null;default:''" json:"-"`
+	BuildTemplateChecksum   string                   `gorm:"not null;default:''" json:"buildTemplateChecksum"`
+	DockerfilePath          string                   `gorm:"not null;default:Dockerfile" json:"dockerfilePath"`
+	BuildContext            string                   `gorm:"not null;default:." json:"buildContext"`
+	BuildDirectory          string                   `json:"buildDirectory"`
+	BuildArgs               string                   `gorm:"type:text;not null;default:''" json:"buildArgs"`
+	BuildEnvironmentID      string                   `gorm:"index;not null;default:''" json:"buildEnvironmentId"`
+	BuildCPURequest         string                   `gorm:"not null;default:'2'" json:"buildCpuRequest"`
+	BuildMemoryRequest      string                   `gorm:"not null;default:'4Gi'" json:"buildMemoryRequest"`
+	BuildTimeoutSeconds     int                      `gorm:"not null;default:1800" json:"buildTimeoutSeconds"`
+	TargetRegistryID        string                   `gorm:"index" json:"targetRegistryId"`
+	TargetRepository        string                   `json:"targetRepository"`
+	TargetTag               string                   `json:"targetTag"`
+	ImageRef                string                   `json:"imageRef"`
+	ImageDigest             string                   `json:"imageDigest"`
+	StartedAt               *time.Time               `json:"startedAt"`
+	FinishedAt              *time.Time               `json:"finishedAt"`
+	CreatedBy               string                   `gorm:"index" json:"createdBy"`
+	IdempotencyKey          string                   `gorm:"not null;default:''" json:"-"`
+	IdempotencyRequestHash  string                   `gorm:"not null;default:''" json:"-"`
+	TriggeredByName         string                   `json:"triggeredByName"`
+	TriggeredByEmail        string                   `json:"triggeredByEmail"`
+	SourceAuthorName        string                   `json:"sourceAuthorName"`
+	SourceAuthorEmail       string                   `json:"sourceAuthorEmail"`
+	SourceCommitMessage     string                   `gorm:"type:text;not null;default:''" json:"sourceCommitMessage"`
+	AIDiagnosis             *AIDeliveryDiagnosisView `gorm:"-" json:"aiDiagnosis,omitempty"`
+	CreatedAt               time.Time                `json:"createdAt"`
+	UpdatedAt               time.Time                `json:"updatedAt"`
+	DeletedAt               gorm.DeletedAt           `gorm:"index" json:"-"`
 }
 
 const (

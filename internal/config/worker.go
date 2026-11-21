@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"strings"
+
+	"github.com/LiteyukiStudio/devops/internal/aiagent"
 )
 
 // LoadWorker is the only Worker startup adapter that reads deployment environment.
@@ -10,11 +12,11 @@ func LoadWorker() (WorkerConfig, error) {
 	snapshot, environmentErr := loadEnvironmentSnapshot()
 	shared, sharedErr := loadSharedFrom(snapshot, environmentErr)
 	raw, decodeErr := decodeEnvironment[workerEnvironment](snapshot)
-	cfg, validationErr := buildWorker(raw, shared)
+	cfg, validationErr := buildWorker(raw, shared, decodeErr)
 	return cfg, errors.Join(sharedErr, decodeErr, validationErr)
 }
 
-func buildWorker(raw workerEnvironment, shared Shared) (WorkerConfig, error) {
+func buildWorker(raw workerEnvironment, shared Shared, decodeErr error) (WorkerConfig, error) {
 	cfg := WorkerConfig{
 		Shared:                      shared,
 		DatabaseMaxOpenConns:        raw.Database.MaxOpenConns,
@@ -47,6 +49,26 @@ func buildWorker(raw workerEnvironment, shared Shared) (WorkerConfig, error) {
 	}
 	if raw.DeployRolloutTimeout <= 0 {
 		errs = append(errs, errors.New("DEPLOY_ROLLOUT_TIMEOUT_SECONDS must be positive"))
+	}
+
+	aiBaseURL := strings.TrimSpace(raw.AIAgentBaseURL)
+	var baseURLErr error
+	if aiBaseURL != "" {
+		baseURLErr = validateHTTPURL("AI_AGENT_BASE_URL", aiBaseURL)
+		errs = appendError(errs, baseURLErr)
+	}
+	if !environmentKeyFailed(decodeErr, "AI_ASSISTANT_AVAILABLE") &&
+		!environmentKeyFailed(decodeErr, "AI_AGENT_TIMEOUT") &&
+		baseURLErr == nil {
+		var aiConfigErr error
+		cfg.AIAgent, aiConfigErr = aiagent.NewConfigWithPrevious(
+			raw.AIAssistantAvailable,
+			aiBaseURL,
+			raw.AIAgentTimeout,
+			raw.AIInternalSecret,
+			raw.AIInternalSecretPrevious,
+		)
+		errs = appendError(errs, aiConfigErr)
 	}
 
 	return cfg, errors.Join(errs...)

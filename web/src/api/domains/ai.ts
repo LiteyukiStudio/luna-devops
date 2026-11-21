@@ -8,6 +8,7 @@ import type {
   AITimeline,
   AITurnCreated,
 } from '../ai-types'
+import type { AIActionProposalExecuteOutput, AIActionProposalPreviewOutput } from '../types'
 import { paginationQuery, request } from '../core'
 
 export const aiApi = {
@@ -57,4 +58,8 @@ export const aiApi = {
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(toolCallId)}/decision`, { method: 'POST', body: JSON.stringify(payload) }),
   submitAIRunInput: (runId: string, payload: { text: string, expectedVersion: number }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/input`, { method: 'POST', body: JSON.stringify(payload) }),
+  previewProjectAIActionProposal: (projectId: string, payload: { toolName: string, arguments: Record<string, unknown> }, signal?: AbortSignal) =>
+    request<AIActionProposalPreviewOutput>(`/projects/${encodeURIComponent(projectId)}/ai-action-proposals/preview`, { method: 'POST', body: JSON.stringify(payload), signal }),
+  executeProjectAIActionProposal: (projectId: string, payload: { toolName: string, arguments: Record<string, unknown>, previewLock: string }) =>
+    request<AIActionProposalExecuteOutput>(`/projects/${encodeURIComponent(projectId)}/ai-action-proposals/execute`, { method: 'POST', body: JSON.stringify(payload) }),
 }

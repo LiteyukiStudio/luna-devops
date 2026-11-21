@@ -207,6 +207,10 @@ const errors = {
     model_output_limit_invalid: '模型目錄的輸出上限無效，請聯絡平臺管理員檢查模型配置。',
     wallet_balance_insufficient: '個人錢包可用餘額不足，模型呼叫未傳送。',
     structured_output_invalid: '模型未回傳符合預期的結構化結果，請稍後再試。',
+    tool_preview_lock_required: '請先執行即時預檢並確認變更後再提交執行。',
+    preview_lock_expired: '預檢結果已過期，請重新預檢後再確認執行。',
+    preview_lock_mismatch: '目前操作人或目標參數與預檢鎖不一致，請重新預檢。',
+    preview_lock_invalid: '預檢簽章無效，請重新預檢後再試。',
     conversation_not_found: '會話不存在或已被刪除。',
     run_not_found: '執行記錄不存在或已被刪除。',
     run_not_resumable: '當前任務狀態已變化，無法繼續此操作。',
@@ -219,6 +223,12 @@ const errors = {
     quota: {
       user_concurrent_runs_exceeded: '當前帳號同時執行的助手任務已達上限，請等待進行中的任務完成後再試。',
     },
+  },
+  ai_automation: {
+    cooldown_invalid: '冷卻時間必須介於 0 到 86400 秒之間。',
+    daily_limit_invalid: '每日上限必須介於 1 到 500 次之間。',
+    billing_user_must_be_self: '背景 AI 計費負責人只能綁定為你本人的個人錢包。',
+    billing_user_invalid: '所選計費負責人無效或不屬於目前專案空間。',
   },
   request: {
     failed: '請求處理失敗，請稍後重試',

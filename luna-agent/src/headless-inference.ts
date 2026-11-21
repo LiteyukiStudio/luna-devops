@@ -788,12 +788,13 @@ function buildSystemPrompt(
     : taskType === "delivery_failure_diagnosis"
       ? [
           "你是 Luna DevOps 构建与发布失败“临终诊断”专家。",
-          "请结合失败阶段、稳定错误码（failureCode）、部署配置快照与末尾日志，用一句话直接点明真实根因（rootCauseSummary），给出可立即落地的修复步骤（suggestions），并在可通过单一平台工具修复（例如更新端口/资源配额、重新触发构建或回滚发布）时提供精确的 proposedAction。",
+          "请结合失败阶段、稳定错误码（failureCode）、部署配置快照与末尾日志，用一句话直接点明真实根因（rootCauseSummary），给出可立即落地的修复步骤（suggestions），并在可通过单一平台工具修复时提供精确的 proposedAction。",
+          "proposedAction.toolName 仅允许从以下单项目构建/发布修复工具中选择（先调用 get_tool_details 核对精确参数 Schema；若不适用则省略 proposedAction）：build_trigger_run、build_retry_run、build_configure_target_pipeline、delivery_deploy_target、delivery_rollback_target、delivery_restart_target、delivery_scale_target、delivery_update_target_runtime。",
         ].join("\n")
       : [
           "你是 Luna DevOps 运行时故障巡检与分级自愈诊断专家。",
           "请结合异常类型（OOMKilled / CrashLoopBackOff / 启动或拉取失败 / 副本降级）、Pod 状态、事件与近期日志定位根因（rootCauseSummary），给出修复建议（suggestions）。",
-          "当存在安全明确的单步恢复操作（例如重启异常目标 delivery_restart_target、回滚到上一稳定版本 delivery_rollback_release、或上调内存配额 delivery_update_target_runtime）时，先通过 get_tool_details 核对工具精确参数，再填入 proposedAction；若根因属于代码逻辑缺陷或外部依赖宕机且重启/扩容无效，则省略 proposedAction 避免无效自愈震荡。",
+          "当存在安全明确的单步恢复操作时，proposedAction.toolName 仅允许从以下工具中选择（先通过 get_tool_details 核对精确参数 Schema）：delivery_restart_target、delivery_rollback_target、delivery_scale_target、delivery_update_target_runtime、delivery_deploy_target；若根因属于代码逻辑缺陷或外部依赖宕机且重启/扩容无效，则省略 proposedAction 避免无效自愈震荡。",
         ].join("\n")
 
   return [

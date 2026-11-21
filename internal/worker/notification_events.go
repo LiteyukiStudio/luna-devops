@@ -16,6 +16,10 @@ import (
 )
 
 func (r *Runner) emitNotificationEvent(ctx context.Context, event notification.Event) {
+	_ = r.emitNotificationEventError(ctx, event)
+}
+
+func (r *Runner) emitNotificationEventError(ctx context.Context, event notification.Event) error {
 	enqueuer := notification.DeliveryEnqueuer(r.taskClient)
 	if r.notificationDeliveryEnqueuer != nil {
 		enqueuer = r.notificationDeliveryEnqueuer
@@ -23,17 +27,31 @@ func (r *Runner) emitNotificationEvent(ctx context.Context, event notification.E
 	if _, err := (notification.Service{DB: r.db, Enqueuer: enqueuer}).Emit(ctx, event); err != nil {
 		telemetry.RecordError(ctx, "notification.event_emit_failed", err,
 			slog.String("notification.event_type", event.Type))
+		return err
 	}
+	return nil
 }
 
 func (r *Runner) emitBuildFailed(ctx context.Context, run model.BuildRun, message string) {
-	r.emitBuildEvent(ctx, run, "failed", message)
+	r.emitBuildFailedWithAI(ctx, run, message, nil)
+}
+
+func (r *Runner) emitBuildFailedWithAI(ctx context.Context, run model.BuildRun, message string, aiDiag *notification.AIDiagnosisContext) {
+	_ = r.emitBuildEventWithAIError(ctx, run, "failed", message, aiDiag)
 }
 
 func (r *Runner) emitBuildEvent(ctx context.Context, run model.BuildRun, status string, message string) {
+	r.emitBuildEventWithAI(ctx, run, status, message, nil)
+}
+
+func (r *Runner) emitBuildEventWithAI(ctx context.Context, run model.BuildRun, status string, message string, aiDiag *notification.AIDiagnosisContext) {
+	_ = r.emitBuildEventWithAIError(ctx, run, status, message, aiDiag)
+}
+
+func (r *Runner) emitBuildEventWithAIError(ctx context.Context, run model.BuildRun, status string, message string, aiDiag *notification.AIDiagnosisContext) error {
 	project, application, target := r.notificationContext(run.ProjectID, run.ApplicationID, run.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(run.ProjectID, run.ApplicationID, run.DeploymentTargetID, project, application, target)
-	r.emitNotificationEvent(ctx, notification.Event{
+	return r.emitNotificationEventError(ctx, notification.Event{
 		Type:             "build." + status,
 		Severity:         notificationSeverity(status),
 		Project:          projectRef,
@@ -47,7 +65,8 @@ func (r *Runner) emitBuildEvent(ctx context.Context, run model.BuildRun, status 
 			GitRef:  firstNonEmpty(run.SourceBranch, run.SourceTag, run.SourceCommit),
 			GitSHA:  run.SourceCommit,
 		},
-		Actor: r.notificationActor(ctx, run.CreatedBy, run.TriggeredByName, run.TriggeredByEmail),
+		AIDiagnosis: aiDiag,
+		Actor:       r.notificationActor(ctx, run.CreatedBy, run.TriggeredByName, run.TriggeredByEmail),
 		ResourceOwnerUserID: r.notificationDeploymentTargetOwnerUserID(
 			ctx,
 			run.ProjectID,
@@ -75,13 +94,21 @@ func (r *Runner) notificationBuildImageRef(run model.BuildRun) string {
 }
 
 func (r *Runner) emitReleaseFailed(ctx context.Context, release model.Release, message string) {
-	r.emitReleaseEvent(ctx, release, "failed", message)
+	r.emitReleaseEventWithAI(ctx, release, "failed", message, nil)
 }
 
 func (r *Runner) emitReleaseEvent(ctx context.Context, release model.Release, status string, message string) {
+	r.emitReleaseEventWithAI(ctx, release, status, message, nil)
+}
+
+func (r *Runner) emitReleaseEventWithAI(ctx context.Context, release model.Release, status string, message string, aiDiag *notification.AIDiagnosisContext) {
+	_ = r.emitReleaseEventWithAIError(ctx, release, status, message, aiDiag)
+}
+
+func (r *Runner) emitReleaseEventWithAIError(ctx context.Context, release model.Release, status string, message string, aiDiag *notification.AIDiagnosisContext) error {
 	project, application, target := r.notificationContext(release.ProjectID, release.ApplicationID, release.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(release.ProjectID, release.ApplicationID, release.DeploymentTargetID, project, application, target)
-	r.emitNotificationEvent(ctx, notification.Event{
+	return r.emitNotificationEventError(ctx, notification.Event{
 		Type:             "release." + status,
 		Severity:         notificationSeverity(status),
 		Project:          projectRef,
@@ -94,7 +121,8 @@ func (r *Runner) emitReleaseEvent(ctx context.Context, release model.Release, st
 			ImageRef: release.ImageRef,
 			Message:  strings.TrimSpace(message),
 		},
-		Actor: r.notificationActor(ctx, release.CreatedBy, "", ""),
+		AIDiagnosis: aiDiag,
+		Actor:       r.notificationActor(ctx, release.CreatedBy, "", ""),
 		ResourceOwnerUserID: r.notificationDeploymentTargetOwnerUserID(
 			ctx,
 			release.ProjectID,

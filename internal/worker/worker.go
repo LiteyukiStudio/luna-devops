@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/observability"
@@ -48,6 +49,9 @@ type Runner struct {
 	personalEmailCooldown          func(context.Context, *gorm.DB) (time.Duration, error)
 	enqueueEmailDigest             func(context.Context, tasks.NotificationEmailDigestPayload) (*asynq.TaskInfo, error)
 	notificationDeliveryEnqueuer   notification.DeliveryEnqueuer
+	aiAgent                        aiagent.Client
+	aiAgentAvailable               bool
+	aiDeliveryDiagnosisEnqueuer    aiDeliveryDiagnosisEnqueuer
 }
 
 const (
@@ -67,6 +71,7 @@ type Options struct {
 	VolumeTransferJobImage      string
 	VolumeTransferMaxBytes      int64
 	SecretCodec                 secret.Codec
+	AIAgent                     aiagent.Config
 }
 
 func Run(redisAddr string, db *gorm.DB, options Options) error {
@@ -112,6 +117,7 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	runner.volumeTaskEnqueuer = runner.taskClient
 	runner.networkPolicyProbeEnqueuer = runner.taskClient
 	runner.networkPolicyReconcileEnqueuer = runner.taskClient
+	runner.aiDeliveryDiagnosisEnqueuer = runner.taskClient
 	defer runner.taskClient.Close()
 	go runner.syncBuildJobStatus(ctx)
 
@@ -140,6 +146,7 @@ func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeVolumeTransferCleanup, runner.withTaskContext((*Runner).handleVolumeTransferCleanup))
 	mux.HandleFunc(tasks.TypeNetworkPolicyReconcile, runner.withTaskContext((*Runner).handleNetworkPolicyReconcile))
 	mux.HandleFunc(tasks.TypeNetworkPolicyProbe, runner.withTaskContext((*Runner).handleNetworkPolicyProbe))
+	mux.HandleFunc(tasks.TypeAIDeliveryDiagnosis, runner.withTaskContext((*Runner).handleAIDeliveryDiagnosis))
 }
 
 func (r *Runner) withTaskContext(handler func(*Runner, context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {
@@ -156,6 +163,20 @@ func (r *Runner) scoped(ctx context.Context) *Runner {
 }
 
 func newRunner(db *gorm.DB, options Options) *Runner {
+	var aiClient aiagent.Client
+	if options.AIAgent.Available &&
+		strings.TrimSpace(options.AIAgent.BaseURL) != "" &&
+		strings.TrimSpace(options.AIAgent.ServiceToken) != "" &&
+		strings.TrimSpace(options.AIAgent.ActorSigningKey) != "" {
+		if c, err := aiagent.NewHTTPClientWithTimeout(
+			options.AIAgent.BaseURL,
+			options.AIAgent.ServiceToken,
+			options.AIAgent.ActorSigningKey,
+			options.AIAgent.Timeout,
+		); err == nil {
+			aiClient = c
+		}
+	}
 	return &Runner{
 		db:                          db,
 		secrets:                     secret.NewStore(db, nil, options.SecretCodec),
@@ -172,6 +193,8 @@ func newRunner(db *gorm.DB, options Options) *Runner {
 		volumeService:               volume.NewGormService(db),
 		volumeTransferJobImage:      strings.TrimSpace(options.VolumeTransferJobImage),
 		volumeTransferMaxBytes:      options.VolumeTransferMaxBytes,
+		aiAgent:                     aiClient,
+		aiAgentAvailable:            options.AIAgent.Available && aiClient != nil,
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {
 			return kubeprovider.NewClientFromKubeconfig(kubeconfig)
 		},

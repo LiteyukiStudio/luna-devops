@@ -99,6 +99,7 @@ func (r *Runner) createAutoDeployRelease(run model.BuildRun, target model.Deploy
 			Revision:           revision,
 			Message:            "auto deploy from build",
 			CreatedBy:          run.CreatedBy,
+			IdempotencyKey:     "auto-deploy:" + run.ID + ":" + target.ID,
 		}
 		return tx.Create(&release).Error
 	})

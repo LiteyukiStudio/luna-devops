@@ -34,8 +34,9 @@ import {
   notificationEventLabel,
 } from '@/pages/notifications/notification-models'
 import { NotificationRuleDialog } from '@/pages/notifications/notification-rule-dialog'
+import { ProjectAIAutomationPanel } from './project-ai-automation-panel'
 
-type ProjectNotificationSubtab = 'rules' | 'channels' | 'deliveries'
+type ProjectNotificationSubtab = 'rules' | 'channels' | 'deliveries' | 'ai-automation'
 
 export function ProjectNotificationsPanel({
   currentUserActions,
@@ -54,7 +55,7 @@ export function ProjectNotificationsPanel({
 
   const eventIdFilter = searchParams.get('eventId') ?? ''
   const rawSubtab = searchParams.get('subtab')
-  const activeTab: ProjectNotificationSubtab = rawSubtab === 'channels' || rawSubtab === 'deliveries' || rawSubtab === 'rules'
+  const activeTab: ProjectNotificationSubtab = rawSubtab === 'channels' || rawSubtab === 'deliveries' || rawSubtab === 'rules' || rawSubtab === 'ai-automation'
     ? rawSubtab
     : (eventIdFilter ? 'deliveries' : 'rules')
 
@@ -82,7 +83,7 @@ export function ProjectNotificationsPanel({
   >(null)
 
   const changeTab = (nextValue: string) => {
-    const nextTab: ProjectNotificationSubtab = nextValue === 'channels' || nextValue === 'deliveries' ? nextValue : 'rules'
+    const nextTab: ProjectNotificationSubtab = nextValue === 'channels' || nextValue === 'deliveries' || nextValue === 'ai-automation' ? nextValue : 'rules'
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
       if (nextTab === 'rules' && !next.get('eventId'))
@@ -594,6 +595,7 @@ export function ProjectNotificationsPanel({
           { label: t('notificationsPage.rules'), value: 'rules' },
           { label: t('notificationsPage.channels'), value: 'channels' },
           { label: t('notificationsPage.deliveries'), value: 'deliveries' },
+          { label: t('aiAssistant.projectAutomation.tab'), value: 'ai-automation' },
         ]}
         tools={tools}
         value={activeTab}
@@ -670,6 +672,10 @@ export function ProjectNotificationsPanel({
             onRetryLoad={() => void deliveries.refetch()}
             onStatusFilterChange={setDeliveryStatus}
           />
+        </TabsContent>
+
+        <TabsContent value="ai-automation">
+          <ProjectAIAutomationPanel canManage={canManage} projectId={projectId} />
         </TabsContent>
       </ContentTabs>
 

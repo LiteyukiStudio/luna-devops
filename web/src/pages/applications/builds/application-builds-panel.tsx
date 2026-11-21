@@ -149,6 +149,11 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     }
   }
   const pagedRuns = useMemo(() => buildRunsPage.data?.items ?? [], [buildRunsPage.data?.items])
+  const activeLogRun = useMemo(() => {
+    if (!logJob)
+      return undefined
+    return pagedRuns.find(run => run.id === logJob.buildRunId) ?? buildRuns.find(run => run.id === logJob.buildRunId)
+  }, [buildRuns, logJob, pagedRuns])
   const runsTotal = buildRunsPage.data?.total ?? 0
   const branchFilterOptions = useMemo(() => uniqueBuildFilterValues([
     selectedBinding?.defaultBranch,
@@ -609,9 +614,19 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
         </DialogContent>
       </Dialog>
       <ApplicationBuildLogPanel
-        job={logJob}
+        applicationId={applicationId}
         content={logContent}
+        job={logJob}
         loading={logStreaming}
+        projectId={projectId}
+        run={activeLogRun}
+        onActionExecuted={() => {
+          void queryClient.invalidateQueries({ queryKey: ['build-runs', projectId] })
+          void queryClient.invalidateQueries({ queryKey: ['build-runs-page', projectId] })
+          void queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
+          void queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })
+          void queryClient.invalidateQueries({ queryKey: ['application-runtime', projectId, applicationId] })
+        }}
         onClose={() => setLogJob(null)}
       />
       <BuildEnvironmentEditorDialog
