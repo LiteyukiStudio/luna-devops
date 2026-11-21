@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	registryprovider "github.com/LiteyukiStudio/devops/internal/provider/registry"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const releaseImageCandidateLimit = 30
@@ -82,13 +83,17 @@ func (h *Handlers) appendRegistryReleaseImageCandidates(ctx *gin.Context, user m
 		response.RegistryError = "registry_not_found"
 		return
 	}
-	if !h.canUseScopedResourceByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx.Request.Context()) {
+	if !deploymentRegistryUsableInProject(h.dbFor(ctx), user, registry, target.ProjectID) {
 		response.RegistryError = "registry_forbidden"
 		return
 	}
 	repository = repositoryWithoutRegistryHost(registry, repository)
-	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
-	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, releaseImageCandidateLimit, h.egressPolicyForUser(user, ctx.Request.Context()), credential)
+	credential := h.registryCredentialInputForProject(ctx.Request.Context(), user, registry, target.ProjectID)
+	egressUser := user
+	if regScope := strings.ToLower(strings.TrimSpace(registry.Scope)); regScope == "" || regScope == "global" {
+		egressUser = model.User{ID: user.ID, Role: authz.PlatformRoleAdmin}
+	}
+	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, releaseImageCandidateLimit, h.egressPolicyForUser(egressUser, ctx.Request.Context()), credential)
 	if err != nil {
 		response.RegistryError = "registry_unavailable"
 		return
@@ -199,4 +204,23 @@ func shortDigestLabel(digest string) string {
 		return digest[:18] + "..."
 	}
 	return digest
+}
+
+func deploymentRegistryUsableInProject(db *gorm.DB, user model.User, registry model.ArtifactRegistry, projectID string) bool {
+	switch strings.ToLower(strings.TrimSpace(registry.Scope)) {
+	case "", "global":
+		return true
+	case "user":
+		return strings.TrimSpace(registry.OwnerRef) == user.ID
+	case "project":
+		var count int64
+		if err := db.Model(&model.ScopedResourceProjectBinding{}).
+			Where("resource_type = ? and resource_id = ? and project_id = ?", scopedResourceArtifactRegistry, registry.ID, strings.TrimSpace(projectID)).
+			Count(&count).Error; err != nil {
+			return false
+		}
+		return count > 0
+	default:
+		return false
+	}
 }

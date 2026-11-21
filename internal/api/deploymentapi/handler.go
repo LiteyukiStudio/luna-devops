@@ -65,6 +65,7 @@ type Host interface {
 	ProjectContinuousAuthorizationAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) bool
 	ResourceCanMutateDuringDelete(status string) bool
 	RegistryCredentialInput(ctx context.Context, user model.User, registry model.ArtifactRegistry) registryprovider.Credential
+	RegistryCredentialInputForProject(ctx context.Context, user model.User, registry model.ArtifactRegistry, projectID string) registryprovider.Credential
 	EgressPolicyForUser(user model.User, ctx context.Context) security.EgressPolicy
 	RequireRuntimeTerminalAuthorization(ctx *gin.Context, user model.User) (runtimeapi.RuntimeTerminalAuthorizationBinding, bool)
 	ConsumeRuntimeTerminalTicket(ctx context.Context, ticket string) (runtimeapi.RuntimeTerminalTicketValue, bool, error)
@@ -254,6 +255,10 @@ func (h *Handler) projectContinuousAuthorizationAllowed(ctx context.Context, use
 
 func (h *Handler) registryCredentialInput(ctx context.Context, user model.User, registry model.ArtifactRegistry) registryprovider.Credential {
 	return h.host.RegistryCredentialInput(ctx, user, registry)
+}
+
+func (h *Handler) registryCredentialInputForProject(ctx context.Context, user model.User, registry model.ArtifactRegistry, projectID string) registryprovider.Credential {
+	return h.host.RegistryCredentialInputForProject(ctx, user, registry, projectID)
 }
 
 func (h *Handler) egressPolicyForUser(user model.User, ctx context.Context) security.EgressPolicy {

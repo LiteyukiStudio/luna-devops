@@ -297,6 +297,7 @@ export function CodeRepositoriesPage() {
                   )
                 : (
                     <CredentialsPanel
+                      canManageGlobal={canViewAll}
                       credentials={credentialItems}
                       loading={credentials.isLoading}
                       page={credentials.data?.page ?? credentialPage}
@@ -341,6 +342,7 @@ export function CodeRepositoriesPage() {
       />
 
       <CredentialDialog
+        canManageGlobal={canViewAll}
         open={credentialDialogOpen}
         editingCredential={editingCredential}
         form={credentialForm}

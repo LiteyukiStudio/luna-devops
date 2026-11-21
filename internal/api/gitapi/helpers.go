@@ -465,7 +465,9 @@ func gitProviderResponses(providers []model.GitProvider) []gin.H {
 func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []model.GitProvider, ctx context.Context) ([]gin.H, error) {
 	responses := make([]gin.H, 0, len(providers))
 	for _, provider := range providers {
-		provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, ctx)
+		if normalizeGitScope(provider.Scope) == "project" {
+			provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, ctx)
+		}
 		response := gitProviderResponse(provider)
 		canInspect, err := h.canInspectScopedResourceConfigByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx)
 		if err != nil {
@@ -480,6 +482,21 @@ func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []mode
 	return responses, nil
 }
 
+func gitProviderOAuthReady(provider model.GitProvider) bool {
+	if !provider.Enabled ||
+		provider.AuthType != "oauth" ||
+		strings.TrimSpace(provider.ClientID) == "" ||
+		!secret.HasValue(provider.ClientSecretRef) {
+		return false
+	}
+	endpoint, err := gitprovider.OAuthEndpoint(provider)
+	if err != nil || strings.TrimSpace(endpoint.AuthURL) == "" {
+		return false
+	}
+	parsed, err := url.Parse(endpoint.AuthURL)
+	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
+}
+
 func gitProviderResponse(provider model.GitProvider) gin.H {
 	return gin.H{
 		"id":              provider.ID,
@@ -492,17 +509,30 @@ func gitProviderResponse(provider model.GitProvider) gin.H {
 		"authType":        provider.AuthType,
 		"clientId":        provider.ClientID,
 		"clientSecretSet": secret.HasValue(provider.ClientSecretRef),
+		"oauthReady":      gitProviderOAuthReady(provider),
 		"enabled":         provider.Enabled,
 		"createdAt":       provider.CreatedAt,
 	}
 }
 
-func gitAccountResponses(accounts []model.GitAccount) []gin.H {
+func (h *Handlers) gitAccountResponsesForUser(user model.User, accounts []model.GitAccount, ctx context.Context) ([]gin.H, error) {
 	responses := make([]gin.H, 0, len(accounts))
 	for _, account := range accounts {
-		responses = append(responses, gitAccountResponse(account))
+		canManage, err := h.canManageScopedResourceWithProjects(ctx, user, account.Scope, account.OwnerRef, jsonList(account.ProjectIDs))
+		if err != nil {
+			return nil, err
+		}
+		resp := gitAccountResponse(account)
+		resp["canManage"] = canManage
+		responses = append(responses, resp)
 	}
-	return responses
+	return responses, nil
+}
+
+func gitAccountResponseWithManage(account model.GitAccount, canManage bool) gin.H {
+	resp := gitAccountResponse(account)
+	resp["canManage"] = canManage
+	return resp
 }
 
 func gitAccountResponse(account model.GitAccount) gin.H {

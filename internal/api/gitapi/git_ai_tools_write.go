@@ -565,7 +565,7 @@ func (h *Handler) aiExecuteSaveGitAccount(tc *aitool.ToolContext, in gitSaveAcco
 		}
 		h.auditWithContext(tc.User.ID, "git_account.create", account.ID, true, account.Scope, tc.Context())
 		h.observeGitAccount(tc.Context(), tc.User, &account)
-		resp := map[string]any(gitAccountResponse(account))
+		resp := map[string]any(gitAccountResponseWithManage(account, true))
 		if strings.TrimSpace(tc.ConversationProjectID) != "" {
 			resp["projectId"] = strings.TrimSpace(tc.ConversationProjectID)
 		}
@@ -657,7 +657,7 @@ func (h *Handler) aiExecuteSaveGitAccount(tc *aitool.ToolContext, in gitSaveAcco
 
 	h.auditWithContext(tc.User.ID, "git_account.update", updated.ID, true, updated.Scope, tc.Context())
 	h.observeGitAccount(tc.Context(), tc.User, &updated)
-	resp := map[string]any(gitAccountResponse(updated))
+	resp := map[string]any(gitAccountResponseWithManage(updated, true))
 	if strings.TrimSpace(tc.ConversationProjectID) != "" {
 		resp["projectId"] = strings.TrimSpace(tc.ConversationProjectID)
 	}
@@ -815,7 +815,7 @@ func (h *Handler) prepareBindRepository(tc *aitool.ToolContext, in gitBindReposi
 	if rawCloneURL == "" {
 		rawCloneURL = defaultCloneURL(provider, owner, repo)
 	}
-	safeCloneURL, err := validateSafeSameOriginCloneURL(rawCloneURL, provider, h.egressPolicyForUser(tc.User, tc.Context()))
+	safeCloneURL, err := validateSafeSameOriginCloneURL(rawCloneURL, provider, h.egressPolicyForProvider(tc.User, provider, tc.Context()))
 	if err != nil {
 		return model.Project{}, model.Application{}, model.GitProvider{}, model.RepositoryBinding{}, err
 	}
@@ -987,7 +987,7 @@ func (h *Handler) prepareUpdateRepositoryBinding(tc *aitool.ToolContext, in gitU
 
 	targetChanged := repositoryBindingWebhookTargetChanged(existing, next)
 	if in.CloneURL != nil {
-		safeURL, urlErr := validateSafeSameOriginCloneURL(*in.CloneURL, nextProvider, h.egressPolicyForUser(tc.User, tc.Context()))
+		safeURL, urlErr := validateSafeSameOriginCloneURL(*in.CloneURL, nextProvider, h.egressPolicyForProvider(tc.User, nextProvider, tc.Context()))
 		if urlErr != nil {
 			return prep, urlErr
 		}
@@ -1002,14 +1002,14 @@ func (h *Handler) prepareUpdateRepositoryBinding(tc *aitool.ToolContext, in gitU
 			)
 		}
 		recomputed := defaultCloneURL(nextProvider, next.Owner, next.Repo)
-		safeURL, urlErr := validateSafeSameOriginCloneURL(recomputed, nextProvider, h.egressPolicyForUser(tc.User, tc.Context()))
+		safeURL, urlErr := validateSafeSameOriginCloneURL(recomputed, nextProvider, h.egressPolicyForProvider(tc.User, nextProvider, tc.Context()))
 		if urlErr != nil {
 			return prep, urlErr
 		}
 		next.CloneURL = safeURL
 	} else {
 		// Validate existing cloneURL remains safe & same-origin.
-		if _, urlErr := validateSafeSameOriginCloneURL(next.CloneURL, nextProvider, h.egressPolicyForUser(tc.User, tc.Context())); urlErr != nil {
+		if _, urlErr := validateSafeSameOriginCloneURL(next.CloneURL, nextProvider, h.egressPolicyForProvider(tc.User, nextProvider, tc.Context())); urlErr != nil {
 			return prep, urlErr
 		}
 	}
@@ -1076,7 +1076,7 @@ func (h *Handler) bestEffortDeleteRemoteWebhook(tc *aitool.ToolContext, binding 
 	if strings.TrimSpace(binding.WebhookID) == "" {
 		return
 	}
-	client, ok := h.gitClientForObservation(tc.User, binding.GitProviderID, binding.GitAccountID, tc.Context())
+	client, ok := h.gitClientForObservation(tc.User, binding.GitProviderID, binding.GitAccountID, binding.ProjectID, tc.Context())
 	if !ok {
 		return
 	}

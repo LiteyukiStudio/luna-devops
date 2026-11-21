@@ -71,10 +71,11 @@ export function RegistriesPage() {
     enabled: Boolean(credentialRegistryFilterId),
   })
 
+  const defaultRegistryScope: RegistryForm['scope'] = canViewAll ? 'global' : 'user'
   const registryForm = useForm<RegistryForm>({
     resolver: zodResolver(registrySchema),
     mode: 'onChange',
-    defaultValues: registryDefaults,
+    defaultValues: { ...registryDefaults, scope: defaultRegistryScope },
   })
   const credentialForm = useForm<CredentialForm>({
     resolver: zodResolver(credentialSchema),
@@ -132,7 +133,7 @@ export function RegistriesPage() {
       toast.success(editingRegistry ? t('registriesPage.registryUpdated') : t('registriesPage.registryCreated'))
       setRegistryDialogOpen(false)
       setEditingRegistry(null)
-      registryForm.reset(registryDefaults)
+      registryForm.reset({ ...registryDefaults, scope: defaultRegistryScope })
       queryClient.invalidateQueries({ queryKey: ['registries'] })
     },
     onError: error => toast.error(error.message),
@@ -279,7 +280,7 @@ export function RegistriesPage() {
 
   const openCreateRegistryDialog = () => {
     setEditingRegistry(null)
-    registryForm.reset(registryDefaults)
+    registryForm.reset({ ...registryDefaults, scope: canViewAll ? 'global' : 'user' })
     setRegistryDialogOpen(true)
   }
 
@@ -332,6 +333,7 @@ export function RegistriesPage() {
 
         <TabsContent value="registries">
           <RegistriesPanel
+            canManageGlobal={canViewAll}
             error={registries.isError
               ? {
                   onRetry: () => void registries.refetch(),
@@ -367,6 +369,7 @@ export function RegistriesPage() {
 
         <TabsContent value="credentials">
           <CredentialsPanel
+            canManageGlobal={canViewAll}
             error={(credentialRegistryFilterId ? credentials.isError : allCredentials.isError)
               ? {
                   onRetry: () => void (credentialRegistryFilterId ? credentials.refetch() : allCredentials.refetch()),
@@ -446,6 +449,7 @@ export function RegistriesPage() {
       </ContentTabs>
 
       <RegistryDialog
+        canManageGlobal={canViewAll}
         open={registryDialogOpen}
         editingRegistry={editingRegistry}
         form={registryForm}
@@ -460,6 +464,7 @@ export function RegistriesPage() {
       />
 
       <CredentialDialog
+        canManageGlobal={canViewAll}
         open={credentialDialogOpen}
         editingCredential={editingCredential}
         form={credentialForm}

@@ -92,6 +92,9 @@ func (host deploymentHost) RuntimeClusterForDeploymentTargetValue(target model.D
 func (host deploymentHost) RegistryCredentialInput(ctx context.Context, user model.User, registry model.ArtifactRegistry) registryprovider.Credential {
 	return host.handlers.registryCredentialInput(ctx, user, registry)
 }
+func (host deploymentHost) RegistryCredentialInputForProject(ctx context.Context, user model.User, registry model.ArtifactRegistry, projectID string) registryprovider.Credential {
+	return host.handlers.registryCredentialInputForProject(ctx, user, registry, projectID)
+}
 func (host deploymentHost) RequireRuntimeTerminalAuthorization(ctx *gin.Context, user model.User) (runtimeapi.RuntimeTerminalAuthorizationBinding, bool) {
 	return host.handlers.domains.runtime.RequireRuntimeTerminalAuthorization(ctx, user)
 }

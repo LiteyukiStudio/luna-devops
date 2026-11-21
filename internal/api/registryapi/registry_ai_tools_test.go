@@ -97,6 +97,9 @@ func (h *registryAITestHost) CanManageScopedResourceByID(ctx *gin.Context, user 
 func (h *registryAITestHost) CanInspectScopedResourceConfigByID(_ model.User, _, _, _, _ string, _ context.Context) (bool, error) {
 	return h.canInspect, nil
 }
+func (h *registryAITestHost) ProjectRoleActionAllowed(_ context.Context, user model.User, _ string, _ authz.Action) (bool, error) {
+	return authz.IsPlatformAdmin(user.Role) || h.canInspect, nil
+}
 func (h *registryAITestHost) CanUseScopedResourceByID(user model.User, scope, ownerRef, resourceType, resourceID string, _ context.Context) bool {
 	if scope == "global" || (scope == "user" && ownerRef == user.ID) {
 		return true

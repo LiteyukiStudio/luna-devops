@@ -236,7 +236,11 @@ func (h *Handler) aiListGitSources(tc *aitool.ToolContext, in gitListSourcesInpu
 		}
 		h.attachGitAccountProjects(accounts, tc.Context())
 		h.observeGitAccounts(tc.Context(), tc.User, accounts)
-		out["accounts"] = aitool.PageEnvelope(gitAccountResponses(accounts), page, pageSize, "createdAt", "desc", total)
+		accountResponses, respErr := h.gitAccountResponsesForUser(tc.User, accounts, tc.Context())
+		if respErr != nil {
+			return nil, aitool.NewError(http.StatusServiceUnavailable, "project.authorization_unavailable", respErr.Error())
+		}
+		out["accounts"] = aitool.PageEnvelope(accountResponses, page, pageSize, "createdAt", "desc", total)
 	}
 
 	return out, nil
@@ -273,7 +277,7 @@ func (h *Handler) aiSearchGitRepositories(tc *aitool.ToolContext, in gitSearchRe
 		if provider.Type == "gitlab" {
 			return nil, aitool.NewErrorWithHint(http.StatusBadRequest, "git.provider_search_unsupported", "GitLab providers do not support remote repository search API", "Bind the GitLab repository directly with owner, repo, and cloneUrl.")
 		}
-		client = gitprovider.NewClientWithPolicy(provider, "", h.egressPolicyForUser(tc.User, tc.Context()))
+		client = gitprovider.NewClientWithPolicy(provider, "", h.egressPolicyForProvider(tc.User, provider, tc.Context()))
 		repos, searchErr := client.SearchPublicRepositories(tc.Context(), search, page, pageSize)
 		if searchErr != nil {
 			return nil, gitUpstreamToolError(searchErr)
@@ -409,7 +413,7 @@ func (h *Handler) aiInspectRepositoryCode(tc *aitool.ToolContext, in gitInspectR
 			if provider.Type == "gitlab" {
 				return nil, aitool.BadRequest("git.provider_inspect_unsupported", "GitLab providers do not support remote code inspection API")
 			}
-			client = gitprovider.NewClientWithPolicy(provider, "", h.egressPolicyForUser(tc.User, tc.Context()))
+			client = gitprovider.NewClientWithPolicy(provider, "", h.egressPolicyForProvider(tc.User, provider, tc.Context()))
 		} else {
 			account, resolvedProv, accErr := h.aiResolveUsableGitAccountAndProvider(tc, accountRef, trimPtr(in.Provider), effectiveProjectID)
 			if accErr != nil {
@@ -809,7 +813,7 @@ func (h *Handler) aiGitClientForAccount(tc *aitool.ToolContext, account model.Gi
 	if token == "" {
 		return gitprovider.Client{}, aitool.BadRequest("git.access_token_missing", "git account has no configured access token")
 	}
-	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(tc.User, tc.Context())), nil
+	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForProvider(tc.User, provider, tc.Context())), nil
 }
 
 func (h *Handler) aiResolveRepositoryBinding(db *gorm.DB, projectID, applicationID, ref string) (model.RepositoryBinding, error) {
@@ -860,8 +864,8 @@ func validateSafeGitIdentifierSegment(value, fieldName string) (string, error) {
 	if trimmed == "" {
 		return "", aitool.BadRequest("argument_invalid", fieldName+" is required")
 	}
-	if strings.HasPrefix(trimmed, "-") || strings.Contains(trimmed, "/") || strings.ContainsAny(trimmed, " \t\r\n") {
-		return "", aitool.BadRequest("argument_invalid", fmt.Sprintf("%s must not start with '-' or contain '/' or whitespace", fieldName))
+	if trimmed == "." || trimmed == ".." || strings.HasPrefix(trimmed, "-") || strings.ContainsAny(trimmed, "/\\ \t\r\n?#") {
+		return "", aitool.BadRequest("argument_invalid", fmt.Sprintf("%s must be a safe repository identifier segment", fieldName))
 	}
 	return trimmed, nil
 }

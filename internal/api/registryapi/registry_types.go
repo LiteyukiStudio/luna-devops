@@ -20,7 +20,9 @@ func registryResponses(registries []model.ArtifactRegistry) []artifactRegistryOu
 func (h *Handler) registryResponsesForUser(user model.User, registries []model.ArtifactRegistry, ctx context.Context) ([]artifactRegistryOutput, error) {
 	result := make([]artifactRegistryOutput, 0, len(registries))
 	for _, registry := range registries {
-		registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID, ctx)
+		if normalizeRegistryScope(registry.Scope) == "project" {
+			registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID, ctx)
+		}
 		registry.DefaultProjectIDs = h.scopedResourceDefaultProjectIDMap(scopedResourceArtifactRegistry, []string{registry.ID}, ctx)[registry.ID]
 		response := registryResponse(registry)
 		canInspect, err := h.canInspectScopedResourceConfigByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx)
@@ -32,9 +34,20 @@ func (h *Handler) registryResponsesForUser(user model.User, registries []model.A
 			response.Namespace = ""
 			response.Capabilities = []string{}
 		}
+		canManage, err := h.canManageScopedResourceWithProjects(ctx, user, registry.Scope, registry.OwnerRef, jsonList(registry.ProjectIDs))
+		if err != nil {
+			return nil, err
+		}
+		response.CanManage = canManage
 		result = append(result, response)
 	}
 	return result, nil
+}
+
+func registryResponseWithManage(registry model.ArtifactRegistry, canManage bool) artifactRegistryOutput {
+	out := registryResponse(registry)
+	out.CanManage = canManage
+	return out
 }
 
 func registryResponse(registry model.ArtifactRegistry) artifactRegistryOutput {
@@ -59,12 +72,24 @@ func registryResponse(registry model.ArtifactRegistry) artifactRegistryOutput {
 	}
 }
 
-func credentialResponses(credentials []model.RegistryCredential) []registryCredentialOutput {
+func (h *Handler) credentialResponsesForUser(user model.User, credentials []model.RegistryCredential, ctx context.Context) ([]registryCredentialOutput, error) {
 	result := make([]registryCredentialOutput, 0, len(credentials))
 	for _, credential := range credentials {
-		result = append(result, credentialResponse(credential))
+		canManage, err := h.canManageScopedResourceWithProjects(ctx, user, credential.Scope, credential.OwnerRef, jsonList(credential.ProjectIDs))
+		if err != nil {
+			return nil, err
+		}
+		out := credentialResponse(credential)
+		out.CanManage = canManage
+		result = append(result, out)
 	}
-	return result
+	return result, nil
+}
+
+func credentialResponseWithManage(credential model.RegistryCredential, canManage bool) registryCredentialOutput {
+	out := credentialResponse(credential)
+	out.CanManage = canManage
+	return out
 }
 
 func credentialResponse(credential model.RegistryCredential) registryCredentialOutput {
@@ -172,6 +197,7 @@ type artifactRegistryOutput struct {
 	Status            string     `json:"status"`
 	ObservationCode   string     `json:"observationCode"`
 	LastCheckedAt     *time.Time `json:"lastCheckedAt"`
+	CanManage         bool       `json:"canManage"`
 	CreatedBy         string     `json:"createdBy"`
 	CreatedAt         time.Time  `json:"createdAt"`
 }
@@ -201,6 +227,7 @@ type registryCredentialOutput struct {
 	TagTemplate        string    `json:"tagTemplate"`
 	PasswordSet        bool      `json:"passwordSet"`
 	TokenSet           bool      `json:"tokenSet"`
+	CanManage          bool      `json:"canManage"`
 	CreatedAt          time.Time `json:"createdAt"`
 }
 

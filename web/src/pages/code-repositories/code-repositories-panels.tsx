@@ -124,6 +124,7 @@ export function ProvidersPanel({
 }
 
 export function CredentialsPanel({
+  canManageGlobal = false,
   credentials,
   loading,
   page,
@@ -141,6 +142,7 @@ export function CredentialsPanel({
   onPageSizeChange,
   onRefresh,
 }: {
+  canManageGlobal?: boolean
   credentials: GitAccount[]
   loading: boolean
   page: number
@@ -219,15 +221,20 @@ export function CredentialsPanel({
             header: t('common.actions'),
             sticky: 'right',
             width: 'actions',
-            render: credential => (
-              <RowActionsMenu
-                items={[
-                  { icon: <Pencil />, label: t('edit'), onSelect: () => onEdit(credential) },
-                  { disabled: refreshPending || !credential.refreshTokenSet, icon: <RefreshCw />, label: t('codeRepositoriesView.refreshCredential'), onSelect: () => onRefresh(credential) },
-                  { destructive: true, icon: <Trash2 />, label: t('common.delete'), onSelect: () => onDelete(credential) },
-                ]}
-              />
-            ),
+            render: (credential) => {
+              const canManage = credential.canManage ?? (canManageGlobal || credential.scope !== 'global')
+              if (!canManage)
+                return <span className="text-xs text-muted-foreground">{t('common.viewOnly')}</span>
+              return (
+                <RowActionsMenu
+                  items={[
+                    { icon: <Pencil />, label: t('edit'), onSelect: () => onEdit(credential) },
+                    { disabled: refreshPending || !credential.refreshTokenSet, icon: <RefreshCw />, label: t('codeRepositoriesView.refreshCredential'), onSelect: () => onRefresh(credential) },
+                    { destructive: true, icon: <Trash2 />, label: t('common.delete'), onSelect: () => onDelete(credential) },
+                  ]}
+                />
+              )
+            },
           },
         ]}
         emptyActions={onCreate && (
@@ -499,7 +506,11 @@ function projectScopeBadges(projectIds: string[] | undefined, projectMap: Record
 }
 
 function isGitOAuthReady(provider: GitProvider) {
-  return provider.enabled && provider.authType === 'oauth' && provider.clientId.trim() !== '' && provider.clientSecretSet
+  if (!provider.enabled || provider.authType !== 'oauth')
+    return false
+  if (typeof provider.oauthReady === 'boolean')
+    return provider.oauthReady
+  return provider.clientId.trim() !== '' && provider.clientSecretSet
 }
 
 function gitProviderFaviconUrl(type: GitProvider['type'], baseUrl?: string) {

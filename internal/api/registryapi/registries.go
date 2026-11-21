@@ -77,13 +77,13 @@ func (h *Handler) CreateArtifactRegistry(ctx *gin.Context) {
 	registry.ID = id.New("reg")
 	registry.CreatedBy = user.ID
 
-	if err := h.saveRegistryWithDefault(registry, ctx.Request.Context()); err != nil {
+	if err := h.saveRegistryWithDefault(&registry, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	h.auditWithContext(user.ID, "registry.create", registry.ID, true, registry.Scope, ctx.Request.Context())
 	h.observeArtifactRegistry(ctx.Request.Context(), user, &registry)
-	ctx.JSON(http.StatusCreated, registryResponse(registry))
+	ctx.JSON(http.StatusCreated, registryResponseWithManage(registry, true))
 }
 
 func (h *Handler) UpdateArtifactRegistry(ctx *gin.Context) {
@@ -128,7 +128,7 @@ func (h *Handler) UpdateArtifactRegistry(ctx *gin.Context) {
 		if compatErr := ensureRegistryScopeCompatibleTx(tx, locked); compatErr != nil {
 			return compatErr
 		}
-		if saveErr := h.saveRegistryWithDefaultTx(tx, locked); saveErr != nil {
+		if saveErr := h.saveRegistryWithDefaultTx(tx, &locked); saveErr != nil {
 			return saveErr
 		}
 		updated = locked
@@ -152,7 +152,7 @@ func (h *Handler) UpdateArtifactRegistry(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "registry.update", updated.ID, true, updated.Scope, ctx.Request.Context())
 	h.observeArtifactRegistry(ctx.Request.Context(), user, &updated)
-	ctx.JSON(http.StatusOK, registryResponse(updated))
+	ctx.JSON(http.StatusOK, registryResponseWithManage(updated, true))
 }
 
 func (h *Handler) DeleteArtifactRegistry(ctx *gin.Context) {
@@ -316,7 +316,12 @@ func (h *Handler) GetDefaultArtifactRegistry(ctx *gin.Context) {
 		return
 	}
 	h.observeArtifactRegistry(ctx.Request.Context(), user, &registry)
-	ctx.JSON(http.StatusOK, registryResponse(registry))
+	responses, err := h.registryResponsesForUser(user, []model.ArtifactRegistry{registry}, ctx.Request.Context())
+	if err != nil {
+		h.writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, responses[0])
 }
 
 func (h *Handler) TestArtifactRegistry(ctx *gin.Context) {
@@ -326,6 +331,14 @@ func (h *Handler) TestArtifactRegistry(ctx *gin.Context) {
 	}
 
 	result := h.pingRegistry(ctx.Request.Context(), user, registry)
+	canInspect, err := h.canInspectScopedResourceConfigByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx.Request.Context())
+	if err != nil {
+		h.writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	if !canInspect {
+		result.Endpoint = ""
+	}
 	ctx.JSON(http.StatusOK, result)
 }
 
@@ -361,14 +374,15 @@ func (h *Handler) registryFromInput(ctx *gin.Context, user model.User, input art
 	return registry, true
 }
 
-func (h *Handler) saveRegistryWithDefault(registry model.ArtifactRegistry, ctx context.Context) error {
+func (h *Handler) saveRegistryWithDefault(registry *model.ArtifactRegistry, ctx context.Context) error {
 	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return h.saveRegistryWithDefaultTx(tx, registry)
 	})
 }
 
-func (h *Handler) saveRegistryWithDefaultTx(tx *gorm.DB, registry model.ArtifactRegistry) error {
+func (h *Handler) saveRegistryWithDefaultTx(tx *gorm.DB, registry *model.ArtifactRegistry) error {
 	projectIDs := sortedProjectIDs(registry.ProjectIDs)
+	registry.ProjectIDs = projectIDs
 	defaultProjectIDs := []string{}
 	if registry.Scope == "project" {
 		if registry.IsDefault {
@@ -382,14 +396,18 @@ func (h *Handler) saveRegistryWithDefaultTx(tx *gorm.DB, registry model.Artifact
 			}
 		}
 		registry.IsDefault = false
-	} else if registry.IsDefault {
-		if err := tx.Model(&model.ArtifactRegistry{}).
-			Where("scope = ? and owner_ref = ? and id <> ?", registry.Scope, registry.OwnerRef, registry.ID).
-			Update("is_default", false).Error; err != nil {
-			return err
+		registry.DefaultProjectIDs = defaultProjectIDs
+	} else {
+		registry.DefaultProjectIDs = []string{}
+		if registry.IsDefault {
+			if err := tx.Model(&model.ArtifactRegistry{}).
+				Where("scope = ? and owner_ref = ? and id <> ?", registry.Scope, registry.OwnerRef, registry.ID).
+				Update("is_default", false).Error; err != nil {
+				return err
+			}
 		}
 	}
-	if err := tx.Save(&registry).Error; err != nil {
+	if err := tx.Save(registry).Error; err != nil {
 		return err
 	}
 	return h.replaceScopedResourceProjectBindings(tx, scopedResourceArtifactRegistry, registry.ID, projectIDs, defaultProjectIDs)

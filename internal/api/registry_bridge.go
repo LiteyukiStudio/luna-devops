@@ -49,6 +49,10 @@ func (h *Handlers) registryCredentialInput(ctx context.Context, user model.User,
 	return h.domains.registry.RegistryCredentialInput(ctx, user, registry)
 }
 
+func (h *Handlers) registryCredentialInputForProject(ctx context.Context, user model.User, registry model.ArtifactRegistry, projectID string) registryprovider.Credential {
+	return h.domains.registry.RegistryCredentialInputForProject(ctx, user, registry, projectID)
+}
+
 func (h *Handlers) pingRegistry(ctx context.Context, user model.User, registry model.ArtifactRegistry) registryapi.RegistryTestResult {
 	return h.domains.registry.PingRegistry(ctx, user, registry)
 }

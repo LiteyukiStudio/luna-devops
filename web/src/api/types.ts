@@ -1122,6 +1122,7 @@ export interface GitProvider {
   authType: 'oauth' | 'github-app' | 'pat'
   clientId: string
   clientSecretSet: boolean
+  oauthReady?: boolean
   enabled: boolean
   createdAt: string
 }
@@ -1142,6 +1143,7 @@ export interface GitAccount {
   status: LiveObservationStatus
   observationCode?: string
   observedAt?: string | null
+  canManage?: boolean
   createdAt: string
 }
 
@@ -1241,11 +1243,12 @@ export interface ArtifactRegistry {
   credentialSet: boolean
   isDefault: boolean
   capabilities: string[]
+  canManage?: boolean
   createdBy: string
   createdAt: string
 }
 
-export type ArtifactRegistryPayload = Omit<ArtifactRegistry, 'id' | 'namespace' | 'credentialSet' | 'defaultProjectIds' | 'createdBy' | 'createdAt'>
+export type ArtifactRegistryPayload = Omit<ArtifactRegistry, 'id' | 'namespace' | 'credentialSet' | 'defaultProjectIds' | 'canManage' | 'createdBy' | 'createdAt'>
 
 export interface RegistryCredential {
   id: string
@@ -1260,6 +1263,7 @@ export interface RegistryCredential {
   tagTemplate: string
   passwordSet: boolean
   tokenSet: boolean
+  canManage?: boolean
   createdAt: string
 }
 

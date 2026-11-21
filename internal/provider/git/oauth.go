@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -38,6 +39,10 @@ func OAuthEndpoint(provider model.GitProvider) (oauth2.Endpoint, error) {
 			TokenURL: base + "/login/oauth/access_token",
 		}, nil
 	case "gitea":
+		parsed, err := url.Parse(base)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return oauth2.Endpoint{}, fmt.Errorf("gitea baseUrl is required for oauth")
+		}
 		return oauth2.Endpoint{
 			AuthURL:  base + "/login/oauth/authorize",
 			TokenURL: base + "/login/oauth/access_token",

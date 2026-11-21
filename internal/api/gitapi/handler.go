@@ -11,9 +11,11 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
+	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/security"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 )
 
@@ -156,6 +158,52 @@ func (h *Handler) egressPolicyForUser(user model.User, ctx context.Context) secu
 }
 func (h *Handler) egressContextForUser(ctx context.Context, user model.User, timeout time.Duration) context.Context {
 	return h.host.EgressContextForUser(ctx, user, timeout)
+}
+
+// egressUserForProvider elevates private-network egress for GitProvider records
+// because all GitProvider records (regardless of global/project/user scope) can
+// only be created and edited by Platform Administrators. Redirect and same-origin
+// guards ensure requests never leave the configured provider origin.
+func egressUserForProvider(user model.User, provider model.GitProvider) model.User {
+	if strings.TrimSpace(provider.ID) != "" {
+		return model.User{ID: user.ID, Role: authz.PlatformRoleAdmin}
+	}
+	return user
+}
+func (h *Handler) egressPolicyForProvider(user model.User, provider model.GitProvider, ctx context.Context) security.EgressPolicy {
+	return h.egressPolicyForUser(egressUserForProvider(user, provider), ctx)
+}
+func (h *Handler) egressContextForProvider(ctx context.Context, user model.User, provider model.GitProvider, timeout time.Duration) context.Context {
+	policy := h.egressPolicyForProvider(user, provider, ctx)
+	return context.WithValue(ctx, oauth2.HTTPClient, gitprovider.NewHTTPClientForPolicy(policy, timeout))
+}
+
+func (h *Handler) canManageScopedResourceWithProjects(ctx context.Context, user model.User, scope, ownerRef string, projectIDs []string) (bool, error) {
+	switch normalizeGitScope(scope) {
+	case "global":
+		return authz.IsPlatformAdmin(user.Role), nil
+	case "user":
+		return ownerRef == user.ID, nil
+	case "project":
+		if authz.IsPlatformAdmin(user.Role) {
+			return true, nil
+		}
+		if len(projectIDs) == 0 {
+			return false, nil
+		}
+		for _, projectID := range projectIDs {
+			allowed, err := h.host.ProjectRoleActionAllowed(ctx, user, projectID, authz.ActionProjectManage)
+			if err != nil {
+				return false, err
+			}
+			if !allowed {
+				return false, nil
+			}
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 func (h *Handler) prepareBuildRunRequest(user model.User, run *model.BuildRun, ctx context.Context) error {
 	return h.host.PrepareBuildRunRequest(user, run, ctx)

@@ -65,6 +65,10 @@ func (c Client) SearchPublicRepositories(ctx context.Context, search string, pag
 }
 
 func (c Client) ListBranches(ctx context.Context, owner, repo string) ([]Branch, error) {
+	var err error
+	if owner, repo, err = validateRepoOwnerAndName(owner, repo); err != nil {
+		return nil, err
+	}
 	output := make([]Branch, 0)
 	for page := 1; page <= gitBranchMaxPages; page++ {
 		params := map[string]string{"page": strconv.Itoa(page)}
@@ -93,9 +97,13 @@ func (c Client) ListBranches(ctx context.Context, owner, repo string) ([]Branch,
 }
 
 func (c Client) GetBranch(ctx context.Context, owner, repo, branchName string) (Branch, error) {
-	branchName = strings.TrimSpace(branchName)
-	if branchName == "" {
-		return Branch{}, fmt.Errorf("branch name is required")
+	var err error
+	if owner, repo, err = validateRepoOwnerAndName(owner, repo); err != nil {
+		return Branch{}, err
+	}
+	branchName, err = validateRepoRelativePath(branchName, false)
+	if err != nil {
+		return Branch{}, fmt.Errorf("invalid branch name")
 	}
 	var branch gitBranchResponse
 	if err := c.getJSON(ctx, c.apiURL(fmt.Sprintf("/repos/%s/%s/branches/%s", pathEscape(owner), pathEscape(repo), pathEscape(branchName)), nil), &branch); err != nil {
@@ -105,16 +113,20 @@ func (c Client) GetBranch(ctx context.Context, owner, repo, branchName string) (
 }
 
 func (c Client) ReadFile(ctx context.Context, owner, repo, filePath, ref string) (FileContent, error) {
-	filePath = strings.TrimLeft(strings.TrimSpace(filePath), "/")
-	if filePath == "" {
-		return FileContent{}, fmt.Errorf("file path is required")
+	var err error
+	if owner, repo, err = validateRepoOwnerAndName(owner, repo); err != nil {
+		return FileContent{}, err
+	}
+	filePath, err = validateRepoRelativePath(filePath, false)
+	if err != nil {
+		return FileContent{}, err
 	}
 	params := map[string]string{}
 	if strings.TrimSpace(ref) != "" {
 		params["ref"] = strings.TrimSpace(ref)
 	}
 	var file gitContentResponse
-	err := c.getJSON(ctx, c.apiURL(fmt.Sprintf("/repos/%s/%s/contents/%s", pathEscape(owner), pathEscape(repo), PathEscapePath(filePath)), params), &file)
+	err = c.getJSON(ctx, c.apiURL(fmt.Sprintf("/repos/%s/%s/contents/%s", pathEscape(owner), pathEscape(repo), PathEscapePath(filePath)), params), &file)
 	if err != nil {
 		return FileContent{}, err
 	}
@@ -137,7 +149,14 @@ func (c Client) ReadFile(ctx context.Context, owner, repo, filePath, ref string)
 }
 
 func (c Client) ListContents(ctx context.Context, owner, repo, dirPath, ref string) ([]ContentItem, error) {
-	dirPath = strings.Trim(strings.TrimSpace(dirPath), "/")
+	var err error
+	if owner, repo, err = validateRepoOwnerAndName(owner, repo); err != nil {
+		return nil, err
+	}
+	dirPath, err = validateRepoRelativePath(dirPath, true)
+	if err != nil {
+		return nil, err
+	}
 	params := map[string]string{}
 	if strings.TrimSpace(ref) != "" {
 		params["ref"] = strings.TrimSpace(ref)
@@ -163,6 +182,10 @@ func (c Client) ListContents(ctx context.Context, owner, repo, dirPath, ref stri
 }
 
 func (c Client) CreateWebhook(ctx context.Context, owner, repo, callbackURL, secret string) (WebhookCreateResult, error) {
+	var err error
+	if owner, repo, err = validateRepoOwnerAndName(owner, repo); err != nil {
+		return WebhookCreateResult{}, err
+	}
 	switch c.provider.Type {
 	case "github":
 		payload := map[string]any{
@@ -203,9 +226,13 @@ func (c Client) CreateWebhook(ctx context.Context, owner, repo, callbackURL, sec
 }
 
 func (c Client) GetWebhook(ctx context.Context, owner, repo, webhookID string) (WebhookSnapshot, error) {
-	webhookID = strings.TrimSpace(webhookID)
-	if webhookID == "" {
-		return WebhookSnapshot{}, fmt.Errorf("webhook ID is required")
+	var err error
+	if owner, repo, err = validateRepoOwnerAndName(owner, repo); err != nil {
+		return WebhookSnapshot{}, err
+	}
+	webhookID, err = validateRepoSegment(webhookID, "webhook ID")
+	if err != nil {
+		return WebhookSnapshot{}, err
 	}
 	path := fmt.Sprintf("/repos/%s/%s/hooks/%s", pathEscape(owner), pathEscape(repo), pathEscape(webhookID))
 	switch c.provider.Type {
@@ -237,9 +264,13 @@ func (c Client) GetWebhook(ctx context.Context, owner, repo, webhookID string) (
 // DeleteWebhook removes a webhook created by CreateWebhook. GitHub and Gitea
 // use the same repository hook endpoint for deletion.
 func (c Client) DeleteWebhook(ctx context.Context, owner, repo, webhookID string) error {
-	webhookID = strings.TrimSpace(webhookID)
-	if webhookID == "" {
-		return fmt.Errorf("webhook ID is required")
+	var err error
+	if owner, repo, err = validateRepoOwnerAndName(owner, repo); err != nil {
+		return err
+	}
+	webhookID, err = validateRepoSegment(webhookID, "webhook ID")
+	if err != nil {
+		return err
 	}
 	switch c.provider.Type {
 	case "github", "gitea":
@@ -299,6 +330,48 @@ func withRepositorySource(repos []Repository, source string) []Repository {
 		repos[index].Source = source
 	}
 	return repos
+}
+
+func validateRepoSegment(value, field string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", fmt.Errorf("%s is required", field)
+	}
+	if trimmed == "." || trimmed == ".." || strings.ContainsAny(trimmed, "/\\ \t\r\n?#") {
+		return "", fmt.Errorf("invalid %s", field)
+	}
+	return trimmed, nil
+}
+
+func validateRepoOwnerAndName(owner, repo string) (string, string, error) {
+	cleanOwner, err := validateRepoSegment(owner, "repository owner")
+	if err != nil {
+		return "", "", err
+	}
+	cleanRepo, err := validateRepoSegment(repo, "repository name")
+	if err != nil {
+		return "", "", err
+	}
+	return cleanOwner, cleanRepo, nil
+}
+
+func validateRepoRelativePath(value string, allowEmpty bool) (string, error) {
+	trimmed := strings.Trim(strings.TrimSpace(value), "/")
+	if trimmed == "" {
+		if allowEmpty {
+			return "", nil
+		}
+		return "", fmt.Errorf("file path is required")
+	}
+	if strings.Contains(trimmed, "\\") || strings.ContainsAny(trimmed, "\r\n?#") {
+		return "", fmt.Errorf("invalid repository path")
+	}
+	for _, part := range strings.Split(trimmed, "/") {
+		if part == "" || part == "." || part == ".." {
+			return "", fmt.Errorf("invalid repository path")
+		}
+	}
+	return trimmed, nil
 }
 
 func pathEscape(value string) string {

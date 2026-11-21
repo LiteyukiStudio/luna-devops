@@ -26,6 +26,7 @@ interface PanelErrorState {
 }
 
 interface RegistriesPanelProps {
+  canManageGlobal?: boolean
   error?: PanelErrorState
   items: ArtifactRegistry[]
   loading: boolean
@@ -41,6 +42,7 @@ interface RegistriesPanelProps {
 }
 
 export function RegistriesPanel({
+  canManageGlobal = false,
   error,
   items,
   loading,
@@ -106,15 +108,19 @@ export function RegistriesPanel({
                     <KeyRound />
                     {t('registriesPage.credentialsTab')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onEdit(registry)}>
-                    <Pencil />
-                    {t('edit')}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={() => onDelete(registry)}>
-                    <Trash2 />
-                    {t('common.delete')}
-                  </DropdownMenuItem>
+                  {(registry.canManage ?? (canManageGlobal || registry.scope !== 'global')) && (
+                    <>
+                      <DropdownMenuItem onSelect={() => onEdit(registry)}>
+                        <Pencil />
+                        {t('edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => onDelete(registry)}>
+                        <Trash2 />
+                        {t('common.delete')}
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -163,6 +169,7 @@ function registryProviderLabel(provider: ArtifactRegistry['provider'], t: Return
 }
 
 interface CredentialsPanelProps {
+  canManageGlobal?: boolean
   error?: PanelErrorState
   items: CredentialWithRegistry[]
   loading: boolean
@@ -174,7 +181,7 @@ interface CredentialsPanelProps {
   onDelete: (credential: CredentialWithRegistry) => void
 }
 
-export function CredentialsPanel({ error, items, loading, pagination, projectMap, toolbar, onCreate, onDelete, onEdit }: CredentialsPanelProps) {
+export function CredentialsPanel({ canManageGlobal = false, error, items, loading, pagination, projectMap, toolbar, onCreate, onDelete, onEdit }: CredentialsPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -233,26 +240,28 @@ export function CredentialsPanel({ error, items, loading, pagination, projectMap
           header: t('common.actions'),
           sticky: 'right',
           width: 'actions',
-          render: credential => (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button aria-label={t('common.actions')} className="size-8" size="icon" type="button" variant="ghost">
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => onEdit(credential)}>
-                  <Pencil />
-                  {t('edit')}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={() => onDelete(credential)}>
-                  <Trash2 />
-                  {t('common.delete')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ),
+          render: credential => (credential.canManage ?? (canManageGlobal || credential.scope !== 'global'))
+            ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-label={t('common.actions')} className="size-8" size="icon" type="button" variant="ghost">
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => onEdit(credential)}>
+                      <Pencil />
+                      {t('edit')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => onDelete(credential)}>
+                      <Trash2 />
+                      {t('common.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
+            : <span className="text-xs text-muted-foreground">{t('common.viewOnly')}</span>,
         },
       ]}
       emptyActions={onCreate && (

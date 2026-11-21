@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -121,7 +122,7 @@ func (h *Handlers) StartGitOAuth(ctx *gin.Context) {
 		return
 	}
 	h.debugLog("git.oauth.start oauth config providerId=%s authURL=%s tokenURL=%s redirectURL=%s scopes=%s clientIdSet=%t", provider.ID, oauthConfig.Endpoint.AuthURL, oauthConfig.Endpoint.TokenURL, oauthConfig.RedirectURL, strings.Join(oauthConfig.Scopes, ","), strings.TrimSpace(oauthConfig.ClientID) != "")
-	if _, err := h.egressPolicyForUser(user, ctx.Request.Context()).ValidateURL(oauthConfig.Endpoint.AuthURL); err != nil {
+	if _, err := h.egressPolicyForProvider(user, provider, ctx.Request.Context()).ValidateURL(oauthConfig.Endpoint.AuthURL); err != nil {
 		h.debugLog("git.oauth.start auth url blocked providerId=%s authURL=%s err=%v", provider.ID, oauthConfig.Endpoint.AuthURL, err)
 		writeError(ctx, http.StatusForbidden, "Git OAuth 授权地址不符合访问策略")
 		return
@@ -195,7 +196,7 @@ func (h *Handlers) CompleteGitOAuth(ctx *gin.Context) {
 		return
 	}
 	h.debugLog("git.oauth.complete oauth config providerId=%s authURL=%s tokenURL=%s redirectURL=%s scopes=%s", provider.ID, oauthConfig.Endpoint.AuthURL, oauthConfig.Endpoint.TokenURL, oauthConfig.RedirectURL, strings.Join(oauthConfig.Scopes, ","))
-	egressCtx := h.egressContextForUser(ctx.Request.Context(), stateUser, 15*time.Second)
+	egressCtx := h.egressContextForProvider(ctx.Request.Context(), stateUser, provider, 15*time.Second)
 	h.debugLog("git.oauth.complete exchanging code providerId=%s tokenURL=%s redirectURL=%s codeLength=%d", provider.ID, oauthConfig.Endpoint.TokenURL, oauthConfig.RedirectURL, len(code))
 	token, err := oauthConfig.Exchange(egressCtx, code)
 	if err != nil {
@@ -206,7 +207,7 @@ func (h *Handlers) CompleteGitOAuth(ctx *gin.Context) {
 	}
 	h.debugLog("git.oauth.complete code exchange succeeded providerId=%s accessTokenSet=%t refreshTokenSet=%t expiry=%s tokenType=%s", provider.ID, token.AccessToken != "", token.RefreshToken != "", token.Expiry.Format(time.RFC3339), token.TokenType)
 
-	client := gitprovider.NewClientWithPolicy(provider, token.AccessToken, h.egressPolicyForUser(stateUser, ctx.Request.Context()))
+	client := gitprovider.NewClientWithPolicy(provider, token.AccessToken, h.egressPolicyForProvider(stateUser, provider, ctx.Request.Context()))
 	h.debugLog("git.oauth.complete loading git user providerId=%s type=%s baseUrl=%s", provider.ID, provider.Type, provider.BaseURL)
 	gitUser, err := client.CurrentUser(egressCtx)
 	if err != nil {
@@ -310,11 +311,22 @@ func (h *Handlers) CreateGitProvider(ctx *gin.Context) {
 		projectIDs = normalizedProjectIDs
 	}
 
+	baseURL, baseURLErr := validateProviderBaseURL(providerType, input.BaseURL)
+	if baseURLErr != nil {
+		var toolErr *aitool.ToolError
+		if errors.As(baseURLErr, &toolErr) {
+			writeErrorCode(ctx, toolErr.Status, toolErr.Code, toolErr.Message)
+		} else {
+			writeError(ctx, http.StatusBadRequest, baseURLErr.Error())
+		}
+		return
+	}
+
 	provider := model.GitProvider{
 		ID:         id.New("gitp"),
 		Type:       providerType,
 		Name:       strings.TrimSpace(input.Name),
-		BaseURL:    normalizeGitBaseURL(providerType, input.BaseURL),
+		BaseURL:    baseURL,
 		Scope:      scope,
 		OwnerRef:   strings.TrimSpace(input.OwnerRef),
 		ProjectIDs: projectIDs,
@@ -325,9 +337,6 @@ func (h *Handlers) CreateGitProvider(ctx *gin.Context) {
 	if provider.Name == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git Provider 名称")
 		return
-	}
-	if provider.BaseURL == "" {
-		provider.BaseURL = defaultGitBaseURL(provider.Type)
 	}
 
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
@@ -398,7 +407,16 @@ func (h *Handlers) UpdateGitProvider(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git Provider 名称")
 		return
 	}
-	baseURL := normalizeGitBaseURL(providerType, input.BaseURL)
+	baseURL, baseURLErr := validateProviderBaseURL(providerType, input.BaseURL)
+	if baseURLErr != nil {
+		var toolErr *aitool.ToolError
+		if errors.As(baseURLErr, &toolErr) {
+			writeErrorCode(ctx, toolErr.Status, toolErr.Code, toolErr.Message)
+		} else {
+			writeError(ctx, http.StatusBadRequest, baseURLErr.Error())
+		}
+		return
+	}
 	ownerRef := strings.TrimSpace(input.OwnerRef)
 	authType := normalizeGitAuthType(input.AuthType)
 	clientID := strings.TrimSpace(input.ClientID)

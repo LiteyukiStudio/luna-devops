@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -220,7 +221,7 @@ func (h *Handlers) CreateRepositoryBinding(ctx *gin.Context) {
 		return
 	}
 
-	binding, ok := h.repositoryBindingFromInput(ctx, user.ID, input)
+	binding, ok := h.repositoryBindingFromInput(ctx, user, input)
 	if !ok {
 		return
 	}
@@ -261,7 +262,7 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 		return
 	}
 
-	binding, ok := h.repositoryBindingFromInput(ctx, user.ID, input)
+	binding, ok := h.repositoryBindingFromInput(ctx, user, input)
 	if !ok {
 		return
 	}
@@ -509,13 +510,22 @@ func webhookBuildRunFromTarget(binding model.RepositoryBinding, target model.Dep
 	}
 }
 
-func (h *Handlers) repositoryBindingFromInput(ctx *gin.Context, userID string, input repositoryBindingInput) (model.RepositoryBinding, bool) {
-	account, ok := h.findGitAccountForUser(ctx, userID, input.GitAccountID)
+func (h *Handlers) repositoryBindingFromInput(ctx *gin.Context, user model.User, input repositoryBindingInput) (model.RepositoryBinding, bool) {
+	projectID := strings.TrimSpace(ctx.Param("projectId"))
+	account, ok := h.findGitAccountForUser(ctx, user.ID, input.GitAccountID)
 	if !ok {
+		return model.RepositoryBinding{}, false
+	}
+	if !h.gitAccountUsableInProject(h.dbFor(ctx), user, account, projectID, ctx.Request.Context()) {
+		writeError(ctx, http.StatusForbidden, "无权在当前项目空间使用该 Git 凭据")
 		return model.RepositoryBinding{}, false
 	}
 	provider, ok := h.findEnabledGitProvider(ctx, account.ProviderID)
 	if !ok {
+		return model.RepositoryBinding{}, false
+	}
+	if !h.gitProviderUsableInProject(h.dbFor(ctx), user, provider, projectID, ctx.Request.Context()) {
+		writeError(ctx, http.StatusForbidden, "无权在当前项目空间使用该 Git Provider")
 		return model.RepositoryBinding{}, false
 	}
 
@@ -524,16 +534,47 @@ func (h *Handlers) repositoryBindingFromInput(ctx *gin.Context, userID string, i
 		return model.RepositoryBinding{}, false
 	}
 
-	owner := strings.TrimSpace(input.Owner)
-	repo := strings.TrimSpace(input.Repo)
-	if owner == "" || repo == "" {
-		writeError(ctx, http.StatusBadRequest, "请输入仓库 owner 和 repo")
+	owner, err := validateSafeGitIdentifierSegment(input.Owner, "owner")
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, "请输入有效的仓库 owner")
+		return model.RepositoryBinding{}, false
+	}
+	repo, err := validateSafeGitIdentifierSegment(input.Repo, "repo")
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, "请输入有效的仓库 repo")
+		return model.RepositoryBinding{}, false
+	}
+	defaultBranch, err := validateSafeGitBranch(input.DefaultBranch)
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, "请输入有效的默认分支名称")
 		return model.RepositoryBinding{}, false
 	}
 
-	cloneURL := strings.TrimSpace(input.CloneURL)
-	if cloneURL == "" {
-		cloneURL = defaultCloneURL(provider, owner, repo)
+	webhookEnabled := shouldAutoConfigureWebhook(input)
+	if provider.Type == "gitlab" {
+		if webhookEnabled {
+			writeErrorCode(ctx, http.StatusBadRequest, "git.webhook_unsupported_for_gitlab", "GitLab providers do not support automatic webhook registration")
+			return model.RepositoryBinding{}, false
+		}
+		if strings.TrimSpace(input.CloneURL) == "" {
+			writeErrorCode(ctx, http.StatusBadRequest, "git.clone_url_required", "cloneUrl is required when binding a GitLab repository")
+			return model.RepositoryBinding{}, false
+		}
+	}
+
+	rawCloneURL := strings.TrimSpace(input.CloneURL)
+	if rawCloneURL == "" {
+		rawCloneURL = defaultCloneURL(provider, owner, repo)
+	}
+	safeCloneURL, urlErr := validateSafeSameOriginCloneURL(rawCloneURL, provider, h.egressPolicyForProvider(user, provider, ctx.Request.Context()))
+	if urlErr != nil {
+		var toolErr *aitool.ToolError
+		if errors.As(urlErr, &toolErr) {
+			writeErrorCode(ctx, toolErr.Status, toolErr.Code, toolErr.Message)
+		} else {
+			writeError(ctx, http.StatusBadRequest, urlErr.Error())
+		}
+		return model.RepositoryBinding{}, false
 	}
 
 	return model.RepositoryBinding{
@@ -544,9 +585,9 @@ func (h *Handlers) repositoryBindingFromInput(ctx *gin.Context, userID string, i
 		GitAccountID:   account.ID,
 		Owner:          owner,
 		Repo:           repo,
-		CloneURL:       cloneURL,
-		DefaultBranch:  fallback(strings.TrimSpace(input.DefaultBranch), "main"),
-		WebhookEnabled: shouldAutoConfigureWebhook(input),
+		CloneURL:       safeCloneURL,
+		DefaultBranch:  defaultBranch,
+		WebhookEnabled: webhookEnabled,
 		CredentialRef:  "",
 	}, true
 }
@@ -697,14 +738,23 @@ func (h *Handlers) configureRepositoryWebhookWithGuard(ctx *gin.Context, user mo
 }
 
 func (h *Handlers) gitClientForUserBinding(ctx *gin.Context, user model.User, binding model.RepositoryBinding, writeClientErrors bool) (gitprovider.Client, error) {
+	projectID := strings.TrimSpace(binding.ProjectID)
 	if writeClientErrors {
 		account, ok := h.findGitAccountForUser(ctx, user.ID, binding.GitAccountID)
 		if !ok {
 			return gitprovider.Client{}, fmt.Errorf("%w: git account unavailable", errGitClientResponseWritten)
 		}
+		if !h.gitAccountUsableInProject(h.dbFor(ctx), user, account, projectID, ctx.Request.Context()) {
+			writeError(ctx, http.StatusForbidden, "无权在当前项目空间使用该 Git 凭据")
+			return gitprovider.Client{}, fmt.Errorf("%w: git account forbidden in project", errGitClientResponseWritten)
+		}
 		provider, ok := h.findEnabledGitProvider(ctx, binding.GitProviderID)
 		if !ok {
 			return gitprovider.Client{}, fmt.Errorf("%w: git provider unavailable", errGitClientResponseWritten)
+		}
+		if !h.gitProviderUsableInProject(h.dbFor(ctx), user, provider, projectID, ctx.Request.Context()) {
+			writeError(ctx, http.StatusForbidden, "无权在当前项目空间使用该 Git Provider")
+			return gitprovider.Client{}, fmt.Errorf("%w: git provider forbidden in project", errGitClientResponseWritten)
 		}
 		if account.ProviderID != provider.ID {
 			writeError(ctx, http.StatusBadRequest, "Git 凭据与 Provider 不匹配")
@@ -721,14 +771,14 @@ func (h *Handlers) gitClientForUserBinding(ctx *gin.Context, user model.User, bi
 			writeError(ctx, http.StatusBadRequest, "git account has no access token")
 			return gitprovider.Client{}, fmt.Errorf("%w: git account has no access token", errGitClientResponseWritten)
 		}
-		return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), nil
+		return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForProvider(user, provider, ctx.Request.Context())), nil
 	}
 
 	var account model.GitAccount
 	if err := h.dbFor(ctx).First(&account, "id = ?", strings.TrimSpace(binding.GitAccountID)).Error; err != nil {
 		return gitprovider.Client{}, fmt.Errorf("%w: git account lookup: %v", errRepositoryWebhookPersistence, err)
 	}
-	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, ctx.Request.Context()) {
+	if !h.gitAccountUsableInProject(h.dbFor(ctx), user, account, projectID, ctx.Request.Context()) {
 		return gitprovider.Client{}, fmt.Errorf("git account forbidden")
 	}
 	var provider model.GitProvider
@@ -738,14 +788,14 @@ func (h *Handlers) gitClientForUserBinding(ctx *gin.Context, user model.User, bi
 	if account.ProviderID != provider.ID {
 		return gitprovider.Client{}, fmt.Errorf("git provider mismatch")
 	}
-	if !h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx.Request.Context()) {
+	if !h.gitProviderUsableInProject(h.dbFor(ctx), user, provider, projectID, ctx.Request.Context()) {
 		return gitprovider.Client{}, fmt.Errorf("git provider forbidden")
 	}
 	token := h.secrets.ResolveContext(ctx.Request.Context(), account.AccessTokenRef)
 	if token == "" {
 		return gitprovider.Client{}, fmt.Errorf("%w: git account access token unavailable", errRepositoryWebhookPersistence)
 	}
-	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), nil
+	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForProvider(user, provider, ctx.Request.Context())), nil
 }
 
 // anonymousGitAccountID 是只读公开仓库访问的账号占位符：选择它时不绑定 Git 账号，
@@ -779,7 +829,7 @@ func (h *Handlers) gitClientForCurrentUserAccount(ctx *gin.Context, accountID st
 		writeError(ctx, http.StatusBadRequest, "git account has no access token")
 		return gitprovider.Client{}, false
 	}
-	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), true
+	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForProvider(user, provider, ctx.Request.Context())), true
 }
 
 // anonymousGitClient 构造不带凭据的 Git 只读 client，用于访问公开仓库。
@@ -795,5 +845,5 @@ func (h *Handlers) anonymousGitClient(ctx *gin.Context, user model.User) (gitpro
 		writeErrorCode(ctx, http.StatusNotFound, "git.provider_not_found", "git provider not found")
 		return gitprovider.Client{}, false
 	}
-	return gitprovider.NewClientWithPolicy(provider, "", h.egressPolicyForUser(user, ctx.Request.Context())), true
+	return gitprovider.NewClientWithPolicy(provider, "", h.egressPolicyForProvider(user, provider, ctx.Request.Context())), true
 }

@@ -38,7 +38,7 @@ func (h *Handler) ListRegistryCredentials(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	h.listRegistryCredentials(ctx, query)
+	h.listRegistryCredentials(ctx, user, query)
 }
 
 func (h *Handler) ListAllRegistryCredentials(ctx *gin.Context) {
@@ -61,10 +61,10 @@ func (h *Handler) ListAllRegistryCredentials(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	h.listRegistryCredentials(ctx, query)
+	h.listRegistryCredentials(ctx, user, query)
 }
 
-func (h *Handler) listRegistryCredentials(ctx *gin.Context, query *gorm.DB) {
+func (h *Handler) listRegistryCredentials(ctx *gin.Context, user model.User, query *gorm.DB) {
 	var credentials []model.RegistryCredential
 	query = applySearch(ctx, query, "name", "username")
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "username": "username", "createdAt": "created_at"}, "createdAt")
@@ -82,7 +82,12 @@ func (h *Handler) listRegistryCredentials(ctx *gin.Context, query *gorm.DB) {
 		return
 	}
 	h.attachRegistryCredentialProjects(credentials, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, paginatedResponse(credentialResponses(credentials), total, pagination))
+	responses, err := h.credentialResponsesForUser(user, credentials, ctx.Request.Context())
+	if err != nil {
+		h.writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
 
 func (h *Handler) CreateRegistryCredential(ctx *gin.Context) {
@@ -166,7 +171,7 @@ func (h *Handler) CreateRegistryCredential(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "registry_credential.create", credential.ID, true, credential.Scope, ctx.Request.Context())
-	ctx.JSON(http.StatusCreated, credentialResponse(credential))
+	ctx.JSON(http.StatusCreated, credentialResponseWithManage(credential, true))
 }
 
 func (h *Handler) UpdateRegistryCredential(ctx *gin.Context) {
@@ -291,7 +296,7 @@ func (h *Handler) UpdateRegistryCredential(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "registry_credential.update", updated.ID, true, updated.Scope, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, credentialResponse(updated))
+	ctx.JSON(http.StatusOK, credentialResponseWithManage(updated, true))
 }
 
 func (h *Handler) DeleteRegistryCredential(ctx *gin.Context) {
@@ -491,6 +496,9 @@ func (h *Handler) registryPushCredentialFor(user model.User, registry model.Arti
 }
 
 func (h *Handler) registryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string, ctx context.Context) (model.RegistryCredential, bool) {
+	if strings.TrimSpace(projectID) != "" && !h.registryUsableInProject(h.dbWithContext(ctx), user, registry, strings.TrimSpace(projectID), ctx) {
+		return model.RegistryCredential{}, false
+	}
 	usages := []string{"push", "push-pull"}
 	var credential model.RegistryCredential
 	visibleCredentials := func() *gorm.DB {

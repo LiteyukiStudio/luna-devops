@@ -486,7 +486,7 @@ func (h *Handler) aiExecuteSaveRegistry(tc *aitool.ToolContext, in registrySaveI
 		}
 		h.auditWithContext(tc.User.ID, "registry.create", reg.ID, true, reg.Scope, tc.Context())
 		h.observeArtifactRegistryForProject(tc.Context(), tc.User, &reg, strings.TrimSpace(tc.ConversationProjectID))
-		return registryOutputMap(registryResponse(reg), tc.ConversationProjectID), nil
+		return registryOutputMap(registryResponseWithManage(reg, true), tc.ConversationProjectID), nil
 	}
 
 	var updated model.ArtifactRegistry
@@ -526,7 +526,7 @@ func (h *Handler) aiExecuteSaveRegistry(tc *aitool.ToolContext, in registrySaveI
 	}
 	h.auditWithContext(tc.User.ID, "registry.update", updated.ID, true, updated.Scope, tc.Context())
 	h.observeArtifactRegistryForProject(tc.Context(), tc.User, &updated, strings.TrimSpace(tc.ConversationProjectID))
-	return registryOutputMap(registryResponse(updated), tc.ConversationProjectID), nil
+	return registryOutputMap(registryResponseWithManage(updated, true), tc.ConversationProjectID), nil
 }
 
 // --- 16. build_delete_registry ---
@@ -998,7 +998,7 @@ func (h *Handler) aiExecuteSaveRegistryCredential(tc *aitool.ToolContext, in reg
 			return nil, aitool.BadRequest("registry.credential_save_failed", txErr.Error())
 		}
 		h.auditWithContext(tc.User.ID, "registry_credential.create", cred.ID, true, cred.Scope, tc.Context())
-		return credentialOutputMap(credentialResponse(cred), tc.ConversationProjectID), nil
+		return credentialOutputMap(credentialResponseWithManage(cred, true), tc.ConversationProjectID), nil
 	}
 
 	var updated model.RegistryCredential
@@ -1100,7 +1100,7 @@ func (h *Handler) aiExecuteSaveRegistryCredential(tc *aitool.ToolContext, in reg
 		return nil, aitool.BadRequest("registry.credential_save_failed", txErr.Error())
 	}
 	h.auditWithContext(tc.User.ID, "registry_credential.update", updated.ID, true, updated.Scope, tc.Context())
-	return credentialOutputMap(credentialResponse(updated), tc.ConversationProjectID), nil
+	return credentialOutputMap(credentialResponseWithManage(updated, true), tc.ConversationProjectID), nil
 }
 
 // --- 18. build_delete_registry_credential ---
@@ -1264,6 +1264,7 @@ func registryOutputMap(out artifactRegistryOutput, conversationProjectID string)
 		"status":            out.Status,
 		"observationCode":   out.ObservationCode,
 		"lastCheckedAt":     out.LastCheckedAt,
+		"canManage":         out.CanManage,
 		"createdBy":         out.CreatedBy,
 		"createdAt":         out.CreatedAt,
 	}
@@ -1287,6 +1288,7 @@ func credentialOutputMap(out registryCredentialOutput, conversationProjectID str
 		"tagTemplate":        out.TagTemplate,
 		"passwordSet":        out.PasswordSet,
 		"tokenSet":           out.TokenSet,
+		"canManage":          out.CanManage,
 		"createdAt":          out.CreatedAt,
 	}
 	if strings.TrimSpace(conversationProjectID) != "" {

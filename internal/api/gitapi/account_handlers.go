@@ -54,7 +54,12 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 	}
 	h.attachGitAccountProjects(accounts, ctx.Request.Context())
 	h.observeGitAccounts(ctx.Request.Context(), user, accounts)
-	ctx.JSON(http.StatusOK, paginatedResponse(gitAccountResponses(accounts), total, pagination))
+	responses, err := h.gitAccountResponsesForUser(user, accounts, ctx.Request.Context())
+	if err != nil {
+		h.host.WriteProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
 
 func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
@@ -137,7 +142,7 @@ func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "git_account.create", account.ID, true, account.Scope, ctx.Request.Context())
 	h.observeGitAccount(ctx.Request.Context(), user, &account)
-	ctx.JSON(http.StatusCreated, gitAccountResponse(account))
+	ctx.JSON(http.StatusCreated, gitAccountResponseWithManage(account, true))
 }
 
 func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
@@ -262,7 +267,7 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "git_account.update", updated.ID, true, updated.Scope, ctx.Request.Context())
 	h.observeGitAccount(ctx.Request.Context(), user, &updated)
-	ctx.JSON(http.StatusOK, gitAccountResponse(updated))
+	ctx.JSON(http.StatusOK, gitAccountResponseWithManage(updated, true))
 }
 
 func (h *Handlers) attachGitAccountProjects(accounts []model.GitAccount, ctx context.Context) {
@@ -430,7 +435,14 @@ func (h *Handlers) RefreshGitAccount(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	ctx.JSON(http.StatusOK, gitAccountResponse(refreshed))
+	accounts := []model.GitAccount{refreshed}
+	h.attachGitAccountProjects(accounts, ctx.Request.Context())
+	responses, err := h.gitAccountResponsesForUser(user, accounts, ctx.Request.Context())
+	if err != nil {
+		h.host.WriteProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, responses[0])
 }
 
 func (h *Handlers) refreshGitAccountForUser(ctx *gin.Context, user model.User, account model.GitAccount, provider model.GitProvider) (model.GitAccount, bool) {
@@ -444,7 +456,7 @@ func (h *Handlers) refreshGitAccountForUser(ctx *gin.Context, user model.User, a
 		writeError(ctx, http.StatusBadRequest, "git OAuth provider configuration is invalid")
 		return account, false
 	}
-	egressCtx := h.egressContextForUser(ctx.Request.Context(), user, 15*time.Second)
+	egressCtx := h.egressContextForProvider(ctx.Request.Context(), user, provider, 15*time.Second)
 	tokenSource := oauthConfig.TokenSource(egressCtx, &oauth2.Token{
 		RefreshToken: refreshToken,
 		Expiry:       time.Now().Add(-time.Minute),

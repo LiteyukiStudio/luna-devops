@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,11 +31,109 @@ func NewClient(provider model.GitProvider, token string) Client {
 
 func NewClientWithPolicy(provider model.GitProvider, token string, policy security.EgressPolicy) Client {
 	return Client{
-		httpClient: security.NewHTTPClient(policy, gitHTTPTimeout),
+		httpClient: NewHTTPClientForPolicy(policy, gitHTTPTimeout),
 		provider:   provider,
 		token:      strings.TrimSpace(token),
 		policy:     policy,
 	}
+}
+
+type gitPublicRedirectContextKey struct{}
+
+type gitOriginScopedTransport struct {
+	primary http.RoundTripper
+	public  http.RoundTripper
+}
+
+func (t gitOriginScopedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.public != nil && req.Context().Value(gitPublicRedirectContextKey{}) == true {
+		return t.public.RoundTrip(req)
+	}
+	return t.primary.RoundTrip(req)
+}
+
+func (t gitOriginScopedTransport) CloseIdleConnections() {
+	type idleCloser interface{ CloseIdleConnections() }
+	if closer, ok := t.primary.(idleCloser); ok {
+		closer.CloseIdleConnections()
+	}
+	if closer, ok := t.public.(idleCloser); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
+func NewHTTPClientForPolicy(policy security.EgressPolicy, timeout time.Duration) *http.Client {
+	client := security.NewHTTPClient(policy, timeout)
+	if policy.AllowPrivateNetwork {
+		publicPolicy := policy
+		publicPolicy.AllowPrivateNetwork = false
+		publicPolicy.ApplyIPFilterToNames = true
+		publicClient := security.NewHTTPClient(publicPolicy, timeout)
+		client.Transport = gitOriginScopedTransport{primary: client.Transport, public: publicClient.Transport}
+	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("stopped after 5 redirects")
+		}
+		if req.URL.User != nil {
+			return security.ErrInvalidURL
+		}
+		initial := via[0].URL
+		sawHTTPS := false
+		crossedOrigin := !sameGitURLOrigin(initial, req.URL)
+		for _, prev := range via {
+			if strings.EqualFold(prev.URL.Scheme, "https") {
+				sawHTTPS = true
+			}
+			if !sameGitURLOrigin(initial, prev.URL) {
+				crossedOrigin = true
+			}
+		}
+		if sawHTTPS && !strings.EqualFold(req.URL.Scheme, "https") {
+			return errors.New("refusing https to http redirect")
+		}
+		if _, err := policy.ValidateURL(req.URL.String()); err != nil {
+			return err
+		}
+		if crossedOrigin {
+			req.Header.Del("Authorization")
+			if policy.AllowPrivateNetwork {
+				publicPolicy := policy
+				publicPolicy.AllowPrivateNetwork = false
+				publicPolicy.ApplyIPFilterToNames = true
+				if err := publicPolicy.ValidateProxyTarget(req.Context(), req.URL); err != nil {
+					return err
+				}
+				*req = *req.WithContext(context.WithValue(req.Context(), gitPublicRedirectContextKey{}, true))
+			}
+		}
+		return nil
+	}
+	return client
+}
+
+func sameGitURLOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(effectiveGitHostPort(left), effectiveGitHostPort(right))
+}
+
+func effectiveGitHostPort(u *url.URL) string {
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "https":
+			port = "443"
+		case "http":
+			port = "80"
+		}
+	}
+	if port == "" {
+		return host
+	}
+	return host + ":" + port
 }
 
 func (c Client) getJSON(ctx context.Context, requestURL string, output any) error {

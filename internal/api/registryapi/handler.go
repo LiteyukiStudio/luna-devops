@@ -40,6 +40,7 @@ type Host interface {
 	ScopedResourceDefaultProjectIDMap(resourceType string, resourceIDs []string, ctx context.Context) map[string][]string
 	FindProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool)
 	ProjectIDsForUser(ctx context.Context, userID string) []string
+	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
 	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
 	AuthorizeProjectRef(ctx *gin.Context, projectRef string, action authz.Action) (model.User, model.Project, bool)
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
@@ -171,6 +172,41 @@ func (h *Handler) resolveSecret(ctx context.Context, ref string) string {
 
 func (h *Handler) egressPolicyForUser(user model.User, ctx context.Context) security.EgressPolicy {
 	return h.host.EgressPolicyForUser(user, ctx)
+}
+
+func (h *Handler) canManageScopedResourceWithProjects(ctx context.Context, user model.User, scope, ownerRef string, projectIDs []string) (bool, error) {
+	switch normalizeRegistryScope(scope) {
+	case "global":
+		return authz.IsPlatformAdmin(user.Role), nil
+	case "user":
+		return ownerRef == user.ID, nil
+	case "project":
+		if authz.IsPlatformAdmin(user.Role) {
+			return true, nil
+		}
+		if len(projectIDs) == 0 {
+			return false, nil
+		}
+		for _, projectID := range projectIDs {
+			allowed, err := h.host.ProjectRoleActionAllowed(ctx, user, projectID, authz.ActionProjectManage)
+			if err != nil {
+				return false, err
+			}
+			if !allowed {
+				return false, nil
+			}
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func (h *Handler) egressPolicyForRegistry(user model.User, registry model.ArtifactRegistry, ctx context.Context) security.EgressPolicy {
+	if normalizeRegistryScope(registry.Scope) == "global" {
+		user = model.User{ID: user.ID, Role: authz.PlatformRoleAdmin}
+	}
+	return h.egressPolicyForUser(user, ctx)
 }
 
 type paginationParams = transportapi.PaginationParams

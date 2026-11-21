@@ -2,7 +2,7 @@ import type { GitAccount, GitBranch, GitProvider, GitRepository, GitRepositoryBu
 import { paginationWithProjectQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
-type GitAccountPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet' | 'status' | 'observationCode' | 'observedAt'> & {
+type GitAccountPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet' | 'status' | 'observationCode' | 'observedAt' | 'canManage'> & {
   scope?: GitAccount['scope']
   ownerRef?: string
   scopes: string[]
@@ -15,9 +15,9 @@ export const gitApi = {
     request<PaginatedResponse<GitProvider>>(`/git/providers?${paginationWithProjectQuery({ ...selectionPageParams, projectId, visibility })}`).then(selectionItems),
   listGitProvidersPage: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) =>
     request<PaginatedResponse<GitProvider>>(`/git/providers?${paginationWithProjectQuery(params)}`),
-  createGitProvider: (payload: Omit<GitProvider, 'id' | 'createdAt' | 'clientSecretSet'> & { scope?: GitProvider['scope'], ownerRef?: string, clientSecret?: string }) =>
+  createGitProvider: (payload: Omit<GitProvider, 'id' | 'createdAt' | 'clientSecretSet' | 'oauthReady'> & { scope?: GitProvider['scope'], ownerRef?: string, clientSecret?: string }) =>
     request<GitProvider>('/git/providers', { method: 'POST', body: JSON.stringify(payload) }),
-  updateGitProvider: (providerId: string, payload: Omit<GitProvider, 'id' | 'createdAt' | 'clientSecretSet'> & { scope?: GitProvider['scope'], ownerRef?: string, clientSecret?: string }) =>
+  updateGitProvider: (providerId: string, payload: Omit<GitProvider, 'id' | 'createdAt' | 'clientSecretSet' | 'oauthReady'> & { scope?: GitProvider['scope'], ownerRef?: string, clientSecret?: string }) =>
     request<GitProvider>(`/git/providers/${providerId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteGitProvider: (providerId: string) =>
     request<void>(`/git/providers/${providerId}`, { method: 'DELETE' }),

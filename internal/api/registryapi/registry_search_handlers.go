@@ -25,7 +25,7 @@ func (h *Handler) SearchRegistryRepositories(ctx *gin.Context) {
 	}
 	search := strings.TrimSpace(ctx.Query("search"))
 	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
-	result, err := registryprovider.SearchRepositories(ctx.Request.Context(), registry.Provider, registry.Endpoint, "", search, page, pageSize, h.egressPolicyForUser(user, ctx.Request.Context()), credential)
+	result, err := registryprovider.SearchRepositories(ctx.Request.Context(), registry.Provider, registry.Endpoint, "", search, page, pageSize, h.egressPolicyForRegistry(user, registry, ctx.Request.Context()), credential)
 	if err != nil {
 		if up, ok := registryprovider.AsUpstreamError(err); ok && (up.StatusCode == http.StatusUnauthorized || up.StatusCode == http.StatusForbidden) {
 			writeErrorKey(ctx, http.StatusForbidden, requestLanguage(ctx), "registry.authentication_required")
@@ -56,7 +56,7 @@ func (h *Handler) ListRegistryRepositoryTags(ctx *gin.Context) {
 		limit = 50
 	}
 	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
-	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, limit, h.egressPolicyForUser(user, ctx.Request.Context()), credential)
+	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, limit, h.egressPolicyForRegistry(user, registry, ctx.Request.Context()), credential)
 	if err != nil {
 		if up, ok := registryprovider.AsUpstreamError(err); ok && (up.StatusCode == http.StatusUnauthorized || up.StatusCode == http.StatusForbidden) {
 			writeErrorKey(ctx, http.StatusForbidden, requestLanguage(ctx), "registry.authentication_required")

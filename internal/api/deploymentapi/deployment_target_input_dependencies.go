@@ -96,6 +96,10 @@ func (h *Handlers) applyRegistryCredentialImageTemplate(ctx *gin.Context, user m
 		writeError(ctx, http.StatusBadRequest, "目标镜像站不存在")
 		return repository, tag, false
 	}
+	if !deploymentRegistryUsableInProject(h.dbFor(ctx), user, registry, app.ProjectID) {
+		writeError(ctx, http.StatusForbidden, "无权在当前项目空间使用该目标镜像站")
+		return repository, tag, false
+	}
 	credential, ok := h.registryPushCredentialForProject(user, registry, app.ProjectID, ctx.Request.Context())
 	if !ok {
 		return repository, tag, true

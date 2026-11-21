@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { credentialDefaults, registryDefaults } from './registry-form-model'
 
 interface RegistryDialogProps {
+  canManageGlobal?: boolean
   open: boolean
   editingRegistry: ArtifactRegistry | null
   form: UseFormReturn<RegistryForm>
@@ -28,7 +29,7 @@ interface RegistryDialogProps {
   onSubmit: (values: RegistryForm) => void
 }
 
-export function RegistryDialog({ open, editingRegistry, form, projects, pending, onOpenChange, onSubmit }: RegistryDialogProps) {
+export function RegistryDialog({ canManageGlobal = false, open, editingRegistry, form, projects, pending, onOpenChange, onSubmit }: RegistryDialogProps) {
   const { t } = useTranslation()
 
   return (
@@ -37,7 +38,7 @@ export function RegistryDialog({ open, editingRegistry, form, projects, pending,
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
         if (!nextOpen)
-          form.reset(registryDefaults)
+          form.reset({ ...registryDefaults, scope: canManageGlobal ? 'global' : 'user' })
       }}
     >
       <DialogContent className="max-w-2xl" scrollable>
@@ -96,7 +97,7 @@ export function RegistryDialog({ open, editingRegistry, form, projects, pending,
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="global">{t('registriesPage.scopeGlobal')}</SelectItem>
+                        {canManageGlobal && <SelectItem value="global">{t('registriesPage.scopeGlobal')}</SelectItem>}
                         <SelectItem value="project">{t('registriesPage.scopeProject')}</SelectItem>
                         <SelectItem value="user">{t('registriesPage.scopeUser')}</SelectItem>
                       </SelectContent>
@@ -148,6 +149,7 @@ export function RegistryDialog({ open, editingRegistry, form, projects, pending,
 }
 
 interface CredentialDialogProps {
+  canManageGlobal?: boolean
   open: boolean
   editingCredential: RegistryCredential | null
   form: UseFormReturn<CredentialForm>
@@ -159,7 +161,7 @@ interface CredentialDialogProps {
   onSubmit: (values: CredentialForm) => void
 }
 
-export function CredentialDialog({ editingCredential, open, form, registries, projects, defaultRegistryId, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
+export function CredentialDialog({ canManageGlobal = false, editingCredential, open, form, registries, projects, defaultRegistryId, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
   const { t } = useTranslation()
   const credentialRegistry = registries.find(registry => registry.id === form.watch('registryId'))
   const allowedProjects = credentialRegistry?.scope === 'project'
@@ -291,7 +293,7 @@ export function CredentialDialog({ editingCredential, open, form, registries, pr
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {credentialRegistry?.scope === 'global' && <SelectItem value="global">{t('registriesPage.scopeGlobal')}</SelectItem>}
+                          {canManageGlobal && credentialRegistry?.scope === 'global' && <SelectItem value="global">{t('registriesPage.scopeGlobal')}</SelectItem>}
                           {credentialRegistry?.scope !== 'user' && <SelectItem value="project">{t('registriesPage.scopeProject')}</SelectItem>}
                           <SelectItem value="user">{t('registriesPage.scopeUser')}</SelectItem>
                         </SelectContent>

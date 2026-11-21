@@ -14917,6 +14917,7 @@ components:
         tagTemplate: { type: string }
         passwordSet: { type: boolean }
         tokenSet: { type: boolean }
+        canManage: { type: boolean }
         createdAt: { type: string, format: date-time }
       required:
         - id
@@ -14931,6 +14932,7 @@ components:
         - tagTemplate
         - passwordSet
         - tokenSet
+        - canManage
         - createdAt
     RepositoryBindingInput:
       type: object

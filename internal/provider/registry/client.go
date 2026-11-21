@@ -2,7 +2,6 @@ package registryprovider
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -36,25 +35,14 @@ func Ping(parent context.Context, endpointText string, policy security.EgressPol
 		return PingResult{Success: false, Message: "镜像站目标不符合访问策略", Endpoint: endpoint.String()}
 	}
 
-	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	resp, err := doRegistryGET(parent, endpoint.String(), "", policy, credential, 5*time.Second)
 	if err != nil {
-		return PingResult{Success: false, Message: "镜像站请求创建失败", Endpoint: endpoint.String()}
-	}
-	if credential.Secret != "" {
-		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(credential.Username+":"+credential.Secret)))
-	}
-
-	resp, err := security.NewHTTPClient(policy, 5*time.Second).Do(req)
-	if err != nil {
-		telemetry.LogWarn(ctx, "Registry request failed", "registry.ping.failed",
+		telemetry.LogWarn(parent, "Registry request failed", "registry.ping.failed",
 			"registry.ping", "provider.request.failed", err,
 			slog.String("server.address", endpoint.Hostname()))
 		return PingResult{Success: false, Message: "镜像站连接失败，请检查地址、网络或凭据", Endpoint: endpoint.String()}
 	}
-	defer resp.Body.Close()
+	defer drainAndCloseBody(resp.Body)
 
 	success := resp.StatusCode >= 200 && resp.StatusCode < 400
 	if resp.StatusCode == http.StatusUnauthorized {
@@ -64,27 +52,25 @@ func Ping(parent context.Context, endpointText string, policy security.EgressPol
 }
 
 func ParseEndpoint(endpoint string) (*url.URL, error) {
-	parsed, err := url.Parse(endpoint)
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, errors.New("invalid registry endpoint")
 	}
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
 		return nil, errors.New("registry endpoint must use http or https")
 	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("registry endpoint must not contain credentials, query, or fragment")
+	}
 	return parsed, nil
 }
 
 func PingURL(endpoint string) (*url.URL, error) {
-	parsed, err := ParseEndpoint(endpoint)
+	parsed, err := normalizeOCIEndpoint(endpoint)
 	if err != nil {
 		return nil, err
 	}
-	path := strings.TrimRight(parsed.Path, "/")
-	if strings.HasSuffix(path, "/v2") {
-		parsed.Path = path + "/"
-	} else {
-		parsed.Path = path + "/v2/"
-	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/v2/"
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed, nil

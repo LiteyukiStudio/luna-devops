@@ -35,7 +35,7 @@ func (h *Handlers) observeGitAccount(ctx context.Context, user model.User, accou
 	account.Status = observation.StatusUnavailable
 	account.ObservationCode = "git_account_upstream_unavailable"
 
-	client, configured := h.gitClientForObservation(user, account.ProviderID, account.ID, ctx)
+	client, configured := h.gitClientForObservation(user, account.ProviderID, account.ID, "", ctx)
 	if !configured {
 		account.Status = observation.StatusNotConfigured
 		account.ObservationCode = "git_account_not_configured"
@@ -78,7 +78,7 @@ func (h *Handlers) observeRepositoryBinding(ctx context.Context, user model.User
 		return
 	}
 
-	client, configured := h.gitClientForObservation(user, binding.GitProviderID, binding.GitAccountID, ctx)
+	client, configured := h.gitClientForObservation(user, binding.GitProviderID, binding.GitAccountID, binding.ProjectID, ctx)
 	if !configured {
 		binding.WebhookStatus = observation.StatusNotConfigured
 		binding.WebhookObservationCode = "git_webhook_not_configured"
@@ -104,27 +104,28 @@ func (h *Handlers) observeRepositoryBinding(ctx context.Context, user model.User
 	binding.WebhookObservationCode = "git_webhook_ready"
 }
 
-func (h *Handlers) gitClientForObservation(user model.User, providerID, accountID string, ctx context.Context) (gitprovider.Client, bool) {
+func (h *Handlers) gitClientForObservation(user model.User, providerID, accountID, projectID string, ctx context.Context) (gitprovider.Client, bool) {
+	db := h.dbWithContext(ctx)
 	var account model.GitAccount
-	if err := h.dbWithContext(ctx).First(&account, "id = ?", strings.TrimSpace(accountID)).Error; err != nil {
+	if err := db.First(&account, "id = ?", strings.TrimSpace(accountID)).Error; err != nil {
 		return gitprovider.Client{}, false
 	}
-	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, ctx) {
+	if !h.gitAccountUsableInProject(db, user, account, strings.TrimSpace(projectID), ctx) {
 		return gitprovider.Client{}, false
 	}
 	var provider model.GitProvider
-	if err := h.dbWithContext(ctx).First(&provider, "id = ? and enabled = ?", strings.TrimSpace(providerID), true).Error; err != nil {
+	if err := db.First(&provider, "id = ? and enabled = ?", strings.TrimSpace(providerID), true).Error; err != nil {
 		return gitprovider.Client{}, false
 	}
 	if account.ProviderID != provider.ID ||
-		!h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx) {
+		!h.gitProviderUsableInProject(db, user, provider, strings.TrimSpace(projectID), ctx) {
 		return gitprovider.Client{}, false
 	}
 	token := strings.TrimSpace(h.secrets.ResolveContext(ctx, account.AccessTokenRef))
 	if token == "" {
 		return gitprovider.Client{}, false
 	}
-	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx)), true
+	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForProvider(user, provider, ctx)), true
 }
 
 func gitObservationFromError(err error, prefix string) (string, string) {

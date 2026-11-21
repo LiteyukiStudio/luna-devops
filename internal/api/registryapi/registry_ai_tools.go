@@ -196,7 +196,11 @@ func (h *Handler) aiListRegistries(tc *aitool.ToolContext, in registryListInput)
 				}
 			}
 			h.attachRegistryCredentialProjects(creds, tc.Context())
-			item.Credentials = credentialResponses(creds)
+			credOutputs, credErr := h.credentialResponsesForUser(tc.User, creds, tc.Context())
+			if credErr != nil {
+				return nil, aitool.NewError(http.StatusServiceUnavailable, "project.authorization_unavailable", credErr.Error())
+			}
+			item.Credentials = credOutputs
 		}
 		items = append(items, item)
 	}
@@ -351,7 +355,7 @@ func (h *Handler) aiSearchRegistryImages(tc *aitool.ToolContext, in registrySear
 		page, pageSize := aitool.NormalizePagination(in.Page, in.PageSize, 20, 20)
 		cred := h.registryCredentialInputForProject(tc.Context(), tc.User, reg, effectiveProjectID)
 		res, searchErr := registryprovider.SearchRepositories(
-			tc.Context(), reg.Provider, reg.Endpoint, "", regTrimPtr(in.Search), page, pageSize, h.egressPolicyForUser(tc.User, tc.Context()), cred,
+			tc.Context(), reg.Provider, reg.Endpoint, "", regTrimPtr(in.Search), page, pageSize, h.egressPolicyForRegistry(tc.User, reg, tc.Context()), cred,
 		)
 		if searchErr != nil {
 			return nil, registryUpstreamToolError(searchErr)
@@ -392,7 +396,7 @@ func (h *Handler) aiSearchRegistryImages(tc *aitool.ToolContext, in registrySear
 		}
 		cred := h.registryCredentialInputForProject(tc.Context(), tc.User, reg, effectiveProjectID)
 		res, tagErr := registryprovider.ListTags(
-			tc.Context(), reg.Provider, reg.Endpoint, repo, fetchLimit, h.egressPolicyForUser(tc.User, tc.Context()), cred,
+			tc.Context(), reg.Provider, reg.Endpoint, repo, fetchLimit, h.egressPolicyForRegistry(tc.User, reg, tc.Context()), cred,
 		)
 		if tagErr != nil {
 			return nil, registryUpstreamToolError(tagErr)
@@ -478,7 +482,7 @@ func (h *Handler) observeArtifactRegistryForProject(parent context.Context, user
 
 func (h *Handler) pingRegistryForProject(parent context.Context, user model.User, registry model.ArtifactRegistry, projectID string) registryTestResult {
 	cred := h.registryCredentialInputForProject(parent, user, registry, projectID)
-	res := registryprovider.Ping(parent, registry.Endpoint, h.egressPolicyForUser(user, parent), cred)
+	res := registryprovider.Ping(parent, registry.Endpoint, h.egressPolicyForRegistry(user, registry, parent), cred)
 	return registryTestResult{
 		Success:    res.Success,
 		StatusCode: res.StatusCode,
@@ -523,7 +527,7 @@ func (h *Handler) registryUsableInProject(db *gorm.DB, user model.User, registry
 		return h.canUseScopedResourceByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx)
 	}
 	switch strings.ToLower(strings.TrimSpace(registry.Scope)) {
-	case "global":
+	case "", "global":
 		return true
 	case "user":
 		return strings.TrimSpace(registry.OwnerRef) == user.ID

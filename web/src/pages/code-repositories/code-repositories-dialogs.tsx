@@ -218,6 +218,7 @@ export function ProviderDialog({
 }
 
 interface CredentialDialogProps {
+  canManageGlobal?: boolean
   open: boolean
   editingCredential: GitAccount | null
   form: UseFormReturn<CredentialForm>
@@ -228,7 +229,7 @@ interface CredentialDialogProps {
   onSubmit: (values: CredentialForm) => void
 }
 
-export function CredentialDialog({ open, editingCredential, form, projects, providers, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
+export function CredentialDialog({ canManageGlobal = false, open, editingCredential, form, projects, providers, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
   const { t } = useTranslation()
   const selectedProvider = providers.find(provider => provider.id === form.watch('providerId'))
   const credentialScope = form.watch('scope')
@@ -303,7 +304,7 @@ export function CredentialDialog({ open, editingCredential, form, projects, prov
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {selectedProvider?.scope === 'global' && <SelectItem value="global">{t('codeRepositoriesView.scopeGlobal')}</SelectItem>}
+                        {canManageGlobal && selectedProvider?.scope === 'global' && <SelectItem value="global">{t('codeRepositoriesView.scopeGlobal')}</SelectItem>}
                         {selectedProvider?.scope !== 'user' && <SelectItem value="project">{t('codeRepositoriesView.scopeProject')}</SelectItem>}
                         <SelectItem value="user">{t('codeRepositoriesView.scopeUser')}</SelectItem>
                       </SelectContent>

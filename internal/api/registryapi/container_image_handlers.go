@@ -79,8 +79,13 @@ func (h *Handler) CreateContainerImage(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if input.ProjectID != "" {
-		if _, _, ok := h.authorizeProjectByID(ctx, input.ProjectID, authz.ActionImageWrite); !ok {
+	projectID := strings.TrimSpace(input.ProjectID)
+	if projectID != "" {
+		if _, _, ok := h.authorizeProjectByID(ctx, projectID, authz.ActionImageWrite); !ok {
+			return
+		}
+		if !h.registryUsableInProject(h.dbFor(ctx), user, registry, projectID, ctx.Request.Context()) {
+			writeError(ctx, http.StatusForbidden, "无权在当前项目空间使用该镜像站")
 			return
 		}
 	} else if user.Role != authz.PlatformRoleAdmin {
