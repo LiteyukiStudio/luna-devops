@@ -5,7 +5,7 @@ import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Copy, KeyRound, MoreHorizontal, Pencil, RotateCcwKey, ShieldX, Trash2 } from 'lucide-react'
+import { Copy, ExternalLink, KeyRound, MoreHorizontal, Pencil, RotateCcwKey, ShieldX, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -19,6 +19,7 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
+import { Surface } from '@/components/common/surface'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -26,6 +27,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { mcpDocumentationUrl } from '@/lib/documentation-url'
+import { MCP_PROTECTED_RESOURCE_METADATA_PATH, resolveMcpEndpointUrl } from './account-mcp-helpers'
 import { OneTimeSecret } from './one-time-secret'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
@@ -55,7 +58,7 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
   createDialogOpen: boolean
   onCreateDialogOpenChange: (open: boolean) => void
 }) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -205,6 +208,23 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
 
   return (
     <div className="grid gap-4">
+      <Surface className="flex flex-wrap items-start justify-between gap-3 p-4" variant="inset">
+        <div className="grid min-w-0 flex-1 gap-1">
+          <p className="text-sm font-medium text-foreground">{t('oauthApps.mcpDiscoveryTitle')}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {t('oauthApps.mcpDiscoveryDescription', {
+              endpointUrl: resolveMcpEndpointUrl(),
+              metadataPath: MCP_PROTECTED_RESOURCE_METADATA_PATH,
+            })}
+          </p>
+        </div>
+        <Button asChild size="sm" variant="outline">
+          <a href={mcpDocumentationUrl(i18n.language)} rel="noopener noreferrer" target="_blank">
+            {t('oauthApps.mcpDocsLink')}
+            <ExternalLink className="size-3.5" />
+          </a>
+        </Button>
+      </Surface>
       {createdSecret && <OneTimeSecret label={t('oauthApps.secretOneTime')} value={createdSecret} />}
       {applications.isError
         ? <ErrorState title={t('oauthApps.loadFailed')} description={applications.error.message} />

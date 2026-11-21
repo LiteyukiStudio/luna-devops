@@ -219,6 +219,10 @@ const accessTokens = {
   revoke: '取り消す',
   revokeTitle: 'Token を取り消す',
   revokeDescription: 'Token {{name}} は直ちに無効になり、リストから非表示になります。',
+  mcpQuickHint: 'この一度限りのトークンをそのまま AI セットアッププロンプトに組み込めます（現在のページメモリ上でのみ生成され、URL やローカルストレージには保存されません）。',
+  copyMcpPromptWithToken: 'このトークン付きの AI 設定プロンプトをコピー',
+  mcpPromptCopied: 'トークン付きの AI 設定プロンプトをコピーしました',
+  openMcpGuide: 'MCP 接続ガイドを表示',
 }
 
 export default accessTokens

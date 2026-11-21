@@ -219,6 +219,10 @@ const accessTokens = {
   revoke: 'Revoke',
   revokeTitle: 'Revoke token',
   revokeDescription: 'Token {{name}} will stop working and be hidden from the list.',
+  mcpQuickHint: 'Embed this one-time token directly into an AI setup prompt (assembled in memory only; never stored in the URL or local storage).',
+  copyMcpPromptWithToken: 'Copy AI setup prompt with this token',
+  mcpPromptCopied: 'Copied AI setup prompt with token',
+  openMcpGuide: 'View MCP setup guide',
 }
 
 export default accessTokens

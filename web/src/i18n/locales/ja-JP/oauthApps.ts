@@ -57,6 +57,9 @@ const oauthApps = {
   applicationActions: 'アプリ {{name}} の操作',
   presentationSection: '表示情報',
   presentationEmpty: '説明、ホームページ、ロゴは未設定',
+  mcpDiscoveryTitle: 'MCP OAuth 2.0 自動検出接続',
+  mcpDiscoveryDescription: 'MCP OAuth 対応の AI クライアントが {{endpointUrl}} に接続すると、{{metadataPath}} を自動読み取りして authorization_code + PKCE（S256）でブラウザ認可を完了します。正確なコールバック URL と許可する権限を先に登録してください。',
+  mcpDocsLink: 'MCP 接続ドキュメント',
 }
 
 export default oauthApps

@@ -219,6 +219,10 @@ const accessTokens = {
   revoke: '취소',
   revokeTitle: 'Token 취소',
   revokeDescription: 'Token {{name}}은(는) 즉시 무효화되고 목록에서 숨겨집니다.',
+  mcpQuickHint: '이 일회성 토큰을 AI 설정 프롬프트에 바로 포함할 수 있습니다(현재 페이지 메모리에서만 생성되며 URL이나 로컬 스토리지에 저장되지 않음).',
+  copyMcpPromptWithToken: '이 토큰이 포함된 AI 설정 프롬프트 복사',
+  mcpPromptCopied: '토큰이 포함된 AI 설정 프롬프트가 복사되었습니다',
+  openMcpGuide: 'MCP 연결 가이드 보기',
 }
 
 export default accessTokens

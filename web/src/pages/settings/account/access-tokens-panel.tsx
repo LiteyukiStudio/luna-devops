@@ -2,7 +2,7 @@ import type { AccessToken } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, ShieldX } from 'lucide-react'
+import { ArrowRight, Plus, ShieldX, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { buildMcpAgentPrompt, resolveMcpEndpointUrl } from './account-mcp-helpers'
 import { OneTimeSecret } from './one-time-secret'
 
 const schema = z.object({
@@ -37,9 +38,10 @@ const DEFAULT_TOKEN_FORM: TokenFormInput = {
   expiresInDays: 30,
 }
 
-export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange }: {
+export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange, onOpenMcpGuide }: {
   createDialogOpen: boolean
   onCreateDialogOpenChange: (open: boolean) => void
+  onOpenMcpGuide?: () => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -149,9 +151,43 @@ export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange }
     },
   ]
 
+  const copyMcpPromptWithCreatedToken = () => {
+    if (!createdToken)
+      return
+    const prompt = buildMcpAgentPrompt(t, {
+      accessToken: createdToken,
+      endpointUrl: resolveMcpEndpointUrl(),
+    })
+    navigator.clipboard.writeText(prompt)
+      .then(() => toast.success(t('accessTokens.mcpPromptCopied')))
+      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : String(error)))
+  }
+
   return (
     <div className="grid items-start gap-4">
-      {createdToken && <OneTimeSecret label={t('accessTokens.oneTime')} value={createdToken} />}
+      {createdToken && (
+        <OneTimeSecret
+          footer={(
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2.5">
+              <p className="text-xs text-muted-foreground">{t('accessTokens.mcpQuickHint')}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" type="button" variant="outline" onClick={copyMcpPromptWithCreatedToken}>
+                  <Sparkles className="size-3.5" />
+                  {t('accessTokens.copyMcpPromptWithToken')}
+                </Button>
+                {onOpenMcpGuide && (
+                  <Button size="sm" type="button" variant="ghost" onClick={onOpenMcpGuide}>
+                    {t('accessTokens.openMcpGuide')}
+                    <ArrowRight className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+          label={t('accessTokens.oneTime')}
+          value={createdToken}
+        />
+      )}
       <DataList
         columns={columns}
         emptyTitle={t('accessTokens.empty')}

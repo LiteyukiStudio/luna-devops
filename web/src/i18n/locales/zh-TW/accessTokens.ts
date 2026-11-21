@@ -219,6 +219,10 @@ const accessTokens = {
   revoke: '撤銷',
   revokeTitle: '撤銷 Token',
   revokeDescription: 'Token {{name}} 會立即失效，並從列表中隱藏。',
+  mcpQuickHint: '可直接將此一次性令牌帶入 AI 設定提示詞（僅在當前頁面記憶體產生，不會寫入位址列或本地儲存）。',
+  copyMcpPromptWithToken: '複製帶此令牌的 AI 設定提示詞',
+  mcpPromptCopied: '已複製帶令牌的 AI 設定提示詞',
+  openMcpGuide: '檢視 MCP 接入引導',
 }
 
 export default accessTokens

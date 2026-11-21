@@ -57,6 +57,9 @@ const oauthApps = {
   applicationActions: '{{name}} 앱 작업',
   presentationSection: '표시 정보',
   presentationEmpty: '설명, 홈페이지, 로고가 없습니다',
+  mcpDiscoveryTitle: 'MCP OAuth 2.0 자동 검색 연결',
+  mcpDiscoveryDescription: 'MCP OAuth를 지원하는 AI 클라이언트가 {{endpointUrl}}에 연결하면 {{metadataPath}}를 자동으로 읽고 authorization_code + PKCE(S256) 브라우저 인가를 완료합니다. 정확한 콜백 URL과 허용 권한을 먼저 등록하세요.',
+  mcpDocsLink: 'MCP 연결 문서',
 }
 
 export default oauthApps

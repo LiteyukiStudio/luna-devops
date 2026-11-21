@@ -57,6 +57,9 @@ const oauthApps = {
   applicationActions: 'Actions for application {{name}}',
   presentationSection: 'Display details',
   presentationEmpty: 'No description, homepage, or logo',
+  mcpDiscoveryTitle: 'MCP OAuth 2.0 auto-discovery',
+  mcpDiscoveryDescription: 'AI clients supporting MCP OAuth that connect to {{endpointUrl}} automatically read {{metadataPath}} and complete authorization_code + PKCE (S256) in the browser. Register the exact callback URL and allowed scopes here first.',
+  mcpDocsLink: 'MCP documentation',
 }
 
 export default oauthApps

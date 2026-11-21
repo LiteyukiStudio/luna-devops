@@ -57,6 +57,9 @@ const oauthApps = {
   applicationActions: '应用 {{name}} 的操作',
   presentationSection: '展示信息',
   presentationEmpty: '描述、主页和 Logo 均未填写',
+  mcpDiscoveryTitle: 'MCP OAuth 2.0 自动发现接入',
+  mcpDiscoveryDescription: '支持 MCP OAuth 规范的 AI 客户端连接 {{endpointUrl}} 时，会自动读取 {{metadataPath}} 并通过 authorization_code + PKCE（S256）完成浏览器授权；请先在此登记客户端精确回调地址与允许申请的权限。',
+  mcpDocsLink: 'MCP 接入文档',
 }
 
 export default oauthApps

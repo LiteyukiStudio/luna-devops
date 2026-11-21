@@ -31,9 +31,53 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TabsContent } from '@/components/ui/tabs'
 import { BrandColorPresetField } from '@/pages/settings/appearance/brand-color-preset-field'
 import { AccessTokensPanel } from './access-tokens-panel'
+import { AccountMcpPanel } from './account-mcp-panel'
 import { AccountNotificationsPanel } from './account-notifications-panel'
 import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
 import { AccountPasswordPanel } from './account-password-panel'
+
+const ACCOUNT_TAB_VALUES = [
+  'profile',
+  'security',
+  'notifications',
+  'tokens',
+  'mcp',
+  'oauth-applications',
+  'oauth-grants',
+] as const
+
+type AccountTabValue = typeof ACCOUNT_TAB_VALUES[number]
+
+function isAccountTabValue(value: string | null | undefined): value is AccountTabValue {
+  return Boolean(value && (ACCOUNT_TAB_VALUES as readonly string[]).includes(value))
+}
+
+function resolveAccountTabFromLocation(): AccountTabValue {
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const hashTab = hashParams.get('tab')
+  if (isAccountTabValue(hashTab))
+    return hashTab
+
+  const searchParams = new URLSearchParams(window.location.search)
+  const queryTab = searchParams.get('tab')
+  if (isAccountTabValue(queryTab))
+    return queryTab
+
+  return 'profile'
+}
+
+function writeAccountTabToLocation(nextTab: AccountTabValue) {
+  const searchParams = new URLSearchParams(window.location.search)
+  searchParams.delete('tab')
+  const nextSearch = searchParams.toString()
+
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  hashParams.set('tab', nextTab)
+  const nextHash = hashParams.toString()
+
+  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#${nextHash}`
+  window.history.replaceState(null, '', nextUrl)
+}
 
 const profileSchema = z.object({
   name: z.string().min(1, { error: () => i18next.t('accountPage.profileNameRequired') }),
@@ -47,8 +91,29 @@ type AccountCreateDialog = 'access-token' | 'oauth-application' | null
 
 export function AccountPage() {
   const { t } = useTranslation()
-  const [activeTab, setActiveTab] = useState('profile')
+  const [activeTab, setActiveTab] = useState<AccountTabValue>(() => resolveAccountTabFromLocation())
   const [createDialog, setCreateDialog] = useState<AccountCreateDialog>(null)
+
+  useEffect(() => {
+    const syncTabFromLocation = () => {
+      const nextTab = resolveAccountTabFromLocation()
+      setActiveTab(currentTab => (currentTab === nextTab ? currentTab : nextTab))
+    }
+    window.addEventListener('hashchange', syncTabFromLocation)
+    window.addEventListener('popstate', syncTabFromLocation)
+    return () => {
+      window.removeEventListener('hashchange', syncTabFromLocation)
+      window.removeEventListener('popstate', syncTabFromLocation)
+    }
+  }, [])
+
+  const selectTab = (nextTab: string) => {
+    if (!isAccountTabValue(nextTab))
+      return
+    setCreateDialog(null)
+    setActiveTab(nextTab)
+    writeAccountTabToLocation(nextTab)
+  }
 
   const activeContent = (() => {
     switch (activeTab) {
@@ -64,8 +129,11 @@ export function AccountPage() {
           <AccessTokensPanel
             createDialogOpen={createDialog === 'access-token'}
             onCreateDialogOpenChange={open => setCreateDialog(open ? 'access-token' : null)}
+            onOpenMcpGuide={() => selectTab('mcp')}
           />
         )
+      case 'mcp':
+        return <AccountMcpPanel onNavigateTab={selectTab} />
       case 'notifications':
         return <AccountNotificationsPanel />
       case 'oauth-applications':
@@ -106,21 +174,25 @@ export function AccountPage() {
           { value: 'security', label: t('accountPage.securityTab') },
           { value: 'notifications', label: t('accountPage.notificationsTab') },
           { value: 'tokens', label: t('accountPage.tokensTab') },
+          { value: 'mcp', label: t('accountPage.mcpTab') },
           { value: 'oauth-applications', label: t('oauthApps.applicationsTab') },
           { value: 'oauth-grants', label: t('oauthApps.grantsTab') },
         ]}
         tools={activeTools}
         value={activeTab}
-        onValueChange={(nextTab) => {
-          setCreateDialog(null)
-          setActiveTab(nextTab)
-        }}
+        onValueChange={selectTab}
       >
         <TabsContent value={activeTab}>
           <motion.div
             key={activeTab}
             animate={{ opacity: 1, y: 0 }}
-            className={activeTab === 'profile' || activeTab === 'security' ? 'w-full max-w-3xl' : undefined}
+            className={
+              activeTab === 'profile' || activeTab === 'security'
+                ? 'w-full max-w-3xl'
+                : activeTab === 'mcp'
+                  ? 'w-full max-w-4xl'
+                  : undefined
+            }
             initial={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >

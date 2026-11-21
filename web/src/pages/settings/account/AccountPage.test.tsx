@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
+import { mcpDocumentationUrl } from '@/lib/documentation-url'
 import { AccountPage } from './AccountPage'
 
 const mocks = vi.hoisted(() => {
@@ -33,13 +34,16 @@ vi.mock('motion/react', () => ({
 }))
 
 vi.mock('@/components/common/content-tabs', () => ({
-  ContentTabs: ({ children, tools, onValueChange }: {
+  ContentTabs: ({ children, tabs, tools, value, onValueChange }: {
     children: ReactNode
+    tabs: Array<{ label: ReactNode, value: string }>
     tools?: ReactNode
+    value: string
     onValueChange: (value: string) => void
   }) => (
-    <div>
+    <div data-active-tab={value} data-tab-order={tabs.map(tab => tab.value).join(',')} data-testid="content-tabs">
       <button type="button" onClick={() => onValueChange('tokens')}>tokens-tab</button>
+      <button type="button" onClick={() => onValueChange('mcp')}>mcp-tab</button>
       <button type="button" onClick={() => onValueChange('oauth-applications')}>oauth-applications-tab</button>
       <div data-testid="content-tabs-tools">{tools}</div>
       <div data-testid="account-tab-content">{children}</div>
@@ -52,8 +56,17 @@ vi.mock('@/components/ui/tabs', () => ({
 }))
 
 vi.mock('./access-tokens-panel', () => ({
-  AccessTokensPanel: ({ createDialogOpen }: { createDialogOpen: boolean }) => (
-    <div data-create-dialog-open={createDialogOpen} data-testid="access-tokens-panel" />
+  AccessTokensPanel: ({ createDialogOpen, onOpenMcpGuide }: {
+    createDialogOpen: boolean
+    onOpenMcpGuide?: () => void
+  }) => (
+    <div data-create-dialog-open={createDialogOpen} data-testid="access-tokens-panel">
+      {onOpenMcpGuide && (
+        <button type="button" onClick={onOpenMcpGuide}>
+          open-mcp-from-tokens
+        </button>
+      )}
+    </div>
   ),
 }))
 
@@ -76,9 +89,10 @@ vi.mock('@/app/theme-context', () => ({
   useTheme: () => ({ mode: 'system', setMode: vi.fn() }),
 }))
 
-describe('account page tab tools', () => {
+describe('account page tab tools and MCP access guide', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
+    window.history.replaceState(null, '', '/settings/account')
     await i18next.changeLanguage('en-US')
   })
 
@@ -106,6 +120,52 @@ describe('account page tab tools', () => {
 
     fireEvent.click(toolButton)
     expect(screen.getByTestId('oauth-applications-panel')).toHaveAttribute('data-create-dialog-open', 'true')
+  })
+
+  it('places the MCP tab adjacent to personal tokens and developer apps, supports ?tab=mcp and #tab=mcp, copies prompt, and links to auth tabs', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    window.history.replaceState(null, '', '/settings/account?tab=mcp')
+    const { unmount } = renderPage()
+
+    expect(screen.getByTestId('content-tabs')).toHaveAttribute(
+      'data-tab-order',
+      'profile,security,notifications,tokens,mcp,oauth-applications,oauth-grants',
+    )
+    const expectedEndpoint = `${window.location.origin}/api/v1/mcp`
+    expect(screen.getByTestId('mcp-endpoint-url')).toHaveTextContent(expectedEndpoint)
+    expect(screen.getByText('Streamable HTTP')).toBeInTheDocument()
+
+    const docsAnchor = screen.getByRole('link', { name: i18next.t('accountPage.mcp.docsLink') })
+    expect(docsAnchor).toHaveAttribute('href', mcpDocumentationUrl('en-US'))
+    expect(docsAnchor).toHaveAttribute('target', '_blank')
+
+    fireEvent.click(screen.getByRole('button', { name: i18next.t('accountPage.mcp.copyPrompt') }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    expect(writeText.mock.calls[0]?.[0]).toContain(expectedEndpoint)
+    expect(writeText.mock.calls[0]?.[0]).toContain('Streamable HTTP')
+    expect(writeText.mock.calls[0]?.[0]).toContain('search_tools')
+
+    fireEvent.click(screen.getByRole('button', { name: i18next.t('accountPage.mcp.goToTokens') }))
+    expect(screen.getByTestId('access-tokens-panel')).toBeInTheDocument()
+    expect(window.location.hash).toBe('#tab=tokens')
+
+    fireEvent.click(screen.getByRole('button', { name: 'open-mcp-from-tokens' }))
+    expect(screen.getByTestId('mcp-endpoint-url')).toBeInTheDocument()
+    expect(window.location.hash).toBe('#tab=mcp')
+
+    fireEvent.click(screen.getByRole('button', { name: i18next.t('accountPage.mcp.goToOAuthApps') }))
+    expect(screen.getByTestId('oauth-applications-panel')).toBeInTheDocument()
+    expect(window.location.hash).toBe('#tab=oauth-applications')
+
+    unmount()
+    window.history.replaceState(null, '', '/settings/account#tab=mcp')
+    renderPage()
+    expect(screen.getByTestId('mcp-endpoint-url')).toHaveTextContent(expectedEndpoint)
   })
 
   it('shows the floating save bar on profile edits, supports discarding changes, and clears after saving', async () => {
