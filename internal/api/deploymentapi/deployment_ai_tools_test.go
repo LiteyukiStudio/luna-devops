@@ -693,7 +693,10 @@ func TestDeliveryAndPipelineToolsPreserveExistingStateAndPreviewLocks(t *testing
 	}
 
 	// 7. runtime_exec_command returns actionable Hint when web console policy is disabled
-	if err := db.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("web_console_policy", "disabled").Error; err != nil {
+	if err := db.Model(&model.Release{}).Where("id = ?", rel1.ID).Update("status", "succeeded").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("web_console_enabled", false).Error; err != nil {
 		t.Fatal(err)
 	}
 	execTool, _ := reg.Get("runtime_exec_command")
