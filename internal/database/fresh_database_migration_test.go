@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 139
+	latestMigrationVersion   = 140
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -100,6 +100,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000138_drop_oauth_device_and_luna_cli.down.sql":             false,
 		"000139_ai_conversation_approval_mode.up.sql":                false,
 		"000139_ai_conversation_approval_mode.down.sql":              false,
+		"000140_reconcile_legacy_baseline_schema.up.sql":             false,
+		"000140_reconcile_legacy_baseline_schema.down.sql":           false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -304,7 +306,53 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 132, "platform_app_templates", "spec_json")
 	assertOAuthDeviceAndLunaCLIRemovalMigration(t, testDB, runner)
 	assertSingleColumnMigration(t, testDB, runner, 139, "ai.conversations", "approval_mode")
+	assertLegacyBaselineReconciliationMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
+}
+
+func assertLegacyBaselineReconciliationMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	if err := runner.Migrate(139); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("roll back to 139 before legacy reconciliation test: %v", err)
+	}
+	legacySetup := []string{
+		`ALTER TABLE public.auth_admission_policies RENAME COLUMN allow_oidc_login TO allow_o_id_c_login`,
+		`ALTER TABLE public.auth_admission_policies RENAME COLUMN allowed_oidc_groups TO allowed_o_id_c_groups`,
+		`ALTER TABLE public.auth_admission_policies ALTER COLUMN allowed_o_id_c_groups DROP NOT NULL, ALTER COLUMN allowed_o_id_c_groups DROP DEFAULT`,
+		`ALTER TABLE public.auth_admission_policies RENAME COLUMN require_verified_oidc_email TO require_verified_o_id_c_email`,
+		`INSERT INTO public.auth_admission_policies (id, allow_local_login, allow_o_id_c_login, allowed_o_id_c_groups, require_verified_o_id_c_email, default_role) VALUES ('auth_admission_policy_default', false, true, 'beta-group', false, 'user') ON CONFLICT (id) DO UPDATE SET allow_local_login = false, allow_o_id_c_login = true, allowed_o_id_c_groups = 'beta-group', require_verified_o_id_c_email = false`,
+		`CREATE TABLE public.step_up_assertions (id text PRIMARY KEY)`,
+		`ALTER TABLE public.applications ADD COLUMN data_retention_mode text NOT NULL DEFAULT 'retain'`,
+		`ALTER TABLE ai.runs ADD COLUMN lease_owner text`,
+		`ALTER TABLE ai.runs ALTER COLUMN actor_session_id DROP NOT NULL`,
+		`ALTER TABLE public.project_members DROP CONSTRAINT IF EXISTS project_members_project_id_user_id_key`,
+	}
+	for _, stmt := range legacySetup {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("seed legacy drift %q: %v", stmt, err)
+		}
+	}
+
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("apply legacy baseline reconciliation migration: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+	assertSlimmingMigrationRemovals(t, db)
+	assertStableModelMigrationCoverage(t, db)
+
+	var policy model.AuthAdmissionPolicy
+	if err := db.First(&policy, "id = ?", "auth_admission_policy_default").Error; err != nil {
+		t.Fatalf("read reconciled admission policy: %v", err)
+	}
+	if policy.AllowLocalLogin || !policy.AllowOIDCLogin || policy.AllowedOIDCGroups != "beta-group" || policy.RequireVerifiedOIDCEmail {
+		t.Fatalf("unexpected reconciled admission policy: %#v", policy)
+	}
+	if db.Migrator().HasTable("step_up_assertions") {
+		t.Fatal("reconciliation retained retired table step_up_assertions")
+	}
+	if err := db.Exec(`DELETE FROM public.auth_admission_policies WHERE id = 'auth_admission_policy_default'`).Error; err != nil {
+		t.Fatalf("clean reconciled admission policy row: %v", err)
+	}
 }
 
 func assertOAuthDeviceAndLunaCLIRemovalMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {

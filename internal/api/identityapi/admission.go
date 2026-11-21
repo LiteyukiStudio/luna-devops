@@ -45,6 +45,10 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
+	admin, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
 
 	var input authAdmissionPolicyInput
 	if !bindJSON(ctx, &input) {
@@ -65,9 +69,10 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 	policy.DefaultRole = normalizeUserRole(input.DefaultRole)
 
 	if err := h.dbFor(ctx).Save(&policy).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		writeErrorCode(ctx, http.StatusInternalServerError, "auth.admission_policy_update_failed", err.Error())
 		return
 	}
+	h.auditWithContext(admin.ID, "auth.admission_policy.update", policy.ID, true, "admission policy updated", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, admissionPolicyResponse(policy))
 }
 
