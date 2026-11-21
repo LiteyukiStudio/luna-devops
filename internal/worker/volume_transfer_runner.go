@@ -95,27 +95,7 @@ func (r *Runner) handleVolumeTransfer(ctx context.Context, task *asynq.Task, exp
 	}
 	transfer = claimed
 	preparationCtx, stopLeaseHeartbeat := maintainVolumeTransferExecutionLease(ctx, service, transfer, leaseOwner, volumeTransferCreationLeaseTTL/3)
-	claimName, snapshotCleanup, err := r.prepareVolumeTransferClaim(preparationCtx, projectVolume, transfer)
-	if err == nil {
-		exportedAt := transfer.CreatedAt
-		if transfer.StartedAt != nil {
-			exportedAt = *transfer.StartedAt
-		}
-		_, err = provider.PrepareVolumeTransfer(preparationCtx, kubeprovider.VolumeTransferSpec{
-			TransferID: transfer.ID, ProjectID: transfer.ProjectID, ProjectVolumeID: transfer.ProjectVolumeID,
-			Namespace: projectVolume.Namespace, ClaimName: claimName, Direction: transfer.Direction,
-			Format: transfer.Format, VolumeMode: projectVolume.VolumeMode, ConsistencyMode: transfer.ConsistencyMode,
-			Image: r.volumeTransferJobImage, CapacityBytes: projectVolume.CapacityBytes,
-			MaxArchiveBytes: r.volumeTransferMaxBytes,
-			ExpectedBytes:   transfer.ExpectedBytes, ExpectedSHA256: transfer.SHA256, ExportedAt: exportedAt,
-		})
-	}
-	if err == nil {
-		transfer, err = service.ConfirmVolumeTransferJobCreated(preparationCtx, transfer.ProjectID, transfer.ID, transfer.ExecutionGeneration)
-	}
-	if err == nil {
-		err = r.waitForVolumeTransferPodReady(preparationCtx, service, provider, projectVolume, transfer)
-	}
+	snapshotCleanup, err := r.handleVolumeTransferPrepare(preparationCtx, service, provider, projectVolume, transfer)
 	leaseErr := stopLeaseHeartbeat()
 	if err == nil {
 		err = leaseErr
@@ -124,6 +104,46 @@ func (r *Runner) handleVolumeTransfer(ctx context.Context, task *asynq.Task, exp
 		return r.failOrRetryVolumeTransfer(ctx, service, provider, transfer, projectVolume, snapshotCleanup, err)
 	}
 	return nil
+}
+
+func (r *Runner) handleVolumeTransferPrepare(
+	ctx context.Context,
+	service volumeWorkerService,
+	provider kubeprovider.VolumeTransferProvider,
+	projectVolume model.ProjectVolume,
+	transfer model.VolumeTransfer,
+) (*volumeTransferSnapshotCleanup, error) {
+	if err := workerStage(ctx, "volume_transfer.ensure_namespace", func(stageCtx context.Context) error {
+		return r.ensureVolumeProjectNamespace(stageCtx, projectVolume)
+	}); err != nil {
+		return nil, err
+	}
+	claimName, snapshotCleanup, err := r.prepareVolumeTransferClaim(ctx, projectVolume, transfer)
+	if err != nil {
+		return snapshotCleanup, err
+	}
+	exportedAt := transfer.CreatedAt
+	if transfer.StartedAt != nil {
+		exportedAt = *transfer.StartedAt
+	}
+	if _, err := provider.PrepareVolumeTransfer(ctx, kubeprovider.VolumeTransferSpec{
+		TransferID: transfer.ID, ProjectID: transfer.ProjectID, ProjectVolumeID: transfer.ProjectVolumeID,
+		Namespace: projectVolume.Namespace, ClaimName: claimName, Direction: transfer.Direction,
+		Format: transfer.Format, VolumeMode: projectVolume.VolumeMode, ConsistencyMode: transfer.ConsistencyMode,
+		Image: r.volumeTransferJobImage, CapacityBytes: projectVolume.CapacityBytes,
+		MaxArchiveBytes: r.volumeTransferMaxBytes,
+		ExpectedBytes:   transfer.ExpectedBytes, ExpectedSHA256: transfer.SHA256, ExportedAt: exportedAt,
+	}); err != nil {
+		return snapshotCleanup, err
+	}
+	transfer, err = service.ConfirmVolumeTransferJobCreated(ctx, transfer.ProjectID, transfer.ID, transfer.ExecutionGeneration)
+	if err != nil {
+		return snapshotCleanup, err
+	}
+	if err := r.waitForVolumeTransferPodReady(ctx, service, provider, projectVolume, transfer); err != nil {
+		return snapshotCleanup, err
+	}
+	return snapshotCleanup, nil
 }
 
 func (r *Runner) waitForVolumeTransferPodReady(ctx context.Context, service volumeWorkerService, provider kubeprovider.VolumeTransferProvider, projectVolume model.ProjectVolume, transfer model.VolumeTransfer) error {
@@ -359,21 +379,31 @@ func (r *Runner) failStaleStreamingVolumeTransfer(ctx context.Context, service v
 }
 
 func (r *Runner) failVolumeTransfer(ctx context.Context, service volumeWorkerService, transfer model.VolumeTransfer, code string, cause error) error {
+	_, _, err := r.commitVolumeTransferFailure(ctx, service, transfer, code, cause)
+	return err
+}
+
+func (r *Runner) commitVolumeTransferFailure(ctx context.Context, service volumeWorkerService, transfer model.VolumeTransfer, code string, cause error) (model.VolumeTransfer, bool, error) {
 	diagnostic := "volume transfer preparation failed"
 	if cause != nil {
 		diagnostic = cause.Error()
 	}
-	_, err := service.FailVolumeTransferExecution(ctx, transfer.ProjectID, transfer.ID, code, diagnostic)
+	committed, err := service.FailVolumeTransferExecution(ctx, transfer.ProjectID, transfer.ID, code, diagnostic)
 	if err != nil {
-		return safeVolumeTaskError(err)
+		if volume.ErrorCode(err) == volume.CodeTransferNotFound {
+			return model.VolumeTransfer{}, false, skipVolumeTask(code)
+		}
+		return model.VolumeTransfer{}, false, safeVolumeTaskError(err)
 	}
-	return skipVolumeTask(code)
+	return committed, true, skipVolumeTask(code)
 }
 
 func (r *Runner) failAndCleanupVolumeTransfer(ctx context.Context, service volumeWorkerService, provider kubeprovider.VolumeTransferProvider, transfer model.VolumeTransfer, projectVolume model.ProjectVolume, snapshot *volumeTransferSnapshotCleanup, code string, cause error) error {
-	failure := r.failVolumeTransfer(ctx, service, transfer, code, cause)
-	transfer.State = model.VolumeTransferStateFailed
-	if _, cleanupErr := r.completeVolumeTransferExecutionCleanup(ctx, service, provider, snapshot, projectVolume, transfer); cleanupErr != nil {
+	committed, ok, failure := r.commitVolumeTransferFailure(ctx, service, transfer, code, cause)
+	if !ok {
+		return failure
+	}
+	if _, cleanupErr := r.completeVolumeTransferExecutionCleanup(ctx, service, provider, snapshot, projectVolume, committed); cleanupErr != nil {
 		return safeVolumeTaskError(cleanupErr)
 	}
 	return failure

@@ -1462,6 +1462,7 @@ export type ReleaseFailureCode
     | 'namespace_failed'
     | 'service_binding_failed'
     | 'preflight_failed'
+    | 'volume_not_ready'
     | 'runtime_config_failed'
     | 'pre_hook_failed'
     | 'dependencies_failed'

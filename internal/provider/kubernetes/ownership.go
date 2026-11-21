@@ -116,12 +116,31 @@ func (c *Client) ensureApplicationStorageOwnership(ctx context.Context, spec App
 			continue
 		}
 		claim, err := c.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(ctx, strings.TrimSpace(volume.ClaimName), metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("%w: %w", ErrProjectVolumeClaimNotFound, err)
+		}
 		if err != nil {
 			return err
+		}
+		if volume.ReferencedClaim {
+			if err := ensureReferencedProjectVolumeOwnership(claim.Labels, spec.ProjectID, volume.ProjectVolumeID); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := ensureProjectVolumeOwnership(claim.Labels, spec.ProjectID, volume.ProjectVolumeID); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func ensureReferencedProjectVolumeOwnership(resourceLabels map[string]string, projectID, volumeID string) error {
+	if actualProject := strings.TrimSpace(resourceLabels[ProjectIDLabel]); actualProject != "" && actualProject != projectID {
+		return ErrProjectVolumeOwnershipConflict
+	}
+	if actualVolume := strings.TrimSpace(resourceLabels[ProjectVolumeIDLabel]); actualVolume != "" && actualVolume != volumeID {
+		return ErrProjectVolumeOwnershipConflict
 	}
 	return nil
 }

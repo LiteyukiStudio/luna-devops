@@ -13,6 +13,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -90,6 +91,11 @@ func (r *Runner) handleVolumeProvision(ctx context.Context, task *asynq.Task) er
 		return nil
 	}
 
+	if err := workerStage(ctx, "volume.ensure_namespace", func(stageCtx context.Context) error {
+		return r.ensureVolumeProjectNamespace(stageCtx, projectVolume)
+	}); err != nil {
+		return r.finishProjectVolumeAttempt(ctx, service, projectVolume, err)
+	}
 	provider, err := r.projectVolumeProvider(ctx, projectVolume.ClusterID)
 	if err != nil {
 		return r.finishProjectVolumeAttempt(ctx, service, projectVolume, err)
@@ -405,6 +411,36 @@ func (r *Runner) projectVolumeService() (volumeWorkerService, error) {
 	return r.volumeService, nil
 }
 
+func (r *Runner) ensureVolumeProjectNamespace(ctx context.Context, projectVolume model.ProjectVolume) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r.db == nil {
+		return errors.New("worker database is required")
+	}
+	var project model.Project
+	if err := r.db.WithContext(ctx).First(&project, "id = ?", strings.TrimSpace(projectVolume.ProjectID)).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &volume.DomainError{Code: volume.CodeNotFound, Message: "project space was not found", Cause: err}
+		}
+		return err
+	}
+	if !model.DeleteStatusActive(project.DeleteStatus) {
+		return &volume.DomainError{Code: volume.CodeStateConflict, Message: "project space is not active"}
+	}
+	namespace := deploymentNamespace(project)
+	if expected := strings.TrimSpace(projectVolume.Namespace); expected != "" && namespace != expected {
+		return kubeprovider.ErrInvalidProjectVolumeSpec
+	}
+	if namespace == "" {
+		return kubeprovider.ErrInvalidProjectVolumeSpec
+	}
+	return r.ensureProjectNamespace(ctx, namespace, project, model.DeploymentTarget{
+		ProjectID: project.ID,
+		ClusterID: strings.TrimSpace(projectVolume.ClusterID),
+	})
+}
+
 func (r *Runner) finishProjectVolumeAttempt(ctx context.Context, service volumeWorkerService, projectVolume model.ProjectVolume, cause error) error {
 	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
 		return cause
@@ -413,7 +449,7 @@ func (r *Runner) finishProjectVolumeAttempt(ctx context.Context, service volumeW
 	if permanent || volumeTaskAttemptExhausted(ctx) {
 		_, transitionErr := service.SetProjectVolumeLifecycle(ctx, projectVolume.ProjectID, projectVolume.ID,
 			[]string{projectVolume.LifecycleState}, model.ProjectVolumeLifecycleError, code, cause.Error())
-		if transitionErr != nil && volume.ErrorCode(transitionErr) != volume.CodeStateConflict {
+		if transitionErr != nil && volume.ErrorCode(transitionErr) != volume.CodeStateConflict && volume.ErrorCode(transitionErr) != volume.CodeNotFound {
 			return safeVolumeTaskError(transitionErr)
 		}
 	}
@@ -424,6 +460,16 @@ func (r *Runner) finishProjectVolumeAttempt(ctx context.Context, service volumeW
 }
 
 func projectVolumeProviderError(err error) (string, bool) {
+	if domainCode := volume.ErrorCode(err); domainCode != "" {
+		permanent := domainCode != volume.CodeClusterUnavailable &&
+			domainCode != volume.CodeDeletionPending &&
+			domainCode != volume.CodeInUse
+		return domainCode, permanent
+	}
+	var resourceConflict *kubeprovider.ResourceOwnershipConflictError
+	if errors.As(err, &resourceConflict) {
+		return volume.CodeOwnershipConflict, true
+	}
 	switch {
 	case errors.Is(err, kubeprovider.ErrInvalidProjectVolumeSpec):
 		return volume.CodeInvalidInput, true

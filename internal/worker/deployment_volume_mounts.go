@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 )
+
+var errDeploymentVolumeNotAttachable = errors.New("project volume is not attachable")
 
 type applicationVolumeAttachmentObserver interface {
 	ObserveApplicationVolumeAttachments(context.Context, string, string, string) (map[string]kubeprovider.ApplicationVolumeAttachment, error)
@@ -48,7 +51,7 @@ func (r *Runner) deploymentTargetDataVolumes(ctx context.Context, target model.D
 				return nil, volumeErr
 			}
 			if !volume.CanAttachProjectVolume(projectVolume) {
-				return nil, fmt.Errorf("project volume %s is not attachable", projectVolume.ID)
+				return nil, fmt.Errorf("%w: %s", errDeploymentVolumeNotAttachable, projectVolume.ID)
 			}
 			if projectVolume.ClusterID != target.ClusterID || projectVolume.Namespace != namespace {
 				return nil, fmt.Errorf("project volume %s is not compatible with the deployment target", projectVolume.ID)
@@ -64,6 +67,7 @@ func (r *Runner) deploymentTargetDataVolumes(ctx context.Context, target model.D
 			item.SourceType = "projectVolume"
 			item.ProjectVolumeID = projectVolume.ID
 			item.ClaimName = projectVolume.ClaimName
+			item.ReferencedClaim = projectVolume.OwnershipMode == model.ProjectVolumeOwnershipReferenced
 		default:
 			return nil, fmt.Errorf("deployment volume %s has unsupported source type", mount.ID)
 		}

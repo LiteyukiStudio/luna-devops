@@ -16636,7 +16636,7 @@ components:
         failureCode:
           type: string
           description: Stable reason for a failed or canceled release; empty while active or succeeded. `message` keeps the raw diagnostic text.
-          enum: ["", canceled_by_user, timeout, dispatch_failed, project_unavailable, application_unavailable, deployment_target_unavailable, namespace_failed, service_binding_failed, preflight_failed, runtime_config_failed, pre_hook_failed, dependencies_failed, apply_failed, rollout_failed, rollout_timeout, volume_mount_failed, post_hook_failed, superseded, internal_error]
+          enum: ["", canceled_by_user, timeout, dispatch_failed, project_unavailable, application_unavailable, deployment_target_unavailable, namespace_failed, service_binding_failed, preflight_failed, volume_not_ready, runtime_config_failed, pre_hook_failed, dependencies_failed, apply_failed, rollout_failed, rollout_timeout, volume_mount_failed, post_hook_failed, superseded, internal_error]
         revision: { type: integer, format: int32, minimum: 1 }
         rollbackFromId: { type: string }
         message: { type: string }

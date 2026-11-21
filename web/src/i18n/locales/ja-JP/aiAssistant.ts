@@ -378,6 +378,7 @@ const aiAssistant = {
           namespace_failed: 'ネームスペースの準備に失敗しました',
           service_binding_failed: 'サービス参照の解決に失敗しました',
           preflight_failed: 'リソース所有権の事前チェックに失敗しました',
+          volume_not_ready: 'マウントされたデータボリュームがまだ準備できていません。作成完了を待ってから再リリースしてください',
           runtime_config_failed: '実行設定の適用に失敗しました',
           task_resolve_failed: 'ビルド設定または認証情報を解決できませんでした',
           pre_hook_failed: 'デプロイ前フックが失敗しました',

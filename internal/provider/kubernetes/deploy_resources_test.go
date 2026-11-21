@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -680,5 +681,73 @@ func assertSelectorLabels(t *testing.T, labels map[string]string, name string, d
 		if labels[key] != "" {
 			t.Fatalf("selector labels must not include ownership label %s: %#v", key, labels)
 		}
+	}
+}
+
+func TestPreflightApplicationResourcesDistinguishesMissingClaimFromOwnershipConflict(t *testing.T) {
+	spec := ApplicationResourcesSpec{
+		Name:               "api-dev",
+		Namespace:          "project-demo",
+		ProjectID:          "prj_demo",
+		ApplicationID:      "app_api",
+		DeploymentTargetID: "dplt_backend",
+		ReleaseID:          "rel_1",
+		Image:              "registry.example.com/acme/api:v1",
+		ServicePort:        8080,
+		DataVolumes: []ApplicationDataVolume{{
+			Name:            "data",
+			SourceType:      "projectVolume",
+			ProjectVolumeID: "pvol_data",
+			ClaimName:       "project-data",
+			MountPath:       "/data",
+		}},
+	}
+
+	missingClient := NewClientForInterface(fake.NewSimpleClientset())
+	missingErr := missingClient.PreflightApplicationResources(context.Background(), spec)
+	if !errors.Is(missingErr, ErrProjectVolumeClaimNotFound) || !apierrors.IsNotFound(missingErr) {
+		t.Fatalf("expected missing claim error wrapping ErrProjectVolumeClaimNotFound, got %v", missingErr)
+	}
+	if errors.Is(missingErr, ErrProjectVolumeOwnershipConflict) {
+		t.Fatalf("missing claim must not be classified as ownership conflict: %v", missingErr)
+	}
+
+	foreignClaim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Name:      "project-data",
+		Namespace: "project-demo",
+		Labels: map[string]string{
+			ManagedByLabel:       ManagedByValue,
+			ProjectIDLabel:       "prj_demo",
+			ProjectVolumeIDLabel: "pvol_other",
+		},
+	}}
+	conflictClient := NewClientForInterface(fake.NewSimpleClientset(foreignClaim))
+	conflictErr := conflictClient.PreflightApplicationResources(context.Background(), spec)
+	if !errors.Is(conflictErr, ErrProjectVolumeOwnershipConflict) {
+		t.Fatalf("expected ErrProjectVolumeOwnershipConflict, got %v", conflictErr)
+	}
+	if errors.Is(conflictErr, ErrProjectVolumeClaimNotFound) {
+		t.Fatalf("ownership conflict must not be classified as missing claim: %v", conflictErr)
+	}
+
+	unmanagedExternalClaim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Name:      "project-data",
+		Namespace: "project-demo",
+	}}
+	referencedSpec := spec
+	referencedSpec.DataVolumes = []ApplicationDataVolume{{
+		Name:            "data",
+		SourceType:      "projectVolume",
+		ProjectVolumeID: "pvol_data",
+		ClaimName:       "project-data",
+		ReferencedClaim: true,
+		MountPath:       "/data",
+	}}
+	referencedClient := NewClientForInterface(fake.NewSimpleClientset(unmanagedExternalClaim))
+	if err := referencedClient.PreflightApplicationResources(context.Background(), referencedSpec); err != nil {
+		t.Fatalf("expected referenced external claim without managed labels to pass preflight, got %v", err)
+	}
+	if err := conflictClient.PreflightApplicationResources(context.Background(), referencedSpec); !errors.Is(err, ErrProjectVolumeOwnershipConflict) {
+		t.Fatalf("expected referenced claim carrying another volume label to fail with ErrProjectVolumeOwnershipConflict, got %v", err)
 	}
 }

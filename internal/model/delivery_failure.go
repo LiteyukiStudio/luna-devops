@@ -42,6 +42,7 @@ const (
 	ReleaseFailureNamespaceFailed        = "namespace_failed"
 	ReleaseFailureServiceBindingFailed   = "service_binding_failed"
 	ReleaseFailurePreflightFailed        = "preflight_failed"
+	ReleaseFailureVolumeNotReady         = "volume_not_ready"
 	ReleaseFailureRuntimeConfigFailed    = "runtime_config_failed"
 	ReleaseFailurePreHookFailed          = "pre_hook_failed"
 	ReleaseFailureDependenciesFailed     = "dependencies_failed"

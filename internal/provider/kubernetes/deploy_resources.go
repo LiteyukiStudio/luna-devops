@@ -94,6 +94,7 @@ type ApplicationDataVolume struct {
 	ProjectVolumeID   string
 	ReadOnly          bool
 	ClaimName         string
+	ReferencedClaim   bool
 	EmptyDirMedium    string
 	EmptyDirSizeLimit string
 }

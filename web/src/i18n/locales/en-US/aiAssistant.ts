@@ -378,6 +378,7 @@ const aiAssistant = {
           namespace_failed: 'Namespace preparation failed',
           service_binding_failed: 'Service reference resolution failed',
           preflight_failed: 'Resource ownership preflight failed',
+          volume_not_ready: 'Mounted data volume is not ready yet; wait for volume creation to finish and retry the release',
           runtime_config_failed: 'Runtime configuration apply failed',
           task_resolve_failed: 'Could not resolve build settings or credentials',
           pre_hook_failed: 'Pre-deployment hook failed',

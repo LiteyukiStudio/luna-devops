@@ -20,7 +20,7 @@ func validateApplicationDataVolume(volume ApplicationDataVolume) error {
 			return fmt.Errorf("project volume %s requires project volume id and authoritative claim name", persistentDataVolumeName(volume))
 		}
 	case "emptyDir":
-		if mountPath == "" || devicePath != "" || strings.TrimSpace(volume.ProjectVolumeID) != "" || strings.TrimSpace(volume.ClaimName) != "" || volume.ReadOnly {
+		if mountPath == "" || devicePath != "" || strings.TrimSpace(volume.ProjectVolumeID) != "" || strings.TrimSpace(volume.ClaimName) != "" || volume.ReadOnly || volume.ReferencedClaim {
 			return fmt.Errorf("emptyDir %s requires a mount path and cannot contain project-volume fields", persistentDataVolumeName(volume))
 		}
 		if sizeLimit := strings.TrimSpace(volume.EmptyDirSizeLimit); sizeLimit != "" {

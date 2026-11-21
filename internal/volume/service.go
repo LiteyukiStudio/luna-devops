@@ -1009,18 +1009,16 @@ func (service *Service) FailVolumeTransferExecution(ctx context.Context, project
 		transitionVolume := false
 		if transfer.Direction == model.VolumeTransferDirectionImport {
 			projectVolume, lockErr = repository.LockProjectVolume(ctx, projectID, transfer.ProjectVolumeID)
-			if lockErr != nil {
-				return normalizeRepositoryError(lockErr)
-			}
-			if projectVolume.SourceKind != model.ProjectVolumeSourceArchiveImport {
-				return newDomainError(CodeStateConflict, "import project volume source changed")
-			}
 			switch {
+			case errors.Is(lockErr, gorm.ErrRecordNotFound):
+			case lockErr != nil:
+				return normalizeRepositoryError(lockErr)
+			case projectVolume.SourceKind != model.ProjectVolumeSourceArchiveImport:
+				return newDomainError(CodeStateConflict, "import project volume source changed")
 			case projectVolume.LifecycleState == model.ProjectVolumeLifecycleProvisioning && projectVolume.PendingOperation == OperationImport:
 				transitionVolume = true
 			case projectVolume.LifecycleState == model.ProjectVolumeLifecycleError && projectVolume.PendingOperation == OperationImport:
 			case projectVolume.LifecycleState == model.ProjectVolumeLifecycleDeleting:
-				return newDomainError(CodeStateConflict, "import project volume is being deleted")
 			default:
 				return newDomainError(CodeStateConflict, "import project volume is not awaiting transfer completion")
 			}

@@ -239,6 +239,7 @@ const deploymentsPage = {
     namespace_failed: '네임스페이스 준비 실패',
     service_binding_failed: '서비스 참조 해석 실패',
     preflight_failed: '리소스 소유권 사전 검사 실패',
+    volume_not_ready: '마운트된 데이터 볼륨이 아직 준비되지 않았습니다. 볼륨 생성이 완료된 후 다시 릴리스하세요',
     runtime_config_failed: '런타임 구성 적용 실패',
     pre_hook_failed: '배포 전 훅 실패',
     dependencies_failed: '플랫폼 구성 요소 의존성 준비 실패',

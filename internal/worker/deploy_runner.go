@@ -97,12 +97,14 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	if err := workerStage(ctx, "deploy.preflight_resources", func(stageCtx context.Context) error {
 		return r.preflightApplicationResources(stageCtx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	}); err != nil {
-		return r.failDeployStage(ctx, release, model.ReleaseFailurePreflightFailed, "资源归属预检失败: ", err, true)
+		code, logPrefix := deployStageFailureForVolumeOrDefault(err, model.ReleaseFailurePreflightFailed, "资源归属预检失败: ")
+		return r.failDeployStage(ctx, release, code, logPrefix, err, true)
 	}
 	if err := workerStage(ctx, "deploy.apply_runtime_config", func(stageCtx context.Context) error {
 		return r.applyApplicationRuntimeConfig(stageCtx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	}); err != nil {
-		return r.failDeployStage(ctx, release, model.ReleaseFailureRuntimeConfigFailed, "运行配置下发失败: ", err, false)
+		code, logPrefix := deployStageFailureForVolumeOrDefault(err, model.ReleaseFailureRuntimeConfigFailed, "运行配置下发失败: ")
+		return r.failDeployStage(ctx, release, code, logPrefix, err, false)
 	}
 	if err := workerStage(ctx, "deploy.run_pre_hook", func(stageCtx context.Context) error {
 		return r.runDeploymentHooks(stageCtx, hookPhasePreDeployment, release, project, application, deploymentTarget, namespace)
@@ -123,7 +125,8 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	if err := workerStage(ctx, "deploy.apply_resources", func(stageCtx context.Context) error {
 		return r.applyApplicationResources(stageCtx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	}); err != nil {
-		return r.failDeployStage(ctx, release, model.ReleaseFailureApplyFailed, "资源下发失败: ", err, true)
+		code, logPrefix := deployStageFailureForVolumeOrDefault(err, model.ReleaseFailureApplyFailed, "资源下发失败: ")
+		return r.failDeployStage(ctx, release, code, logPrefix, err, true)
 	}
 	if err := r.db.WithContext(ctx).Model(&model.Release{}).Where("id = ? and status = ?", release.ID, "running").Updates(map[string]any{
 		"message": fmt.Sprintf("Deployment/Service/ConfigMap/Secret 已下发到命名空间 %s", namespace),
@@ -200,6 +203,13 @@ func (r *Runner) failDeployStage(ctx context.Context, release model.Release, cod
 		r.markSystemComponentDeployment(ctx, release, "failed", stageErr.Error())
 	}
 	return errors.Join(stageErr, finishErr)
+}
+
+func deployStageFailureForVolumeOrDefault(err error, defaultCode string, defaultLogPrefix string) (string, string) {
+	if errors.Is(err, kubeprovider.ErrProjectVolumeClaimNotFound) || errors.Is(err, errDeploymentVolumeNotAttachable) {
+		return model.ReleaseFailureVolumeNotReady, "挂载数据卷尚未就绪: "
+	}
+	return defaultCode, defaultLogPrefix
 }
 
 // ensurePlatformApplicationDependencies provisions ServiceAccount/RBAC only for

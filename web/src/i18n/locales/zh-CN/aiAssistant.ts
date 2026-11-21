@@ -378,6 +378,7 @@ const aiAssistant = {
           namespace_failed: '命名空间准备失败',
           service_binding_failed: '服务引用解析失败',
           preflight_failed: '资源归属预检失败',
+          volume_not_ready: '挂载的数据卷尚未就绪，请等待数据卷创建完成后重试发布',
           runtime_config_failed: '运行配置下发失败',
           task_resolve_failed: '构建参数或凭据解析失败',
           pre_hook_failed: '部署前钩子执行失败',
