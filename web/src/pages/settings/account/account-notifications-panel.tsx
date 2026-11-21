@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { NotificationDeliveryDetailSheet } from '@/pages/notifications/notification-delivery-detail-sheet'
 import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
@@ -462,16 +462,23 @@ function ChannelDialog({ channel, presets, saving, onClose, onSave }: {
             </Field>
             {!channel && (
               <Field label={t('accountPage.notifications.preset')} required>
-                <NativeSelect
-                  value={presetId}
-                  onChange={(event) => {
-                    form.setValue('presetId', event.target.value, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('webhookUrl', '', { shouldDirty: true })
-                    form.setValue('signSecret', '', { shouldDirty: true })
-                  }}
-                >
-                  {presets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </NativeSelect>
+                {fieldControl => (
+                  <Select
+                    value={presetId || undefined}
+                    onValueChange={(next) => {
+                      form.setValue('presetId', next, { shouldDirty: true, shouldValidate: true })
+                      form.setValue('webhookUrl', '', { shouldDirty: true })
+                      form.setValue('signSecret', '', { shouldDirty: true })
+                    }}
+                  >
+                    <SelectTrigger {...fieldControl} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {presets.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
               </Field>
             )}
           </div>

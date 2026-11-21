@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Send } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -14,7 +14,7 @@ import { PageChromeTools } from '@/components/common/page-chrome'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 import { defaultMailSettingsFormValues, mailSettingsSchema, mailSettingsToForm } from './mail-settings-form'
 
@@ -81,11 +81,24 @@ export function MailSettingsPanel() {
               <Input {...form.register('port', { valueAsNumber: true })} aria-invalid={Boolean(form.formState.errors.port)} inputMode="numeric" max={65535} min={1} type="number" />
             </Field>
             <Field label={t('settings.mail.security')} required>
-              <NativeSelect {...form.register('security')}>
-                <option value="starttls">{t('settings.mail.securityStartTLS')}</option>
-                <option value="tls">{t('settings.mail.securityTLS')}</option>
-                <option value="none">{t('settings.mail.securityNone')}</option>
-              </NativeSelect>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="security"
+                  render={({ field }) => (
+                    <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="starttls">{t('settings.mail.securityStartTLS')}</SelectItem>
+                        <SelectItem value="tls">{t('settings.mail.securityTLS')}</SelectItem>
+                        <SelectItem value="none">{t('settings.mail.securityNone')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             <Field label={t('settings.mail.username')}>
               <Input {...form.register('username')} autoComplete="off" />

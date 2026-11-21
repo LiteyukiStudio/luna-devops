@@ -1,7 +1,6 @@
 import type { HTMLAttributes } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { NativeSelect } from '@/components/ui/native-select'
 import {
   Pagination,
   PaginationContent,
@@ -11,6 +10,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 interface PaginationControllerProps extends HTMLAttributes<HTMLDivElement> {
@@ -47,6 +47,7 @@ export function PaginationController({
   ...rest
 }: PaginationControllerProps) {
   const { t } = useTranslation()
+  const pageSizeSelectId = useId()
   const effectivePageSize = pageSize ?? defaultPageSize
   const maxBtns = useMemo(() => {
     const normalized = Math.max(5, maxButtons || 7)
@@ -134,28 +135,34 @@ export function PaginationController({
   return (
     <div className={cn('flex flex-wrap items-center justify-center gap-3', className)} {...rest}>
       {onPageSizeChange && (
-        <label className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
-          <span className="whitespace-nowrap">{t('pagination.pageSize')}</span>
-          <NativeSelect
-            aria-label={t('pagination.pageSizeAria')}
-            className="h-9 bg-surface px-3 text-sm"
-            containerClassName="w-24"
+        <div className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+          <label className="whitespace-nowrap" htmlFor={pageSizeSelectId}>{t('pagination.pageSize')}</label>
+          <Select
             disabled={disabled}
-            value={effectivePageSize}
-            onChange={(event) => {
-              const nextPageSize = Number(event.target.value)
+            value={String(effectivePageSize)}
+            onValueChange={(nextValue) => {
+              const nextPageSize = Number(nextValue)
               if (Number.isNaN(nextPageSize))
                 return
               onPageSizeChange(nextPageSize)
             }}
           >
-            {normalizedPageSizeOptions.map(option => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
+            <SelectTrigger
+              id={pageSizeSelectId}
+              aria-label={t('pagination.pageSizeAria')}
+              className="h-9 w-24 bg-surface px-3 text-sm"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {normalizedPageSizeOptions.map(option => (
+                <SelectItem key={option} value={String(option)}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       )}
       <Pagination className="mx-0 w-auto">
         <PaginationContent className="select-none gap-2">

@@ -3,6 +3,7 @@ import type { ReleaseForm } from './application-deployments-panel-utils'
 import type { BuildRun, DeploymentTarget, ReleaseImageCandidate } from '@/api'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
+import { Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
@@ -12,7 +13,7 @@ import { ProgressiveSection } from '@/components/common/progressive-section'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { shortImageRef } from '@/lib/image-ref'
 
 interface ApplicationCreateReleaseDialogProps {
@@ -84,39 +85,58 @@ export function ApplicationCreateReleaseDialog({
           <input type="hidden" {...form.register('imageRef', { required: t('common.required') })} />
           {selectedTarget?.sourceType !== 'image' && (
             <Field error={form.formState.errors.imageRef?.message} hint={registryHint} label={t('deploymentsPage.releaseImageCandidate')} required>
-              <Select aria-invalid={Boolean(form.formState.errors.imageRef)} value={selectedCandidateKey} onChange={event => applyCandidate(event.target.value)}>
-                <option value="">{t('common.select')}</option>
-                {candidates.map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.label}</option>)}
-              </Select>
+              {fieldControl => (
+                <Select value={selectedCandidateKey || undefined} onValueChange={applyCandidate}>
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue placeholder={t('common.select')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {candidates.map(candidate => (
+                      <SelectItem key={candidate.key} value={candidate.key}>{candidate.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
           )}
           {selectedTarget && <input type="hidden" {...form.register('deploymentTargetId', { required: t('common.required') })} />}
           <Field error={form.formState.errors.deploymentTargetId?.message} hint={selectedTarget ? t('deploymentsPage.releaseTargetLockedHint') : undefined} label={t('buildsPage.buildConfig')} required>
-            {selectedTarget
+            {fieldControl => selectedTarget
               ? (
                   <Input
+                    {...fieldControl}
                     disabled
                     value={`${selectedTarget.name} · ${t(`deploymentsPage.stageLabels.${selectedTarget.stage}`, { defaultValue: selectedTarget.stage })}`}
                   />
                 )
               : (
-                  <Select
-                    {...form.register('deploymentTargetId', {
-                      required: t('common.required'),
-                      onChange: (event) => {
-                        const targetId = event.target.value
-                        const nextTarget = releaseReadyTargets.find(item => item.id === targetId)
-                        const matchedRun = targetId ? selectableBuildRuns.find(run => run.deploymentTargetId === targetId) : undefined
-                        form.setValue('applicationId', matchedRun?.applicationId ?? applicationId, { shouldDirty: true, shouldValidate: true })
-                        form.setValue('buildRunId', matchedRun?.id ?? '', { shouldDirty: true, shouldValidate: true })
-                        form.setValue('imageRef', matchedRun ? buildRunImageRef(matchedRun) : nextTarget?.imageRef ?? '', { shouldDirty: true, shouldValidate: true })
-                      },
-                    })}
-                    aria-invalid={Boolean(form.formState.errors.deploymentTargetId)}
-                  >
-                    <option value="">{t('common.select')}</option>
-                    {releaseReadyTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
-                  </Select>
+                  <Controller
+                    control={form.control}
+                    name="deploymentTargetId"
+                    rules={{ required: t('common.required') }}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value || undefined}
+                        onValueChange={(targetId) => {
+                          field.onChange(targetId)
+                          const nextTarget = releaseReadyTargets.find(item => item.id === targetId)
+                          const matchedRun = targetId ? selectableBuildRuns.find(run => run.deploymentTargetId === targetId) : undefined
+                          form.setValue('applicationId', matchedRun?.applicationId ?? applicationId, { shouldDirty: true, shouldValidate: true })
+                          form.setValue('buildRunId', matchedRun?.id ?? '', { shouldDirty: true, shouldValidate: true })
+                          form.setValue('imageRef', matchedRun ? buildRunImageRef(matchedRun) : nextTarget?.imageRef ?? '', { shouldDirty: true, shouldValidate: true })
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue placeholder={t('common.select')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {releaseReadyTargets.map(target => (
+                            <SelectItem key={target.id} value={target.id}>{target.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                 )}
           </Field>
           <Field hint={t('deploymentsPage.releaseImageSummaryHint')} label={t('deploymentsPage.imageSummary')} required>

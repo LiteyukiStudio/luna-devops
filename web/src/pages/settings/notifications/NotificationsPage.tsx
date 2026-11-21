@@ -28,7 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
@@ -678,18 +678,35 @@ function TemplateDialog({
             <Input {...form.register('name')} />
           </Field>
           <Field label={t('notificationsPage.eventType')}>
-            <Select value={values.eventType} onChange={event => form.setValue('eventType', event.target.value, { shouldDirty: true })}>
-              {ALL_NOTIFICATION_EVENTS.map(event => <option key={event} value={event}>{event}</option>)}
-            </Select>
+            {fieldControl => (
+              <Select
+                value={values.eventType || undefined}
+                onValueChange={next => form.setValue('eventType', next, { shouldDirty: true })}
+              >
+                <SelectTrigger {...fieldControl} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_NOTIFICATION_EVENTS.map(event => <SelectItem key={event} value={event}>{event}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </Field>
           <Field label={t('notificationsPage.adapter')}>
-            <Select
-              value={values.adapterKind}
-              onChange={event => form.setValue('adapterKind', event.target.value === 'smtp' ? 'smtp' : 'webhook', { shouldDirty: true })}
-            >
-              <option value="webhook">{t('notificationsPage.adapters.webhook')}</option>
-              <option value="smtp">{t('notificationsPage.adapters.smtp')}</option>
-            </Select>
+            {fieldControl => (
+              <Select
+                value={values.adapterKind}
+                onValueChange={next => form.setValue('adapterKind', next === 'smtp' ? 'smtp' : 'webhook', { shouldDirty: true })}
+              >
+                <SelectTrigger {...fieldControl} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="webhook">{t('notificationsPage.adapters.webhook')}</SelectItem>
+                  <SelectItem value="smtp">{t('notificationsPage.adapters.smtp')}</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </Field>
           <Field label={t('notificationsPage.locale')}>
             <Input {...form.register('locale')} />

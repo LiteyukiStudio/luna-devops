@@ -18,7 +18,7 @@ import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
@@ -453,16 +453,31 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
             <input type="hidden" {...form.register('sourceBranch', { required: t('common.required') })} />
             <DialogBody className="grid gap-3">
               <Field error={form.formState.errors.deploymentTargetId?.message} hint={t('buildsPage.buildConfigHint')} label={t('buildsPage.buildConfig')} required>
-                <Select
-                  {...form.register('deploymentTargetId', {
-                    required: t('common.required'),
-                    onChange: event => applyDeploymentTargetDefaults(event.target.value),
-                  })}
-                  aria-invalid={Boolean(form.formState.errors.deploymentTargetId)}
-                >
-                  <option value="">{t('common.select')}</option>
-                  {deploymentTargets.map(config => <option key={config.id} value={config.id}>{config.name}</option>)}
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="deploymentTargetId"
+                    rules={{ required: t('common.required') }}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value || undefined}
+                        onValueChange={(next) => {
+                          field.onChange(next)
+                          applyDeploymentTargetDefaults(next)
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue placeholder={t('common.select')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {deploymentTargets.map(config => (
+                            <SelectItem key={config.id} value={config.id}>{config.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
               <Field error={form.formState.errors.sourceBranch?.message} label={t('repositories.defaultBranch')} required>
                 <SearchSelect
@@ -479,13 +494,25 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
                 />
               </Field>
               <Field error={form.formState.errors.targetRegistryId?.message} label={t('buildsPage.targetRegistry')} required>
-                <Select
-                  {...form.register('targetRegistryId', { required: t('common.required') })}
-                  aria-invalid={Boolean(form.formState.errors.targetRegistryId)}
-                >
-                  <option value="">{t('common.select')}</option>
-                  {registries.map(registry => <option key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</option>)}
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="targetRegistryId"
+                    rules={{ required: t('common.required') }}
+                    render={({ field }) => (
+                      <Select value={field.value || undefined} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue placeholder={t('common.select')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {registries.map(registry => (
+                            <SelectItem key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
               <Field error={form.formState.errors.targetImageRef?.message} hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
                 <TargetImageRefInput

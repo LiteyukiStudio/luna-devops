@@ -12,7 +12,7 @@ import { StorageQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { projectVolumeAccessModeOptions, projectVolumeModeLabel, projectVolumeModeOptions } from './project-volume-form-options'
 import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from './volume-resource-selectors'
 
@@ -177,26 +177,43 @@ export function ProjectVolumeCreateDialog({ deploymentContext, onCreated, onOpen
             </Field>
             {deploymentContext && <input type="hidden" {...form.register('sourceMode')} />}
             <Field label={t('projectVolumes.createSource')} required>
-              {deploymentContext
+              {fieldControl => deploymentContext
                 ? (
-                    <NativeSelect disabled value="blank">
-                      <option value="blank">{t('projectVolumes.sourceBlank')}</option>
-                    </NativeSelect>
+                    <Select disabled value="blank">
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="blank">{t('projectVolumes.sourceBlank')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   )
                 : (
-                    <NativeSelect {...form.register('sourceMode')}>
-                      <option value="blank">{t('projectVolumes.sourceBlank')}</option>
-                      <option value="existingReferenced">{t('projectVolumes.sourceExistingReferenced')}</option>
-                      <option value="existingManaged">{t('projectVolumes.sourceExistingManaged')}</option>
-                      <option value="snapshot">{t('projectVolumes.sourceSnapshot')}</option>
-                    </NativeSelect>
+                    <Controller
+                      control={form.control}
+                      name="sourceMode"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="blank">{t('projectVolumes.sourceBlank')}</SelectItem>
+                            <SelectItem value="existingReferenced">{t('projectVolumes.sourceExistingReferenced')}</SelectItem>
+                            <SelectItem value="existingManaged">{t('projectVolumes.sourceExistingManaged')}</SelectItem>
+                            <SelectItem value="snapshot">{t('projectVolumes.sourceSnapshot')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
                   )}
             </Field>
             <Field error={form.formState.errors.clusterId?.message} label={t('projectVolumes.cluster')} required>
-              {deploymentContext
-                ? <Input disabled value={deploymentContext.clusterName} />
+              {fieldControl => deploymentContext
+                ? <Input {...fieldControl} disabled value={deploymentContext.clusterName} />
                 : (
                     <ProjectVolumeClusterSelect
+                      {...fieldControl}
                       projectId={projectId}
                       value={clusterId}
                       onChange={(value) => {
@@ -208,12 +225,15 @@ export function ProjectVolumeCreateDialog({ deploymentContext, onCreated, onOpen
             </Field>
             {requiresSpec && (
               <Field error={form.formState.errors.storageClassName?.message} label={t('projectVolumes.storageClass')} required>
-                <ProjectVolumeStorageClassSelect
-                  clusterId={clusterId}
-                  projectId={projectId}
-                  value={form.watch('storageClassName')}
-                  onChange={value => form.setValue('storageClassName', value, { shouldDirty: true, shouldValidate: true })}
-                />
+                {fieldControl => (
+                  <ProjectVolumeStorageClassSelect
+                    {...fieldControl}
+                    clusterId={clusterId}
+                    projectId={projectId}
+                    value={form.watch('storageClassName')}
+                    onChange={value => form.setValue('storageClassName', value, { shouldDirty: true, shouldValidate: true })}
+                  />
+                )}
               </Field>
             )}
             {requiresSpec && (
@@ -235,24 +255,63 @@ export function ProjectVolumeCreateDialog({ deploymentContext, onCreated, onOpen
             )}
             {requiresSpec && (
               <Field label={t('projectVolumes.accessMode')} required>
-                <NativeSelect {...form.register('accessMode')}>
-                  {projectVolumeAccessModeOptions(t).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </NativeSelect>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="accessMode"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {projectVolumeAccessModeOptions(t).map(option => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             )}
             {requiresSpec && deploymentContext && <input type="hidden" {...form.register('volumeMode')} />}
             {requiresSpec && (
               <Field label={t('projectVolumes.volumeMode')} required>
-                {deploymentContext
+                {fieldControl => deploymentContext
                   ? (
-                      <NativeSelect disabled value={deploymentContext.volumeMode}>
-                        <option value={deploymentContext.volumeMode}>{projectVolumeModeLabel(t, deploymentContext.volumeMode)}</option>
-                      </NativeSelect>
+                      <Select disabled value={deploymentContext.volumeMode}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={deploymentContext.volumeMode}>
+                            {projectVolumeModeLabel(t, deploymentContext.volumeMode)}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     )
                   : (
-                      <NativeSelect {...form.register('volumeMode')}>
-                        {projectVolumeModeOptions(t).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </NativeSelect>
+                      <Controller
+                        control={form.control}
+                        name="volumeMode"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {projectVolumeModeOptions(t).map(option => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
                     )}
               </Field>
             )}

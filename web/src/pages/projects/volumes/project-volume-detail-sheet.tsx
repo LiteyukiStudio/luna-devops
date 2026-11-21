@@ -22,7 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { canCancelVolumeTransfer, canRetryProjectVolume, canRetryVolumeTransfer } from '@/lib/project-volume-capabilities'
@@ -312,19 +312,41 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, transferEnab
         <VolumeTransferNotice direction="export" transferEnabled={transferEnabled} />
         <form className="grid gap-4" onSubmit={form.handleSubmit(values => create.mutate(values))}>
           <Field label={t('projectVolumes.archiveFormat')}>
-            <input type="hidden" {...form.register('format')} />
-            <NativeSelect disabled value={format}>
-              {format === 'tar_gz'
-                ? <option value="tar_gz">{t('projectVolumes.formatTarGz')}</option>
-                : <option value="raw_zst">{t('projectVolumes.formatRawZst')}</option>}
-            </NativeSelect>
+            {fieldControl => (
+              <>
+                <input type="hidden" {...form.register('format')} />
+                <Select disabled value={format}>
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {format === 'tar_gz'
+                      ? <SelectItem value="tar_gz">{t('projectVolumes.formatTarGz')}</SelectItem>
+                      : <SelectItem value="raw_zst">{t('projectVolumes.formatRawZst')}</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
           </Field>
           <Field label={t('projectVolumes.consistency')}>
-            <NativeSelect {...form.register('consistency')}>
-              <option value="auto">{t('projectVolumes.consistencyAuto')}</option>
-              <option disabled={snapshotSupport === 'unsupported'} value="snapshot">{t('projectVolumes.consistencySnapshot')}</option>
-              <option disabled={volume.volumeMode === 'Block'} value="live">{t('projectVolumes.consistencyLive')}</option>
-            </NativeSelect>
+            {fieldControl => (
+              <Controller
+                control={form.control}
+                name="consistency"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger {...fieldControl} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{t('projectVolumes.consistencyAuto')}</SelectItem>
+                      <SelectItem disabled={snapshotSupport === 'unsupported'} value="snapshot">{t('projectVolumes.consistencySnapshot')}</SelectItem>
+                      <SelectItem disabled={volume.volumeMode === 'Block'} value="live">{t('projectVolumes.consistencyLive')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
           </Field>
           {snapshotNotice && <p className="text-xs text-muted-foreground" role="note">{snapshotNotice}</p>}
           <DialogFooter>

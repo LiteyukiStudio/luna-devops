@@ -7,7 +7,8 @@ import { DataList } from '@/components/common/data-list'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { NotificationDeliveryDetailSheet } from './notification-delivery-detail-sheet'
 import {
   NOTIFICATION_EVENT_GROUPS,
@@ -226,59 +227,66 @@ export function NotificationDeliveriesPanel({
         toolbar={(
           <>
             <Select
-              aria-label={t('common.status')}
-              className="text-xs"
-              containerClassName="w-full @lg/data-list:w-36"
-              value={statusFilter}
-              onChange={(event) => {
-                onStatusFilterChange(event.target.value)
+              value={toSelectValue(statusFilter)}
+              onValueChange={(next) => {
+                onStatusFilterChange(fromSelectValue(next))
                 onPageChange(1)
               }}
             >
-              <option value="">{t('notificationsPage.allStatuses')}</option>
-              <option value="pending">{t('notificationsPage.deliveryStatus.pending')}</option>
-              <option value="sending">{t('notificationsPage.deliveryStatus.sending')}</option>
-              <option value="delivered">{t('notificationsPage.deliveryStatus.delivered')}</option>
-              <option value="failed">{t('notificationsPage.deliveryStatus.failed')}</option>
+              <SelectTrigger aria-label={t('common.status')} className="w-full text-xs @lg/data-list:w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EMPTY_SELECT_VALUE}>{t('notificationsPage.allStatuses')}</SelectItem>
+                <SelectItem value="pending">{t('notificationsPage.deliveryStatus.pending')}</SelectItem>
+                <SelectItem value="sending">{t('notificationsPage.deliveryStatus.sending')}</SelectItem>
+                <SelectItem value="delivered">{t('notificationsPage.deliveryStatus.delivered')}</SelectItem>
+                <SelectItem value="failed">{t('notificationsPage.deliveryStatus.failed')}</SelectItem>
+              </SelectContent>
             </Select>
 
             <Select
-              aria-label={t('notificationsPage.eventType')}
-              className="text-xs"
-              containerClassName="w-full @lg/data-list:w-52"
-              value={eventTypeFilter}
-              onChange={(event) => {
-                onEventTypeFilterChange(event.target.value)
+              value={toSelectValue(eventTypeFilter)}
+              onValueChange={(next) => {
+                onEventTypeFilterChange(fromSelectValue(next))
                 onPageChange(1)
               }}
             >
-              <option value="">{t('notificationsPage.allEventTypes')}</option>
-              {NOTIFICATION_EVENT_GROUPS.map(group => (
-                <optgroup key={group.key} label={notificationEventGroupLabel(group.key, t)}>
-                  {group.events.map(eventType => (
-                    <option key={eventType} value={eventType}>
-                      {notificationEventLabel(eventType, t)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
+              <SelectTrigger aria-label={t('notificationsPage.eventType')} className="w-full text-xs @lg/data-list:w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EMPTY_SELECT_VALUE}>{t('notificationsPage.allEventTypes')}</SelectItem>
+                {NOTIFICATION_EVENT_GROUPS.map(group => (
+                  <SelectGroup key={group.key}>
+                    <SelectLabel>{notificationEventGroupLabel(group.key, t)}</SelectLabel>
+                    {group.events.map(eventType => (
+                      <SelectItem key={eventType} value={eventType}>
+                        {notificationEventLabel(eventType, t)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
             </Select>
 
             <Select
-              aria-label={t('notificationsPage.channels')}
-              className="text-xs"
-              containerClassName="w-full @lg/data-list:w-44"
               disabled={channels.length === 0 && !channelFilter}
-              value={channelFilter}
-              onChange={(event) => {
-                onChannelFilterChange(event.target.value)
+              value={toSelectValue(channelFilter)}
+              onValueChange={(next) => {
+                onChannelFilterChange(fromSelectValue(next))
                 onPageChange(1)
               }}
             >
-              <option value="">{t('notificationsPage.allChannels')}</option>
-              {channels.map(channel => (
-                <option key={channel.id} value={channel.id}>{channel.name}</option>
-              ))}
+              <SelectTrigger aria-label={t('notificationsPage.channels')} className="w-full text-xs @lg/data-list:w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EMPTY_SELECT_VALUE}>{t('notificationsPage.allChannels')}</SelectItem>
+                {channels.map(channel => (
+                  <SelectItem key={channel.id} value={channel.id}>{channel.name}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
 
             {eventIdFilter && (

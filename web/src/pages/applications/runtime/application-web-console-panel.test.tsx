@@ -56,6 +56,7 @@ describe('application web console panel', () => {
   })
 
   it('tracks the selected container and replica and toggles fullscreen', async () => {
+    const user = userEvent.setup()
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <TooltipProvider>
@@ -67,11 +68,13 @@ describe('application web console panel', () => {
     expect(await screen.findByText('Terminal auto default')).toBeInTheDocument()
 
     const containerSelect = await screen.findByRole('combobox', { name: 'Container' })
-    await userEvent.selectOptions(containerSelect, 'worker')
+    await user.click(containerSelect)
+    await user.click(await screen.findByRole('option', { name: 'worker' }))
+    expect(containerSelect).toHaveTextContent('worker')
     expect(await screen.findByText('Terminal auto worker')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Replica' }))
-    await userEvent.click(await screen.findByRole('button', { name: /api-7f9c-b.*Not ready.*Restarts: 4.*Other release/ }))
+    await user.click(screen.getByRole('button', { name: 'Replica' }))
+    await user.click(await screen.findByRole('button', { name: /api-7f9c-b.*Not ready.*Restarts: 4.*Other release/ }))
     expect(await screen.findByText('Terminal api-7f9c-b worker')).toBeInTheDocument()
     expect(api.listDeploymentTargetRuntimePods).toHaveBeenCalledWith('prj_123', 'app_456', 'dplt_789', { releaseId: 'rel_123', search: '' }, expect.any(AbortSignal))
 

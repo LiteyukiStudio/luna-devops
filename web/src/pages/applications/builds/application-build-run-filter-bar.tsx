@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import type { BuildRun } from '@/api'
 import { useTranslation } from 'react-i18next'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 
 const buildRunStatusFilters: Array<BuildRun['status']> = ['queued', 'running', 'succeeded', 'failed', 'canceled', 'timeout']
 const buildRunEventFilters: Array<BuildRun['triggerType']> = ['manual', 'push', 'tag', 'webhook', 'api', 'retry']
@@ -26,9 +27,9 @@ export function ApplicationBuildRunFilterBar({ actor, actorOptions, branch, bran
         value={event}
         onChange={onEventChange}
       >
-        <option value="">{t('buildsPage.allEvents')}</option>
+        <SelectItem value={EMPTY_SELECT_VALUE}>{t('buildsPage.allEvents')}</SelectItem>
         {buildRunEventFilters.map(value => (
-          <option key={value} value={value}>{t(`buildsPage.events.${value}`)}</option>
+          <SelectItem key={value} value={value}>{t(`buildsPage.events.${value}`)}</SelectItem>
         ))}
       </BuildRunFilterSelect>
       <BuildRunFilterSelect
@@ -36,9 +37,9 @@ export function ApplicationBuildRunFilterBar({ actor, actorOptions, branch, bran
         value={status}
         onChange={onStatusChange}
       >
-        <option value="">{t('buildsPage.allStatuses')}</option>
+        <SelectItem value={EMPTY_SELECT_VALUE}>{t('buildsPage.allStatuses')}</SelectItem>
         {buildRunStatusFilters.map(value => (
-          <option key={value} value={value}>{t(`buildsPage.statuses.${value}`)}</option>
+          <SelectItem key={value} value={value}>{t(`buildsPage.statuses.${value}`)}</SelectItem>
         ))}
       </BuildRunFilterSelect>
       <BuildRunFilterSelect
@@ -46,9 +47,9 @@ export function ApplicationBuildRunFilterBar({ actor, actorOptions, branch, bran
         value={branch}
         onChange={onBranchChange}
       >
-        <option value="">{t('buildsPage.allBranches')}</option>
+        <SelectItem value={EMPTY_SELECT_VALUE}>{t('buildsPage.allBranches')}</SelectItem>
         {branchOptions.map(value => (
-          <option key={value} value={value}>{value}</option>
+          <SelectItem key={value} value={value}>{value}</SelectItem>
         ))}
       </BuildRunFilterSelect>
       <BuildRunFilterSelect
@@ -56,9 +57,9 @@ export function ApplicationBuildRunFilterBar({ actor, actorOptions, branch, bran
         value={actor}
         onChange={onActorChange}
       >
-        <option value="">{t('buildsPage.allActors')}</option>
+        <SelectItem value={EMPTY_SELECT_VALUE}>{t('buildsPage.allActors')}</SelectItem>
         {actorOptions.map(value => (
-          <option key={value} value={value}>{shortActorLabel(value)}</option>
+          <SelectItem key={value} value={value}>{shortActorLabel(value)}</SelectItem>
         ))}
       </BuildRunFilterSelect>
     </div>
@@ -72,16 +73,17 @@ function BuildRunFilterSelect({ children, label, onChange, value }: {
   onChange: (value: string) => void
 }) {
   return (
-    <label className="w-full @lg/data-list:w-36">
-      <span className="sr-only">{label}</span>
-      <Select
-        aria-label={label}
-        value={value}
-        onChange={event => onChange(event.target.value)}
-      >
+    <Select
+      value={toSelectValue(value)}
+      onValueChange={next => onChange(fromSelectValue(next))}
+    >
+      <SelectTrigger aria-label={label} className="w-full @lg/data-list:w-36">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
         {children}
-      </Select>
-    </label>
+      </SelectContent>
+    </Select>
   )
 }
 

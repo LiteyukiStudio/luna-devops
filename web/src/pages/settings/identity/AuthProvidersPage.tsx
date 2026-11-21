@@ -23,7 +23,7 @@ import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
@@ -425,10 +425,23 @@ export function AuthProvidersPage() {
                       <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} rows={2} />
                     </Field>
                     <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
-                      <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
-                        <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
-                        <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
-                      </Select>
+                      {fieldControl => (
+                        <Controller
+                          control={policyForm.control}
+                          name="defaultRole"
+                          render={({ field }) => (
+                            <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                              <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={PlatformRole.User}>{t('usersPage.normalUser')}</SelectItem>
+                                <SelectItem value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      )}
                     </Field>
                   </form>
                 </Surface>

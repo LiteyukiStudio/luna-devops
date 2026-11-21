@@ -345,7 +345,7 @@ export function DataList<T>({
           className={cn(
             'peer/tools flex shrink-0 flex-col gap-2 pb-3 has-[>[data-slot=data-list-tools-controls]:only-child:empty]:hidden @lg/data-list:flex-row @lg/data-list:flex-wrap @lg/data-list:items-center',
             // 工具区控件统一使用 32px（h-8）紧凑高度，使按钮、输入框与下拉框严格对齐
-            '[&_[data-slot=button]]:h-8 [&_[data-slot=button][data-size=icon]]:w-8 [&_[data-slot=input]]:h-8 [&_[data-slot=native-select]]:h-8 [&_[data-slot=select-trigger]]:h-8',
+            '[&_[data-slot=button]]:h-8 [&_[data-slot=button][data-size=icon]]:w-8 [&_[data-slot=input]]:h-8 [&_[data-slot=select-trigger]]:h-8',
             hasToolsLead ? '@lg/data-list:justify-between' : '@lg/data-list:justify-start',
           )}
           data-slot="data-list-tools"

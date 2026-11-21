@@ -1,7 +1,8 @@
 import type { ResultVisibility } from '@/api'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 
 interface ResultVisibilitySelectProps {
   canViewAll: boolean
@@ -19,16 +20,17 @@ export function ResultVisibilitySelect({ canViewAll, containerClassName = 'min-w
     return null
 
   const select = (
-    <NativeSelect
-      id={selectId}
-      aria-label={t('common.resultVisibility.label')}
-      containerClassName={containerClassName}
-      value={value}
-      onChange={event => onChange(event.target.value as ResultVisibility)}
-    >
-      <option value="related">{t('common.resultVisibility.related')}</option>
-      <option value="all">{t('common.resultVisibility.all')}</option>
-    </NativeSelect>
+    <div className={cn('min-w-0', containerClassName)}>
+      <Select value={value} onValueChange={next => onChange(next as ResultVisibility)}>
+        <SelectTrigger id={selectId} aria-label={t('common.resultVisibility.label')} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="related">{t('common.resultVisibility.related')}</SelectItem>
+          <SelectItem value="all">{t('common.resultVisibility.all')}</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   )
 
   if (!showLabel)

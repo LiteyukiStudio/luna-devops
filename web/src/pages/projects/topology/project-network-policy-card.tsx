@@ -2,7 +2,7 @@ import type { ProjectEgressException, ProjectNetworkPolicy, ProjectNetworkPolicy
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -12,7 +12,7 @@ import { FormField } from '@/components/common/form-field'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -117,17 +117,43 @@ function ProjectNetworkPolicyForm({ canManage, initial, projectId }: { canManage
     <form className="grid gap-4" onSubmit={form.handleSubmit(values => save.mutate(values))}>
       <div className="grid gap-4 md:grid-cols-2">
         <FormField hint={t('projectTopology.networkPolicy.ingressModeHint')} label={t('projectTopology.networkPolicy.ingressMode')}>
-          <NativeSelect disabled={disabled} {...form.register('ingressMode')}>
-            <option value="isolated">{t('projectTopology.networkPolicy.ingressModes.isolated')}</option>
-            <option value="dependencies">{t('projectTopology.networkPolicy.ingressModes.dependencies')}</option>
-          </NativeSelect>
+          {fieldControl => (
+            <Controller
+              control={form.control}
+              name="ingressMode"
+              render={({ field }) => (
+                <Select disabled={disabled} value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="isolated">{t('projectTopology.networkPolicy.ingressModes.isolated')}</SelectItem>
+                    <SelectItem value="dependencies">{t('projectTopology.networkPolicy.ingressModes.dependencies')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </FormField>
         <FormField hint={t('projectTopology.networkPolicy.egressModeHint')} label={t('projectTopology.networkPolicy.egressMode')}>
-          <NativeSelect disabled={disabled} {...form.register('egressMode')}>
-            <option value="internet">{t('projectTopology.networkPolicy.egressModes.internet')}</option>
-            <option value="allowlist">{t('projectTopology.networkPolicy.egressModes.allowlist')}</option>
-            <option value="none">{t('projectTopology.networkPolicy.egressModes.none')}</option>
-          </NativeSelect>
+          {fieldControl => (
+            <Controller
+              control={form.control}
+              name="egressMode"
+              render={({ field }) => (
+                <Select disabled={disabled} value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="internet">{t('projectTopology.networkPolicy.egressModes.internet')}</SelectItem>
+                    <SelectItem value="allowlist">{t('projectTopology.networkPolicy.egressModes.allowlist')}</SelectItem>
+                    <SelectItem value="none">{t('projectTopology.networkPolicy.egressModes.none')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </FormField>
       </div>
       {egressMode === 'allowlist'

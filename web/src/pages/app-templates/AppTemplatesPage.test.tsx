@@ -196,16 +196,15 @@ describe('app template installation', () => {
     await user.click(within(installDialog).getByRole('button', { name: i18next.t('projectVolumes.create') }))
     const createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
     expect(within(createDialog).getByDisplayValue('Primary cluster')).toBeDisabled()
-    const blankSource = within(createDialog).getByRole('option', { name: i18next.t('projectVolumes.sourceBlank') }) as HTMLOptionElement
-    const filesystemMode = within(createDialog).getByRole('option', { name: i18next.t('deploymentsPage.kubernetesValues.Filesystem') }) as HTMLOptionElement
-    expect(blankSource.selected).toBe(true)
-    expect(blankSource.parentElement).toBeDisabled()
-    expect(filesystemMode.selected).toBe(true)
-    expect(filesystemMode.parentElement).toBeDisabled()
+    const blankSource = within(createDialog).getByRole('combobox', { name: i18next.t('projectVolumes.createSource') })
+    const filesystemMode = within(createDialog).getByRole('combobox', { name: i18next.t('projectVolumes.volumeMode') })
+    expect(blankSource).toHaveTextContent(i18next.t('projectVolumes.sourceBlank'))
+    expect(blankSource).toBeDisabled()
+    expect(filesystemMode).toHaveTextContent(i18next.t('deploymentsPage.kubernetesValues.Filesystem'))
+    expect(filesystemMode).toBeDisabled()
 
     await user.type(within(createDialog).getByPlaceholderText(i18next.t('projectVolumes.displayNamePlaceholder')), 'Redis data')
-    const storageClass = await within(createDialog).findByRole('option', { name: i18next.t('projectVolumes.storageClassDefault', { name: 'fast' }) })
-    await user.selectOptions(storageClass.parentElement as HTMLSelectElement, 'fast')
+    await selectComboboxOption(user, within(createDialog).getByRole('combobox', { name: i18next.t('projectVolumes.storageClass') }), i18next.t('projectVolumes.storageClassDefault', { name: 'fast' }))
     await user.click(within(createDialog).getByRole('button', { name: i18next.t('projectVolumes.create') }))
 
     await waitFor(() => expect(mocks.createProjectVolume).toHaveBeenCalledWith('prj_1', {
@@ -218,8 +217,8 @@ describe('app template installation', () => {
       volumeMode: 'Filesystem',
     }, expect.any(String)))
 
-    await within(installDialog).findByRole('option', { name: 'Redis data · 10Gi' })
-    expect(within(installDialog).getAllByRole('combobox').some(element => (element as HTMLSelectElement).value === 'pvol_new')).toBe(true)
+    const volumeSelect = within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.projectVolume') })
+    await waitFor(() => expect(volumeSelect).toHaveTextContent('Redis data · 10Gi'))
     expect(within(installDialog).getByDisplayValue(initialIdentifier)).toBeInTheDocument()
     const installButton = within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') })
     expect(installButton).toBeEnabled()
@@ -257,8 +256,7 @@ describe('app template installation', () => {
     await user.hover(within(installDialog).getByRole('button', { name: `${passwordLabel}${i18next.t('common.helpSuffix')}` }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('appTemplatesPage.valueHints.redisPassword'))
 
-    const volumeOption = await within(installDialog).findByRole('option', { name: 'Existing Redis data · 10Gi' })
-    await user.selectOptions(volumeOption.parentElement as HTMLSelectElement, 'pvol_existing')
+    await selectComboboxOption(user, within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.projectVolume') }), 'Existing Redis data · 10Gi')
     await user.type(passwordInput, 'redis-test-password')
     await user.click(within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') }))
 
@@ -291,8 +289,7 @@ describe('app template installation', () => {
 
     const installDialog = await openInstallSheet(user, 'Redis')
     await expandCustomParameters(user, installDialog)
-    const volumeOption = await within(installDialog).findByRole('option', { name: 'Existing Redis data · 10Gi' })
-    await user.selectOptions(volumeOption.parentElement as HTMLSelectElement, 'pvol_existing')
+    await selectComboboxOption(user, within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.projectVolume') }), 'Existing Redis data · 10Gi')
     await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith('prj_1'))
 
     expect(within(installDialog).queryByRole('button', { name: i18next.t('projectVolumes.create') })).not.toBeInTheDocument()
@@ -321,8 +318,7 @@ describe('app template installation', () => {
 
     const installDialog = await openInstallSheet(user, 'Redis')
     await expandCustomParameters(user, installDialog)
-    const volumeOption = await within(installDialog).findByRole('option', { name: 'Existing Redis data · 10Gi' })
-    await user.selectOptions(volumeOption.parentElement as HTMLSelectElement, 'pvol_existing')
+    await selectComboboxOption(user, within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.projectVolume') }), 'Existing Redis data · 10Gi')
     await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith('prj_1'))
 
     expect(within(installDialog).queryByRole('button', { name: i18next.t('projectVolumes.create') })).not.toBeInTheDocument()
@@ -343,8 +339,7 @@ describe('app template installation', () => {
     await user.click(await within(installDialog).findByRole('button', { name: i18next.t('projectVolumes.create') }))
     const createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
     await user.type(within(createDialog).getByPlaceholderText(i18next.t('projectVolumes.displayNamePlaceholder')), 'Redis data')
-    const storageClass = await within(createDialog).findByRole('option', { name: i18next.t('projectVolumes.storageClassDefault', { name: 'fast' }) })
-    await user.selectOptions(storageClass.parentElement as HTMLSelectElement, 'fast')
+    await selectComboboxOption(user, within(createDialog).getByRole('combobox', { name: i18next.t('projectVolumes.storageClass') }), i18next.t('projectVolumes.storageClassDefault', { name: 'fast' }))
     await user.click(within(createDialog).getByRole('button', { name: i18next.t('projectVolumes.create') }))
     await waitFor(() => expect(mocks.createProjectVolume).toHaveBeenCalledOnce())
 
@@ -354,7 +349,7 @@ describe('app template installation', () => {
 
     resolveCreate(createdVolume)
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18next.t('projectVolumes.create') })).not.toBeInTheDocument())
-    expect(within(installDialog).getAllByRole('combobox').some(element => (element as HTMLSelectElement).value === 'pvol_new')).toBe(true)
+    expect(within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.projectVolume') })).toHaveTextContent('Redis data · 10Gi')
   })
 
   it('keeps the volume form and idempotency key available for retry after an ambiguous failure', async () => {
@@ -368,8 +363,7 @@ describe('app template installation', () => {
     const createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
     const nameInput = within(createDialog).getByPlaceholderText(i18next.t('projectVolumes.displayNamePlaceholder'))
     await user.type(nameInput, 'Redis data')
-    const storageClass = await within(createDialog).findByRole('option', { name: i18next.t('projectVolumes.storageClassDefault', { name: 'fast' }) })
-    await user.selectOptions(storageClass.parentElement as HTMLSelectElement, 'fast')
+    await selectComboboxOption(user, within(createDialog).getByRole('combobox', { name: i18next.t('projectVolumes.storageClass') }), i18next.t('projectVolumes.storageClassDefault', { name: 'fast' }))
     const createButton = within(createDialog).getByRole('button', { name: i18next.t('projectVolumes.create') })
 
     await user.click(createButton)
@@ -384,7 +378,7 @@ describe('app template installation', () => {
     await waitFor(() => expect(mocks.createProjectVolume).toHaveBeenCalledTimes(2))
     expect(mocks.createProjectVolume.mock.calls[1][2]).toBe(firstIdempotencyKey)
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18next.t('projectVolumes.create') })).not.toBeInTheDocument())
-    expect(within(installDialog).getAllByRole('combobox').some(element => (element as HTMLSelectElement).value === 'pvol_new')).toBe(true)
+    expect(within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.projectVolume') })).toHaveTextContent('Redis data · 10Gi')
   })
 
   it('resets quick-create values after cancellation', async () => {
@@ -444,14 +438,14 @@ describe('app template installation', () => {
     expect(identifier.value.length + '-postgres'.length).toBeLessThanOrEqual(22)
     const installButton = within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') })
 
-    const apiVolume = within(installDialog).getByText(i18next.t('appTemplatesPage.componentProjectVolume', { name: 'Backend' })).closest('div')!.parentElement!
-    await user.selectOptions(within(apiVolume).getAllByRole('combobox')[0], await within(apiVolume).findByRole('option', { name: 'Blog uploads · 10Gi' }))
+    const apiVolume = within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.componentProjectVolume', { name: 'Backend' }) })
+    await selectComboboxOption(user, apiVolume, 'Blog uploads · 10Gi')
     expect(installButton).toBeEnabled()
     await user.click(installButton)
     expect(await within(installDialog).findByText(i18next.t('appTemplatesPage.validation.projectVolumeRequired'))).toBeInTheDocument()
     expect(mocks.installAppTemplate).not.toHaveBeenCalled()
-    const databaseVolume = within(installDialog).getByText(i18next.t('appTemplatesPage.componentProjectVolume', { name: 'PostgreSQL' })).closest('div')!.parentElement!
-    await user.selectOptions(within(databaseVolume).getAllByRole('combobox')[0], await within(databaseVolume).findByRole('option', { name: 'Blog database · 10Gi' }))
+    const databaseVolume = within(installDialog).getByRole('combobox', { name: i18next.t('appTemplatesPage.componentProjectVolume', { name: 'PostgreSQL' }) })
+    await selectComboboxOption(user, databaseVolume, 'Blog database · 10Gi')
     expect(installButton).toBeEnabled()
     await user.click(installButton)
 
@@ -477,10 +471,10 @@ describe('app template installation', () => {
     await expandCustomParameters(user, installDialog)
     await user.click(await within(installDialog).findByRole('button', { name: i18next.t('projectVolumes.create') }))
     const createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
-    const blockMode = within(createDialog).getByRole('option', { name: i18next.t('deploymentsPage.kubernetesValues.Block') }) as HTMLOptionElement
+    const blockMode = within(createDialog).getByRole('combobox', { name: i18next.t('projectVolumes.volumeMode') })
 
-    expect(blockMode.selected).toBe(true)
-    expect(blockMode.parentElement).toBeDisabled()
+    expect(blockMode).toHaveTextContent(i18next.t('deploymentsPage.kubernetesValues.Block'))
+    expect(blockMode).toBeDisabled()
   })
 
   it('filters templates by category chips with counts and pressed state', async () => {
@@ -826,6 +820,12 @@ async function openInstallSheet(user: ReturnType<typeof userEvent.setup>, name: 
 
 async function expandCustomParameters(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
   await user.click(await within(dialog).findByRole('button', { name: i18next.t('appTemplatesPage.customParameters') }))
+}
+
+async function selectComboboxOption(user: ReturnType<typeof userEvent.setup>, combobox: HTMLElement, optionName: string) {
+  await waitFor(() => expect(combobox).toBeEnabled())
+  await user.click(combobox)
+  await user.click(await screen.findByRole('option', { name: optionName }))
 }
 
 function page<T>(items: T[], sortBy = 'displayName') {

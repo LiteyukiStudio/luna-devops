@@ -14,7 +14,7 @@ import { SearchMultiSelect, SearchSelect } from '@/components/common/search-sele
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 
 function exceptionSchema(message: { required: string, cidr: string, ports: string, project: string, nameTooLong: string, reasonTooLong: string }) {
@@ -100,11 +100,24 @@ export function ClusterEgressExceptionFormDialog({ cluster, exception, onOpenCha
               <FormField error={errors.name?.message} label={t('clustersPage.egressExceptions.name')} required><Input {...form.register('name')} /></FormField>
               <FormField error={errors.cidr?.message} hint={t('clustersPage.egressExceptions.cidrHint')} label={t('clustersPage.egressExceptions.cidr')} required><Input className="font-mono" placeholder="192.168.31.10/32" {...form.register('cidr')} /></FormField>
               <FormField label={t('clustersPage.egressExceptions.protocol')}>
-                <NativeSelect {...form.register('protocol')}>
-                  <option value="tcp">{t('clustersPage.egressExceptions.protocols.tcp')}</option>
-                  <option value="udp">{t('clustersPage.egressExceptions.protocols.udp')}</option>
-                  <option value="any">{t('clustersPage.egressExceptions.protocols.any')}</option>
-                </NativeSelect>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="protocol"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="tcp">{t('clustersPage.egressExceptions.protocols.tcp')}</SelectItem>
+                          <SelectItem value="udp">{t('clustersPage.egressExceptions.protocols.udp')}</SelectItem>
+                          <SelectItem value="any">{t('clustersPage.egressExceptions.protocols.any')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </FormField>
               <FormField error={errors.ports?.message} hint={t('clustersPage.egressExceptions.portsHint')} label={t('clustersPage.egressExceptions.ports')}><Input placeholder="3306" {...form.register('ports')} /></FormField>
             </div>

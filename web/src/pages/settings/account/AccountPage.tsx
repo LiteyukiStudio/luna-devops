@@ -4,7 +4,7 @@ import i18next from 'i18next'
 import { ChevronDown, Link2, Plus, Unlink } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -27,7 +27,7 @@ import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { BrandColorPresetField } from '@/pages/settings/appearance/brand-color-preset-field'
 import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
@@ -203,20 +203,46 @@ function ProfilePanel() {
           <Input {...form.register('avatarUrl')} aria-invalid={Boolean(form.formState.errors.avatarUrl)} placeholder={t('accountPage.avatarUrlPlaceholder')} />
         </Field>
         <Field error={form.formState.errors.language?.message} hint={t('accountPage.languageHint')} label={t('language')} required>
-          <Select {...form.register('language')} aria-invalid={Boolean(form.formState.errors.language)}>
-            <option value="zh-CN">{t('languages.zhCN')}</option>
-            <option value="zh-TW">{t('languages.zhTW')}</option>
-            <option value="en-US">{t('languages.enUS')}</option>
-            <option value="ja-JP">{t('languages.jaJP')}</option>
-            <option value="ko-KR">{t('languages.koKR')}</option>
-          </Select>
+          {fieldControl => (
+            <Controller
+              control={form.control}
+              name="language"
+              render={({ field }) => (
+                <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="zh-CN">{t('languages.zhCN')}</SelectItem>
+                    <SelectItem value="zh-TW">{t('languages.zhTW')}</SelectItem>
+                    <SelectItem value="en-US">{t('languages.enUS')}</SelectItem>
+                    <SelectItem value="ja-JP">{t('languages.jaJP')}</SelectItem>
+                    <SelectItem value="ko-KR">{t('languages.koKR')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </Field>
         <Field hint={t('accountPage.appearanceModeHint')} label={t('theme.mode')}>
-          <Select value={mode} onChange={event => setMode(event.target.value as typeof mode)}>
-            <option value="system">{t('theme.system')}</option>
-            <option value="light">{t('theme.light')}</option>
-            <option value="dark">{t('theme.dark')}</option>
-          </Select>
+          {fieldControl => (
+            <Select
+              value={mode}
+              onValueChange={(next) => {
+                if (next === 'system' || next === 'light' || next === 'dark')
+                  setMode(next)
+              }}
+            >
+              <SelectTrigger {...fieldControl} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="system">{t('theme.system')}</SelectItem>
+                <SelectItem value="light">{t('theme.light')}</SelectItem>
+                <SelectItem value="dark">{t('theme.dark')}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </Field>
         <Field error={form.formState.errors.brandColorPreset?.message} hint={t('accountPage.brandColorHint')} label={t('accountPage.brandColor')}>
           <BrandColorPresetField

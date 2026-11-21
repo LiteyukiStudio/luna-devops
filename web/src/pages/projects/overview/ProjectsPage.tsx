@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, FolderKanban, MoreHorizontal, Pencil, Plus, Save, SearchX, Trash2 } from 'lucide-react'
 import { useDeferredValue, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -27,7 +27,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { PROJECT_IDENTIFIER_MAX_LENGTH, PROJECT_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { isPlatformAdmin } from '@/lib/roles'
@@ -312,18 +312,23 @@ export function ProjectsPage() {
             />
             <div className="flex min-w-0 flex-1 items-center gap-1.5 @lg/data-list:flex-none">
               <Select
-                aria-label={t('projectSpaces.sortBy')}
-                className="h-8 text-xs"
-                containerClassName="min-w-32 flex-1 @lg/data-list:w-40 @lg/data-list:flex-none"
                 value={sortBy}
-                onChange={(event) => {
-                  setSortBy(event.target.value as ProjectSortBy)
+                onValueChange={(next) => {
+                  setSortBy(next as ProjectSortBy)
                   setPage(1)
                 }}
               >
-                {PROJECT_SORT_OPTIONS.map(option => (
-                  <option key={option} value={option}>{t(`projectSpaces.sort.${option}`)}</option>
-                ))}
+                <SelectTrigger
+                  aria-label={t('projectSpaces.sortBy')}
+                  className="min-w-32 flex-1 text-xs @lg/data-list:w-40 @lg/data-list:flex-none"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_SORT_OPTIONS.map(option => (
+                    <SelectItem key={option} value={option}>{t(`projectSpaces.sort.${option}`)}</SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <Button
                 aria-label={t('projectSpaces.sortOrder')}
@@ -441,10 +446,26 @@ export function ProjectsPage() {
               title={t('projectSpaces.webConsoleSettingsTitle')}
             >
               <Field hint={t('projectSpaces.webConsoleEnabledHint')} label={t('projectSpaces.webConsoleEnabled')}>
-                <Select {...form.register('webConsoleEnabled', { setValueAs: value => String(value) !== 'false' })}>
-                  <option value="true">{t('common.enabled')}</option>
-                  <option value="false">{t('common.disabled')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="webConsoleEnabled"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ? 'true' : 'false'}
+                        onValueChange={next => field.onChange(next !== 'false')}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('common.enabled')}</SelectItem>
+                          <SelectItem value="false">{t('common.disabled')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             </ProgressiveSection>
             <DialogFooter>

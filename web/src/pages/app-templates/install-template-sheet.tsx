@@ -20,7 +20,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
@@ -315,10 +316,10 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
   })
 
   const clusterOptions = clusterItems.map(cluster => (
-    <option key={cluster.id} value={cluster.id}>
+    <SelectItem key={cluster.id} value={cluster.id}>
       {cluster.name}
       {cluster.isDefault ? ` (${t('common.default')})` : ''}
-    </option>
+    </SelectItem>
   ))
 
   const templateValueField = (value: AppTemplate['values'][number]) => {
@@ -359,10 +360,29 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
         {systemComponent
           ? (
               <Field error={errors.clusterId?.message} label={t('appTemplatesPage.runtimeCluster')} required>
-                <Select disabled={clusters.isLoading || installing} {...register('clusterId')}>
-                  <option value="">{t('appTemplatesPage.selectRuntimeCluster')}</option>
-                  {clusterOptions}
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={control}
+                    name="clusterId"
+                    render={({ field }) => (
+                      <Select
+                        disabled={clusters.isLoading || installing}
+                        value={field.value || undefined}
+                        onValueChange={(next) => {
+                          if (next)
+                            field.onChange(next)
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue placeholder={t('appTemplatesPage.selectRuntimeCluster')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clusterOptions}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             )
           : (
@@ -409,11 +429,24 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                   )}
                 </Field>
                 <Field label={t('appTemplatesPage.stage')}>
-                  <Select {...register('stage')}>
-                    {INSTALL_STAGES.map(stage => (
-                      <option key={stage} value={stage}>{t(`appTemplatesPage.stageOptions.${stage}`)}</option>
-                    ))}
-                  </Select>
+                  {fieldControl => (
+                    <Controller
+                      control={control}
+                      name="stage"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {INSTALL_STAGES.map(stage => (
+                              <SelectItem key={stage} value={stage}>{t(`appTemplatesPage.stageOptions.${stage}`)}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
                 </Field>
               </>
             )}
@@ -473,13 +506,35 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                   <>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label={t('appTemplatesPage.runtimeCluster')}>
-                        <Select
-                          disabled={clusters.isLoading || installing}
-                          {...register('clusterId', { onChange: resetVolumes })}
-                        >
-                          <option value="">{t('appTemplatesPage.defaultCluster')}</option>
-                          {clusterOptions}
-                        </Select>
+                        {fieldControl => (
+                          <Controller
+                            control={control}
+                            name="clusterId"
+                            render={({ field }) => (
+                              <Select
+                                disabled={clusters.isLoading || installing}
+                                value={toSelectValue(field.value)}
+                                onValueChange={(next) => {
+                                  if (!next)
+                                    return
+                                  const nextClusterId = fromSelectValue(next)
+                                  if (nextClusterId === field.value)
+                                    return
+                                  field.onChange(nextClusterId)
+                                  resetVolumes()
+                                }}
+                              >
+                                <SelectTrigger {...fieldControl} className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={EMPTY_SELECT_VALUE}>{t('appTemplatesPage.defaultCluster')}</SelectItem>
+                                  {clusterOptions}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
+                        )}
                       </Field>
                       <Field label={t('appTemplatesPage.deploymentName')}>
                         <Input {...register('deploymentName')} />

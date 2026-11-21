@@ -9,7 +9,8 @@ import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { StatusIndicator } from '@/components/common/status-indicator'
 import { Button } from '@/components/ui/button'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
@@ -156,35 +157,39 @@ export function ApplicationReleaseLogsPanel({
                 {containerOptions.length > 0 && (
                   <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                     <label htmlFor={containerSelectId}>{t('deploymentsPage.container')}</label>
-                    <NativeSelect
-                      className="h-8 w-36 font-mono text-xs"
-                      containerClassName="w-auto"
-                      id={containerSelectId}
-                      value={container}
-                      onChange={event => setContainer(event.target.value)}
+                    <Select
+                      value={toSelectValue(container)}
+                      onValueChange={next => setContainer(fromSelectValue(next))}
                     >
-                      <option value="">{t('deploymentsPage.webConsoleContainerPlaceholder')}</option>
-                      {containerOptions.map(option => (
-                        <option key={option.name} value={option.name}>
-                          {option.init ? `${option.name} (init)` : option.name}
-                        </option>
-                      ))}
-                    </NativeSelect>
+                      <SelectTrigger className="h-8 w-36 font-mono text-xs" id={containerSelectId} size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.webConsoleContainerPlaceholder')}</SelectItem>
+                        {containerOptions.map(option => (
+                          <SelectItem key={option.name} value={option.name}>
+                            {option.init ? `${option.name} (init)` : option.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
                 <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                   <label htmlFor={tailSelectId}>{t('deploymentsPage.runtimeTailLines')}</label>
-                  <NativeSelect
-                    className="h-8 w-24 text-xs"
-                    containerClassName="w-auto"
-                    id={tailSelectId}
+                  <Select
                     value={String(tailLines)}
-                    onChange={event => setTailLines(Number(event.target.value) || 500)}
+                    onValueChange={next => setTailLines(Number(next) || 500)}
                   >
-                    {tailLineOptions.map(lines => (
-                      <option key={lines} value={String(lines)}>{t('deploymentsPage.runtimeTailLinesOption', { count: lines })}</option>
-                    ))}
-                  </NativeSelect>
+                    <SelectTrigger className="h-8 w-24 text-xs" id={tailSelectId} size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tailLineOptions.map(lines => (
+                        <SelectItem key={lines} value={String(lines)}>{t('deploymentsPage.runtimeTailLinesOption', { count: lines })}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <Button
                   aria-pressed={previous}

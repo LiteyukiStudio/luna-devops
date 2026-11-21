@@ -14,8 +14,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFieldError } from '../deployment-target-editor-utils'
 
@@ -88,10 +88,17 @@ export function ApplicationBuildTemplateFields({
   return (
     <div className="grid gap-4 @xl/workspace:col-span-2 @xl/workspace:grid-cols-2">
       <Field className="@xl/workspace:col-span-2" hint={t('buildTemplates.modeHint')} label={t('buildTemplates.mode')} required>
-        <NativeSelect value={mode} onChange={event => switchMode(event.target.value === 'template' ? 'template' : 'repository_dockerfile')}>
-          <option value="repository_dockerfile">{t('buildTemplates.repositoryDockerfile')}</option>
-          <option value="template">{t('buildTemplates.platformTemplate')}</option>
-        </NativeSelect>
+        {control => (
+          <Select value={mode} onValueChange={value => switchMode(value === 'template' ? 'template' : 'repository_dockerfile')}>
+            <SelectTrigger {...control} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="repository_dockerfile">{t('buildTemplates.repositoryDockerfile')}</SelectItem>
+              <SelectItem value="template">{t('buildTemplates.platformTemplate')}</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
       </Field>
 
       {mode === 'repository_dockerfile' && dockerfileSuggestions.length === 0 && (
@@ -213,16 +220,32 @@ function TemplateParameterField({
     ? rawError.message
     : undefined
 
+  const options = parameter.options ?? []
+  const hasEmptyOption = options.includes('')
+
   return (
     <Field error={error} label={t(`buildTemplates.parameters.${parameter.key}`)} required={parameter.required}>
-      {parameter.type === 'select'
+      {fieldControl => parameter.type === 'select'
         ? (
-            <NativeSelect value={value} onChange={event => onChange(event.target.value)}>
-              {(parameter.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}
-            </NativeSelect>
+            <Select
+              value={hasEmptyOption ? toSelectValue(value) : (value || undefined)}
+              onValueChange={next => onChange(hasEmptyOption ? fromSelectValue(next) : next)}
+            >
+              <SelectTrigger {...fieldControl} className="w-full">
+                <SelectValue placeholder={hasEmptyOption ? undefined : t('common.select')} />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map(option => (
+                  <SelectItem key={option || EMPTY_SELECT_VALUE} value={hasEmptyOption ? toSelectValue(option) : option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )
         : (
             <Input
+              {...fieldControl}
               className="font-mono"
               inputMode={parameter.type === 'port' ? 'numeric' : undefined}
               value={value}

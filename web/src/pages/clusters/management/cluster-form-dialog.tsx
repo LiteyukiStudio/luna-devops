@@ -13,7 +13,7 @@ import { ProjectSpaceMultiSelect } from '@/components/common/project-space-selec
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { inspectKubeconfig, selectSingleKubeconfigContext } from '@/lib/kubeconfig'
 import { clusterResourcePolicySchema } from '../resources/cluster-resource-policy-schema'
@@ -216,11 +216,24 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
               <ProgressiveSection defaultOpen description={t('clustersPage.basicClusterConfigDescription')} title={t('clustersPage.basicClusterConfig')}>
                 <Field label={t('common.name')} required><Input {...form.register('name', { required: true })} /></Field>
                 <Field label={t('common.scope')}>
-                  <Select {...form.register('scope')}>
-                    <option value="global">{t('codeRepositoriesView.scopeGlobal')}</option>
-                    <option value="project">{t('codeRepositoriesView.scopeProject')}</option>
-                    <option value="user">{t('codeRepositoriesView.scopeUser')}</option>
-                  </Select>
+                  {fieldControl => (
+                    <Controller
+                      control={form.control}
+                      name="scope"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="global">{t('codeRepositoriesView.scopeGlobal')}</SelectItem>
+                            <SelectItem value="project">{t('codeRepositoriesView.scopeProject')}</SelectItem>
+                            <SelectItem value="user">{t('codeRepositoriesView.scopeUser')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
                 </Field>
                 {scope === 'project' && (
                   <Field label={t('projectSpaces.title')} required>
@@ -252,8 +265,21 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                         {kubeconfigContextSelectionRequired && (
                           <div className="mt-3 grid gap-2">
                             <label className="text-sm font-medium text-foreground" htmlFor="cluster-kubeconfig-context">{t('clustersPage.kubeconfigContextLabel')}</label>
-                            <Select id="cluster-kubeconfig-context" value={effectiveKubeconfigContext} onChange={event => setSelectedKubeconfigContext(event.target.value)}>
-                              {kubeconfigInspection.contexts.map(context => <option key={context.name} value={context.name}>{kubeconfigContextOptionLabel(context)}</option>)}
+                            <Select
+                              value={effectiveKubeconfigContext || undefined}
+                              onValueChange={(next) => {
+                                if (next)
+                                  setSelectedKubeconfigContext(next)
+                              }}
+                            >
+                              <SelectTrigger className="w-full" id="cluster-kubeconfig-context">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {kubeconfigInspection.contexts.map(context => (
+                                  <SelectItem key={context.name} value={context.name}>{kubeconfigContextOptionLabel(context)}</SelectItem>
+                                ))}
+                              </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">{t('clustersPage.kubeconfigContextHint')}</p>
                           </div>
@@ -285,43 +311,100 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                     <Textarea {...form.register('gatewayDomainSuffixesText', { required: true })} placeholder={t('clustersPage.gatewayDomainSuffixesPlaceholder')} rows={3} />
                   </Field>
                   <Field hint={t('clustersPage.gatewayPublicSchemeHint')} label={t('clustersPage.gatewayPublicScheme')} required>
-                    <Select {...form.register('gatewayPublicScheme', { onChange: (event) => {
-                      const nextScheme = event.target.value as RuntimeCluster['gatewayPublicScheme']
-                      const currentPort = form.getValues('gatewayPublicPort')
-                      if (currentPort === 80 || currentPort === 443 || !currentPort)
-                        form.setValue('gatewayPublicPort', defaultGatewayPublicPort(nextScheme), { shouldDirty: true, shouldValidate: true })
-                    } })}
-                    >
-                      <option value="http">{t('clustersPage.protocolHttp')}</option>
-                      <option value="https">{t('clustersPage.protocolHttps')}</option>
-                    </Select>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="gatewayPublicScheme"
+                        render={({ field }) => (
+                          <Select
+                            value={field.value}
+                            onValueChange={(next) => {
+                              const nextScheme = next as RuntimeCluster['gatewayPublicScheme']
+                              if (nextScheme === field.value)
+                                return
+                              field.onChange(nextScheme)
+                              const currentPort = form.getValues('gatewayPublicPort')
+                              if (currentPort === 80 || currentPort === 443 || !currentPort)
+                                form.setValue('gatewayPublicPort', defaultGatewayPublicPort(nextScheme), { shouldDirty: true, shouldValidate: true })
+                            }}
+                          >
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="http">{t('clustersPage.protocolHttp')}</SelectItem>
+                              <SelectItem value="https">{t('clustersPage.protocolHttps')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </Field>
                   <Field hint={t('clustersPage.gatewayPublicPortHint')} label={t('clustersPage.gatewayPublicPort')} required>
                     <Input {...form.register('gatewayPublicPort', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" max={65535} min={1} placeholder={String(defaultGatewayPublicPort(form.watch('gatewayPublicScheme')))} type="number" />
                   </Field>
                   <Field hint={t('clustersPage.gatewayExternalTLSModeHint')} label={t('clustersPage.gatewayExternalTLSMode')}>
-                    <Select {...form.register('gatewayExternalTLSMode')}>
-                      <option value="none">{t('clustersPage.gatewayTLSNone')}</option>
-                      <option value="gateway">{t('clustersPage.gatewayTLSGateway')}</option>
-                      <option value="upstream">{t('clustersPage.gatewayTLSUpstream')}</option>
-                    </Select>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="gatewayExternalTLSMode"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">{t('clustersPage.gatewayTLSNone')}</SelectItem>
+                              <SelectItem value="gateway">{t('clustersPage.gatewayTLSGateway')}</SelectItem>
+                              <SelectItem value="upstream">{t('clustersPage.gatewayTLSUpstream')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </Field>
                   <Field hint={t('clustersPage.gatewayForwardedHeadersModeHint')} label={t('clustersPage.gatewayForwardedHeadersMode')}>
-                    <Select {...form.register('gatewayForwardedHeadersMode')}>
-                      <option value="preserve">{t('clustersPage.gatewayForwardedPreserve')}</option>
-                      <option value="overwrite">{t('clustersPage.gatewayForwardedOverwrite')}</option>
-                      <option value="none">{t('clustersPage.gatewayForwardedNone')}</option>
-                    </Select>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="gatewayForwardedHeadersMode"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="preserve">{t('clustersPage.gatewayForwardedPreserve')}</SelectItem>
+                              <SelectItem value="overwrite">{t('clustersPage.gatewayForwardedOverwrite')}</SelectItem>
+                              <SelectItem value="none">{t('clustersPage.gatewayForwardedNone')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </Field>
                 </div>
               </ProgressiveSection>
               <ProgressiveSection description={t('clustersPage.gatewayInternalConfigDescription')} summary={`${watchedGateway.gatewayControllerType} · ${watchedGateway.gatewayHttpListenerPort} / ${watchedGateway.gatewayHttpsListenerPort}`} title={t('clustersPage.gatewayInternalConfig')}>
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field hint={t('clustersPage.gatewayControllerTypeHint')} label={t('clustersPage.gatewayControllerType')}>
-                    <Select {...form.register('gatewayControllerType')}>
-                      <option value="traefik">{t('clustersPage.gatewayControllerTraefik')}</option>
-                      <option value="generic">{t('clustersPage.gatewayControllerGeneric')}</option>
-                    </Select>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="gatewayControllerType"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="traefik">{t('clustersPage.gatewayControllerTraefik')}</SelectItem>
+                              <SelectItem value="generic">{t('clustersPage.gatewayControllerGeneric')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </Field>
                   <Field hint={t('clustersPage.gatewayClassNameHint')} label={t('clustersPage.gatewayClassName')}><Input {...form.register('gatewayClassName')} placeholder={t('clustersPage.gatewayClassNamePlaceholder')} /></Field>
                   <Field hint={t('clustersPage.gatewayNameHint')} label={t('clustersPage.gatewayName')}><Input {...form.register('gatewayName')} placeholder={t('clustersPage.gatewayNamePlaceholder')} /></Field>
@@ -333,10 +416,23 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                   <Field hint={t('clustersPage.gatewayTlsSecretNameHint')} label={t('clustersPage.gatewayTlsSecretName')}><Input {...form.register('gatewayTlsSecretName')} placeholder={t('clustersPage.gatewayTlsSecretNamePlaceholder')} /></Field>
                   <Field hint={t('clustersPage.gatewayTlsSecretNamespaceHint')} label={t('clustersPage.gatewayTlsSecretNamespace')}><Input {...form.register('gatewayTlsSecretNamespace')} placeholder={t('clustersPage.gatewayTlsSecretNamespacePlaceholder')} /></Field>
                   <Field hint={t('clustersPage.gatewayCertIssuerKindHint')} label={t('clustersPage.gatewayCertIssuerKind')}>
-                    <Select {...form.register('gatewayCertIssuerKind')}>
-                      <option value="ClusterIssuer">{t('clustersPage.gatewayClusterIssuer')}</option>
-                      <option value="Issuer">{t('clustersPage.gatewayNamespacedIssuer')}</option>
-                    </Select>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="gatewayCertIssuerKind"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ClusterIssuer">{t('clustersPage.gatewayClusterIssuer')}</SelectItem>
+                              <SelectItem value="Issuer">{t('clustersPage.gatewayNamespacedIssuer')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </Field>
                   <Field hint={t('clustersPage.gatewayCertIssuerNameHint')} label={t('clustersPage.gatewayCertIssuerName')}><Input {...form.register('gatewayCertIssuerName')} placeholder={t('clustersPage.gatewayCertIssuerNamePlaceholder')} /></Field>
                   <Field hint={t('clustersPage.gatewayCertificateNamespaceHint')} label={t('clustersPage.gatewayCertificateNamespace')}><Input {...form.register('gatewayCertificateNamespace')} placeholder={t('clustersPage.gatewayCertificateNamespacePlaceholder')} /></Field>
@@ -356,10 +452,23 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                 <Field error={form.formState.errors.networkBlockedCIDRs?.message} hint={t('clustersPage.networkBlockedCIDRsHint')} label={t('clustersPage.networkBlockedCIDRs')}><Textarea {...form.register('networkBlockedCIDRs')} placeholder={t('clustersPage.networkBlockedCIDRsPlaceholder')} rows={3} /></Field>
                 <Field error={form.formState.errors.networkGatewayNamespace?.message} hint={t('clustersPage.networkGatewayNamespaceHint')} label={t('clustersPage.networkGatewayNamespace')}><Input {...form.register('networkGatewayNamespace')} placeholder={form.watch('gatewayNamespace') || 'kube-system'} /></Field>
                 <Field error={form.formState.errors.buildEgressMode?.message} hint={t('clustersPage.buildEgressModeHint')} label={t('clustersPage.buildEgressMode')}>
-                  <Select {...form.register('buildEgressMode')}>
-                    <option value="restricted">{t('clustersPage.buildEgressModeRestricted')}</option>
-                    <option value="permissive">{t('clustersPage.buildEgressModePermissive')}</option>
-                  </Select>
+                  {fieldControl => (
+                    <Controller
+                      control={form.control}
+                      name="buildEgressMode"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="restricted">{t('clustersPage.buildEgressModeRestricted')}</SelectItem>
+                            <SelectItem value="permissive">{t('clustersPage.buildEgressModePermissive')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
                 </Field>
                 {form.watch('buildEgressMode') === 'restricted'
                   ? (

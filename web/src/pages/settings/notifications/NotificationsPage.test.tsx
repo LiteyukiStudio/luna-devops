@@ -57,10 +57,9 @@ describe('notification rule scope', () => {
 
     expect(screen.getByRole('dialog', { name: 'Notification rule' })).toBeInTheDocument()
     const name = screen.getByRole('textbox', { name: 'Name' })
-    const scope = screen.getByText('Notification scope', { selector: '[data-slot="field-label"] span' }).closest('[data-slot="field"]')?.querySelector('select')
+    const scope = screen.getByRole('combobox', { name: 'Notification scope' })
     expect(name).not.toBeNull()
-    expect(scope).not.toBeNull()
-    expect(scope).toHaveValue('projects')
+    expect(scope).toHaveTextContent('Selected project spaces (default)')
     expect(screen.getByText('Select at least one project space before saving the rule.')).toBeInTheDocument()
     expect(mocks.listProjects).toHaveBeenCalledWith('all')
 
@@ -68,7 +67,8 @@ describe('notification rule scope', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Team channel' }))
     expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create rule' })).toBeDisabled()
 
-    await user.selectOptions(scope!, 'all')
+    await user.click(scope)
+    await user.click(await screen.findByRole('option', { name: 'All project spaces' }))
     expect(screen.getByText(/matches events platform-wide/)).toBeInTheDocument()
     expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create rule' })).toBeEnabled()
 
@@ -85,10 +85,11 @@ describe('notification rule scope', () => {
     await user.click(await screen.findByRole('tab', { name: 'Rules' }))
     await user.click(screen.getByRole('button', { name: 'Create rule' }))
     const name = screen.getByRole('textbox', { name: 'Name' })
-    const scope = screen.getByText('Notification scope', { selector: '[data-slot="field-label"] span' }).closest('[data-slot="field"]')?.querySelector('select')
+    const scope = screen.getByRole('combobox', { name: 'Notification scope' })
     await user.type(name, 'Build failures')
     await user.click(screen.getByRole('checkbox', { name: 'Team channel' }))
-    await user.selectOptions(scope!, 'all')
+    await user.click(scope)
+    await user.click(await screen.findByRole('option', { name: 'All project spaces' }))
 
     await user.click(screen.getByRole('button', { name: 'Advanced filters' }))
     const filter = screen.getByRole('textbox', { name: 'Advanced filter JSON' })

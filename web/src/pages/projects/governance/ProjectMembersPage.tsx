@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2, UserPlus } from 'lucide-react'
 import { useImperativeHandle, useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -20,7 +20,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PROJECT_ROLES, ProjectRole } from '@/lib/roles'
 
 const schema = z.object({
@@ -164,16 +164,18 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
             render: member => (
               <div className="flex justify-end gap-2">
                 <Select
-                  aria-label={t('projectMembers.role')}
-                  className="h-9"
-                  containerClassName="w-36"
                   value={member.role}
-                  onChange={event => updateMember.mutate({ memberId: member.id, role: event.target.value as ProjectMember['role'] })}
+                  onValueChange={next => updateMember.mutate({ memberId: member.id, role: next as ProjectMember['role'] })}
                 >
-                  <option value={ProjectRole.Viewer}>{t('projectMembers.roleViewer')}</option>
-                  <option value={ProjectRole.Developer}>{t('projectMembers.roleDeveloper')}</option>
-                  <option value={ProjectRole.Admin}>{t('projectMembers.roleAdmin')}</option>
-                  <option value={ProjectRole.Owner}>{t('projectMembers.roleOwner')}</option>
+                  <SelectTrigger aria-label={t('projectMembers.role')} className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ProjectRole.Viewer}>{t('projectMembers.roleViewer')}</SelectItem>
+                    <SelectItem value={ProjectRole.Developer}>{t('projectMembers.roleDeveloper')}</SelectItem>
+                    <SelectItem value={ProjectRole.Admin}>{t('projectMembers.roleAdmin')}</SelectItem>
+                    <SelectItem value={ProjectRole.Owner}>{t('projectMembers.roleOwner')}</SelectItem>
+                  </SelectContent>
                 </Select>
                 <ConfirmDialog
                   confirmText={t('projectMembers.removeConfirm')}
@@ -251,12 +253,25 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
               />
             </Field>
             <Field error={form.formState.errors.role?.message} hint={t('projectMembers.roleHint')} label={t('projectMembers.role')} required>
-              <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
-                <option value={ProjectRole.Viewer}>{t('projectMembers.roleViewer')}</option>
-                <option value={ProjectRole.Developer}>{t('projectMembers.roleDeveloper')}</option>
-                <option value={ProjectRole.Admin}>{t('projectMembers.roleAdmin')}</option>
-                <option value={ProjectRole.Owner}>{t('projectMembers.roleOwner')}</option>
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="role"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ProjectRole.Viewer}>{t('projectMembers.roleViewer')}</SelectItem>
+                        <SelectItem value={ProjectRole.Developer}>{t('projectMembers.roleDeveloper')}</SelectItem>
+                        <SelectItem value={ProjectRole.Admin}>{t('projectMembers.roleAdmin')}</SelectItem>
+                        <SelectItem value={ProjectRole.Owner}>{t('projectMembers.roleOwner')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             <DialogFooter>
               <DialogClose asChild>

@@ -31,8 +31,10 @@ describe('project network policy card', () => {
     mocks.updateProjectNetworkPolicy.mockImplementation((_projectId: string, payload: object) => Promise.resolve({ ...payload, egressExceptions: [] }))
     renderCard(true)
     const user = userEvent.setup()
-    await user.selectOptions(await screen.findByLabelText('Ingress'), 'dependencies')
-    await user.selectOptions(screen.getByLabelText('Egress'), 'allowlist')
+    await user.click(await screen.findByLabelText('Ingress'))
+    await user.click(await screen.findByRole('option', { name: 'Service bindings only' }))
+    await user.click(screen.getByLabelText('Egress'))
+    await user.click(await screen.findByRole('option', { name: 'Allowlist only' }))
     await user.type(screen.getByLabelText('Egress allowlist'), '1.1.1.1/32 443')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.updateProjectNetworkPolicy).toHaveBeenCalledWith('prj_demo', {
@@ -45,7 +47,8 @@ describe('project network policy card', () => {
   it('rejects malformed or IPv4-mapped allowlist entries before saving', async () => {
     renderCard(true)
     const user = userEvent.setup()
-    await user.selectOptions(await screen.findByLabelText('Egress'), 'allowlist')
+    await user.click(await screen.findByLabelText('Egress'))
+    await user.click(await screen.findByRole('option', { name: 'Allowlist only' }))
     await user.type(screen.getByLabelText('Egress allowlist'), '::ffff:0.0.0.0/96')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText(/egress allowlist is invalid/i)).toBeInTheDocument()

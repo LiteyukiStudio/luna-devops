@@ -12,7 +12,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { deploymentReleaseKey } from '@/pages/applications/application-config-utils'
@@ -147,16 +147,22 @@ export function RuntimeConfigSetsField({ canManageSecrets, deploymentTargets, pr
                 </label>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {selectedRef && (
-                    <NativeSelect
-                      aria-label={t('deploymentTargetEditor.runtimeConfigRefModeFor', { name: set.name })}
-                      className="h-8 w-auto text-xs"
-                      containerClassName="w-auto shrink-0"
+                    <Select
                       value={selectedRef.mode}
-                      onChange={event => changeMode(set.id, event.target.value === 'snapshot' ? 'snapshot' : 'live')}
+                      onValueChange={value => changeMode(set.id, value === 'snapshot' ? 'snapshot' : 'live')}
                     >
-                      <option value="live">{t('deploymentsPage.runtimeConfigRefModes.live')}</option>
-                      <option value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</option>
-                    </NativeSelect>
+                      <SelectTrigger
+                        aria-label={t('deploymentTargetEditor.runtimeConfigRefModeFor', { name: set.name })}
+                        className="w-auto shrink-0 text-xs"
+                        size="sm"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="live">{t('deploymentsPage.runtimeConfigRefModes.live')}</SelectItem>
+                        <SelectItem value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   )}
                   <Button aria-label={t('deploymentTargetEditor.editRuntimeConfigSet', { name: set.name })} size="icon" type="button" variant="ghost" onClick={() => openDialog(set)}>
                     <Pencil className="size-4" />

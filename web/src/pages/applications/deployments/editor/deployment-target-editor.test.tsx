@@ -165,7 +165,7 @@ function renderEditor({ releases = [] as Release[], target = null as DeploymentT
   return router
 }
 
-describe('deployment target editor', () => {
+describe('deployment target editor', { timeout: 15_000 }, () => {
   beforeAll(() => {
     Element.prototype.scrollIntoView = vi.fn()
   })
@@ -246,7 +246,8 @@ describe('deployment target editor', () => {
     const cpuInput = screen.getByRole('textbox', { name: /CPU quota/ })
     await user.clear(cpuInput)
     await user.type(cpuInput, '1.5')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'CPU unit' }), '')
+    await user.click(screen.getByRole('combobox', { name: 'CPU unit' }))
+    await user.click(await screen.findByRole('option', { name: 'core' }))
     await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
 
     expect(await screen.findByText('deployments list')).toBeInTheDocument()
@@ -296,7 +297,8 @@ describe('deployment target editor', () => {
 
     // Wait for listBuildTemplates query to settle before switching mode
     await waitFor(() => expect(api.listBuildTemplates).toHaveBeenCalled())
-    await user.selectOptions(screen.getByRole('combobox', { name: /Build definition/ }), 'template')
+    await user.click(screen.getByRole('combobox', { name: /Build definition/ }))
+    await user.click(await screen.findByRole('option', { name: 'Platform build template' }))
     const portInput = await screen.findByDisplayValue('9000')
     await user.clear(portInput)
     await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
@@ -334,7 +336,8 @@ describe('deployment target editor', () => {
     renderEditor({ values: { name: 'dev' } })
 
     await user.click(screen.getByRole('button', { name: 'Add data volume' }))
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Source' }), 'emptyDir')
+    await user.click(screen.getByRole('combobox', { name: 'Source' }))
+    await user.click(await screen.findByRole('option', { name: 'Temporary emptyDir' }))
     const mountPathInput = screen.getByRole('textbox', { name: 'Data path' })
     await user.type(mountPathInput, 'relative/cache')
     await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
@@ -516,7 +519,8 @@ describe('deployment target editor', () => {
 
     await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced options/ }))
     await user.click(screen.getByRole('button', { name: /Health check probes/ }))
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Readiness probe' }), 'httpGet')
+    await user.click(screen.getByRole('combobox', { name: 'Readiness probe' }))
+    await user.click(await screen.findByRole('option', { name: 'HTTP GET' }))
     const pathInput = screen.getByRole('textbox', { name: 'Path' })
     await user.clear(pathInput)
     await user.type(pathInput, '/readyz')

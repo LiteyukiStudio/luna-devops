@@ -80,7 +80,7 @@ describe('aI assistant channel affinity setting', () => {
   it('defaults capability-sensitive Provider policies to automatic mode', async () => {
     renderPanel()
 
-    expect(await screen.findByRole('combobox', { name: i18next.t('settings.ai.providerCompatibility') })).toHaveValue('auto')
-    expect(screen.getByRole('combobox', { name: i18next.t('settings.ai.promptCacheKeyMode') })).toHaveValue('auto')
+    expect(await screen.findByRole('combobox', { name: i18next.t('settings.ai.providerCompatibility') })).toHaveTextContent(i18next.t('settings.ai.providerCompatibilityAuto'))
+    expect(screen.getByRole('combobox', { name: i18next.t('settings.ai.promptCacheKeyMode') })).toHaveTextContent(i18next.t('settings.ai.promptCacheKeyModeAuto'))
   })
 })

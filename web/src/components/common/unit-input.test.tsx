@@ -89,13 +89,15 @@ describe('unified quota inputs', () => {
     await user.type(memoryInput, '1.5')
     expect(screen.getByTestId('memory-value')).toHaveTextContent('1.5Gi')
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Memory unit' }), 'Mi')
+    await user.click(screen.getByRole('combobox', { name: 'Memory unit' }))
+    await user.click(await screen.findByRole('option', { name: 'Mi' }))
     expect(screen.getByTestId('memory-value')).toHaveTextContent('1.5Mi')
 
     const storageInput = screen.getByRole('textbox', { name: 'Storage capacity' })
     await user.clear(storageInput)
     await user.type(storageInput, '2.5')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Storage unit' }), 'Ti')
+    await user.click(screen.getByRole('combobox', { name: 'Storage unit' }))
+    await user.click(await screen.findByRole('option', { name: 'Ti' }))
     expect(screen.getByTestId('storage-value')).toHaveTextContent('2.5Ti')
   })
 })

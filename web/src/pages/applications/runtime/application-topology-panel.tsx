@@ -17,7 +17,8 @@ import { TopologyGraph } from '@/components/common/topology-graph'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { toneForResourceStatus } from './application-topology-utils'
@@ -123,20 +124,22 @@ export function ApplicationTopologyPanel({ applicationId, projectId }: Applicati
       )}
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b p-3">
-          <NativeSelect
-            aria-label={t('apps.topology.targetFilter')}
-            className="min-w-48"
-            containerClassName="w-auto min-w-48"
-            value={selectedTargetId}
-            onChange={event => setSelectedTargetId(event.target.value)}
+          <Select
+            value={toSelectValue(selectedTargetId)}
+            onValueChange={next => setSelectedTargetId(fromSelectValue(next))}
           >
-            <option value="">{t('apps.topology.allTargets')}</option>
-            {topology.data.targets.map(target => (
-              <option key={target.id} value={target.id}>
-                {`${target.name} · ${target.stage}`}
-              </option>
-            ))}
-          </NativeSelect>
+            <SelectTrigger aria-label={t('apps.topology.targetFilter')} className="min-w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={EMPTY_SELECT_VALUE}>{t('apps.topology.allTargets')}</SelectItem>
+              {topology.data.targets.map(target => (
+                <SelectItem key={target.id} value={target.id}>
+                  {`${target.name} · ${target.stage}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             aria-pressed={showDependencies}
             variant={showDependencies ? 'secondary' : 'outline'}

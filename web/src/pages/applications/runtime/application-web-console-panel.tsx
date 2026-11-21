@@ -8,7 +8,8 @@ import { StatusValueBadge } from '@/components/common/status-badge'
 import { TerminalConnectionStatus, TerminalPlaceholder, ViewerToolbar, ViewerToolbarButton } from '@/components/common/terminal-chrome'
 import { useTerminalConnection } from '@/components/common/use-terminal-connection'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { RuntimePodSelect } from './runtime-pod-select'
 import { collectRuntimeContainerOptions, useReleaseRuntimePods } from './use-release-runtime-pods'
 
@@ -64,21 +65,23 @@ export function ApplicationWebConsolePanel({
           <label htmlFor={containerInputId}>{t('deploymentsPage.container')}</label>
           {containerOptions.length > 0
             ? (
-                <NativeSelect
-                  className="h-8 w-40 font-mono text-xs"
-                  containerClassName="w-auto"
-                  id={containerInputId}
-                  value={container}
-                  onChange={event => setContainer(event.target.value)}
+                <Select
+                  value={toSelectValue(container)}
+                  onValueChange={next => setContainer(fromSelectValue(next))}
                 >
-                  <option value="">{t('deploymentsPage.webConsoleContainerPlaceholder')}</option>
-                  {containerOptions.map(option => (
-                    <option key={option.name} value={option.name}>{option.name}</option>
-                  ))}
-                  {container && !containerOptions.some(option => option.name === container) && (
-                    <option value={container}>{container}</option>
-                  )}
-                </NativeSelect>
+                  <SelectTrigger className="h-8 w-40 font-mono text-xs" id={containerInputId} size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.webConsoleContainerPlaceholder')}</SelectItem>
+                    {containerOptions.map(option => (
+                      <SelectItem key={option.name} value={option.name}>{option.name}</SelectItem>
+                    ))}
+                    {container && !containerOptions.some(option => option.name === container) && (
+                      <SelectItem value={container}>{container}</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
               )
             : (
                 <Input

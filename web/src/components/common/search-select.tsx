@@ -52,7 +52,7 @@ interface SearchMultiSelectProps extends SearchSelectCommonProps {
 
 /**
  * 可搜索的单选基础组件。
- * 资源候选较多或需要远程搜索时使用；少量固定枚举继续使用 shadcn Select 或 NativeSelect。
+ * 资源候选较多或需要远程搜索时使用；少量固定枚举继续使用 shadcn Select。
  */
 export function SearchSelect({
   'aria-describedby': ariaDescribedBy,

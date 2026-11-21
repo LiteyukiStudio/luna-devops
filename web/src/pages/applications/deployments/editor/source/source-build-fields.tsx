@@ -12,8 +12,9 @@ import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
 import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
 import { RadioGroup } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useBillingDisplay } from '@/lib/billing-display'
@@ -152,10 +153,22 @@ export function SourceFields({
                   />
                 </div>
                 <FormField error={registryError} label={t('buildsPage.targetRegistry')} required>
-                  <NativeSelect {...register('targetRegistryId')}>
-                    <option value="">{t('common.select')}</option>
-                    {registries.map(item => <option key={item.id} value={item.id}>{registryOptionLabel(item)}</option>)}
-                  </NativeSelect>
+                  {fieldControl => (
+                    <Controller
+                      control={control}
+                      name="targetRegistryId"
+                      render={({ field }) => (
+                        <Select value={field.value || undefined} onValueChange={field.onChange}>
+                          <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                            <SelectValue placeholder={t('common.select')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {registries.map(item => <SelectItem key={item.id} value={item.id}>{registryOptionLabel(item)}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
                 </FormField>
                 <FormField error={targetImageRefError} hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
                   {fieldControl => (
@@ -241,9 +254,22 @@ export function SourceFields({
               <EditorGroup title={t('deploymentTargetEditor.releaseTriggerTitle')}>
                 <div className="grid gap-4 @xl/workspace:grid-cols-2">
                   <FormField hint={policyOptions[buildConcurrencyPolicy].hint} label={t('deploymentTargetEditor.buildConcurrencyPolicy')}>
-                    <NativeSelect {...register('buildConcurrencyPolicy')}>
-                      {buildConcurrencyPolicies.map(policy => <option key={policy} value={policy}>{policyOptions[policy].label}</option>)}
-                    </NativeSelect>
+                    {fieldControl => (
+                      <Controller
+                        control={control}
+                        name="buildConcurrencyPolicy"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {buildConcurrencyPolicies.map(policy => <SelectItem key={policy} value={policy}>{policyOptions[policy].label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </FormField>
                   <ImagePullPolicyField />
                   <FormField hint={t('deploymentsPage.branchPatternHint')} label={t('deploymentsPage.branchPattern')}>
@@ -270,15 +296,31 @@ export function SourceFields({
 
 function ImagePullPolicyField() {
   const { t } = useTranslation()
-  const { register } = useFormContext<DeploymentTargetFormValues>()
+  const { control } = useFormContext<DeploymentTargetFormValues>()
   return (
     <FormField hint={t('deploymentsPage.imagePullPolicyHint')} label={t('deploymentsPage.imagePullPolicy')}>
-      <NativeSelect {...register('imagePullPolicy')}>
-        <option value="">{t('deploymentsPage.kubernetesDefault')}</option>
-        <option value="IfNotPresent">{t('deploymentsPage.kubernetesValues.IfNotPresent')}</option>
-        <option value="Always">{t('deploymentsPage.kubernetesValues.Always')}</option>
-        <option value="Never">{t('deploymentsPage.kubernetesValues.Never')}</option>
-      </NativeSelect>
+      {fieldControl => (
+        <Controller
+          control={control}
+          name="imagePullPolicy"
+          render={({ field }) => (
+            <Select
+              value={toSelectValue(field.value)}
+              onValueChange={next => field.onChange(fromSelectValue(next))}
+            >
+              <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.kubernetesDefault')}</SelectItem>
+                <SelectItem value="IfNotPresent">{t('deploymentsPage.kubernetesValues.IfNotPresent')}</SelectItem>
+                <SelectItem value="Always">{t('deploymentsPage.kubernetesValues.Always')}</SelectItem>
+                <SelectItem value="Never">{t('deploymentsPage.kubernetesValues.Never')}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
+      )}
     </FormField>
   )
 }

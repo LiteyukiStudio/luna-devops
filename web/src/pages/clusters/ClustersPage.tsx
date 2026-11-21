@@ -12,7 +12,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
 import { PageShell } from '@/components/common/page-shell'
 import { Button } from '@/components/ui/button'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
@@ -125,15 +125,21 @@ export function ClustersPage() {
               : (
                   <>
                     <Select
-                      aria-label={t('clustersPage.selectResourceCluster')}
-                      containerClassName="w-52 max-w-full"
                       disabled={resourceClusters.length === 0}
-                      value={resources.selectedResourceCluster?.id ?? ''}
-                      onChange={event => resources.selectResourceCluster(event.target.value)}
+                      value={resources.selectedResourceCluster?.id || undefined}
+                      onValueChange={resources.selectResourceCluster}
                     >
-                      {resourceClusters.length > 0
-                        ? resourceClusters.map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name}</option>)
-                        : <option value="">{t('clustersPage.noResourceClusterTitle')}</option>}
+                      <SelectTrigger
+                        aria-label={t('clustersPage.selectResourceCluster')}
+                        className="w-52 max-w-full"
+                      >
+                        <SelectValue placeholder={t('clustersPage.noResourceClusterTitle')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {resourceClusters.map(cluster => (
+                          <SelectItem key={cluster.id} value={cluster.id}>{cluster.name}</SelectItem>
+                        ))}
+                      </SelectContent>
                     </Select>
                     <Button
                       disabled={!resources.selectedResourceCluster || resources.clusterResources.isFetching}

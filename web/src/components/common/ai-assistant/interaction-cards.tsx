@@ -35,8 +35,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect } from '@/components/ui/native-select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { CopyableCodeBlock } from './copyable-code-block'
@@ -517,10 +517,32 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
       )
     }
     return (
-      <NativeSelect id={controlId} aria-describedby={describedBy} aria-invalid={error} aria-required={required} name={name} value={value} onBlur={onBlur} onChange={event => onChange(event.target.value)}>
-        <option value="">{field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')}</option>
-        {field.options.map(option => <option key={option.value} disabled={option.disabled} value={option.value}>{option.label}</option>)}
-      </NativeSelect>
+      <Select
+        name={name}
+        value={value || undefined}
+        onValueChange={(next) => {
+          onChange(next)
+          onBlur()
+        }}
+      >
+        <SelectTrigger
+          id={controlId}
+          aria-describedby={describedBy}
+          aria-invalid={error}
+          aria-required={required}
+          className="w-full"
+          onBlur={onBlur}
+        >
+          <SelectValue placeholder={field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')} />
+        </SelectTrigger>
+        <SelectContent>
+          {field.options.filter(option => option.value !== '').map(option => (
+            <SelectItem key={option.value} disabled={option.disabled} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     )
   }
   const segmented = field.display === 'segmented'

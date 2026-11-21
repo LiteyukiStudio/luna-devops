@@ -2,6 +2,7 @@ import type { UseFormReturn } from 'react-hook-form'
 import type { CredentialForm, ProviderForm } from './code-repositories-form-model'
 import type { GitAccount, GitProvider, Project } from '@/api'
 import { Info, Plus, Save } from 'lucide-react'
+import { Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
@@ -11,7 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { credentialDefaults } from './code-repositories-form-model'
 import { CredentialOAuthGuide, GitProviderIcon, OAuthAppGuide } from './code-repositories-panels'
 import { gitProviderGuide, normalizeGitBaseUrl } from './code-repositories-utils'
@@ -66,26 +67,42 @@ export function ProviderDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field error={form.formState.errors.name?.message} hint={t('codeRepositoriesView.providerNameHint')} label={t('codeRepositoriesView.name')} required><Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('codeRepositoriesView.providerNamePlaceholder')} /></Field>
                 <Field error={form.formState.errors.type?.message} hint={t('codeRepositoriesView.providerTypeHint')} label={t('codeRepositoriesView.type')} required>
-                  <div className="flex gap-2">
-                    <GitProviderIcon baseUrl={providerBaseUrl} className="flex size-9 shrink-0 items-center justify-center rounded-control border border-border bg-surface-subtle p-1.5" type={providerType} />
-                    <Select
-                      {...form.register('type', {
-                        onChange: (event) => {
-                          if (event.target.value === 'github') {
-                            form.setValue('baseUrl', normalizeGitBaseUrl('github'), { shouldDirty: true, shouldValidate: true })
-                            form.setValue('scope', 'global', { shouldDirty: true, shouldValidate: true })
-                            form.setValue('ownerRef', '', { shouldDirty: true, shouldValidate: true })
-                            form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                          }
-                        },
-                      })}
-                      aria-invalid={Boolean(form.formState.errors.type)}
-                    >
-                      <option value="github" disabled={hasAnotherGithubProvider && (!editingProvider || editingProvider.type !== 'github')}>{t('codeRepositoriesView.github')}</option>
-                      <option value="gitea">{t('codeRepositoriesView.gitea')}</option>
-                      <option value="gitlab">{t('codeRepositoriesView.gitlab')}</option>
-                    </Select>
-                  </div>
+                  {fieldControl => (
+                    <div className="flex gap-2">
+                      <GitProviderIcon baseUrl={providerBaseUrl} className="flex size-9 shrink-0 items-center justify-center rounded-control border border-border bg-surface-subtle p-1.5" type={providerType} />
+                      <Controller
+                        control={form.control}
+                        name="type"
+                        render={({ field }) => (
+                          <Select
+                            value={field.value}
+                            onValueChange={(next) => {
+                              if (next === field.value)
+                                return
+                              field.onChange(next)
+                              if (next === 'github') {
+                                form.setValue('baseUrl', normalizeGitBaseUrl('github'), { shouldDirty: true, shouldValidate: true })
+                                form.setValue('scope', 'global', { shouldDirty: true, shouldValidate: true })
+                                form.setValue('ownerRef', '', { shouldDirty: true, shouldValidate: true })
+                                form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                              }
+                            }}
+                          >
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem disabled={hasAnotherGithubProvider && (!editingProvider || editingProvider.type !== 'github')} value="github">
+                                {t('codeRepositoriesView.github')}
+                              </SelectItem>
+                              <SelectItem value="gitea">{t('codeRepositoriesView.gitea')}</SelectItem>
+                              <SelectItem value="gitlab">{t('codeRepositoriesView.gitlab')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </div>
+                  )}
                 </Field>
               </div>
               {hasAnotherGithubProvider && !editingProvider?.type && (
@@ -113,20 +130,34 @@ export function ProviderDialog({
               title={t('codeRepositoriesView.providerAdvancedSectionTitle')}
             >
               <Field error={form.formState.errors.scope?.message} hint={t('codeRepositoriesView.scopeHint')} label={t('codeRepositoriesView.scope')} required>
-                <Select
-                  {...form.register('scope', {
-                    onChange: (event) => {
-                      if (event.target.value !== 'project')
-                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                    },
-                  })}
-                  aria-invalid={Boolean(form.formState.errors.scope)}
-                  disabled={isGithubProvider}
-                >
-                  <option value="global">{t('codeRepositoriesView.scopeGlobal')}</option>
-                  <option value="project">{t('codeRepositoriesView.scopeProject')}</option>
-                  <option value="user">{t('codeRepositoriesView.scopeUser')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="scope"
+                    render={({ field }) => (
+                      <Select
+                        disabled={isGithubProvider}
+                        value={field.value}
+                        onValueChange={(next) => {
+                          if (next === field.value)
+                            return
+                          field.onChange(next)
+                          if (next !== 'project')
+                            form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="global">{t('codeRepositoriesView.scopeGlobal')}</SelectItem>
+                          <SelectItem value="project">{t('codeRepositoriesView.scopeProject')}</SelectItem>
+                          <SelectItem value="user">{t('codeRepositoriesView.scopeUser')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
               {providerScope === 'project' && (
                 <Field error={form.formState.errors.projectIds?.message} hint={t('codeRepositoriesView.ownerProjectHint')} label={t('codeRepositoriesView.ownerProject')} required>
@@ -139,10 +170,23 @@ export function ProviderDialog({
               )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field error={form.formState.errors.authType?.message} hint={t('codeRepositoriesView.authTypeHint')} label={t('codeRepositoriesView.authType')} required>
-                  <Select {...form.register('authType')} aria-invalid={Boolean(form.formState.errors.authType)}>
-                    <option value="oauth">{t('codeRepositoriesView.oauth')}</option>
-                    <option value="pat">{t('codeRepositoriesView.pat')}</option>
-                  </Select>
+                  {fieldControl => (
+                    <Controller
+                      control={form.control}
+                      name="authType"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="oauth">{t('codeRepositoriesView.oauth')}</SelectItem>
+                            <SelectItem value="pat">{t('codeRepositoriesView.pat')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
                 </Field>
                 <Field error={form.formState.errors.clientId?.message} hint={t('codeRepositoriesView.clientIdHint')} label={t('codeRepositoriesView.clientId')}><Input {...form.register('clientId')} aria-invalid={Boolean(form.formState.errors.clientId)} /></Field>
               </div>
@@ -209,37 +253,64 @@ export function CredentialDialog({ open, editingCredential, form, projects, prov
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(onSubmit)}>
           <DialogBody className="grid gap-3">
             <Field error={form.formState.errors.providerId?.message} label={t('codeRepositoriesView.provider')} required>
-              <Select
-                {...form.register('providerId', {
-                  onChange: () => {
-                    form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
-                    form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                  },
-                })}
-                aria-invalid={Boolean(form.formState.errors.providerId)}
-                disabled={Boolean(editingCredential)}
-              >
-                <option value="">{t('codeRepositoriesView.selectProvider')}</option>
-                {providers.map(provider => (
-                  <option key={provider.id} value={provider.id}>{provider.name}</option>
-                ))}
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="providerId"
+                  render={({ field }) => (
+                    <Select
+                      disabled={Boolean(editingCredential)}
+                      value={field.value || undefined}
+                      onValueChange={(next) => {
+                        if (!next || next === field.value)
+                          return
+                        field.onChange(next)
+                        form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
+                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue placeholder={t('codeRepositoriesView.selectProvider')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {providers.map(provider => (
+                          <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             {selectedProvider && <CredentialOAuthGuide provider={selectedProvider} />}
             <Field error={form.formState.errors.scope?.message} hint={t('codeRepositoriesView.scopeHint')} label={t('codeRepositoriesView.scope')} required>
-              <Select
-                {...form.register('scope', {
-                  onChange: (event) => {
-                    if (event.target.value !== 'project')
-                      form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                  },
-                })}
-                aria-invalid={Boolean(form.formState.errors.scope)}
-              >
-                {selectedProvider?.scope === 'global' && <option value="global">{t('codeRepositoriesView.scopeGlobal')}</option>}
-                {selectedProvider?.scope !== 'user' && <option value="project">{t('codeRepositoriesView.scopeProject')}</option>}
-                <option value="user">{t('codeRepositoriesView.scopeUser')}</option>
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="scope"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={(next) => {
+                        if (next === field.value)
+                          return
+                        field.onChange(next)
+                        if (next !== 'project')
+                          form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedProvider?.scope === 'global' && <SelectItem value="global">{t('codeRepositoriesView.scopeGlobal')}</SelectItem>}
+                        {selectedProvider?.scope !== 'user' && <SelectItem value="project">{t('codeRepositoriesView.scopeProject')}</SelectItem>}
+                        <SelectItem value="user">{t('codeRepositoriesView.scopeUser')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             {credentialScope === 'project' && (
               <Field error={form.formState.errors.projectIds?.message} hint={t('codeRepositoriesView.ownerProjectHint')} label={t('codeRepositoriesView.ownerProject')} required>

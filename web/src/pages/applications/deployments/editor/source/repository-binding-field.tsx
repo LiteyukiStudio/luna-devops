@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { api } from '@/api'
 import { FormField } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { DeferredRepositoryBindingDialog } from '@/pages/applications/deployments/application-deployment-dialogs'
 import { repositoryBindingItems } from '@/pages/applications/deployments/application-deployments-panel-utils'
@@ -110,23 +110,27 @@ export function RepositoryBindingField({ applicationId, onRepositoryChange, proj
             control={control}
             name="repositoryBindingId"
             render={({ field }) => (
-              <NativeSelect
-                {...fieldControl}
-                ref={field.ref}
-                containerClassName="min-w-0 flex-1"
-                name={field.name}
-                value={field.value}
-                onBlur={field.onBlur}
-                onChange={(event) => {
-                  field.onChange(event.target.value)
-                  onRepositoryChange(repositoryBindings.find(binding => binding.id === event.target.value))
+              <Select
+                value={field.value || undefined}
+                onValueChange={(next) => {
+                  field.onChange(next)
+                  onRepositoryChange(repositoryBindings.find(binding => binding.id === next))
                 }}
               >
-                <option value="">{t('common.select')}</option>
-                {repositoryBindings.map(binding => (
-                  <option key={binding.id} value={binding.id}>{`${binding.owner}/${binding.repo}`}</option>
-                ))}
-              </NativeSelect>
+                <SelectTrigger
+                  {...fieldControl}
+                  ref={field.ref}
+                  className="w-full min-w-0 flex-1"
+                  onBlur={field.onBlur}
+                >
+                  <SelectValue placeholder={t('common.select')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {repositoryBindings.map(binding => (
+                    <SelectItem key={binding.id} value={binding.id}>{`${binding.owner}/${binding.repo}`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           />
           <Button className="shrink-0" type="button" variant="outline" onClick={() => setDialogOpen(true)}>

@@ -11,7 +11,8 @@ import { StorageQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isValidResourceQuantity } from '@/lib/resource-units'
@@ -79,18 +80,24 @@ export function RuntimeDataVolumesEditor({ clusterId, hideAddButton = false, onC
               />
             </Field>
             <Field label={t('deploymentsPage.dataVolumeSourceType')}>
-              <Select
-                aria-label={t('deploymentsPage.dataVolumeSourceType')}
-                value={volume.sourceType}
-                onChange={(event) => {
-                  const nextRows = [...rows]
-                  nextRows[index] = { ...volume, sourceType: event.target.value as RuntimeDataVolumeRow['sourceType'] }
-                  onChange(nextRows)
-                }}
-              >
-                <option value="projectVolume">{t('projectVolumes.deploymentSelectorLabel')}</option>
-                <option value="emptyDir">{t('deploymentsPage.dataVolumeSourceEmptyDir')}</option>
-              </Select>
+              {fieldControl => (
+                <Select
+                  value={volume.sourceType}
+                  onValueChange={(next) => {
+                    const nextRows = [...rows]
+                    nextRows[index] = { ...volume, sourceType: next as RuntimeDataVolumeRow['sourceType'] }
+                    onChange(nextRows)
+                  }}
+                >
+                  <SelectTrigger {...fieldControl} aria-label={t('deploymentsPage.dataVolumeSourceType')} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="projectVolume">{t('projectVolumes.deploymentSelectorLabel')}</SelectItem>
+                    <SelectItem value="emptyDir">{t('deploymentsPage.dataVolumeSourceEmptyDir')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
             <Field label={t('deploymentsPage.dataMountPath')}>
               {control => volume.sourceType === 'projectVolume'
@@ -158,17 +165,25 @@ export function RuntimeDataVolumesEditor({ clusterId, hideAddButton = false, onC
                 : (
                     <div className="grid min-w-0 gap-2 @lg/workspace:grid-cols-2">
                       <Select
-                        aria-describedby={hasError ? errorId : undefined}
-                        aria-label={t('deploymentTargetEditor.emptyDirMediumLabel')}
-                        value={volume.emptyDirMedium}
-                        onChange={(event) => {
+                        value={toSelectValue(volume.emptyDirMedium)}
+                        onValueChange={(next) => {
+                          const value = fromSelectValue(next)
                           const nextRows = [...rows]
-                          nextRows[index] = { ...volume, emptyDirMedium: event.target.value === 'Memory' ? 'Memory' : '' }
+                          nextRows[index] = { ...volume, emptyDirMedium: value === 'Memory' ? 'Memory' : '' }
                           onChange(nextRows)
                         }}
                       >
-                        <option value="">{t('deploymentsPage.emptyDirMediumDefault')}</option>
-                        <option value="Memory">{t('deploymentsPage.emptyDirMediumMemory')}</option>
+                        <SelectTrigger
+                          aria-describedby={hasError ? errorId : undefined}
+                          aria-label={t('deploymentTargetEditor.emptyDirMediumLabel')}
+                          className="w-full"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.emptyDirMediumDefault')}</SelectItem>
+                          <SelectItem value="Memory">{t('deploymentsPage.emptyDirMediumMemory')}</SelectItem>
+                        </SelectContent>
                       </Select>
                       <StorageQuotaInput
                         inputProps={{
@@ -357,23 +372,29 @@ function ProjectVolumePicker({
         ? <Skeleton className="h-9 w-full rounded-control" />
         : (
             <Select
-              aria-describedby={ariaDescribedBy}
-              aria-invalid={(ariaInvalid && !selectDisabled) ? true : undefined}
-              aria-label={t('projectVolumes.deploymentSelectorLabel')}
               disabled={selectDisabled}
-              value={currentVolumeId}
-              onChange={event => onChange(options.find(item => item.id === event.target.value))}
+              value={currentVolumeId || undefined}
+              onValueChange={next => onChange(options.find(item => item.id === next))}
             >
-              <option value="">{t('projectVolumes.deploymentSelectorPlaceholder')}</option>
-              {options.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.displayName}
-                  {' '}
-                  ·
-                  {item.capacity}
-                  {item.id === currentVolumeId && item.availability !== 'available' ? ` · ${t('projectVolumes.deploymentSelectorCurrent')}` : ''}
-                </option>
-              ))}
+              <SelectTrigger
+                aria-describedby={ariaDescribedBy}
+                aria-invalid={(ariaInvalid && !selectDisabled) ? true : undefined}
+                aria-label={t('projectVolumes.deploymentSelectorLabel')}
+                className="w-full"
+              >
+                <SelectValue placeholder={t('projectVolumes.deploymentSelectorPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map(item => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.displayName}
+                    {' '}
+                    ·
+                    {item.capacity}
+                    {item.id === currentVolumeId && item.availability !== 'available' ? ` · ${t('projectVolumes.deploymentSelectorCurrent')}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           )}
       {!volumes.isLoading && !volumes.isError && options.length === 0 && <p className="text-xs text-muted-foreground">{t('projectVolumes.deploymentSelectorEmpty')}</p>}

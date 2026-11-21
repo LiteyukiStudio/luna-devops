@@ -9,8 +9,8 @@ import { FormField as Field } from '@/components/common/form-field'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // anonymousGitModeAccountId 是公开仓库匿名访问占位符，与后端 anonymousGitAccountID 对应。
 const anonymousGitModeAccountId = 'anonymous'
@@ -107,44 +107,52 @@ export function GitRepositoryPicker({
       {isAnonymous
         ? (
             <Field hint={t('repositories.gitPlatformHint')} label={t('repositories.gitPlatform')} required>
-              <Select
-                disabled={disabled}
-                value={value.providerId ?? ''}
-                onChange={(event) => {
-                  onChange({ ...value, providerId: event.target.value, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
-                  setSearch('')
-                }}
-              >
-                <option value="">{t('repositories.selectGitPlatform')}</option>
-                {enabledProviders.map(provider => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                    {' '}
-                    (
-                    {provider.type}
-                    )
-                  </option>
-                ))}
-              </Select>
+              {fieldControl => (
+                <Select
+                  disabled={disabled}
+                  value={value.providerId || undefined}
+                  onValueChange={(nextProviderId) => {
+                    onChange({ ...value, providerId: nextProviderId, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
+                    setSearch('')
+                  }}
+                >
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue placeholder={t('repositories.selectGitPlatform')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {enabledProviders.map(provider => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {`${provider.name} (${provider.type})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
           )
         : (
             <Field hint={t('repositories.gitAccountHint')} label={t('repositories.gitAccount')} required>
-              <Select
-                disabled={disabled}
-                value={value.gitAccountId}
-                onChange={(event) => {
-                  onChange({ gitAccountId: event.target.value, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
-                  setSearch('')
-                }}
-              >
-                <option value="">{t('repositories.selectAccount')}</option>
-                {accounts.map(account => (
-                  <option key={account.id} value={account.id}>
-                    {gitAccountLabel(account)}
-                  </option>
-                ))}
-              </Select>
+              {fieldControl => (
+                <Select
+                  disabled={disabled}
+                  value={value.gitAccountId || undefined}
+                  onValueChange={(nextAccountId) => {
+                    onChange({ gitAccountId: nextAccountId, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
+                    setSearch('')
+                  }}
+                >
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue placeholder={t('repositories.selectAccount')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {gitAccountLabel(account)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
           )}
       <Field hint={t('repositories.repositorySearchHint')} label={t('repositories.repositorySearch')} required>

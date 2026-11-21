@@ -2,12 +2,12 @@ import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import type { HookPhase, ProjectHookConfig } from '@/api'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, Plus, RotateCw, Trash2 } from 'lucide-react'
-import { useFieldArray, useFormContext, useWatch } from 'react-hook-form'
+import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
@@ -85,7 +85,7 @@ function HookBindingRow({ disabled, hooks, imageSource, index, isFirst, isLast, 
   onRemove: () => void
 }) {
   const { t } = useTranslation()
-  const { register } = useFormContext<DeploymentTargetFormValues>()
+  const { control } = useFormContext<DeploymentTargetFormValues>()
   const error = useFieldError(`buildHookBindings.${index}.hookConfigId`)
   const phaseLabel = (phase: HookPhase) => t(`projectHooks.phases.${phase}`)
   const order = index + 1
@@ -94,27 +94,57 @@ function HookBindingRow({ disabled, hooks, imageSource, index, isFirst, isLast, 
   return (
     <li className="grid gap-2 @xl/workspace:grid-cols-[2rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] @xl/workspace:items-center">
       <span aria-hidden="true" className="text-sm font-medium text-muted-foreground tabular-nums">{order}</span>
-      <NativeSelect {...register(`buildHookBindings.${index}.phase`)} aria-label={t('deploymentTargetEditor.hookPhaseFor', { index: order })} disabled={disabled}>
-        <optgroup label={t('deploymentTargetEditor.buildPhases')}>
-          {deploymentHookPhases.filter(phase => buildHookPhases.has(phase)).map(phase => (
-            <option key={phase} disabled={imageSource} value={phase}>{phaseLabel(phase)}</option>
-          ))}
-        </optgroup>
-        <optgroup label={t('deploymentTargetEditor.deploymentPhases')}>
-          {deploymentHookPhases.filter(phase => !buildHookPhases.has(phase)).map(phase => (
-            <option key={phase} value={phase}>{phaseLabel(phase)}</option>
-          ))}
-        </optgroup>
-      </NativeSelect>
-      <NativeSelect
-        {...register(`buildHookBindings.${index}.hookConfigId`)}
-        aria-describedby={error ? errorId : undefined}
-        aria-invalid={error ? true : undefined}
-        aria-label={t('deploymentTargetEditor.hookConfigFor', { index: order })}
-        disabled={disabled}
-      >
-        {hooks.map(hook => <option key={hook.id} value={hook.id}>{hook.name}</option>)}
-      </NativeSelect>
+      <Controller
+        control={control}
+        name={`buildHookBindings.${index}.phase`}
+        render={({ field }) => (
+          <Select disabled={disabled} value={field.value} onValueChange={field.onChange}>
+            <SelectTrigger
+              ref={field.ref}
+              aria-label={t('deploymentTargetEditor.hookPhaseFor', { index: order })}
+              className="w-full"
+              onBlur={field.onBlur}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>{t('deploymentTargetEditor.buildPhases')}</SelectLabel>
+                {deploymentHookPhases.filter(phase => buildHookPhases.has(phase)).map(phase => (
+                  <SelectItem key={phase} disabled={imageSource} value={phase}>{phaseLabel(phase)}</SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectGroup>
+                <SelectLabel>{t('deploymentTargetEditor.deploymentPhases')}</SelectLabel>
+                {deploymentHookPhases.filter(phase => !buildHookPhases.has(phase)).map(phase => (
+                  <SelectItem key={phase} value={phase}>{phaseLabel(phase)}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        )}
+      />
+      <Controller
+        control={control}
+        name={`buildHookBindings.${index}.hookConfigId`}
+        render={({ field }) => (
+          <Select disabled={disabled} value={field.value || undefined} onValueChange={field.onChange}>
+            <SelectTrigger
+              ref={field.ref}
+              aria-describedby={error ? errorId : undefined}
+              aria-invalid={error ? true : undefined}
+              aria-label={t('deploymentTargetEditor.hookConfigFor', { index: order })}
+              className="w-full"
+              onBlur={field.onBlur}
+            >
+              <SelectValue placeholder={t('common.select')} />
+            </SelectTrigger>
+            <SelectContent>
+              {hooks.map(hook => <SelectItem key={hook.id} value={hook.id}>{hook.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+      />
       <div className="flex justify-end gap-1">
         <Button aria-label={t('deploymentTargetEditor.moveHookUpAt', { index: order })} disabled={disabled || isFirst} size="icon" type="button" variant="ghost" onClick={() => onMove(-1)}>
           <ArrowUp className="size-4" />

@@ -15,7 +15,7 @@ import { ProjectSpaceMultiSelect } from '@/components/common/project-space-selec
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import {
@@ -144,18 +144,27 @@ function NotificationChannelDialogBody({
           {channel
             ? (
                 <Field label={t('notificationsPage.channelMode')}>
-                  <Select
-                    disabled
-                    value={values.mode}
-                    onChange={(event) => {
-                      const nextMode = event.target.value as NotificationChannelMode
-                      form.setValue('mode', nextMode, { shouldDirty: true, shouldValidate: true })
-                    }}
-                  >
-                    {presets.length > 0 && <option value="preset">{t('notificationsPage.modePreset')}</option>}
-                    <option value="webhook">{t('notificationsPage.modeWebhook')}</option>
-                    <option value="smtp">{t('notificationsPage.modeSmtp')}</option>
-                  </Select>
+                  {fieldControl => (
+                    <Select
+                      disabled
+                      value={values.mode}
+                      onValueChange={(next) => {
+                        const nextMode = next as NotificationChannelMode
+                        form.setValue('mode', nextMode, { shouldDirty: true, shouldValidate: true })
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(presets.length > 0 || values.mode === 'preset') && (
+                          <SelectItem value="preset">{t('notificationsPage.modePreset')}</SelectItem>
+                        )}
+                        <SelectItem value="webhook">{t('notificationsPage.modeWebhook')}</SelectItem>
+                        <SelectItem value="smtp">{t('notificationsPage.modeSmtp')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </Field>
               )
             : (
@@ -197,16 +206,23 @@ function NotificationChannelDialogBody({
 
           {allowGlobalScope && (
             <Field label={t('notificationsPage.scope')}>
-              <Select
-                value={values.scope}
-                onChange={(event) => {
-                  const nextScope = event.target.value === 'global' ? 'global' : 'project'
-                  form.setValue('scope', nextScope, { shouldDirty: true, shouldValidate: true })
-                }}
-              >
-                <option value="global">{t('notificationsPage.scopeGlobal')}</option>
-                <option value="project">{t('notificationsPage.scopeProject')}</option>
-              </Select>
+              {fieldControl => (
+                <Select
+                  value={values.scope}
+                  onValueChange={(next) => {
+                    const nextScope = next === 'global' ? 'global' : 'project'
+                    form.setValue('scope', nextScope, { shouldDirty: true, shouldValidate: true })
+                  }}
+                >
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">{t('notificationsPage.scopeGlobal')}</SelectItem>
+                    <SelectItem value="project">{t('notificationsPage.scopeProject')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
           )}
 
@@ -246,20 +262,27 @@ function NotificationChannelDialogBody({
           {values.mode === 'preset' && selectedPreset && (
             <>
               <Field className="md:col-span-2" label={t('notificationsPage.preset')} required>
-                <Select
-                  disabled={Boolean(channel)}
-                  value={selectedPreset.id}
-                  onChange={(event) => {
-                    form.setValue('presetId', event.target.value, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('presetSecrets', {}, { shouldDirty: true })
-                  }}
-                >
-                  {presets.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {`${item.name} — ${item.description}`}
-                    </option>
-                  ))}
-                </Select>
+                {fieldControl => (
+                  <Select
+                    disabled={Boolean(channel)}
+                    value={selectedPreset.id}
+                    onValueChange={(next) => {
+                      form.setValue('presetId', next, { shouldDirty: true, shouldValidate: true })
+                      form.setValue('presetSecrets', {}, { shouldDirty: true })
+                    }}
+                  >
+                    <SelectTrigger {...fieldControl} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {presets.map(item => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {`${item.name} — ${item.description}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </Field>
               {selectedPreset.secretFields.map(secretField => (
                 <Field
@@ -305,13 +328,20 @@ function NotificationChannelDialogBody({
           {values.mode === 'webhook' && (
             <>
               <Field label={t('notificationsPage.webhookMethod')}>
-                <Select
-                  value={values.webhookMethod}
-                  onChange={event => form.setValue('webhookMethod', event.target.value === 'PUT' ? 'PUT' : 'POST', { shouldDirty: true })}
-                >
-                  <option value="POST">POST</option>
-                  <option value="PUT">PUT</option>
-                </Select>
+                {fieldControl => (
+                  <Select
+                    value={values.webhookMethod}
+                    onValueChange={next => form.setValue('webhookMethod', next === 'PUT' ? 'PUT' : 'POST', { shouldDirty: true })}
+                  >
+                    <SelectTrigger {...fieldControl} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="POST">POST</SelectItem>
+                      <SelectItem value="PUT">PUT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </Field>
               <Field label={t('notificationsPage.webhookUrl')} required>
                 <Input {...form.register('webhookUrlCustom')} placeholder="https://example.com/webhook" type="url" />
@@ -364,21 +394,28 @@ function NotificationChannelDialogBody({
                   />
                 </Field>
                 <Field label={t('notificationsPage.smtpSecurity')}>
-                  <Select
-                    value={values.smtpSecurity}
-                    onChange={(event) => {
-                      const security = event.target.value as 'starttls' | 'tls' | 'none'
-                      form.setValue('smtpSecurity', security, { shouldDirty: true })
-                      if (security === 'tls' && values.smtpPort === 587)
-                        form.setValue('smtpPort', 465, { shouldDirty: true })
-                      else if (security === 'starttls' && values.smtpPort === 465)
-                        form.setValue('smtpPort', 587, { shouldDirty: true })
-                    }}
-                  >
-                    <option value="starttls">{t('notificationsPage.smtpSecurityStarttls')}</option>
-                    <option value="tls">{t('notificationsPage.smtpSecurityTls')}</option>
-                    <option value="none">{t('notificationsPage.smtpSecurityNone')}</option>
-                  </Select>
+                  {fieldControl => (
+                    <Select
+                      value={values.smtpSecurity}
+                      onValueChange={(next) => {
+                        const security = next as 'starttls' | 'tls' | 'none'
+                        form.setValue('smtpSecurity', security, { shouldDirty: true })
+                        if (security === 'tls' && values.smtpPort === 587)
+                          form.setValue('smtpPort', 465, { shouldDirty: true })
+                        else if (security === 'starttls' && values.smtpPort === 465)
+                          form.setValue('smtpPort', 587, { shouldDirty: true })
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="starttls">{t('notificationsPage.smtpSecurityStarttls')}</SelectItem>
+                        <SelectItem value="tls">{t('notificationsPage.smtpSecurityTls')}</SelectItem>
+                        <SelectItem value="none">{t('notificationsPage.smtpSecurityNone')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </Field>
               </div>
               <Field label={t('notificationsPage.smtpUsername')}>

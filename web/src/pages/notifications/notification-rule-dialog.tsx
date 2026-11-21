@@ -14,7 +14,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Textarea } from '@/components/ui/textarea'
 import {
   ALL_NOTIFICATION_EVENTS,
@@ -266,31 +267,47 @@ function NotificationRuleDialogBody({
 
           {contextMode === 'global' && (
             <Field label={t('notificationsPage.template')}>
-              <Select
-                value={resolvedTemplates.some(item => item.id === values.templateId) ? values.templateId : ''}
-                onChange={event => form.setValue('templateId', event.target.value, { shouldDirty: true })}
-              >
-                <option value="">{t('notificationsPage.defaultTemplate')}</option>
-                {resolvedTemplates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </Select>
+              {fieldControl => (
+                <Select
+                  value={toSelectValue(resolvedTemplates.some(item => item.id === values.templateId) ? values.templateId : '')}
+                  onValueChange={next => form.setValue('templateId', fromSelectValue(next), { shouldDirty: true })}
+                >
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_SELECT_VALUE}>{t('notificationsPage.defaultTemplate')}</SelectItem>
+                    {resolvedTemplates.map(item => (
+                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
           )}
 
           {contextMode === 'global' && (
             <>
               <Field className="md:col-span-2" label={t('notificationsPage.ruleScope')}>
-                <Select
-                  value={values.scope}
-                  onChange={(event) => {
-                    const nextScope = event.target.value === 'all' ? 'all' : 'projects'
-                    form.setValue('scope', nextScope, { shouldDirty: true, shouldValidate: true })
-                    if (nextScope === 'all')
-                      form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                  }}
-                >
-                  <option value="projects">{t('notificationsPage.ruleScopeProjects')}</option>
-                  <option value="all">{t('notificationsPage.ruleScopeAll')}</option>
-                </Select>
+                {fieldControl => (
+                  <Select
+                    value={values.scope}
+                    onValueChange={(next) => {
+                      const nextScope = next === 'all' ? 'all' : 'projects'
+                      form.setValue('scope', nextScope, { shouldDirty: true, shouldValidate: true })
+                      if (nextScope === 'all')
+                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                    }}
+                  >
+                    <SelectTrigger {...fieldControl} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="projects">{t('notificationsPage.ruleScopeProjects')}</SelectItem>
+                      <SelectItem value="all">{t('notificationsPage.ruleScopeAll')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </Field>
 
               {values.scope === 'projects'
@@ -503,12 +520,21 @@ function NotificationRuleDialogBody({
             />
           </Field>
           <Field label={t('notificationsPage.timeZone')}>
-            <Select
-              value={values.timeZone}
-              onChange={event => form.setValue('timeZone', event.target.value, { shouldDirty: true })}
-            >
-              {timeZoneOptions.map(zone => <option key={zone} value={zone}>{zone}</option>)}
-            </Select>
+            {fieldControl => (
+              <Select
+                value={values.timeZone || 'Asia/Shanghai'}
+                onValueChange={next => form.setValue('timeZone', next, { shouldDirty: true })}
+              >
+                <SelectTrigger {...fieldControl} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {timeZoneOptions.map(zone => (
+                    <SelectItem key={zone} value={zone}>{zone}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </Field>
           <div className="md:col-span-3">
             <Controller

@@ -1,8 +1,9 @@
+import type { GatewayRouteFormValues } from './application-gateway-form-fields'
 import type { DeploymentTarget, GatewayRoute, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { MoreHorizontal, Pencil, Plus, SearchCheck, Trash2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
-import { useController, useForm } from 'react-hook-form'
+import { Controller, useController, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
@@ -20,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
@@ -29,7 +30,7 @@ import { AccessUrlLink } from './access-url-link'
 import { GatewayRouteFormFields } from './application-gateway-form-fields'
 import { gatewayRouteAccessUrl } from './gateway-route-url'
 
-type RouteForm = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'certificateStatus' | 'certificateMessage' | 'certificateNotAfter' | 'certificateIssuerKind' | 'certificateIssuerName' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt' | 'routeSummary' | 'conditions'>
+type RouteForm = GatewayRouteFormValues
 
 const routeDefaults: RouteForm = {
   applicationId: '',
@@ -235,16 +236,8 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                 title={t('gatewayRoutesPage.basicGatewayConfig')}
               >
                 <GatewayRouteFormFields
-                  deploymentTargetIdField={form.register('deploymentTargetId', {
-                    required: t('common.required'),
-                    onChange: (event) => {
-                      const target = deploymentTargets.find(item => item.id === event.target.value)
-                      form.setValue('servicePort', deploymentTargetPrimaryServicePort(target), { shouldDirty: true, shouldValidate: true })
-                      form.setValue('domainSuffix', firstGatewayDomainSuffix(target, runtimeClusters.data ?? []), { shouldDirty: true, shouldValidate: true })
-                    },
-                  })}
+                  control={form.control}
                   deploymentTargets={deploymentTargetOptions}
-                  domainSuffixField={form.register('domainSuffix', { required: t('common.required') })}
                   domainSuffixOptions={domainSuffixOptions}
                   enabledField={enabledField}
                   errors={form.formState.errors}
@@ -252,8 +245,11 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                   hostPlaceholder={defaultHostPlaceholder}
                   pathField={form.register('path')}
                   servicePortOptions={servicePortOptions}
-                  servicePortField={form.register('servicePort', { valueAsNumber: true })}
-                  tlsModeField={form.register('tlsMode')}
+                  onDeploymentTargetChange={(targetId) => {
+                    const target = deploymentTargets.find(item => item.id === targetId)
+                    form.setValue('servicePort', deploymentTargetPrimaryServicePort(target), { shouldDirty: true, shouldValidate: true })
+                    form.setValue('domainSuffix', firstGatewayDomainSuffix(target, runtimeClusters.data ?? []), { shouldDirty: true, shouldValidate: true })
+                  }}
                 />
               </ProgressiveSection>
               <ProgressiveSection
@@ -268,10 +264,23 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                     <Input {...form.register('parentGatewayNamespace')} aria-invalid={Boolean(form.formState.errors.parentGatewayNamespace)} placeholder={t('gatewayRoutesPage.parentGatewayNamespacePlaceholder')} />
                   </Field>
                   <Field error={form.formState.errors.pathMatchType?.message} hint={t('gatewayRoutesPage.pathMatchTypeHint')} label={t('gatewayRoutesPage.pathMatchType')}>
-                    <Select {...form.register('pathMatchType')} aria-invalid={Boolean(form.formState.errors.pathMatchType)}>
-                      <option value="PathPrefix">{t('gatewayRoutesPage.pathMatchPrefix')}</option>
-                      <option value="Exact">{t('gatewayRoutesPage.pathMatchExact')}</option>
-                    </Select>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="pathMatchType"
+                        render={({ field }) => (
+                          <Select value={field.value || undefined} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="PathPrefix">{t('gatewayRoutesPage.pathMatchPrefix')}</SelectItem>
+                              <SelectItem value="Exact">{t('gatewayRoutesPage.pathMatchExact')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </Field>
                   <Field error={form.formState.errors.backendWeight?.message} hint={t('gatewayRoutesPage.backendWeightHint')} label={t('gatewayRoutesPage.backendWeight')}>
                     <Input {...form.register('backendWeight', { valueAsNumber: true })} aria-invalid={Boolean(form.formState.errors.backendWeight)} min={1} type="number" />

@@ -1,7 +1,7 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import type { RepositoryBinding } from '@/api'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FormProvider, useForm } from 'react-hook-form'
 import { MemoryRouter } from 'react-router-dom'
@@ -71,12 +71,15 @@ describe('repository binding field', () => {
     renderField(onRepositoryChange)
 
     const select = await screen.findByRole('combobox', { name: /Code repository/ })
-    expect(within(select).getByRole('option', { name: 'liteyuki/api' })).toBeInTheDocument()
+    await user.click(select)
+    expect(await screen.findByRole('option', { name: 'liteyuki/api' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
     await user.click(screen.getByRole('button', { name: 'Bind code repository' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Bind code repository' })
     expect(within(dialog).getByRole('link', { name: 'Manage Git providers and credentials' })).toHaveAttribute('href', '/code-repositories')
-    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Git credential' }), 'ga_1')
+    await user.click(within(dialog).getByRole('combobox', { name: /Git credential/ }))
+    await user.click(await screen.findByRole('option', { name: /octo/ }))
     await user.type(within(dialog).getByRole('textbox', { name: /^Owner/ }), 'liteyuki')
     await user.type(within(dialog).getByRole('textbox', { name: /^Repo/ }), 'web')
     await user.click(within(dialog).getByRole('button', { name: 'Bind code repository' }))
@@ -84,8 +87,7 @@ describe('repository binding field', () => {
     expect(mocks.createRepositoryBinding).toHaveBeenCalledWith('prj_1', expect.objectContaining({ applicationId: 'app_1', gitAccountId: 'ga_1', owner: 'liteyuki', repo: 'web' }))
     expect(onRepositoryChange).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'rb_new' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(await within(select).findByRole('option', { name: 'liteyuki/web' })).toBeInTheDocument()
-    expect(select).toHaveValue('rb_new')
+    await waitFor(() => expect(select).toHaveTextContent('liteyuki/web'))
   })
 })
 

@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
 import { RuntimeClusterPressureBadge } from '@/components/common/runtime-cluster-pressure'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { platformDefaultRuntimeCluster } from '@/lib/runtime-cluster-default'
 import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
@@ -22,8 +21,7 @@ export function BasicsSection({ editing, projectId, runtimeClusters }: {
   runtimeClusters: RuntimeCluster[]
 }) {
   const { t } = useTranslation()
-  const { control, getValues, register, setValue, watch } = useFormContext<DeploymentTargetFormValues>()
-  const stage = watch('stage')
+  const { control, getValues, register, setValue } = useFormContext<DeploymentTargetFormValues>()
   const nameError = useFieldError('name')
   const pressure = useRuntimeClusterPressure({ clusterIds: runtimeClusters.map(cluster => cluster.id), projectId })
   const defaultCluster = platformDefaultRuntimeCluster(runtimeClusters)
@@ -59,12 +57,25 @@ export function BasicsSection({ editing, projectId, runtimeClusters }: {
           <Input {...register('name')} autoComplete="off" placeholder={t('deploymentsPage.deploymentConfigNamePattern')} />
         </FormField>
         <FormField hint={editing ? t('deploymentTargetEditor.stageLockedHint') : undefined} label={t('deploymentsPage.stage')}>
-          <NativeSelect {...register('stage')} disabled={editing}>
-            {!isPublicDeploymentStage(stage) && (
-              <option value={stage}>{t('deploymentsPage.stageSystemManaged', { stage })}</option>
-            )}
-            {publicDeploymentStages.map(item => <option key={item} value={item}>{stageLabels[item]}</option>)}
-          </NativeSelect>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="stage"
+              render={({ field }) => (
+                <Select disabled={editing} value={field.value || undefined} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Boolean(field.value) && !isPublicDeploymentStage(field.value) && (
+                      <SelectItem value={field.value}>{t('deploymentsPage.stageSystemManaged', { stage: field.value })}</SelectItem>
+                    )}
+                    {publicDeploymentStages.map(item => <SelectItem key={item} value={item}>{stageLabels[item]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </FormField>
         <FormField hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
           {fieldControl => (
@@ -100,10 +111,23 @@ export function BasicsSection({ editing, projectId, runtimeClusters }: {
           )}
         </FormField>
         <FormField hint={t('deploymentsPage.workloadTypeHint')} label={t('deploymentsPage.workloadType')}>
-          <NativeSelect {...register('workloadType')}>
-            <option value="Deployment">{t('deploymentsPage.kubernetesValues.Deployment')}</option>
-            <option value="StatefulSet">{t('deploymentsPage.kubernetesValues.StatefulSet')}</option>
-          </NativeSelect>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="workloadType"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Deployment">{t('deploymentsPage.kubernetesValues.Deployment')}</SelectItem>
+                    <SelectItem value="StatefulSet">{t('deploymentsPage.kubernetesValues.StatefulSet')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </FormField>
       </div>
     </EditorSection>

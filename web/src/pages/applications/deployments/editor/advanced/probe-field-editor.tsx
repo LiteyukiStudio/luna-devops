@@ -6,7 +6,7 @@ import { CodeEditor } from '@/components/common/code-editor'
 import { FormField } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useFieldError } from '../deployment-target-editor-utils'
 
@@ -242,22 +242,28 @@ export function ProbeFieldEditor({
                 <label className="text-sm font-medium text-foreground" htmlFor={modeSelectId}>{label}</label>
                 <HelpTip label={label}>{hint}</HelpTip>
               </span>
-              <NativeSelect
-                aria-describedby={nonJsonError ? errorId : undefined}
-                aria-invalid={nonJsonError ? true : undefined}
-                aria-label={label}
-                className="h-8 w-44 text-xs"
-                containerClassName="w-auto"
-                id={modeSelectId}
+              <Select
                 value={effectiveMode}
-                onChange={event => handleModeChange(event.target.value as ProbeMode)}
+                onValueChange={next => handleModeChange(next as ProbeMode)}
               >
-                <option value="none">{t('deploymentsPage.probeTypes.none')}</option>
-                <option value="httpGet">{t('deploymentsPage.probeTypes.httpGet')}</option>
-                <option value="tcpSocket">{t('deploymentsPage.probeTypes.tcpSocket')}</option>
-                <option value="exec">{t('deploymentsPage.probeTypes.exec')}</option>
-                <option value="json">{t('deploymentsPage.probeTypes.json')}</option>
-              </NativeSelect>
+                <SelectTrigger
+                  aria-describedby={nonJsonError ? errorId : undefined}
+                  aria-invalid={nonJsonError ? true : undefined}
+                  aria-label={label}
+                  className="w-44 text-xs"
+                  id={modeSelectId}
+                  size="sm"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t('deploymentsPage.probeTypes.none')}</SelectItem>
+                  <SelectItem value="httpGet">{t('deploymentsPage.probeTypes.httpGet')}</SelectItem>
+                  <SelectItem value="tcpSocket">{t('deploymentsPage.probeTypes.tcpSocket')}</SelectItem>
+                  <SelectItem value="exec">{t('deploymentsPage.probeTypes.exec')}</SelectItem>
+                  <SelectItem value="json">{t('deploymentsPage.probeTypes.json')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {effectiveMode === 'httpGet' && (
@@ -285,13 +291,20 @@ export function ProbeFieldEditor({
                   />
                 </FormField>
                 <FormField label={t('deploymentsPage.probeHttpScheme')}>
-                  <NativeSelect
-                    value={draft.scheme}
-                    onChange={event => updateDraft({ scheme: event.target.value === 'HTTPS' ? 'HTTPS' : 'HTTP' })}
-                  >
-                    <option value="HTTP">HTTP</option>
-                    <option value="HTTPS">HTTPS</option>
-                  </NativeSelect>
+                  {fieldControl => (
+                    <Select
+                      value={draft.scheme}
+                      onValueChange={value => updateDraft({ scheme: value === 'HTTPS' ? 'HTTPS' : 'HTTP' })}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="HTTP">HTTP</SelectItem>
+                        <SelectItem value="HTTPS">HTTPS</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </FormField>
               </div>
             )}

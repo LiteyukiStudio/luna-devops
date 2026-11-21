@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 
 const bindingSchema = z.object({
@@ -302,12 +302,30 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
               ? <input type="hidden" {...form.register('applicationId')} value={applicationId} />
               : (
                   <Field error={form.formState.errors.applicationId?.message} label={t('repositories.application')} required>
-                    <Select {...form.register('applicationId')} aria-invalid={Boolean(form.formState.errors.applicationId)}>
-                      <option value="">{t('repositories.selectApplication')}</option>
-                      {(applications.data ?? []).map(application => (
-                        <option key={application.id} value={application.id}>{application.name}</option>
-                      ))}
-                    </Select>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="applicationId"
+                        render={({ field }) => (
+                          <Select
+                            value={field.value || undefined}
+                            onValueChange={(next) => {
+                              if (next)
+                                field.onChange(next)
+                            }}
+                          >
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue placeholder={t('repositories.selectApplication')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(applications.data ?? []).map(application => (
+                                <SelectItem key={application.id} value={application.id}>{application.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                   </Field>
                 )}
             <GitRepositoryPicker

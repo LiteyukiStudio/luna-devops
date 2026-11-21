@@ -1,8 +1,8 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import { useFormContext, useWatch } from 'react-hook-form'
+import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { JsonField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
@@ -28,7 +28,7 @@ export function ProbesFields() {
 /** 容器命令与运行控制：覆盖启动命令、参数、生命周期钩子、Web Console 策略与辅助容器。 */
 export function ContainerFields() {
   const { t } = useTranslation()
-  const { register } = useFormContext<DeploymentTargetFormValues>()
+  const { control, register } = useFormContext<DeploymentTargetFormValues>()
   const commandError = useFieldError('containerCommand')
   const argsError = useFieldError('containerArgs')
 
@@ -42,10 +42,23 @@ export function ContainerFields() {
           <Textarea {...register('containerArgs')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.containerArgsPlaceholder') })} spellCheck={false} />
         </FormField>
         <FormField hint={t('deploymentsPage.webConsoleOverrideHint')} label={t('deploymentsPage.webConsoleOverride')}>
-          <NativeSelect {...register('webConsoleEnabled')}>
-            <option value="inherit">{t('deploymentsPage.webConsoleInheritProject')}</option>
-            <option value="disabled">{t('deploymentsPage.webConsoleDisableForTarget')}</option>
-          </NativeSelect>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="webConsoleEnabled"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">{t('deploymentsPage.webConsoleInheritProject')}</SelectItem>
+                    <SelectItem value="disabled">{t('deploymentsPage.webConsoleDisableForTarget')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </FormField>
       </div>
       <JsonField hint={t('deploymentsPage.lifecycleHint')} label={t('deploymentsPage.lifecycle')} name="lifecycle" placeholder={t('deploymentsPage.lifecyclePlaceholder')} />

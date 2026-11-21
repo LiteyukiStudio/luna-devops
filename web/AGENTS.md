@@ -72,8 +72,8 @@
   时不手写同类组件。修改 Radix/shadcn 组件必须保留键盘、焦点、ARIA、Portal 和受控语义。
 - 项目已安装组件以 `src/components/ui` 和 `components.json` 为准，不维护人工组件清单或引入愿望单。
 - shadcn/ui 不提供完整平台资源选择器；统一复用
-  `components/common/search-select.tsx` 的 `SearchSelect` / `SearchMultiSelect`。固定小枚举继续用
-  `Select` / `NativeSelect`，带独立策略的选项保留领域编辑器。
+  `components/common/search-select.tsx` 的 `SearchSelect` / `SearchMultiSelect`。固定小枚举统一使用
+  `components/ui/select.tsx` 的自定义 `Select`（不混用浏览器原生 `<select>`），带独立策略的选项保留领域编辑器。
 - 视觉语言与 Liteyuki 的 neo-blog 控制台保持一致（shadcn inset 侧栏布局）：侧栏色画布上放一块圆角加轻阴影的
   正文面板；侧栏顶部是站点标识，底部是用户卡片（账号菜单）；面板顶栏放侧栏开关、上级面包屑和页面标题。卡片白底、
   `rounded-container`、细边框、`shadow-sm`；Button/Input/Select 36px、`rounded-control`（8px）；Badge 与状态

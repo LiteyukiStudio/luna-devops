@@ -3,7 +3,8 @@ import type { UnitInputUnit } from '@/lib/resource-units'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { cpuUnits, formatUnitInputValue, memoryUnits, normalizeUnitInputAmount, parseUnitInputValue, storageUnits } from '@/lib/resource-units'
 import { cn } from '@/lib/utils'
 
@@ -64,16 +65,25 @@ export function UnitInput({ className, disabled, inputProps, onChange, unitSelec
         onChange={event => updateAmount(event.target.value)}
       />
       <div className="my-1.5 w-px shrink-0 bg-border" />
-      <NativeSelect
-        aria-label={unitSelectLabel}
-        className="h-full w-auto rounded-none border-0 bg-transparent px-2.5 pr-7 text-xs font-medium text-muted-foreground shadow-none disabled:opacity-100 focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
-        containerClassName="h-full shrink-0 [&_svg]:right-2"
+      <Select
         disabled={disabled}
-        value={activeUnit}
-        onChange={event => updateUnit(event.target.value)}
+        value={toSelectValue(activeUnit)}
+        onValueChange={next => updateUnit(fromSelectValue(next))}
       >
-        {units.map(unit => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
-      </NativeSelect>
+        <SelectTrigger
+          aria-label={unitSelectLabel}
+          className="h-full w-auto shrink-0 gap-1.5 rounded-none border-0 bg-transparent px-2.5 text-xs font-medium text-muted-foreground shadow-none focus-visible:border-transparent focus-visible:ring-0 disabled:opacity-100 dark:bg-transparent dark:hover:bg-transparent"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align="end">
+          {units.map(unit => (
+            <SelectItem key={unit.value || EMPTY_SELECT_VALUE} value={toSelectValue(unit.value)}>
+              {unit.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }

@@ -1,9 +1,10 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import { useFormContext } from 'react-hook-form'
+import { Controller, useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Textarea } from '@/components/ui/textarea'
 import { JsonField, SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
@@ -11,7 +12,7 @@ import { useFieldError } from '../deployment-target-editor-utils'
 /** 安全上下文与调度：Pod 安全设置、节点选择、容忍、亲和与拓扑分布。 */
 export function SecuritySchedulingFields() {
   const { t } = useTranslation()
-  const { register } = useFormContext<DeploymentTargetFormValues>()
+  const { control, register } = useFormContext<DeploymentTargetFormValues>()
   const runAsUserError = useFieldError('runAsUser')
   const runAsGroupError = useFieldError('runAsGroup')
   const fsGroupError = useFieldError('fsGroup')
@@ -33,11 +34,27 @@ export function SecuritySchedulingFields() {
             <Input {...register('fsGroup')} inputMode="numeric" />
           </FormField>
           <FormField hint={t('deploymentsPage.fsGroupChangePolicyHint')} label={t('deploymentsPage.fsGroupChangePolicy')}>
-            <NativeSelect {...register('fsGroupChangePolicy')}>
-              <option value="">{t('deploymentsPage.kubernetesDefault')}</option>
-              <option value="OnRootMismatch">{t('deploymentsPage.kubernetesValues.OnRootMismatch')}</option>
-              <option value="Always">{t('deploymentsPage.kubernetesValues.Always')}</option>
-            </NativeSelect>
+            {fieldControl => (
+              <Controller
+                control={control}
+                name="fsGroupChangePolicy"
+                render={({ field }) => (
+                  <Select
+                    value={toSelectValue(field.value)}
+                    onValueChange={next => field.onChange(fromSelectValue(next))}
+                  >
+                    <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.kubernetesDefault')}</SelectItem>
+                      <SelectItem value="OnRootMismatch">{t('deploymentsPage.kubernetesValues.OnRootMismatch')}</SelectItem>
+                      <SelectItem value="Always">{t('deploymentsPage.kubernetesValues.Always')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
           </FormField>
           <FormField error={capabilityDropError} hint={t('deploymentsPage.capabilityDropHint')} label={t('deploymentsPage.capabilityDrop')}>
             <Input {...register('capabilityDrop')} className="font-mono" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.capabilityDropPlaceholder') })} />

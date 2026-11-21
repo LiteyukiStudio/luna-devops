@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, ShieldX } from 'lucide-react'
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -18,7 +18,7 @@ import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { OneTimeSecret } from './one-time-secret'
 
 const schema = z.object({
@@ -209,13 +209,30 @@ export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange }
               />
             </Field>
             <Field error={form.formState.errors.expiresInDays?.message} hint={t('accessTokens.expiresInDaysHint')} label={t('accessTokens.expiresInDays')} required>
-              <Select {...form.register('expiresInDays')} aria-invalid={Boolean(form.formState.errors.expiresInDays)}>
-                <option value={7}>{t('accessTokens.expiresIn7Days')}</option>
-                <option value={15}>{t('accessTokens.expiresIn15Days')}</option>
-                <option value={30}>{t('accessTokens.expiresIn30Days')}</option>
-                <option value={90}>{t('accessTokens.expiresIn90Days')}</option>
-                <option value={0}>{t('accessTokens.expiresNever')}</option>
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="expiresInDays"
+                  render={({ field }) => (
+                    <Select
+                      name={field.name}
+                      value={String(field.value ?? 30)}
+                      onValueChange={next => field.onChange(Number(next))}
+                    >
+                      <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="7">{t('accessTokens.expiresIn7Days')}</SelectItem>
+                        <SelectItem value="15">{t('accessTokens.expiresIn15Days')}</SelectItem>
+                        <SelectItem value="30">{t('accessTokens.expiresIn30Days')}</SelectItem>
+                        <SelectItem value="90">{t('accessTokens.expiresIn90Days')}</SelectItem>
+                        <SelectItem value="0">{t('accessTokens.expiresNever')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             <DialogFooter>
               <DialogClose asChild>

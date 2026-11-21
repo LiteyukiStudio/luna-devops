@@ -16,7 +16,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
@@ -136,32 +136,71 @@ export function AIAssistantSettingsPanel() {
             render={({ field }) => <ControlledCheckboxField description={t('settings.ai.enabledHint')} field={field}>{t('settings.ai.enabled')}</ControlledCheckboxField>}
           />
           <Field hint={t('settings.ai.accessModeHint')} label={t('settings.ai.accessMode')} required>
-            <Select {...form.register('accessMode')}>
-              <option value="all_authenticated">{t('settings.ai.accessModeAllAuthenticated')}</option>
-              <option value="admins">{t('settings.ai.accessModeAdmins')}</option>
-            </Select>
+            {fieldControl => (
+              <Controller
+                control={form.control}
+                name="accessMode"
+                render={({ field }) => (
+                  <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all_authenticated">{t('settings.ai.accessModeAllAuthenticated')}</SelectItem>
+                      <SelectItem value="admins">{t('settings.ai.accessModeAdmins')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
           </Field>
           <div className="grid gap-4 @xl/workspace:grid-cols-2">
             <Field error={errors.baseUrl?.message} hint={t('settings.ai.baseUrlHint')} label={t('settings.ai.baseUrl')} required>
               <Input autoComplete="url" placeholder="https://api.example.com/v1" {...form.register('baseUrl')} />
             </Field>
             <Field hint={t('settings.ai.providerCompatibilityHint')} label={t('settings.ai.providerCompatibility')} required>
-              <Select aria-label={t('settings.ai.providerCompatibility')} {...form.register('providerCompatibility')}>
-                <option value="auto">{t('settings.ai.providerCompatibilityAuto')}</option>
-                <option value="openai">{t('settings.ai.providerCompatibilityOpenAI')}</option>
-                <option value="deepseek">{t('settings.ai.providerCompatibilityDeepSeek')}</option>
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="providerCompatibility"
+                  render={({ field }) => (
+                    <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger {...fieldControl} ref={field.ref} aria-label={t('settings.ai.providerCompatibility')} className="w-full" onBlur={field.onBlur}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">{t('settings.ai.providerCompatibilityAuto')}</SelectItem>
+                        <SelectItem value="openai">{t('settings.ai.providerCompatibilityOpenAI')}</SelectItem>
+                        <SelectItem value="deepseek">{t('settings.ai.providerCompatibilityDeepSeek')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
           </div>
           <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
             <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
           </Field>
           <Field hint={t('settings.ai.promptCacheKeyModeHint')} label={t('settings.ai.promptCacheKeyMode')} required>
-            <Select aria-label={t('settings.ai.promptCacheKeyMode')} {...form.register('promptCacheKeyMode')}>
-              <option value="auto">{t('settings.ai.promptCacheKeyModeAuto')}</option>
-              <option value="enabled">{t('settings.ai.promptCacheKeyModeEnabled')}</option>
-              <option value="disabled">{t('settings.ai.promptCacheKeyModeDisabled')}</option>
-            </Select>
+            {fieldControl => (
+              <Controller
+                control={form.control}
+                name="promptCacheKeyMode"
+                render={({ field }) => (
+                  <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger {...fieldControl} ref={field.ref} aria-label={t('settings.ai.promptCacheKeyMode')} className="w-full" onBlur={field.onBlur}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{t('settings.ai.promptCacheKeyModeAuto')}</SelectItem>
+                      <SelectItem value="enabled">{t('settings.ai.promptCacheKeyModeEnabled')}</SelectItem>
+                      <SelectItem value="disabled">{t('settings.ai.promptCacheKeyModeDisabled')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
           </Field>
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-1.5">

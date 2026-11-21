@@ -20,7 +20,8 @@ import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { ProjectTopologyChart } from './project-topology-chart'
 import { ProjectTopologyDetailSheet } from './project-topology-detail-sheet'
 import { projectTopologyKeys, projectTopologyPageParams } from './project-topology-query'
@@ -179,16 +180,19 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
       {managementListTruncated && <p className="text-xs text-muted-foreground">{t('projectTopology.truncatedWarning')}</p>}
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-          <NativeSelect
-            aria-label={t('projectTopology.stageFilter')}
-            className="h-8 min-w-36 text-xs"
-            containerClassName="w-auto"
-            value={stage}
-            onChange={event => setStage(event.target.value)}
-          >
-            <option value="">{t('projectTopology.allStages')}</option>
-            {stages.map(value => <option key={value} value={value}>{t(`deploymentsPage.stageLabels.${value}`, { defaultValue: value })}</option>)}
-          </NativeSelect>
+          <Select value={toSelectValue(stage)} onValueChange={next => setStage(fromSelectValue(next))}>
+            <SelectTrigger aria-label={t('projectTopology.stageFilter')} className="min-w-36 text-xs" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={EMPTY_SELECT_VALUE}>{t('projectTopology.allStages')}</SelectItem>
+              {stages.map(value => (
+                <SelectItem key={value} value={value}>
+                  {t(`deploymentsPage.stageLabels.${value}`, { defaultValue: value })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Input
             aria-label={t('projectTopology.searchRelations')}
             className="h-8 w-full @lg/workspace:w-52"
@@ -197,17 +201,16 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
             value={search}
             onChange={event => setSearch(event.target.value)}
           />
-          <NativeSelect
-            aria-label={t('projectTopology.originFilter')}
-            className="h-8 min-w-40 text-xs"
-            containerClassName="w-auto"
-            value={origin}
-            onChange={event => setOrigin(event.target.value as typeof origin)}
-          >
-            <option value="all">{t('projectTopology.allOrigins')}</option>
-            <option value="service_binding">{t('projectTopology.serviceBindings')}</option>
-            <option value="manual">{t('projectTopology.manualRelations')}</option>
-          </NativeSelect>
+          <Select value={origin} onValueChange={next => setOrigin(next as typeof origin)}>
+            <SelectTrigger aria-label={t('projectTopology.originFilter')} className="min-w-40 text-xs" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('projectTopology.allOrigins')}</SelectItem>
+              <SelectItem value="service_binding">{t('projectTopology.serviceBindings')}</SelectItem>
+              <SelectItem value="manual">{t('projectTopology.manualRelations')}</SelectItem>
+            </SelectContent>
+          </Select>
           <span className="text-xs text-muted-foreground">{t('projectTopology.relationCount', { count: visibleEdges.length })}</span>
           <div className="ml-auto flex items-center gap-1">
             {canManage && (

@@ -3,7 +3,7 @@ import type { ProjectHookConfig } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ScrollText, Trash2 } from 'lucide-react'
 import { useImperativeHandle, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 
 type HookForm = Omit<ProjectHookConfig, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'updatedAt'>
@@ -165,18 +165,44 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
             <div className="grid gap-3 md:grid-cols-2">
               <Field label={t('common.name')} required><Input {...form.register('name', { required: true })} /></Field>
               <Field label={t('projectHooks.shell')}>
-                <Select {...form.register('shell')}>
-                  <option value="sh">{t('projectHooks.shells.sh')}</option>
-                  <option value="bash">{t('projectHooks.shells.bash')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="shell"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sh">{t('projectHooks.shells.sh')}</SelectItem>
+                          <SelectItem value="bash">{t('projectHooks.shells.bash')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label={t('projectHooks.failurePolicy')}>
-                <Select {...form.register('failurePolicy')}>
-                  <option value="fail">{t('projectHooks.failurePolicies.fail')}</option>
-                  <option value="ignore">{t('projectHooks.failurePolicies.ignore')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="failurePolicy"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fail">{t('projectHooks.failurePolicies.fail')}</SelectItem>
+                          <SelectItem value="ignore">{t('projectHooks.failurePolicies.ignore')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
               <Field label={t('projectHooks.timeoutSeconds')}>
                 <Input min={1} max={3600} type="number" {...form.register('timeoutSeconds', { valueAsNumber: true })} />

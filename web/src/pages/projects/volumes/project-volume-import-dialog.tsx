@@ -15,7 +15,7 @@ import { StorageQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { VolumeTransferNotice } from './volume-transfer-notice'
 import { uploadVolumeImport, waitForVolumeTransferReady } from './volume-transfer-upload'
 
@@ -190,11 +190,18 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId, trans
             </Field>
             <input type="hidden" {...form.register('format')} />
             <Field label={t('projectVolumes.archiveFormat')} required>
-              <NativeSelect disabled value={importFormat}>
-                {importFormat === 'tar_gz'
-                  ? <option value="tar_gz">{t('projectVolumes.formatTarGz')}</option>
-                  : <option value="raw_zst">{t('projectVolumes.formatRawZst')}</option>}
-              </NativeSelect>
+              {fieldControl => (
+                <Select disabled value={importFormat}>
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {importFormat === 'tar_gz'
+                      ? <SelectItem value="tar_gz">{t('projectVolumes.formatTarGz')}</SelectItem>
+                      : <SelectItem value="raw_zst">{t('projectVolumes.formatRawZst')}</SelectItem>}
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
             <Field error={form.formState.errors.clusterId?.message} label={t('projectVolumes.cluster')} required>
               <ProjectVolumeClusterSelect
@@ -230,22 +237,51 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId, trans
               )}
             </Field>
             <Field label={t('projectVolumes.accessMode')} required>
-              <NativeSelect {...form.register('accessMode')}>
-                {projectVolumeAccessModeOptions(t).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </NativeSelect>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="accessMode"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projectVolumeAccessModeOptions(t).map(option => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
-            <input type="hidden" {...form.register('volumeMode')} />
             <Field label={t('projectVolumes.volumeMode')} required>
-              <NativeSelect
-                value={volumeMode}
-                onChange={(event) => {
-                  const nextMode = event.target.value as ProjectVolumeMode
-                  form.setValue('volumeMode', nextMode, { shouldDirty: true, shouldValidate: true })
-                  form.setValue('format', nextMode === 'Block' ? 'raw_zst' : 'tar_gz', { shouldDirty: true, shouldValidate: true })
-                }}
-              >
-                {projectVolumeModeOptions(t).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </NativeSelect>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="volumeMode"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={(next) => {
+                        const nextMode = next as ProjectVolumeMode
+                        field.onChange(nextMode)
+                        form.setValue('format', nextMode === 'Block' ? 'raw_zst' : 'tar_gz', { shouldDirty: true, shouldValidate: true })
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projectVolumeModeOptions(t).map(option => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
           </div>
           <Field label={t('projectVolumes.chooseFile')} required>

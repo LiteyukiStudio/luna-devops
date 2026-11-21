@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { Copy, KeyRound, MoreHorizontal, Pencil, RotateCcwKey, ShieldX, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { OneTimeSecret } from './one-time-secret'
 
@@ -359,13 +359,30 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
             />
           </Field>
           <Field label={t('oauthApps.tokenLifetime')} required>
-            <Select {...form.register('accessTokenLifetimeDays', { valueAsNumber: true })}>
-              <option value={1}>{t('oauthApps.days', { count: 1 })}</option>
-              <option value={7}>{t('oauthApps.days', { count: 7 })}</option>
-              <option value={30}>{t('oauthApps.days', { count: 30 })}</option>
-              <option value={90}>{t('oauthApps.days', { count: 90 })}</option>
-              <option value={0}>{t('oauthApps.neverExpires')}</option>
-            </Select>
+            {fieldControl => (
+              <Controller
+                control={form.control}
+                name="accessTokenLifetimeDays"
+                render={({ field }) => (
+                  <Select
+                    name={field.name}
+                    value={String(field.value ?? 30)}
+                    onValueChange={next => field.onChange(Number(next))}
+                  >
+                    <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">{t('oauthApps.days', { count: 1 })}</SelectItem>
+                      <SelectItem value="7">{t('oauthApps.days', { count: 7 })}</SelectItem>
+                      <SelectItem value="30">{t('oauthApps.days', { count: 30 })}</SelectItem>
+                      <SelectItem value="90">{t('oauthApps.days', { count: 90 })}</SelectItem>
+                      <SelectItem value="0">{t('oauthApps.neverExpires')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
           </Field>
           <ProgressiveSection
             summary={presentationSummary || t('oauthApps.presentationEmpty')}

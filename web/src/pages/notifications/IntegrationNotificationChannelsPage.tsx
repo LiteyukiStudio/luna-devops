@@ -19,7 +19,7 @@ import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
@@ -323,18 +323,20 @@ export function IntegrationNotificationChannelsPage() {
         toolbar={(
           <>
             <Select
-              aria-label={t('notificationsPage.scope')}
-              className="text-xs"
-              containerClassName="w-full @lg/data-list:w-40"
               value={scopeFilter}
-              onChange={(event) => {
-                setScopeFilter(event.target.value as 'all' | 'project' | 'global')
+              onValueChange={(next) => {
+                setScopeFilter(next as 'all' | 'project' | 'global')
                 setPage(1)
               }}
             >
-              <option value="all">{t('notificationsPage.allScopes')}</option>
-              <option value="project">{t('notificationsPage.scopeProject')}</option>
-              <option value="global">{t('notificationsPage.scopeGlobal')}</option>
+              <SelectTrigger aria-label={t('notificationsPage.scope')} className="w-full text-xs @lg/data-list:w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('notificationsPage.allScopes')}</SelectItem>
+                <SelectItem value="project">{t('notificationsPage.scopeProject')}</SelectItem>
+                <SelectItem value="global">{t('notificationsPage.scopeGlobal')}</SelectItem>
+              </SelectContent>
             </Select>
             {hasFilters && (
               <Button className="h-8 text-xs" size="sm" type="button" variant="ghost" onClick={clearFilters}>

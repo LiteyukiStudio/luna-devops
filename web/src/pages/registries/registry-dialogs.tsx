@@ -14,7 +14,7 @@ import { ProjectSpaceMultiSelect } from '@/components/common/project-space-selec
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { credentialDefaults, registryDefaults } from './registry-form-model'
 
@@ -52,31 +52,58 @@ export function RegistryDialog({ open, editingRegistry, form, projects, pending,
                 <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('registriesPage.registryNamePlaceholder')} />
               </Field>
               <Field error={form.formState.errors.provider?.message} hint={t('registriesPage.providerHint')} label={t('registriesPage.provider')} required>
-                <Select {...form.register('provider')} aria-invalid={Boolean(form.formState.errors.provider)}>
-                  <option value="harbor">{t('registriesPage.providerHarbor')}</option>
-                  <option value="dockerhub">{t('registriesPage.providerDockerHub')}</option>
-                  <option value="gitea-registry">{t('registriesPage.providerGiteaRegistry')}</option>
-                  <option value="generic-oci">{t('registriesPage.providerGenericOCI')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="provider"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="harbor">{t('registriesPage.providerHarbor')}</SelectItem>
+                          <SelectItem value="dockerhub">{t('registriesPage.providerDockerHub')}</SelectItem>
+                          <SelectItem value="gitea-registry">{t('registriesPage.providerGiteaRegistry')}</SelectItem>
+                          <SelectItem value="generic-oci">{t('registriesPage.providerGenericOCI')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             </div>
             <Field error={form.formState.errors.endpoint?.message} hint={t('registriesPage.endpointHint')} label={t('registriesPage.endpoint')} required>
               <Input {...form.register('endpoint')} aria-invalid={Boolean(form.formState.errors.endpoint)} placeholder={t('registriesPage.endpointPlaceholder')} />
             </Field>
             <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.registryScopeHint')} label={t('registriesPage.scope')} required>
-              <Select
-                {...form.register('scope', {
-                  onChange: (event) => {
-                    if (event.target.value !== 'project')
-                      form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                  },
-                })}
-                aria-invalid={Boolean(form.formState.errors.scope)}
-              >
-                <option value="global">{t('registriesPage.scopeGlobal')}</option>
-                <option value="project">{t('registriesPage.scopeProject')}</option>
-                <option value="user">{t('registriesPage.scopeUser')}</option>
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="scope"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={(next) => {
+                        if (next === field.value)
+                          return
+                        field.onChange(next)
+                        if (next !== 'project')
+                          form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="global">{t('registriesPage.scopeGlobal')}</SelectItem>
+                        <SelectItem value="project">{t('registriesPage.scopeProject')}</SelectItem>
+                        <SelectItem value="user">{t('registriesPage.scopeUser')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             {form.watch('scope') === 'project' && (
               <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')}>
@@ -162,32 +189,58 @@ export function CredentialDialog({ editingCredential, open, form, registries, pr
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(onSubmit)}>
           <DialogBody className="grid gap-3">
             <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.credentialRegistryHint')} label={t('registries')} required>
-              <Select
-                {...form.register('registryId', {
-                  onChange: () => {
-                    form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
-                    form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                  },
-                })}
-                aria-invalid={Boolean(form.formState.errors.registryId)}
-                disabled={Boolean(editingCredential)}
-              >
-                <option value="">{t('registriesPage.selectRegistry')}</option>
-                {registries.map(registry => (
-                  <option key={registry.id} value={registry.id}>{registry.name}</option>
-                ))}
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="registryId"
+                  render={({ field }) => (
+                    <Select
+                      disabled={Boolean(editingCredential)}
+                      value={field.value || undefined}
+                      onValueChange={(next) => {
+                        if (!next || next === field.value)
+                          return
+                        field.onChange(next)
+                        form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
+                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue placeholder={t('registriesPage.selectRegistry')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {registries.map(registry => (
+                          <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field error={form.formState.errors.name?.message} hint={t('registriesPage.credentialNameHint')} label={t('registriesPage.name')} required>
                 <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} />
               </Field>
               <Field error={form.formState.errors.usage?.message} hint={t('registriesPage.credentialScopeHint')} label={t('registriesPage.usage')} required>
-                <Select {...form.register('usage')} aria-invalid={Boolean(form.formState.errors.usage)}>
-                  <option value="push-pull">{t('registriesPage.credentialScopePushPull')}</option>
-                  <option value="push">{t('registriesPage.credentialScopePush')}</option>
-                  <option value="pull">{t('registriesPage.credentialScopePull')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="usage"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="push-pull">{t('registriesPage.credentialScopePushPull')}</SelectItem>
+                          <SelectItem value="push">{t('registriesPage.credentialScopePush')}</SelectItem>
+                          <SelectItem value="pull">{t('registriesPage.credentialScopePull')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             </div>
             <Field error={form.formState.errors.username?.message} hint={t('registriesPage.usernameHint')} label={t('registriesPage.username')}>
@@ -219,19 +272,33 @@ export function CredentialDialog({ editingCredential, open, form, registries, pr
               title={t('registriesPage.credentialAccessScope')}
             >
               <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.credentialAccessScopeHint')} label={t('registriesPage.credentialAccessScope')} required>
-                <Select
-                  {...form.register('scope', {
-                    onChange: (event) => {
-                      if (event.target.value !== 'project')
-                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                    },
-                  })}
-                  aria-invalid={Boolean(form.formState.errors.scope)}
-                >
-                  {credentialRegistry?.scope === 'global' && <option value="global">{t('registriesPage.scopeGlobal')}</option>}
-                  {credentialRegistry?.scope !== 'user' && <option value="project">{t('registriesPage.scopeProject')}</option>}
-                  <option value="user">{t('registriesPage.scopeUser')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="scope"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={(next) => {
+                          if (next === field.value)
+                            return
+                          field.onChange(next)
+                          if (next !== 'project')
+                            form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {credentialRegistry?.scope === 'global' && <SelectItem value="global">{t('registriesPage.scopeGlobal')}</SelectItem>}
+                          {credentialRegistry?.scope !== 'user' && <SelectItem value="project">{t('registriesPage.scopeProject')}</SelectItem>}
+                          <SelectItem value="user">{t('registriesPage.scopeUser')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
               {credentialScope === 'project' && (
                 <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')} required>
@@ -339,23 +406,36 @@ export function ImageDialog({
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit(onSubmit)}>
           <DialogBody className="grid gap-3">
             <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.imageRegistryHint')} label={t('registries')} required>
-              <Select
-                {...form.register('registryId', {
-                  onChange: () => {
-                    form.setValue('repository', '', { shouldDirty: true, shouldValidate: true })
-                    form.setValue('tag', '', { shouldDirty: true, shouldValidate: true })
-                    onRepositorySearchChange('')
-                    onRepositoryResultsOpenChange(false)
-                    setActiveIndex(-1)
-                  },
-                })}
-                aria-invalid={Boolean(form.formState.errors.registryId)}
-              >
-                <option value="">{t('registriesPage.selectRegistry')}</option>
-                {registries.map(registry => (
-                  <option key={registry.id} value={registry.id}>{registry.name}</option>
-                ))}
-              </Select>
+              {fieldControl => (
+                <Controller
+                  control={form.control}
+                  name="registryId"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value || undefined}
+                      onValueChange={(next) => {
+                        if (!next || next === field.value)
+                          return
+                        field.onChange(next)
+                        form.setValue('repository', '', { shouldDirty: true, shouldValidate: true })
+                        form.setValue('tag', '', { shouldDirty: true, shouldValidate: true })
+                        onRepositorySearchChange('')
+                        onRepositoryResultsOpenChange(false)
+                        setActiveIndex(-1)
+                      }}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue placeholder={t('registriesPage.selectRegistry')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {registries.map(registry => (
+                          <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
             </Field>
             <Field error={form.formState.errors.repository?.message} hint={t('registriesPage.repositoryHint')} label={t('registriesPage.repository')} required>
               <div className="flex gap-2">

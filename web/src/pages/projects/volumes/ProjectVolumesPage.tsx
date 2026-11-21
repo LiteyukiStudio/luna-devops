@@ -14,7 +14,8 @@ import { ProjectVolumeClusterSelect } from '@/components/common/project-volumes/
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { ProjectVolumeDetailSheet } from './project-volume-detail-sheet'
@@ -46,28 +47,62 @@ function VolumeFilters({ availability, clusterId, onAvailabilityChange, onCluste
       <div className="w-full @xl/data-list:w-40">
         <ProjectVolumeClusterSelect allowAll projectId={projectId} value={clusterId} onChange={onClusterChange} />
       </div>
-      <NativeSelect aria-label={t('projectVolumes.allAvailability')} containerClassName="w-full @xl/data-list:w-36" value={availability} onChange={event => onAvailabilityChange(event.target.value as '' | ProjectVolumeAvailability)}>
-        <option value="">{t('projectVolumes.allAvailability')}</option>
-        <option value="available">{t('projectVolumes.availabilityStates.available')}</option>
-        <option value="reserved">{t('projectVolumes.availabilityStates.reserved')}</option>
-        <option value="in_use">{t('projectVolumes.availabilityStates.in_use')}</option>
-        <option value="unavailable">{t('projectVolumes.availabilityStates.unavailable')}</option>
-      </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.allSources')} containerClassName="w-full @xl/data-list:w-36" value={sourceKind} onChange={event => onSourceChange(event.target.value as '' | ProjectVolumeSourceKind)}>
-        <option value="">{t('projectVolumes.allSources')}</option>
-        {(['blank', 'managed', 'retained', 'archive_import', 'snapshot_restore', 'existing_claim'] as const).map(value => <option key={value} value={value}>{t(`projectVolumes.sourceKinds.${value}`)}</option>)}
-      </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.allOwnership')} containerClassName="w-full @xl/data-list:w-36" value={ownership} onChange={event => onOwnershipChange(event.target.value as '' | ProjectVolumeOwnershipMode)}>
-        <option value="">{t('projectVolumes.allOwnership')}</option>
-        <option value="managed">{t('projectVolumes.ownershipModes.managed')}</option>
-        <option value="referenced">{t('projectVolumes.ownershipModes.referenced')}</option>
-      </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.sort')} containerClassName="w-full @xl/data-list:w-36" value={sortBy} onChange={event => onSortChange(event.target.value as typeof sortBy)}>
-        <option value="createdAt">{t('projectVolumes.sortCreated')}</option>
-        <option value="updatedAt">{t('projectVolumes.sortUpdated')}</option>
-        <option value="displayName">{t('projectVolumes.sortName')}</option>
-        <option value="capacity">{t('projectVolumes.sortCapacity')}</option>
-      </NativeSelect>
+      <Select
+        value={toSelectValue(availability)}
+        onValueChange={next => onAvailabilityChange(fromSelectValue(next) as '' | ProjectVolumeAvailability)}
+      >
+        <SelectTrigger aria-label={t('projectVolumes.allAvailability')} className="w-full @xl/data-list:w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={EMPTY_SELECT_VALUE}>{t('projectVolumes.allAvailability')}</SelectItem>
+          <SelectItem value="available">{t('projectVolumes.availabilityStates.available')}</SelectItem>
+          <SelectItem value="reserved">{t('projectVolumes.availabilityStates.reserved')}</SelectItem>
+          <SelectItem value="in_use">{t('projectVolumes.availabilityStates.in_use')}</SelectItem>
+          <SelectItem value="unavailable">{t('projectVolumes.availabilityStates.unavailable')}</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select
+        value={toSelectValue(sourceKind)}
+        onValueChange={next => onSourceChange(fromSelectValue(next) as '' | ProjectVolumeSourceKind)}
+      >
+        <SelectTrigger aria-label={t('projectVolumes.allSources')} className="w-full @xl/data-list:w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={EMPTY_SELECT_VALUE}>{t('projectVolumes.allSources')}</SelectItem>
+          {(['blank', 'managed', 'retained', 'archive_import', 'snapshot_restore', 'existing_claim'] as const).map(value => (
+            <SelectItem key={value} value={value}>{t(`projectVolumes.sourceKinds.${value}`)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={toSelectValue(ownership)}
+        onValueChange={next => onOwnershipChange(fromSelectValue(next) as '' | ProjectVolumeOwnershipMode)}
+      >
+        <SelectTrigger aria-label={t('projectVolumes.allOwnership')} className="w-full @xl/data-list:w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={EMPTY_SELECT_VALUE}>{t('projectVolumes.allOwnership')}</SelectItem>
+          <SelectItem value="managed">{t('projectVolumes.ownershipModes.managed')}</SelectItem>
+          <SelectItem value="referenced">{t('projectVolumes.ownershipModes.referenced')}</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select
+        value={sortBy}
+        onValueChange={next => onSortChange(next as typeof sortBy)}
+      >
+        <SelectTrigger aria-label={t('projectVolumes.sort')} className="w-full @xl/data-list:w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="createdAt">{t('projectVolumes.sortCreated')}</SelectItem>
+          <SelectItem value="updatedAt">{t('projectVolumes.sortUpdated')}</SelectItem>
+          <SelectItem value="displayName">{t('projectVolumes.sortName')}</SelectItem>
+          <SelectItem value="capacity">{t('projectVolumes.sortCapacity')}</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }

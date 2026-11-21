@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin, ProjectAction, projectActionAllowed } from '@/lib/roles'
@@ -716,16 +716,23 @@ export function ProjectNotificationsPanel({
               )
             : (
                 <Field label={t('notificationsPage.selectChannelToBind')} required>
-                  <Select
-                    value={selectedBindChannelId || bindableChannels[0]?.id || ''}
-                    onChange={event => setSelectedBindChannelId(event.target.value)}
-                  >
-                    {bindableChannels.map(channel => (
-                      <option key={channel.id} value={channel.id}>
-                        {`${channel.name} (${channel.adapterKind === 'smtp' ? t('notificationsPage.adapters.smtp') : t('notificationsPage.adapters.webhook')})`}
-                      </option>
-                    ))}
-                  </Select>
+                  {fieldControl => (
+                    <Select
+                      value={selectedBindChannelId || bindableChannels[0]?.id || undefined}
+                      onValueChange={setSelectedBindChannelId}
+                    >
+                      <SelectTrigger {...fieldControl} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {bindableChannels.map(channel => (
+                          <SelectItem key={channel.id} value={channel.id}>
+                            {`${channel.name} (${channel.adapterKind === 'smtp' ? t('notificationsPage.adapters.smtp') : t('notificationsPage.adapters.webhook')})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </Field>
               )}
           <DialogFooter>

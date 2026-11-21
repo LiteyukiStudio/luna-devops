@@ -14,7 +14,7 @@ import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { InstallTemplateSheet } from './install-template-sheet'
@@ -191,13 +191,19 @@ export function AppTemplatesPage() {
             onChange={event => setSearch(event.target.value)}
           />
           <Select
-            aria-label={t('appTemplatesPage.sortBy')}
-            containerClassName="min-w-32 flex-1 @lg/workspace:w-36 @lg/workspace:flex-none"
             value={sortBy}
-            onChange={event => setSortBy(event.target.value === 'name' ? 'name' : 'popularity')}
+            onValueChange={next => setSortBy(next === 'name' ? 'name' : 'popularity')}
           >
-            <option value="popularity">{t('appTemplatesPage.sortByPopularity')}</option>
-            <option value="name">{t('appTemplatesPage.sortByName')}</option>
+            <SelectTrigger
+              aria-label={t('appTemplatesPage.sortBy')}
+              className="min-w-32 flex-1 @lg/workspace:w-36 @lg/workspace:flex-none"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="popularity">{t('appTemplatesPage.sortByPopularity')}</SelectItem>
+              <SelectItem value="name">{t('appTemplatesPage.sortByName')}</SelectItem>
+            </SelectContent>
           </Select>
           <Button
             aria-label={t('appTemplatesPage.sortOrder')}

@@ -23,8 +23,8 @@ import { SearchSelect } from '@/components/common/search-select'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { cn } from '@/lib/utils'
@@ -255,9 +255,24 @@ export function ProjectTopologyRelationDialog({
             </div>
             {mode === 'manual' && (
               <Field label={t('projectTopology.form.relationType')} required>
-                <NativeSelect {...form.register('relationType')}>
-                  {relationTypes.map(type => <option key={type} value={type}>{t(`projectTopology.relationTypes.${type}`)}</option>)}
-                </NativeSelect>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="relationType"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {relationTypes.map(type => (
+                            <SelectItem key={type} value={type}>{t(`projectTopology.relationTypes.${type}`)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             )}
           </ProgressiveSection>
@@ -266,16 +281,48 @@ export function ProjectTopologyRelationDialog({
             <ProgressiveSection defaultOpen description={t('projectTopology.form.runtimeSectionDescription')} title={t('projectTopology.form.runtimeSection')}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field error={form.formState.errors.targetPortName?.message} hint={t('projectTopology.form.targetPortHint')} label={t('projectTopology.form.targetPort')} required>
-                  <NativeSelect {...form.register('targetPortName')} disabled={!targetDeploymentTargetId}>
-                    <option value="">{t('projectTopology.form.selectPort')}</option>
-                    {targetPorts.map(port => <option key={port.name} value={port.name}>{`${port.name} · ${port.port}`}</option>)}
-                  </NativeSelect>
+                  {fieldControl => (
+                    <Controller
+                      control={form.control}
+                      name="targetPortName"
+                      render={({ field }) => (
+                        <Select
+                          key={targetDeploymentTargetId || 'no-target'}
+                          disabled={!targetDeploymentTargetId}
+                          value={field.value || undefined}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue placeholder={t('projectTopology.form.selectPort')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {targetPorts.map(port => (
+                              <SelectItem key={port.name} value={port.name}>{`${port.name} · ${port.port}`}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
                 </Field>
                 <Field label={t('projectTopology.form.injectionMode')} required>
-                  <NativeSelect {...form.register('injectionMode')}>
-                    <option value="url" disabled={protocol === 'tcp'}>{t('projectTopology.form.urlMode')}</option>
-                    <option value="host_port">{t('projectTopology.form.hostPortMode')}</option>
-                  </NativeSelect>
+                  {fieldControl => (
+                    <Controller
+                      control={form.control}
+                      name="injectionMode"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem disabled={protocol === 'tcp'} value="url">{t('projectTopology.form.urlMode')}</SelectItem>
+                            <SelectItem value="host_port">{t('projectTopology.form.hostPortMode')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
                 </Field>
                 {injectionMode === 'url'
                   ? (
@@ -324,19 +371,32 @@ export function ProjectTopologyRelationDialog({
                 </>
               )}
               <Field label={t('projectTopology.form.protocol')} required={mode === 'service_binding'}>
-                <NativeSelect
-                  {...form.register('protocol')}
-                  onChange={(event) => {
-                    const value = event.target.value as RelationFormValues['protocol']
-                    form.setValue('protocol', value, { shouldDirty: true, shouldValidate: true })
-                    if (value === 'tcp')
-                      form.setValue('injectionMode', 'host_port', { shouldDirty: true, shouldValidate: true })
-                  }}
-                >
-                  <option value="http">{t('projectTopology.form.protocols.http')}</option>
-                  <option value="https">{t('projectTopology.form.protocols.https')}</option>
-                  <option value="tcp">{t('projectTopology.form.protocols.tcp')}</option>
-                </NativeSelect>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="protocol"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={(next) => {
+                          const value = next as RelationFormValues['protocol']
+                          field.onChange(value)
+                          if (value === 'tcp')
+                            form.setValue('injectionMode', 'host_port', { shouldDirty: true, shouldValidate: true })
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="http">{t('projectTopology.form.protocols.http')}</SelectItem>
+                          <SelectItem value="https">{t('projectTopology.form.protocols.https')}</SelectItem>
+                          <SelectItem value="tcp">{t('projectTopology.form.protocols.tcp')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
               {mode === 'service_binding' && protocol !== 'tcp' && (
                 <Field error={form.formState.errors.path?.message} label={t('projectTopology.form.path')}>

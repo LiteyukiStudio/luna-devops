@@ -22,7 +22,7 @@ import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import i18next from '@/i18n'
 import { useBillingAmountDisplay } from '@/lib/billing-display'
 import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
@@ -267,19 +267,45 @@ export function UsersPage() {
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field error={form.formState.errors.role?.message} hint={t('usersPage.globalRoleHint')} label={t('usersPage.globalRole')} required>
-                <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
-                  <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
-                  <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="role"
+                    render={({ field }) => (
+                      <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={PlatformRole.User}>{t('usersPage.normalUser')}</SelectItem>
+                          <SelectItem value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
               <Field error={form.formState.errors.language?.message} hint={t('usersPage.languageHint')} label={t('language')} required>
-                <Select {...form.register('language')} aria-invalid={Boolean(form.formState.errors.language)}>
-                  <option value="zh-CN">{t('languages.zhCN')}</option>
-                  <option value="zh-TW">{t('languages.zhTW')}</option>
-                  <option value="en-US">{t('languages.enUS')}</option>
-                  <option value="ja-JP">{t('languages.jaJP')}</option>
-                  <option value="ko-KR">{t('languages.koKR')}</option>
-                </Select>
+                {fieldControl => (
+                  <Controller
+                    control={form.control}
+                    name="language"
+                    render={({ field }) => (
+                      <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="zh-CN">{t('languages.zhCN')}</SelectItem>
+                          <SelectItem value="zh-TW">{t('languages.zhTW')}</SelectItem>
+                          <SelectItem value="en-US">{t('languages.enUS')}</SelectItem>
+                          <SelectItem value="ja-JP">{t('languages.jaJP')}</SelectItem>
+                          <SelectItem value="ko-KR">{t('languages.koKR')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
               </Field>
             </div>
             <Controller

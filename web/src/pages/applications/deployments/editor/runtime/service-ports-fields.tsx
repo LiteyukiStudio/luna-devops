@@ -1,11 +1,12 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import { Plus, X } from 'lucide-react'
-import { useFieldArray, useFormContext } from 'react-hook-form'
+import { Controller, useFieldArray, useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Textarea } from '@/components/ui/textarea'
 import { EditorGroup, SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
@@ -51,16 +52,32 @@ export function ServicePortsFields() {
 /** 高级分区中的 Service 选项：会话亲和、注解与内部服务。 */
 export function ServiceAdvancedFields() {
   const { t } = useTranslation()
-  const { register } = useFormContext<DeploymentTargetFormValues>()
+  const { control, register } = useFormContext<DeploymentTargetFormValues>()
   const annotationsError = useFieldError('serviceAnnotations')
   return (
     <div className="grid gap-4 @xl/workspace:grid-cols-2">
       <FormField hint={t('deploymentsPage.serviceSessionAffinityHint')} label={t('deploymentsPage.serviceSessionAffinity')}>
-        <NativeSelect {...register('serviceSessionAffinity')}>
-          <option value="">{t('deploymentsPage.kubernetesDefaultNone')}</option>
-          <option value="None">{t('deploymentsPage.kubernetesValues.None')}</option>
-          <option value="ClientIP">{t('deploymentsPage.kubernetesValues.ClientIP')}</option>
-        </NativeSelect>
+        {fieldControl => (
+          <Controller
+            control={control}
+            name="serviceSessionAffinity"
+            render={({ field }) => (
+              <Select
+                value={toSelectValue(field.value)}
+                onValueChange={next => field.onChange(fromSelectValue(next))}
+              >
+                <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.kubernetesDefaultNone')}</SelectItem>
+                  <SelectItem value="None">{t('deploymentsPage.kubernetesValues.None')}</SelectItem>
+                  <SelectItem value="ClientIP">{t('deploymentsPage.kubernetesValues.ClientIP')}</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          />
+        )}
       </FormField>
       <FormField error={annotationsError} hint={t('deploymentsPage.serviceAnnotationsHint')} label={t('deploymentsPage.serviceAnnotations')}>
         <Textarea {...register('serviceAnnotations')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.serviceAnnotationsPlaceholder') })} />

@@ -14,7 +14,7 @@ import { CpuQuotaInput, MemoryQuotaInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import {
   createPlatformTemplateFormSchema,
@@ -140,11 +140,24 @@ function PlatformTemplateEditorForm({
 
       <div className="grid gap-4 sm:grid-cols-4">
         <Field label={t('appTemplatesPage.platformAdmin.category')} required>
-          <Select disabled={pending} {...register('category')}>
-            {PLATFORM_TEMPLATE_CATEGORIES.map(category => (
-              <option key={category} value={category}>{templateCategoryLabel(category, t)}</option>
-            ))}
-          </Select>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="category"
+              render={({ field }) => (
+                <Select disabled={pending} value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLATFORM_TEMPLATE_CATEGORIES.map(category => (
+                      <SelectItem key={category} value={category}>{templateCategoryLabel(category, t)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </Field>
         <Field label={t('appTemplatesPage.platformAdmin.version')}>
           <Input disabled={pending} placeholder="1.0" {...register('version')} />
@@ -197,10 +210,23 @@ function PlatformTemplateEditorForm({
 
       <div className="grid gap-4 border-t border-border pt-4">
         <Field label={t('appTemplatesPage.platformAdmin.workloadMode')}>
-          <Select disabled={pending} {...register('workloadMode')}>
-            <option value="single">{t('appTemplatesPage.platformAdmin.modeSingle')}</option>
-            <option value="multi">{t('appTemplatesPage.platformAdmin.modeMulti')}</option>
-          </Select>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="workloadMode"
+              render={({ field }) => (
+                <Select disabled={pending} value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger {...fieldControl} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="single">{t('appTemplatesPage.platformAdmin.modeSingle')}</SelectItem>
+                    <SelectItem value="multi">{t('appTemplatesPage.platformAdmin.modeMulti')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
         </Field>
 
         {workloadMode === 'single'

@@ -8,7 +8,7 @@ import { api } from '@/api'
 import { ProjectVolumeCreateDialog } from '@/components/common/project-volumes/project-volume-create-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 
 /** 选择或就地创建与模板声明兼容（同集群、同卷模式、可用）的项目数据卷。 */
@@ -78,21 +78,27 @@ export function TemplateProjectVolumePicker({ canCreate, clusterId, clusterName,
         )}
       </div>
       <Select
-        {...control}
         disabled={disabled || !clusterId || volumes.isLoading || volumes.isError}
-        value={value}
-        onChange={event => onChange(event.target.value)}
+        value={value || undefined}
+        onValueChange={(next) => {
+          if (next)
+            onChange(next)
+        }}
       >
-        <option value="">{t('appTemplatesPage.selectProjectVolume')}</option>
-        {options.map(volume => (
-          <option key={volume.id} value={volume.id}>
-            {volume.displayName}
-            {' '}
-            ·
-            {' '}
-            {volume.capacity}
-          </option>
-        ))}
+        <SelectTrigger {...control} className="w-full">
+          <SelectValue placeholder={t('appTemplatesPage.selectProjectVolume')} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map(volume => (
+            <SelectItem key={volume.id} value={volume.id}>
+              {volume.displayName}
+              {' '}
+              ·
+              {' '}
+              {volume.capacity}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
       {!volumes.isLoading && !volumes.isError && options.length === 0 && <p className="text-xs text-muted-foreground">{t('projectVolumes.deploymentSelectorEmpty')}</p>}
       {volumes.isError && <p className="text-xs text-danger">{t('projectVolumes.loadFailedDescription')}</p>}

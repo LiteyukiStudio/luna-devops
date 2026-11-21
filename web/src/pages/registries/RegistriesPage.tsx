@@ -14,7 +14,8 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { PageShell } from '@/components/common/page-shell'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
@@ -379,18 +380,24 @@ export function RegistriesPage() {
               <>
                 {visibilitySelect}
                 <Select
-                  aria-label={t('registriesPage.selectRegistryTitle')}
-                  containerClassName="w-full @lg/data-list:w-40"
-                  value={credentialRegistryFilterId}
-                  onChange={(event) => {
-                    setCredentialRegistryFilterId(event.target.value)
+                  value={toSelectValue(credentialRegistryFilterId)}
+                  onValueChange={(next) => {
+                    setCredentialRegistryFilterId(fromSelectValue(next))
                     setCredentialPage(1)
                   }}
                 >
-                  <option value="">{t('registriesPage.allRegistries')}</option>
-                  {(registryOptions.data ?? registryItems).map(registry => (
-                    <option key={registry.id} value={registry.id}>{registry.name}</option>
-                  ))}
+                  <SelectTrigger
+                    aria-label={t('registriesPage.selectRegistryTitle')}
+                    className="w-full @lg/data-list:w-40"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_SELECT_VALUE}>{t('registriesPage.allRegistries')}</SelectItem>
+                    {(registryOptions.data ?? registryItems).map(registry => (
+                      <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </>
             )}
