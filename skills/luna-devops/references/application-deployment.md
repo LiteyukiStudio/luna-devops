@@ -76,7 +76,7 @@ description: 管理应用生命周期、从零上线新服务闭环、应用市�
   1. 先调 `delivery_list_templates` 检索模板，**必须再调 `delivery_get_template`** 查看参数表（区分普通参数 `values` 与敏感参数 `secretValues`、哪些支持 `autoGenerate`）及组件卷要求。
   2. 调用 `delivery_install_template` 时：**单组件模板**挂载已有卷使用顶层 `projectVolume`；**多组件模板**使用 `componentVolumes` 按组件 `key` 分别映射独立数据卷（二者互斥）。
 - **四类运行控制动作严格分流（切勿混用）**：
-  - **停机释放算力 / 调整副本（`delivery_scale_target`）**：传 `replicas: 0` 才会真正停止线上 Pod 释放计费算力；而修改 `governance.enabled: false` **仅禁止新建发布，绝不会停止已在运行的 Pod**！注意：目标已启用 HPA，或挂载了 `ReadWriteOnce`（`RWO`）单节点云盘的无状态 `Deployment` 不宜盲目扩至多副本（跨节点调度会触发 `Multi-Attach` 死锁）。
+  - **停机释放算力 / 调整副本（`delivery_scale_target`）**：传 `replicas: 0` 才会真正停止线上 Pod 释放计费算力；而修改 `governance.enabled: false` **仅禁止新建发布，绝不会停止已在运行的 Pod**！注意：目标已启用 HPA，或挂载了 `ReadWriteOnce`（`RWO`）单节点云盘的无状态 `Deployment` 不宜盲目扩至多副本（跨节点调度会触发 `Multi-Attach` 死锁）。此外，挂载 `RWO` 卷且独占应用文件锁（如 Meilisearch LMDB `os error 11`、SQLite）的服务若使用 `Deployment` 滚动更新（先起新 Pod 再杀旧 Pod），新 Pod 会因旧 Pod 仍持有文件锁而启动失败；临时恢复可向用户一次性说明完整闭环（`delivery_cancel_release` → `delivery_scale_target(0)` 释放锁 → `delivery_scale_target(1)` 恢复）并取得**单次授权**后连续执行完，长期建议将 `workloadType` 切换为 `StatefulSet`。
   - **原地滚动重启 vs. 下发草稿（`delivery_restart_target` vs. `delivery_deploy_target`）**：`delivery_restart_target` 仅向集群已有工作负载写入 `restartedAt` 注解重建旧配置 Pod，**绝不会下发数据库中未发布的配置/密钥改动**；要让新配置生效必须调 `delivery_deploy_target`。
   - **浮动镜像 Tag 重拉取**：外部重推同名浮动标签（如 `:latest`）要求更新线上实例时，调用 `delivery_deploy_target` 必须显式传 `forceImagePull: true`，否则节点命中本地缓存会导致“发布成功但仍跑旧代码”。
   - **跨阶段克隆卷隔离（`cloneFromStage`）**：调 `delivery_create_target` 克隆已有环境时，若源环境含持久化卷，必须传 `volumeOverrides` 绑定新环境独占卷或设 `omitProjectVolumes: true`，严禁两套环境争抢同一 `RWO` 数据卷。
@@ -95,6 +95,7 @@ description: 管理应用生命周期、从零上线新服务闭环、应用市�
 | 取消 `running` 中的发布后线上仍存在崩溃的新版 Pod | `delivery_cancel_release` 只停止平台等待工作流，不回退已 Apply 到 K8s 的模板 | 调 `runtime_get_target_diagnostics` 核实；若集群已切至问题版本，继续执行 `delivery_rollback_target` 恢复 |
 | 重推 `:latest` 等同名 Tag 并 `deploy` 成功，但线上代码未变 | 默认拉取策略命中节点本地旧镜像缓存 | 重新调用 `delivery_deploy_target` 并显式传入 `"forceImagePull": true` |
 | `delivery_scale_target` 被拒（HPA 冲突）或扩容后新 Pod 卡 `Multi-Attach` | 开启 HPA 时禁止手动固定副本；`Deployment` 挂载 `RWO` 卷跨节点多副本互斥 | HPA 场景改调 `delivery_update_target_runtime` 调整 `autoScaling`；`RWO` 卷保持单副本或改用 `RWX` / `StatefulSet` |
+| `Deployment` 挂载 `RWO` 卷发布卡住（新 Pod 报 `os error 11` / 文件锁冲突） | 滚动更新“先起后杀”导致新旧 Pod 同时争抢同一 `RWO` 卷上的应用文件锁 | 向用户单次确认完整恢复方案后连续执行：`delivery_cancel_release` 取消卡住发布 → `delivery_scale_target(0)` 释放锁 → `delivery_scale_target(1)` 恢复；长期建议改用 `StatefulSet` |
 | `service_binding.env_conflict` 或 `deployment.runtime_config_mount_conflict` | 变量名与出站 `ServiceBinding` 注入键冲突，或挂载文件/卷路径重叠及父子前缀嵌套 | 更换变量名或调整 `ServiceBinding`；确保 `configFiles`、`secretFiles` 与卷 `mountPath` 路径互不重叠嵌套 |
 | `delivery_install_template` 报 `app_template.value_required` 或参数分类错误 | 必填项缺失，或把 `secret=true` 参数误放进明文 `values`（反之亦然） | 调用 `delivery_get_template` 对照每个参数的 `secret` 与 `required` 标记，拆分至 `values` 与 `secretValues` |
 | `ai.preview_conflict` 或 `billing.insufficient_balance` | 审批期间目标状态被并发修改，或项目计费主体余额不足触发门禁冻结 | `preview_conflict` 重读 `delivery_get_target` 后重新预检；欠费**禁止重试**，引导核查 `ops_get_billing_summary` |
