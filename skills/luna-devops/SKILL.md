@@ -12,6 +12,7 @@ description: 通过 Luna DevOps MCP Server（/api/v1/mcp）管理项目空间、
 - [2. 三级风险门禁与 L2 两阶段预检锁](#2-三级风险门禁与-l2-两阶段预检锁)
 - [3. 全局状态机与防死循环铁律](#3-全局状态机与防死循环铁律)
 - [4. 安全红线与 Web 控制台人工边界](#4-安全红线与-web-控制台人工边界)
+- [5. 交互展示与宿主能力自适应（仅适用于支持富 UI/选项的宿主）](#5-交互展示与宿主能力自适应仅适用于支持富-ui选项的宿主)
 
 ---
 
@@ -47,6 +48,7 @@ description: 通过 Luna DevOps MCP Server（/api/v1/mcp）管理项目空间、
   - **Step 2 — 用户确认**：向用户清晰展示目标环境、变更摘要、风险提示与可回滚方式，取得明确授权。
   - **Step 3 — 验锁执行**：携带**完全一致**的 `arguments` 与 `previewLock` 调用 `execute_tool(toolName, arguments, previewLock)`。
   - **Step 4 — 后置回读**：按工具返回或 SOP 指引回读权威状态，确认真实副作用达成后才可报告完成。
+  - **多步连贯方案的联合授权（避免逐步打断）**：当用户已明确同意完整的多步操作方案（例如“修改规格并发布生效”、“取消发布 → 缩容至 0 释放锁 → 恢复 1 副本”），且因状态前后依赖无法一次性预先签发全部 `previewLock` 时，只需在方案起点说明完整步骤与影响并取得**一次明确授权**；后续配套步骤仍须在执行前调用 `preview_tool` 完成服务端校验，只要返回的 Diff 与 `warnings` 均在已授权方案预期内，即可直接携 `previewLock` 连续调用 `execute_tool` 推进到底，仅在出现预期外的新增风险或冲突时才暂停重新确认。
 
 ---
 
@@ -86,3 +88,12 @@ description: 通过 Luna DevOps MCP Server（/api/v1/mcp）管理项目空间、
   2. 容器交互式 WebSocket TTY Shell 终端（AI 仅限在已开启终端权限的环境按需执行单次非交互 `runtime_exec_command`）；
   3. 数据卷本地归档文件浏览器上传导入，以及已就绪导出归档文件的浏览器下载；
   4. 部署目标高级 Kubernetes 调度字段（`initContainers`、`sidecarContainers`、`tolerations`、`affinity`）与跨项目 JSON Bundle 导入向导。
+
+---
+
+## 5. 交互展示与宿主能力自适应（仅适用于支持富 UI/选项的宿主）
+
+根据当前客户端宿主实际具备的交互与渲染能力动态选择输出形态，切勿编造当前宿主不存在的私有工具：
+
+- **结构化决策**：当存在多候选资源消歧（如多个同名应用或目标环境）或多步方案确认时，优先使用当前宿主自身提供的结构化提问/选项能力，避免大段自由文本猜参数；若运行于纯终端 CLI 等无选项组件环境，则退化为简洁的编号列表供用户回复序号确认。
+- **只读结果展示**：需要直观对比部署诊断快照（`diagnostics`）、变更预览 Diff（`change_review`）、资源与路由盘点（`inventory`）或服务依赖拓扑（`topology`）时，若当前宿主支持渲染 HTML 卡片或 MCP `ui://` 视图，优先调用 MCP 只读元工具 `render_card` 输出自包含卡片（返回内容已同时兼容 `ui://luna-devops/card-viewer.html` 与纯 HTML 字符串）；**严禁在只读卡片内伪造可执行按钮，也严禁借卡片展示跳过 `preview_tool` 预检锁校验**。若运行于纯 CLI 环境，则忽略 `render_card`，直接输出紧凑的 Markdown 表格。

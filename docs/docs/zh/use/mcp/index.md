@@ -56,11 +56,11 @@ claude mcp add --transport http luna-devops https://devops.example.com/api/v1/mc
 
 ### 预期结果
 
-保存配置后，客户端 MCP 列表会显示 `luna-devops` 已连接并加载 7 个渐进式元工具。可直接发送“列出我有权限的项目空间”验证连通性；推荐进一步阅读[配套 Skills](./skills) 了解领域工作流加载方式。
+保存配置后，客户端 MCP 列表会显示 `luna-devops` 已连接并加载 8 个渐进式元工具。可直接发送“列出我有权限的项目空间”验证连通性；推荐进一步阅读[配套 Skills](./skills) 了解领域工作流加载方式。
 
 ## 渐进式工具发现与安全门禁
 
-为避免一次性向模型上下文注入上百个 Schema，MCP Server 通过 **7 个内置渐进式元工具**按需暴露覆盖 7 大业务域的 **166 个平台操作**：
+为避免一次性向模型上下文注入上百个 Schema，MCP Server 通过 **8 个内置渐进式元工具**按需暴露覆盖 7 大业务域的 **166 个平台操作**：
 
 | 元工具 | 用途 |
 | --- | --- |
@@ -71,6 +71,7 @@ claude mcp add --transport http luna-devops https://devops.example.com/api/v1/mc
 | `load_skill` | 按需加载业务域工作流规程，见[配套 Skills](./skills)。 |
 | `search_docs` | 检索随当前平台版本打包的官方公开文档。 |
 | `read_doc` | 按章节读取官方文档原文，核对字段格式、模板变量与限制。 |
+| `render_card` | 为支持富 UI / MCP Apps（`ui://`）或内联 HTML 的桌面客户端生成只读诊断、盘点、拓扑与变更预览卡片。 |
 
 ### 三级风险门禁与 `L2` 两阶段预检锁
 

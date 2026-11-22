@@ -159,14 +159,14 @@ func TestMCPStreamableHTTPEndToEnd(t *testing.T) {
 	if listToolsRec.Code != http.StatusOK {
 		t.Fatalf("tools/list = %d %s", listToolsRec.Code, listToolsRec.Body.String())
 	}
-	for _, metaTool := range []string{"load_skill", "search_tools", "get_tool_details", "preview_tool", "execute_tool", "search_docs", "read_doc"} {
+	for _, metaTool := range []string{"load_skill", "search_tools", "get_tool_details", "preview_tool", "execute_tool", "search_docs", "read_doc", "render_card"} {
 		if !strings.Contains(listToolsRec.Body.String(), `"`+metaTool+`"`) {
 			t.Fatalf("tools/list missing %q: %s", metaTool, listToolsRec.Body.String())
 		}
 	}
 
 	resListRec := callMCP(readOnlyPAT, `{"jsonrpc":"2.0","id":3,"method":"resources/list"}`)
-	if resListRec.Code != http.StatusOK || !strings.Contains(resListRec.Body.String(), "luna://skills/domains/platform-admin") {
+	if resListRec.Code != http.StatusOK || !strings.Contains(resListRec.Body.String(), "luna://skills/domains/platform-admin") || !strings.Contains(resListRec.Body.String(), "ui://luna-devops/card-viewer.html") {
 		t.Fatalf("resources/list = %d %s", resListRec.Code, resListRec.Body.String())
 	}
 

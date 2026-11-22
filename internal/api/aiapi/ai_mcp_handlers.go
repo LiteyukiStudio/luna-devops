@@ -280,12 +280,22 @@ func (h *Handler) handleMCPInitialize(rawParams json.RawMessage) map[string]any 
 			"tools":     map[string]any{"listChanged": false},
 			"resources": map[string]any{"subscribe": false, "listChanged": false},
 			"prompts":   map[string]any{"listChanged": false},
+			"extensions": map[string]any{
+				"io.modelcontextprotocol/ui": map[string]any{
+					"mimeTypes": []string{mcpAppHTMLMimeType},
+				},
+			},
+			"experimental": map[string]any{
+				"io.modelcontextprotocol/ui": map[string]any{
+					"mimeTypes": []string{mcpAppHTMLMimeType},
+				},
+			},
 		},
 		"serverInfo": map[string]any{
 			"name":    "luna-devops",
 			"version": h.host.AppVersion(),
 		},
-		"instructions": "Luna DevOps MCP 采用渐进式领域门面：1) 先按业务域调 load_skill 加载 SOP，再用单域短词调 search_tools 发现工具、写前调 get_tool_details 确认 Schema 与风险分级，涉及内置变量/模板/计费规则先调 search_docs + read_doc；2) L0 直接调 execute_tool，L1 传 confirmed: true，L2 及 stage=prod 强制先调 preview_tool 向用户确认 Diff 后携 previewLock 调 execute_tool；3) 对 pod、previewLock、revision 等易失句柄收到 not_found 或 conflict 时原地重试次数强制为 0，必须退回 project/application/target 稳定锚点（如 runtime_get_target_diagnostics）重对齐；4) 配置写工具均为纯增量补丁，多项 requiresRelease=true 改动须攒齐后合并单次 delivery_deploy_target，观测返回 status=unavailable 时如实报告集群不可达，异步任务按退避节奏有界查询严禁死循环。",
+		"instructions": "Luna DevOps MCP 采用渐进式领域门面：1) 先按业务域调 load_skill 加载 SOP，再用单域短词调 search_tools 发现工具、写前调 get_tool_details 确认 Schema 与风险分级，涉及内置变量/模板/计费规则先调 search_docs + read_doc；2) L0 直接调 execute_tool，L1 传 confirmed: true，L2 及 stage=prod 须先调 preview_tool 并向用户确认 Diff 后携 previewLock 调 execute_tool；若用户已明确授权完整多步方案（如“改配置并发布”、“缩 0 释放锁再恢复 1”），后续配套步骤在 preview_tool 校验无新增风险/冲突时可直接携 previewLock 连续执行，不必逐步打断用户重复确认；3) 对 pod、previewLock、revision 等易失句柄收到 not_found 或 conflict 时原地重试次数强制为 0，必须退回 project/application/target 稳定锚点（如 runtime_get_target_diagnostics）重对齐；4) 配置写工具均为纯增量补丁，多项 requiresRelease=true 改动须攒齐后合并单次 delivery_deploy_target，观测返回 status=unavailable 时如实报告集群不可达，异步任务按退避节奏有界查询严禁死循环；5) 交互展示按宿主能力自适应：当存在多候选消歧或多步方案确认时，优先使用当前宿主自带的结构化提问/选项能力（纯终端无选项组件时使用简洁编号列表）；展示部署诊断、资源盘点、依赖拓扑或变更预览 Diff 时，若宿主支持渲染 HTML 卡片或 MCP ui:// 视图，优先调用 render_card 输出只读卡片（禁止伪造可执行按钮或跳过 preview_tool），不支持富 UI 的终端环境则输出紧凑 Markdown 表格。",
 	}
 }
 
@@ -406,6 +416,7 @@ func mcpMetaToolDefinitions() []map[string]any {
 				"additionalProperties": false,
 			},
 		},
+		mcpRenderCardToolDefinition(),
 	}
 }
 
@@ -450,11 +461,14 @@ func (h *Handler) handleMCPToolsCall(
 	case "read_doc":
 		opSpan.SetAttributes(attribute.String("luna.mcp.meta_tool", "read_doc"))
 		return h.mcpCallReadDoc(ctx, user, call.Arguments), nil
+	case "render_card":
+		opSpan.SetAttributes(attribute.String("luna.mcp.meta_tool", "render_card"))
+		return h.mcpCallRenderCard(user, call.Arguments), nil
 	default:
 		opSpan.SetAttributes(attribute.String("luna.mcp.meta_tool", "unknown"))
 		return mcpToolErrorResult(aitool.BadRequest(
 			"mcp.meta_tool_unknown",
-			fmt.Sprintf("unknown MCP tool %q; use search_tools, get_tool_details, preview_tool, execute_tool, load_skill, search_docs, or read_doc", metaTool),
+			fmt.Sprintf("unknown MCP tool %q; use search_tools, get_tool_details, preview_tool, execute_tool, load_skill, search_docs, read_doc, or render_card", metaTool),
 		)), nil
 	}
 }
@@ -922,7 +936,7 @@ func (h *Handler) handleMCPResourcesList() (any, *jsonRPCError) {
 	if err != nil {
 		return nil, &jsonRPCError{Code: -32603, Message: "Skills catalog unavailable"}
 	}
-	resources := make([]map[string]any, 0, 1+len(domains))
+	resources := make([]map[string]any, 0, 2+len(domains))
 	resources = append(resources, map[string]any{
 		"uri":         "luna://skills/luna-devops",
 		"name":        entry.Name,
@@ -937,6 +951,7 @@ func (h *Handler) handleMCPResourcesList() (any, *jsonRPCError) {
 			"mimeType":    "text/markdown",
 		})
 	}
+	resources = append(resources, mcpCardViewerResourceMetadata())
 	return map[string]any{"resources": resources}, nil
 }
 
@@ -948,6 +963,16 @@ func (h *Handler) handleMCPResourcesRead(rawParams json.RawMessage) (any, *jsonR
 		return nil, &jsonRPCError{Code: -32602, Message: "uri is required"}
 	}
 	uri := strings.TrimSpace(in.URI)
+	if uri == mcpCardViewerResourceURI {
+		return map[string]any{
+			"contents": []map[string]any{{
+				"uri":      mcpCardViewerResourceURI,
+				"mimeType": mcpAppHTMLMimeType,
+				"_meta":    mcpCardViewerUIMeta(),
+				"text":     mcpCardViewerAppHTML(),
+			}},
+		}, nil
+	}
 	if uri == "luna://skills/luna-devops" {
 		entry, err := skills.EntrySkill()
 		if err != nil {

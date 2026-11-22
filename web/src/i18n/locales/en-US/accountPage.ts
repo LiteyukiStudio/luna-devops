@@ -104,7 +104,7 @@ const accountPage = {
     transportBadge: 'Streamable HTTP',
     copyEndpoint: 'Copy endpoint URL',
     docsLink: 'MCP documentation',
-    metaToolsHint: 'Connected clients load 7 progressive meta-tools on demand (search_tools, get_tool_details, preview_tool, execute_tool, load_skill, search_docs, read_doc) to keep context lean.',
+    metaToolsHint: 'Connected clients load 8 progressive meta-tools on demand (search_tools, get_tool_details, preview_tool, execute_tool, load_skill, search_docs, read_doc, render_card) to keep context lean.',
     promptTitle: 'Copy setup prompt for AI',
     promptDescription: 'Works with Claude Code, Cursor, Antigravity, Windsurf, Cline, and other Streamable HTTP MCP clients. Paste it into your AI Agent to configure and verify connectivity.',
     copyPrompt: 'Copy prompt for AI',

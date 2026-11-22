@@ -104,7 +104,7 @@ const accountPage = {
     transportBadge: 'Streamable HTTP',
     copyEndpoint: '엔드포인트 URL 복사',
     docsLink: 'MCP 연결 문서',
-    metaToolsHint: '연결 후 클라이언트는 7개의 점진적 메타 도구(search_tools, get_tool_details, preview_tool, execute_tool, load_skill, search_docs, read_doc)를 필요할 때 로드합니다.',
+    metaToolsHint: '연결 후 클라이언트는 8개의 점진적 메타 도구(search_tools, get_tool_details, preview_tool, execute_tool, load_skill, search_docs, read_doc, render_card)를 필요할 때 로드합니다.',
     promptTitle: 'AI용 설정 프롬프트 원클릭 복사',
     promptDescription: 'Claude Code, Cursor, Antigravity, Windsurf, Cline 등 Streamable HTTP 지원 AI Agent용입니다. 복사하여 AI에 붙여넣으면 설정과 연결 확인을 수행합니다.',
     copyPrompt: 'AI 설정 프롬프트 복사',

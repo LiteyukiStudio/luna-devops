@@ -56,11 +56,11 @@ Add the server to your client's MCP configuration file:
 
 ### Expected result
 
-Once saved, your client's MCP panel shows `luna-devops` connected with 7 progressive meta-tools. Verify access by asking a read-only question such as “List the project spaces I can access.” See [Companion Skills](./skills) to load domain-specific workflows.
+Once saved, your client's MCP panel shows `luna-devops` connected with 8 progressive meta-tools. Verify access by asking a read-only question such as “List the project spaces I can access.” See [Companion Skills](./skills) to load domain-specific workflows.
 
 ## Progressive tool discovery and safety model
 
-Instead of loading hundreds of schemas into context upfront, the MCP Server exposes **166 domain operations** across 7 domains through **7 built-in progressive meta-tools**:
+Instead of loading hundreds of schemas into context upfront, the MCP Server exposes **166 domain operations** across 7 domains through **8 built-in progressive meta-tools**:
 
 | Meta-tool | Purpose |
 | --- | --- |
@@ -71,6 +71,7 @@ Instead of loading hundreds of schemas into context upfront, the MCP Server expo
 | `load_skill` | Load domain workflow instructions on demand; see [Companion Skills](./skills). |
 | `search_docs` | Search the official public documentation bundled with the running server version. |
 | `read_doc` | Read official documentation sections to verify field formats, template variables, and limits. |
+| `render_card` | Render self-contained read-only HTML cards (compatible with MCP Apps `ui://` and inline HTML) for diagnostics, change diffs, inventory, and service topology. |
 
 ### Three-tier risk gate and mandatory `L2` preview lock
 

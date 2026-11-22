@@ -104,7 +104,7 @@ const accountPage = {
     transportBadge: 'Streamable HTTP',
     copyEndpoint: '复制服务地址',
     docsLink: '查看 MCP 接入文档',
-    metaToolsHint: '连接后客户端按需加载 7 个渐进式元工具（search_tools、get_tool_details、preview_tool、execute_tool、load_skill、search_docs、read_doc），避免撑爆上下文窗口。',
+    metaToolsHint: '连接后客户端按需加载 8 个渐进式元工具（search_tools、get_tool_details、preview_tool、execute_tool、load_skill、search_docs、read_doc、render_card），避免撑爆上下文窗口。',
     promptTitle: '一键复制给 AI 的配置提示词',
     promptDescription: '适配 Claude Code、Cursor、Antigravity、Windsurf、Cline 等支持 Streamable HTTP 的 AI Agent。复制后发送给你的 AI 即可完成配置与连通性自检。',
     copyPrompt: '复制 AI 配置提示词',

@@ -39,8 +39,14 @@ func TestEmbeddedSkillsLoadAndStayUniversal(t *testing.T) {
 		"request_choice",
 		"navigate_to_route",
 		"wait_for_task",
+		"ask_question",
+		"AskUserQuestion",
+		"request_user_input",
 		"luna deployment exec",
 		"luna-cli",
+	}
+	if !strings.Contains(entry.Instructions, "render_card") {
+		t.Error("entry SKILL.md must document the MCP read-only render_card adaptive guidance")
 	}
 	for _, forbidden := range webOnlyTokens {
 		if strings.Contains(entry.Instructions, forbidden) {

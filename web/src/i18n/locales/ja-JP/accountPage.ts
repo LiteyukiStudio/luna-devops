@@ -104,7 +104,7 @@ const accountPage = {
     transportBadge: 'Streamable HTTP',
     copyEndpoint: 'エンドポイント URL をコピー',
     docsLink: 'MCP 接続ドキュメント',
-    metaToolsHint: '接続後は 7 つの段階的メタツール（search_tools、get_tool_details、preview_tool、execute_tool、load_skill、search_docs、read_doc）をオンデマンドで読み込みます。',
+    metaToolsHint: '接続後は 8 つの段階的メタツール（search_tools、get_tool_details、preview_tool、execute_tool、load_skill、search_docs、read_doc、render_card）をオンデマンドで読み込みます。',
     promptTitle: 'AI に渡すセットアッププロンプト',
     promptDescription: 'Claude Code、Cursor、Antigravity、Windsurf、Cline など Streamable HTTP 対応クライアント向け。コピーして AI に送信すると設定と疎通確認を実行できます。',
     copyPrompt: 'AI セットアッププロンプトをコピー',

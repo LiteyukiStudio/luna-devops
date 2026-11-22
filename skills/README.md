@@ -3,7 +3,7 @@
 > **打包隔离声明**：本文件（`skills/README.md`）仅面向仓库开发者与维护者说明 Skill 设计准则，**严禁打包进任何运行环境**（已通过 `skills/embed.go` 精确路径白名单、`luna-agent/Dockerfile` 定向复制及根目录 `.dockerignore` 物理排除，避免污染 Agent 上下文）。
 
 本目录维护 **Luna DevOps 唯一一套工作流规程事实源**（`skills/luna-devops/`），同时服务于：
-1. 对外公开的 `/api/v1/mcp` Streamable HTTP MCP 网关（通过 `load_skill` 元工具、`luna://skills/*` Resources 与 Prompts 下发）；
+1. 对外公开的 `/api/v1/mcp` Streamable HTTP MCP 网关（通过 `load_skill` 元工具、`luna://skills/*` Resources 与 Prompts 下发，并配合 MCP 只读卡片元工具 `render_card` 自适应渲染）；
 2. 平台内置 AI 助手 `luna-agent`（通过运行时 `load_skill` 按需加载）；
 3. 支持本地 `SKILL.md` 开放标准（`agentskills.io`）的外部客户端（Claude Code、Cursor、Codex、Antigravity 等，可直接整包复制 `skills/luna-devops/`）。
 

@@ -54,6 +54,7 @@ export const interactionGuidance = `# Luna DevOps 交互与推进规程
 
 ## 选择交互方式
 
+- Web 内置助手固定使用本节的 \`present_card\`、\`request_input\`、\`request_choice\` 与 \`navigate_to_route\` 承载结构化交互（外部 \`/api/v1/mcp\` 专属的只读 HTML 工具不向内置助手暴露，正文中也严禁输出裸 HTML）。
 - \`present_card\`：使用裁剪后的展示 Schema（仅支持 \`template: result | change_review | live_task\`）呈现已经由可信工具结果确认的事实、诊断、变更核对或权威实时任务进度；严禁传入 \`mode\` 字段或未定义模板名。
 - \`request_input\`：使用裁剪后的表单 Schema（包含 \`form\` 与绑定 \`actions\`）收集当前工作流真正缺少的结构化输入；可发现的资源使用真实候选，不让用户手填 ID，严禁传入 \`mode\` 或 \`template\` 字段。
 - \`request_choice\`：使用裁剪后的候选决策 Schema（通过 \`selection\` 或逐张候选卡动作表达单选/多选）让用户从可信候选中决策；候选过多时改用 \`request_input\` 的 \`select\` 字段，严禁传入 \`mode\` 或 \`template\` 字段。
