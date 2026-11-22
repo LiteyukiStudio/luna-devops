@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="web/public/luna-devops-logo.svg" width="132" alt="Luna DevOps logo" />
+  <img src="web/public/luna-devops-logo.svg" width="112" alt="Luna DevOps" />
 </p>
 
 <h1 align="center">Luna DevOps</h1>
 
 <p align="center">
-  A lightweight application delivery platform for small teams, businesses, and independent developers.
+  Open-source application delivery platform for solo developers and small teams.
 </p>
 
 <p align="center">
@@ -13,217 +13,44 @@
 </p>
 
 <p align="center">
-  <img src=".github/assets/luna-devops-banner-v4.png" alt="Luna DevOps automated delivery pipeline banner" />
+  <a href="https://luna-devops.liteyuki.org/en/">Documentation</a>
+  ·
+  <a href="https://luna-devops.liteyuki.org/en/start/install/kubernetes">Install</a>
+  ·
+  <a href="https://github.com/LiteyukiStudio/luna-devops/releases">Releases</a>
+  ·
+  <a href="LICENSE">MIT License</a>
 </p>
 
 <p align="center">
-  <a href="https://luna-devops.liteyuki.org/en/">Documentation</a>
-  ·
-  <a href="https://github.com/LiteyukiStudio/luna-devops">GitHub</a>
-  ·
-  <a href="docs/docs/en/start/install/kubernetes.md">Helm</a>
-  ·
-  <a href="docs/docs/en/start/install/docker-compose.md">Docker Compose</a>
+  <img src=".github/assets/luna-devops-banner-v4.png" alt="Luna DevOps overview" />
 </p>
 
-## What Is Luna DevOps?
+Running apps on your own cluster usually comes with a long list of chores between pushing code and going live: building images, pushing to a registry, maintaining deployment configs, wiring up domains, renewing certificates, and digging through logs when something breaks. Enterprise platforms are often too heavy to run for a small team, while hand-rolled scripts scatter quickly across repositories.
 
-Luna DevOps connects source repositories, image registries, BuildKit, Kubernetes, gateway routes, certificates, releases, and billing into one delivery workflow.
+Luna DevOps brings those everyday steps into a lightweight web console. Connect your existing Git host, image registry, and cluster, then handle builds, rollouts, rollbacks, custom domains, and live status checks in one place. There is no cloud lock-in, and it works alongside the GitHub, Gitea, or Harbor setup you already use.
 
-The goal is simple: keep the product team focused on code, while the platform handles the repeatable steps required to build and expose a service.
+## What You Can Do
 
-```text
-Repository
-  -> Build image
-  -> Push registry artifact
-  -> Deploy to Kubernetes / K3s
-  -> Create gateway route
-  -> Track status, logs, release history, and usage
-```
+- Deploy straight from GitHub or Gitea repositories, run an existing container image, or launch common services from marketplace templates.
+- Keep a clear history of builds and releases, roll back to a previous version when needed, and check live status, logs, persistent volumes, and service connections in the browser.
+- Attach custom domains with automated HTTPS certificates for public apps, or keep internal services private within a project space.
+- Organize apps by project space with member roles, notifications, resource quotas, and usage billing so multiple projects can share a cluster cleanly.
+- Use the built-in web AI assistant, or connect local tools like Claude Code and Cursor over MCP to check app health, troubleshoot failures, and prepare changes in chat.
 
-## Features
+## Getting Started
 
-| Area | Included |
-| --- | --- |
-| Workspaces | Project spaces, applications, members, roles, and audit-oriented operations |
-| Repositories | GitHub and Gitea account integration, repository binding, and webhook entry points |
-| Builds | Worker-managed Kubernetes Jobs, rootless BuildKit, image tags, logs, and build records |
-| Registries | Harbor, Gitea Registry, DockerHub, and generic OCI registry connections |
-| Deployments | Kubernetes / K3s workloads, release records, status sync, and rollback-oriented history |
-| Gateway | Gateway API / HTTPRoute, domains, access entries, and certificate automation |
-| Operations | Events, notifications, application marketplace, billing, and platform settings |
-| User experience | React console, i18n, light / dark / system theme, and embedded production frontend |
+Setup guides, configuration references, and usage walkthroughs live on the **[Documentation Site](https://luna-devops.liteyuki.org/en/)**:
 
-## Tech Stack
+- **Install**: [Kubernetes (Helm)](https://luna-devops.liteyuki.org/en/start/install/kubernetes) · [Docker Compose](https://luna-devops.liteyuki.org/en/start/install/docker-compose)
+- **Initial Setup**: [First Login](https://luna-devops.liteyuki.org/en/start/first-login) · [Connect Resources](https://luna-devops.liteyuki.org/en/start/connect-resources)
+- **Day-to-Day Use**: [Delivery Workflow](https://luna-devops.liteyuki.org/en/use/workflow) · [App Marketplace](https://luna-devops.liteyuki.org/en/use/app-marketplace) · [AI Assistant](https://luna-devops.liteyuki.org/en/use/ai-assistant) · [MCP Integration](https://luna-devops.liteyuki.org/en/use/mcp)
 
-| Layer | Stack |
-| --- | --- |
-| Backend | Go, Gin, GORM, PostgreSQL, Redis, Asynq, client-go |
-| AI Agent | Node.js 24, TypeScript, Fastify, LangGraph.js, PostgreSQL checkpoints |
-| Frontend | Vite, React, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query |
-| Forms and UX | React Hook Form, Zod, i18next, react-i18next, Sonner |
-| Delivery | Docker Compose, Helm, Kubernetes Job, BuildKit, Gateway API |
-| MCP / Skills | Streamable HTTP MCP Server (`/api/v1/mcp`), unified domain `SKILL.md` |
-| Tooling | pnpm, uv, golang-migrate, OpenAPI |
+## Community & Contributing
 
-## Quick Start
-
-Start local dependencies:
-
-```bash
-docker compose -f docker-compose-dev-db.yaml up -d
-```
-
-Create local configuration:
-
-```bash
-cp .env.example .env
-```
-
-Set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` in `.env`. API creates that administrator on its first startup, then you sign in at `/login`.
-
-The development Compose files do not manage Luna DevOps processes. Run the four components in separate terminals:
-
-```bash
-# Terminal 1: API
-go run ./cmd/api
-
-# Terminal 2: Worker
-go run ./cmd/worker
-
-# Terminal 3: Agent
-pnpm --dir luna-agent install
-pnpm --dir luna-agent dev
-
-# Terminal 4: Web
-pnpm --dir web install
-pnpm --dir web dev
-```
-
-The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
-The root `.env` is the single authoring entry for API, Worker, and Agent development. It already contains the local API-to-Agent and Agent-to-API addresses plus the HMAC mode, so enable the assistant by setting only `AI_ASSISTANT_AVAILABLE=true` and one `AI_INTERNAL_SECRET`. Use `luna-agent/.env.local` only for Agent-specific overrides; [`luna-agent/.env.example`](luna-agent/.env.example) now contains only Agent-owned settings. API and Worker database pools use separate `API_DB_*` and `WORKER_DB_*` settings.
-
-API, Worker, helper commands, and Agent default to `LOG_FORMAT=auto`: interactive terminals get readable console logs, while redirected output and containers get ANSI-free JSON. Use `LOG_LEVEL` to change verbosity or `LOG_COLOR=never` / `NO_COLOR` to disable color. OTel always receives structured records independently of terminal rendering.
-
-## MCP & External AI Integration
-
-Luna DevOps includes a native Streamable HTTP MCP Server at `/api/v1/mcp`. Connect Claude Code, Cursor, Antigravity, or other MCP clients using a Personal Access Token (`lyd_...`) or OAuth 2.0 (`authorization_code` + PKCE `S256`)—even on self-hosted instances where the built-in Web AI Assistant is disabled:
-
-```bash
-claude mcp add --transport http luna-devops https://devops.example.com/api/v1/mcp \
-  --header "Authorization: Bearer <YOUR_PAT>"
-```
-
-- [MCP integration guide](https://luna-devops.liteyuki.org/en/use/mcp)
-- [Companion Skills guide](https://luna-devops.liteyuki.org/en/use/mcp/skills)
-- [Unified Skills directory](skills/luna-devops)
-
-## Deployment
-
-Luna DevOps can run from containers, Helm, or a local binary workflow. Containerized deployment is recommended for real environments.
-
-| Method | Best for | Entry point |
-| --- | --- | --- |
-| Kubernetes / Helm | Production-like Kubernetes or K3s clusters | [`charts/luna-devops`](charts/luna-devops) |
-| Docker Compose | Single-node trial, small labs, release verification | [`docker-compose.yaml`](docker-compose.yaml) |
-| Binary | Local debugging and source-level development | [`cmd/api`](cmd/api), [`cmd/worker`](cmd/worker) |
-
-The DockerHub images are published as `liteyukistudio/luna-devops`, `liteyukistudio/luna-worker`, and `liteyukistudio/luna-agent`.
-
-Start the published container images with Docker Compose:
-
-```bash
-cp .env.example .env
-# Fill SECRET_ENCRYPTION_KEY and REDIS_PASSWORD; a fresh database also needs INITIAL_ADMIN_EMAIL/PASSWORD.
-docker compose up -d
-```
-
-The AI assistant is disabled by default. After configuring the Agent trust material and durable encryption key in `.env`, enable its explicit profile:
-
-```bash
-AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
-```
-
-Install with Helm:
-
-```bash
-# First create luna-devops-initial-admin as described in the Helm guide.
-helm install luna-devops ./charts/luna-devops \
-  --namespace luna-devops \
-  --create-namespace \
-  --set api.initialAdmin.existingSecret=luna-devops-initial-admin
-```
-
-More deployment guides:
-
-- [Kubernetes / Helm](docs/docs/en/start/install/kubernetes.md)
-- [Docker Compose](docs/docs/en/start/install/docker-compose.md)
-- [Binary deployment](docs/docs/en/start/install/binary.md)
-- [Configuration](docs/docs/en/start/configuration.md)
-
-## Configuration Notes
-
-- `APP_ENV=development` enables local development conveniences.
-- A fresh database requires `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`; API creates the first administrator before listening. Existing active administrators are never overwritten from environment variables, and these variables may be cleared after initialization succeeds.
-- `SECRET_ENCRYPTION_KEY` must be stable in production. It protects stored tokens, registry credentials, OAuth secrets, and other sensitive values.
-- `TRUSTED_PROXY_CIDRS` should include trusted reverse proxies or CDN egress ranges when Luna DevOps is behind a proxy.
-- Worker build networking is configurable. Use restricted egress plus explicit allowlists when builds need to access private registries or mirrors.
-
-For the full list of API and Worker options, see [Configuration](docs/docs/en/start/configuration.md).
-
-## Repository Layout
-
-```text
-cmd/api                 API service entry point
-cmd/worker              Async Worker entry point
-luna-agent/             Independent AI Agent, orchestration graph, tool catalog, and durable runtime
-skills/                 Unified MCP and Agent domain Skills (SKILL.md)
-internal/               Backend domains, providers, services, and models
-migrations/             PostgreSQL migrations
-openapi/                OpenAPI definitions
-web/                    Vite + React console
-web/public/             Public assets, logo, mascot, and favicon
-docs/                   Rspress documentation site
-docs-internal/                  Internal engineering docs (standards, proposals, records)
-charts/luna-devops      Helm chart
-```
-
-## Development
-
-Common checks:
-
-```bash
-go test ./...
-pnpm --dir web lint
-pnpm --dir web build
-```
-
-Project conventions:
-
-- Use `pnpm` for frontend dependencies.
-- `web/`, `docs/`, `tests/`, and `luna-agent/` each own their manifests and lockfiles. There is no cross-directory root pnpm workspace; any pnpm project settings stay inside the owning directory.
-- Use `uv` for Python tooling.
-- Keep backend handlers thin; put business logic in services and external integrations in providers.
-- Keep user-facing frontend text in i18n files.
-- Update the documentation site when a feature or behavior changes.
-
-## Assets
-
-- Logo / favicon: [`web/public/luna-devops-logo.svg`](web/public/luna-devops-logo.svg)
-- Mascot: [`.github/assets/mascot-luna-devops.png`](.github/assets/mascot-luna-devops.png)
-
-## Documentation
-
-- Public documentation: [luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/en/)
-- Product notes: [`docs-internal/产品概要.md`](docs-internal/产品概要.md)
-- Internal engineering docs index: [`docs-internal/README.md`](docs-internal/README.md)
-- Code health SOP: [`docs-internal/代码检查流程.md`](docs-internal/代码检查流程.md)
-- Development plan: [`TODO.md`](TODO.md)
-- AI agent rules: [`AGENTS.md`](AGENTS.md)
-- Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Found a bug or have an idea? Open an issue on [GitHub Issues](https://github.com/LiteyukiStudio/luna-devops/issues).
+- Looking to run from source or contribute code? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Luna DevOps is open source under the [MIT License](LICENSE). You may use, copy, modify, merge, publish, and distribute the project as long as copies or substantial portions retain the original copyright and license notice.
-
-The project is provided “as is,” without express or implied warranty. Third-party dependencies, external services, and third-party brand assets remain subject to their own terms. The MIT License does not grant trademark rights to the Luna DevOps or Liteyuki Studio names and logos. See the [license guide](docs/docs/en/reference/license.md) for details.
+Released under the [MIT License](LICENSE). Third-party dependencies and Luna DevOps / Liteyuki Studio brand assets remain subject to their respective terms; see the [license notes](https://luna-devops.liteyuki.org/en/reference/license).

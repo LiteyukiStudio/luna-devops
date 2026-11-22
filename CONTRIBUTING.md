@@ -2,11 +2,26 @@
 
 感谢关注 Luna DevOps。人类贡献者从本页进入；AI 编码代理直接阅读 [工程约束](AGENTS.md)。
 
-## 开始
+## 本地开发
 
-1. 阅读 [仓库 README](README.md) 完成本地环境准备。
-2. 阅读 [内部文档索引](docs-internal/README.md) 和任务涉及的现行规范。
-3. 检查工作树，沿真实调用链修改，并保留已有未提交改动。
+环境要求：Go 1.26+、Node.js 24+、`pnpm`、Docker（用于本地 PostgreSQL 与 Redis）。
+
+```bash
+docker compose -f docker-compose-dev-db.yaml up -d
+cp .env.example .env
+# 空库首次启动前填写 INITIAL_ADMIN_EMAIL 与 INITIAL_ADMIN_PASSWORD
+
+go run ./cmd/api
+go run ./cmd/worker
+pnpm --dir web install && pnpm --dir web dev
+```
+
+联调网页端 AI 助手时，在 `.env` 中设置 `AI_ASSISTANT_AVAILABLE=true` 与 `AI_INTERNAL_SECRET`，再启动 `pnpm --dir luna-agent install && pnpm --dir luna-agent dev`。
+
+## 开始修改
+
+1. 阅读 [内部文档索引](docs-internal/README.md) 和任务涉及的现行规范。
+2. 检查工作树，沿真实调用链修改，并保留已有未提交改动。
 
 工程、安全、文档和验证规则以 [`AGENTS.md`](AGENTS.md) 为准；前端特有规则见
 [`web/AGENTS.md`](web/AGENTS.md)，代码检查方法见

@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="web/public/luna-devops-logo.svg" width="132" alt="Luna DevOps 标志" />
+  <img src="web/public/luna-devops-logo.svg" width="112" alt="Luna DevOps" />
 </p>
 
 <h1 align="center">Luna DevOps</h1>
 
 <p align="center">
-  面向小型团队、企业与独立开发者的轻量级应用交付平台。
+  面向个人开发者与小团队的开源应用交付平台。
 </p>
 
 <p align="center">
@@ -13,222 +13,44 @@
 </p>
 
 <p align="center">
-  <img src=".github/assets/luna-devops-banner-v4.png" alt="Luna DevOps 自动化交付流水线" />
+  <a href="https://luna-devops.liteyuki.org/">官方文档</a>
+  ·
+  <a href="https://luna-devops.liteyuki.org/start/install/kubernetes">安装指南</a>
+  ·
+  <a href="https://github.com/LiteyukiStudio/luna-devops/releases">版本发布</a>
+  ·
+  <a href="LICENSE">MIT License</a>
 </p>
 
 <p align="center">
-  <a href="https://luna-devops.liteyuki.org/">文档站</a>
-  ·
-  <a href="https://github.com/LiteyukiStudio/luna-devops">GitHub</a>
-  ·
-  <a href="docs/docs/zh/start/install/kubernetes.md">Helm 部署</a>
-  ·
-  <a href="docs/docs/zh/start/install/docker-compose.md">Docker Compose 部署</a>
+  <img src=".github/assets/luna-devops-banner-v4.png" alt="Luna DevOps 概览" />
 </p>
 
-## Luna DevOps 是什么？
+自己维护集群跑服务时，从写完代码到真正上线，中间往往有一堆重复琐事：打包镜像、推送仓库、调整部署配置、绑定域名、申请证书、翻日志查报错。重型平台部署和维护成本太高，全靠脚本和零散配置文件又不好协作。
 
-Luna DevOps 将代码仓库、镜像站、BuildKit、Kubernetes、访问入口、证书、发布和计费能力串联成一条完整的应用交付流程。
+Luna DevOps 把这些日常高频操作收进一个轻便的控制台里。接上现有的代码仓库、镜像站和集群后，日常只需维护好代码和基础配置，构建、发布、回滚、配域名和看状态都在同一处完成。它不绑定特定云厂商，也不会替代你原本在用的 GitHub、Gitea 或 Harbor。
 
-目标很简单：让产品团队专注于代码，只需轻松几步即可部署自己的项目，平台负责重复而繁琐的构建与交付工作。
+## 能做什么
 
-```text
-代码仓库
-  -> 构建镜像
-  -> 推送镜像产物
-  -> 部署到 Kubernetes / K3s
-  -> 创建访问入口
-  -> 跟踪状态、日志、发布历史与资源用量
-```
+- 连接 GitHub / Gitea 仓库自动完成镜像构建与上线，也可以直接部署现成镜像，或从应用市场模板创建常用服务。
+- 每次构建和发布都保留历史记录，遇到问题可随时回退旧版本；在浏览器里直接查看运行状态、实时日志、数据卷和服务连接。
+- 为对外应用绑定自定义域名并自动申请、续期 HTTPS 证书；不需要公开访问的服务可设为仅项目内互通。
+- 按项目空间管理应用、成员权限、告警通知与资源账单，多人或多项目共用一套集群时边界清晰。
+- 内置网页端 AI 助手，同时支持通过 MCP 接入 Claude Code、Cursor 等本地工具，在对话中查状态、排查报错或准备配置变更。
 
-## 主要功能
+## 开始使用
 
-| 领域 | 已支持能力 |
-| --- | --- |
-| 工作空间 | 项目空间、应用、成员、角色和带审计记录的管理操作 |
-| 代码仓库 | GitHub 与 Gitea 账号接入、仓库绑定和 Webhook 入口 |
-| 构建 | Worker 管理的 Kubernetes Job、Rootless BuildKit、镜像标签、日志和构建记录 |
-| 镜像站 | Harbor、Gitea Registry、DockerHub 和通用 OCI 镜像站 |
-| 部署 | Kubernetes / K3s 工作负载、发布记录、状态同步和支持回滚的历史记录 |
-| 访问入口 | Gateway API / HTTPRoute、域名、访问入口和证书自动化 |
-| 平台运营 | 事件、通知、应用市场、计费和站点设置 |
-| 用户体验 | React 控制台、国际化、浅色 / 深色 / 跟随系统主题和内嵌生产前端 |
+完整的安装步骤、初始化配置和日常操作指南统一维护在 **[官方文档站](https://luna-devops.liteyuki.org/)**：
 
-运行集群统一管理应用资源分配策略：默认按应用每副本配额的 CPU `10%`、内存 `25%` 写入 requests，按 CPU/内存 `100%` 写入 limits，任一项设为 `0%` 时省略对应 Kubernetes 字段。Worker 继续使用 `metrics.k8s.io` 每分钟保存不可变运行观察，并按小时把每个区间的 `max(有效 request，实际用量)` 聚合为 CPU、内存账单；访问流量仍由现有 Gateway Traffic Probe 独立采集和结算。
+- **部署安装**：[Kubernetes (Helm)](https://luna-devops.liteyuki.org/start/install/kubernetes) · [Docker Compose](https://luna-devops.liteyuki.org/start/install/docker-compose)
+- **初始化平台**：[首次登录](https://luna-devops.liteyuki.org/start/first-login) · [添加基础资源](https://luna-devops.liteyuki.org/start/connect-resources)
+- **日常使用**：[应用交付流程](https://luna-devops.liteyuki.org/use/workflow) · [应用市场](https://luna-devops.liteyuki.org/use/app-marketplace) · [AI 助手](https://luna-devops.liteyuki.org/use/ai-assistant) · [MCP 接入](https://luna-devops.liteyuki.org/use/mcp)
 
-## 技术栈
+## 反馈与参与
 
-| 层级 | 技术栈 |
-| --- | --- |
-| 后端 | Go、Gin、GORM、PostgreSQL、Redis、Asynq、client-go |
-| AI Agent | Node.js 24、TypeScript、Fastify、显式模型运行时、PostgreSQL 持久化 |
-| 前端 | Vite、React、TypeScript、Tailwind CSS、shadcn/ui、TanStack Query |
-| 表单与交互 | React Hook Form、Zod、i18next、react-i18next、Sonner |
-| 交付 | Docker Compose、Helm、Kubernetes Job、BuildKit、Gateway API |
-| MCP / Skills | Streamable HTTP MCP Server（`/api/v1/mcp`）、统一领域 `SKILL.md` |
-| 工具链 | pnpm、uv、golang-migrate、OpenAPI |
-
-## 快速开始
-
-启动本地开发依赖：
-
-```bash
-docker compose -f docker-compose-dev-db.yaml up -d
-```
-
-创建本地配置：
-
-```bash
-cp .env.example .env
-```
-
-在 `.env` 中填写 `INITIAL_ADMIN_EMAIL` 和 `INITIAL_ADMIN_PASSWORD`；API 首次启动时会用它们创建管理员，随后直接从 `/login` 登录。
-
-四个 Luna DevOps 组件不由开发 Compose 管理，分别在四个终端运行：
-
-```bash
-# 终端 1：API
-go run ./cmd/api
-
-# 终端 2：Worker
-go run ./cmd/worker
-
-# 终端 3：Agent
-pnpm --dir luna-agent install
-pnpm --dir luna-agent dev
-
-# 终端 4：Web
-pnpm --dir web install
-pnpm --dir web dev
-```
-
-Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
-根目录 `.env` 是 API、Worker 和 Agent 联调的单一填写入口；其中已经包含 API 与 Agent 互访的本地地址和 HMAC 模式，启用时只需设置 `AI_ASSISTANT_AVAILABLE=true` 和一份 `AI_INTERNAL_SECRET`。只有 Agent 专属覆盖才写入 `luna-agent/.env.local`，可参考只包含 Agent 专属项的 [`luna-agent/.env.example`](luna-agent/.env.example)。API 与 Worker 数据库连接池分别使用 `API_DB_*`、`WORKER_DB_*`。
-
-API、Worker、辅助命令和 Agent 默认使用 `LOG_FORMAT=auto`：交互式终端显示便于阅读的 console 日志，重定向或容器中输出无 ANSI 的 JSON。可用 `LOG_LEVEL` 调整级别，或设置 `LOG_COLOR=never` / `NO_COLOR` 关闭颜色；OTel 始终接收与终端渲染无关的结构化记录。
-
-## MCP 与外部 AI 接入
-
-Luna DevOps 在 `/api/v1/mcp` 内置原生 Streamable HTTP MCP Server，支持使用个人访问令牌（PAT，`lyd_...`）或 OAuth 2.0（`authorization_code` + PKCE `S256`）从 Claude Code、Cursor、Antigravity 等外部 AI 客户端直连管理与排障（即使未开启内置网页 AI 助手同样可用）：
-
-```bash
-claude mcp add --transport http luna-devops https://devops.example.com/api/v1/mcp \
-  --header "Authorization: Bearer <YOUR_PAT>"
-```
-
-- [MCP 接入文档](https://luna-devops.liteyuki.org/use/mcp)
-- [配套 Skills 文档](https://luna-devops.liteyuki.org/use/mcp/skills)
-- [统一 Skills 目录](skills/luna-devops)
-
-## 部署
-
-Luna DevOps 支持容器、Helm 和本地二进制部署。实际使用环境推荐采用容器化部署。
-
-| 方式 | 适用场景 | 入口 |
-| --- | --- | --- |
-| Kubernetes / Helm | 生产级 Kubernetes 或 K3s 集群 | [`charts/luna-devops`](charts/luna-devops) |
-| Docker Compose | 单机试用、小型实验室和发版验证 | [`docker-compose.yaml`](docker-compose.yaml) |
-| 二进制 | 本地调试和源码开发 | [`cmd/api`](cmd/api)、[`cmd/worker`](cmd/worker) |
-
-DockerHub 发布镜像统一为 `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker` 和 `liteyukistudio/luna-agent`。
-
-使用 Docker Compose 启动已发布的容器镜像：
-
-```bash
-cp .env.example .env
-# 请填写 SECRET_ENCRYPTION_KEY、REDIS_PASSWORD；全新数据库还需填写 INITIAL_ADMIN_EMAIL/PASSWORD。
-docker compose up -d
-```
-
-AI 助手默认关闭。为 API 与 Agent 配置同一个稳定的 `AI_INTERNAL_SECRET` 后，显式启用 AI profile：
-
-```bash
-AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
-```
-
-使用 Helm 安装：
-
-```bash
-# 先按 Helm 部署文档创建 luna-devops-initial-admin Secret。
-helm install luna-devops ./charts/luna-devops \
-  --namespace luna-devops \
-  --create-namespace \
-  --set api.initialAdmin.existingSecret=luna-devops-initial-admin
-```
-
-更多部署说明：
-
-- [Kubernetes / Helm](docs/docs/zh/start/install/kubernetes.md)
-- [Docker Compose](docs/docs/zh/start/install/docker-compose.md)
-- [二进制部署](docs/docs/zh/start/install/binary.md)
-- [配置项](docs/docs/zh/start/configuration.md)
-
-## 配置说明
-
-- `APP_ENV=development` 会启用本地开发便利功能。
-- 全新数据库需要配置 `INITIAL_ADMIN_EMAIL` 和 `INITIAL_ADMIN_PASSWORD`；API 会在开始监听前创建首个管理员。已有有效管理员时不会用环境变量覆盖账号或密码，初始化成功后可清空这些变量。
-- 生产环境中的 `SECRET_ENCRYPTION_KEY` 必须保持稳定。它用于保护已保存的 Token、镜像站凭据、OAuth Secret 和其他敏感数据。
-- Luna DevOps 位于反向代理之后时，`TRUSTED_PROXY_CIDRS` 应包含可信反向代理或 CDN 的出口网段。
-- Worker 的构建网络可以单独配置。构建需要访问私有镜像站或镜像源时，建议使用受限出口并显式配置白名单。
-
-完整的 API 与 Worker 配置请查看[配置项](docs/docs/zh/start/configuration.md)。
-
-## 仓库结构
-
-```text
-cmd/api                 API 服务入口
-cmd/worker              异步 Worker 入口
-luna-agent/             独立 AI Agent、编排图、工具目录和持久运行时
-skills/                 统一 MCP 与 Agent 领域 Skills（SKILL.md）
-internal/               后端业务域、Provider、Service 和数据模型
-migrations/             PostgreSQL 数据库迁移
-openapi/                OpenAPI 定义
-web/                    Vite + React 控制台
-web/public/             公共资源、标志、吉祥物和 favicon
-docs/                   Rspress 文档站
-docs-internal/                  内部开发文档（长期规范与方案记录）
-charts/luna-devops      Helm Chart
-```
-
-## 开发
-
-常用检查命令：
-
-```bash
-go test ./...
-pnpm --dir web check:singletons
-pnpm --dir web lint
-pnpm --dir web build
-```
-
-项目约定：
-
-- 前端依赖统一使用 `pnpm`。
-- React、CodeMirror 等运行时单例依赖不得在同一前端产物中出现多个版本；依赖变更后运行 `pnpm --dir web check:singletons`。
-- `web/`、`docs/`、`tests/` 和 `luna-agent/` 分别维护自己的依赖清单与 lockfile，不使用跨目录的根 pnpm workspace；需要 pnpm 项目配置时也只放在对应工作目录。
-- Python 工具链统一使用 `uv`。
-- 后端 Handler 保持精简，业务逻辑放入 Service，外部平台集成放入 Provider。
-- 新功能必须按 [`docs-internal/可观测和插桩规范.md`](docs-internal/可观测和插桩规范.md) 补齐 Trace、关键结构化日志和低基数 Metrics，并保持跨服务 Context 连续。
-- 所有用户可见的前端文案都放入 i18n 文件。
-- 功能或行为变化时同步更新文档站。
-
-## 品牌资源
-
-- 标志 / favicon：[`web/public/luna-devops-logo.svg`](web/public/luna-devops-logo.svg)
-- 吉祥物：[`.github/assets/mascot-luna-devops.png`](.github/assets/mascot-luna-devops.png)
-
-## 文档
-
-- 在线文档：[luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/)
-- 产品方案：[`docs-internal/产品概要.md`](docs-internal/产品概要.md)
-- 内部开发文档索引：[`docs-internal/README.md`](docs-internal/README.md)
-- 代码健康检查 SOP：[`docs-internal/代码检查流程.md`](docs-internal/代码检查流程.md)
-- 开发计划：[`TODO.md`](TODO.md)
-- AI 代理规范：[`AGENTS.md`](AGENTS.md)
-- 贡献指南：[`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Bug 反馈与功能建议欢迎提交至 [GitHub Issues](https://github.com/LiteyukiStudio/luna-devops/issues)。
+- 本地开发环境搭建、仓库结构与代码贡献规范请查阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
-Luna DevOps 采用 [MIT License](LICENSE) 开源。你可以使用、复制、修改、合并、发布和分发本项目，但在副本或项目的主要部分中需要保留原始版权与许可声明。
-
-项目按“原样”提供，不附带任何明示或暗示的担保。第三方依赖、外部服务和第三方品牌资源仍分别受其自身条款约束；MIT License 不授予 Luna DevOps 或 Liteyuki Studio 名称与标志的商标使用权。详细说明见[许可说明](docs/docs/zh/reference/license.md)。
+本项目基于 [MIT License](LICENSE) 开源。第三方依赖以及 Luna DevOps / Liteyuki Studio 名称与标志的使用说明见[许可说明](https://luna-devops.liteyuki.org/reference/license)。
