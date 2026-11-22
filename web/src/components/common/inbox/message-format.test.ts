@@ -1,7 +1,7 @@
 import type { InboxMessage } from '@/api'
 import { describe, expect, it } from 'vitest'
 import i18next from '@/i18n'
-import { inboxMessageText } from './message-format'
+import { inboxMessageText, inboxMessageVisualKind, stripInlineMarkdown } from './message-format'
 
 function message(overrides: Partial<InboxMessage> = {}): InboxMessage {
   return {
@@ -73,5 +73,21 @@ describe('inboxMessageText', () => {
     expect(buildText.title).toBe('构建失败')
     expect(buildText.content).toContain('Wordle')
     expect(buildText.content).toContain('exitCode=1')
+  })
+
+  it('strips inline markdown backticks, links, emphasis, and classifies visual severity kinds', () => {
+    expect(stripInlineMarkdown('Dockerfile 第 1 行基础镜像名拼写错误：写成 `nginxx:1.27`，应改为 **nginx:1.27**')).toBe(
+      'Dockerfile 第 1 行基础镜像名拼写错误：写成 nginxx:1.27，应改为 nginx:1.27',
+    )
+    expect(stripInlineMarkdown('请查看 [构建日志](/projects/prj_1/apps/app_1) 并确认 *镜像标签* 与 app_backend_prod')).toBe(
+      '请查看 构建日志 并确认 镜像标签 与 app_backend_prod',
+    )
+    expect(stripInlineMarkdown('第一段：`OOMKilled`\n\n\n第二段：**建议扩容至 1Gi**', { preserveNewlines: true })).toBe(
+      '第一段：OOMKilled\n\n第二段：建议扩容至 1Gi',
+    )
+    expect(inboxMessageVisualKind(message({ titleKey: 'inbox.delivery.buildFailed.title' }))).toBe('danger')
+    expect(inboxMessageVisualKind(message({ titleKey: 'inbox.runtime.degraded.title' }))).toBe('warning')
+    expect(inboxMessageVisualKind(message({ titleKey: 'inbox.runtime.recovered.title' }))).toBe('success')
+    expect(inboxMessageVisualKind(message())).toBe('default')
   })
 })

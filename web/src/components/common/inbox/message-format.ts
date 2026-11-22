@@ -40,6 +40,51 @@ const contentCatalog: Record<string, string> = {
   'inbox.delivery.certificateFailed.body': 'inbox.catalog.certificateFailed.content',
 }
 
+const dangerTitleKeys = new Set([
+  'inbox.delivery.buildFailed.title',
+  'inbox.delivery.releaseFailed.title',
+  'inbox.delivery.hookFailed.title',
+  'inbox.delivery.gatewayFailed.title',
+  'inbox.delivery.certificateFailed.title',
+  'inbox.runtime.oomKilled.title',
+  'inbox.runtime.crashLoop.title',
+  'inbox.runtime.startFailed.title',
+])
+
+export type InboxMessageVisualKind = 'danger' | 'warning' | 'success' | 'default'
+
+export function inboxMessageVisualKind(message: Pick<InboxMessage, 'actionRequest' | 'priority' | 'titleKey'>): InboxMessageVisualKind {
+  if (message.titleKey === 'inbox.runtime.recovered.title')
+    return 'success'
+  if (dangerTitleKeys.has(message.titleKey) || message.priority === 'critical')
+    return 'danger'
+  if (message.titleKey === 'inbox.runtime.degraded.title' || message.actionRequest?.status === 'pending')
+    return 'warning'
+  return 'default'
+}
+
+export function stripInlineMarkdown(raw: string, options?: { preserveNewlines?: boolean }): string {
+  const cleaned = raw
+    .replace(/\r\n?/g, '\n')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/`+([^`]+)`+/g, '$1')
+    .replace(/`/g, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(^|\s)\*([^*\s][^*]*)\*(?=\s|$)/g, '$1$2')
+
+  if (options?.preserveNewlines) {
+    return cleaned
+      .replace(/[^\S\n]+/g, ' ')
+      .replace(/ *\n */g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
+  return cleaned
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function inboxMessageText(message: InboxMessage, t: TFunction) {
   const params = safeTranslationParams(message.params)
   const titleKey = titleCatalog[message.titleKey]

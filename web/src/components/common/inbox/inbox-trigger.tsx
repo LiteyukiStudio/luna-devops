@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { api, inboxStreamUrl } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { InboxPanel } from './inbox-panel'
 import { inboxKeys, invalidateInbox } from './inbox-query'
 
@@ -35,7 +35,7 @@ export function InboxTrigger() {
     <Button aria-label={count > 99 ? t('inbox.unreadCountOverflow') : count > 0 ? t('inbox.unreadCount', { count }) : t('inbox.open')} className="relative size-8 shrink-0 hover:bg-primary-subtle-hover data-[state=open]:bg-primary-subtle-hover" size="icon" variant="ghost">
       <Bell aria-hidden="true" className="size-4" />
       {count > 0 && (
-        <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[0.625rem] font-semibold leading-none text-white ring-2 ring-background">
+        <span aria-hidden="true" className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[0.625rem] font-semibold leading-none text-white ring-2 ring-background">
           {count > 99 ? '99+' : count}
         </span>
       )}
@@ -46,9 +46,10 @@ export function InboxTrigger() {
     return (
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>{button}</SheetTrigger>
-        <SheetContent className="flex w-[min(92vw,28rem)] max-w-none gap-0 p-0" side="right">
+        <SheetContent className="flex w-[min(92vw,26rem)] max-w-none flex-col gap-0 overflow-hidden p-0" side="right">
           <SheetTitle className="sr-only">{t('inbox.title')}</SheetTitle>
-          <InboxPanel onClose={() => setOpen(false)} />
+          <SheetDescription className="sr-only">{t('inbox.title')}</SheetDescription>
+          <InboxPanel inSheet onClose={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
     )
@@ -57,7 +58,7 @@ export function InboxTrigger() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{button}</PopoverTrigger>
-      <PopoverContent align="end" className="flex h-[min(70dvh,38rem)] w-[25rem] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0">
+      <PopoverContent align="end" className="flex max-h-[min(74dvh,36rem)] w-[26rem] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden rounded-container p-0">
         <InboxPanel onClose={() => setOpen(false)} />
       </PopoverContent>
     </Popover>

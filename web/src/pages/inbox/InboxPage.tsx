@@ -8,13 +8,19 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ApiError } from '@/api/core'
+import {
+  formatHumanApprovalValue,
+  resolveApprovalFieldLabel,
+  resolveApprovalWarningText,
+} from '@/components/common/ai-assistant/approval-presentation'
 import { toolDisplayName } from '@/components/common/ai-assistant/tool-display-name'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { InboxMessageAvatar } from '@/components/common/inbox/inbox-message-row'
 import { inboxKeys, invalidateInbox } from '@/components/common/inbox/inbox-query'
-import { inboxMessageText } from '@/components/common/inbox/message-format'
+import { inboxMessageText, stripInlineMarkdown } from '@/components/common/inbox/message-format'
 import { PageShell } from '@/components/common/page-shell'
 import { StatusBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
@@ -120,20 +126,18 @@ export function InboxPage() {
       width: 'primary',
       render: (message) => {
         const text = inboxMessageText(message, t)
-        const aiSummary = typeof message.params?.aiRootCauseSummary === 'string' ? message.params.aiRootCauseSummary.trim() : ''
+        const rawAiSummary = typeof message.params?.aiRootCauseSummary === 'string' ? message.params.aiRootCauseSummary : ''
+        const aiSummary = rawAiSummary ? stripInlineMarkdown(rawAiSummary) : ''
         return (
           <div className="flex min-w-0 items-start gap-3">
-            <span className="relative mt-1 grid size-8 shrink-0 place-items-center rounded-control bg-surface-subtle text-muted-foreground">
-              <Bell className="size-4" />
-              {!message.readAt && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary" />}
-            </span>
-            <div className="min-w-0">
-              <p className={message.readAt ? 'truncate font-medium' : 'truncate font-semibold'}>{text.title}</p>
-              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{text.content}</p>
+            <InboxMessageAvatar className="mt-0.5" message={message} showUnreadDot />
+            <div className="min-w-0 flex-1">
+              <p className={message.readAt ? 'truncate font-medium text-foreground/90' : 'truncate font-semibold text-foreground'}>{text.title}</p>
+              <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground wrap-anywhere">{text.content}</p>
               {aiSummary && (
-                <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-primary-text">
-                  <Sparkles aria-hidden="true" className="size-3 shrink-0" />
-                  <span className="truncate">{aiSummary}</span>
+                <p className="mt-1.5 inline-flex max-w-full min-w-0 items-start gap-1.5 rounded-control border border-primary-border/45 bg-primary-subtle/35 px-2 py-1 text-xs leading-[1.125rem] text-foreground">
+                  <Sparkles aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                  <span className="min-w-0 line-clamp-2 wrap-anywhere">{aiSummary}</span>
                 </p>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2 @xl/data-list:hidden">
@@ -375,13 +379,13 @@ function InboxDetail({
                         <Sparkles aria-hidden="true" className="size-3.5 text-primary" />
                         <span>{t('inbox.selfHeal.aiDiagnosisTitle')}</span>
                       </div>
-                      <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">{aiRootCauseSummary}</p>
+                      <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">{stripInlineMarkdown(aiRootCauseSummary, { preserveNewlines: true })}</p>
                       {aiSuggestions.length > 0 && (
                         <div className="space-y-1 pt-1">
                           <div className="text-[11px] font-medium text-muted-foreground">{t('inbox.selfHeal.suggestionsTitle')}</div>
                           <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
                             {aiSuggestions.map(item => (
-                              <li key={item}>{item}</li>
+                              <li key={item}>{stripInlineMarkdown(item)}</li>
                             ))}
                           </ul>
                         </div>
@@ -389,7 +393,7 @@ function InboxDetail({
                       {aiAutoHealSummary && (
                         <div className="rounded-control border border-border bg-background/80 p-2.5 text-xs">
                           <div className="font-medium text-foreground">{t('inbox.selfHeal.autoHealExecutedTitle')}</div>
-                          <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{aiAutoHealSummary}</p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{stripInlineMarkdown(aiAutoHealSummary, { preserveNewlines: true })}</p>
                         </div>
                       )}
                     </div>
@@ -449,9 +453,11 @@ function InboxDetail({
                             <dl className="grid gap-1 pt-1">
                               {repreviewOutput.approvalPreview.changes.map(ch => (
                                 <div className="flex items-baseline justify-between gap-2" key={ch.field}>
-                                  <dt className="font-mono text-muted-foreground">{ch.field}</dt>
+                                  <dt className="text-muted-foreground">{resolveApprovalFieldLabel(t, ch.field)}</dt>
                                   <dd className="font-mono text-foreground">
-                                    {ch.before !== undefined ? `${formatArgScalar(ch.before)} -> ${formatArgScalar(ch.after)}` : formatArgScalar(ch.after)}
+                                    {ch.before !== undefined
+                                      ? `${formatHumanApprovalValue(t, formatArgScalar(ch.before))} -> ${formatHumanApprovalValue(t, formatArgScalar(ch.after))}`
+                                      : formatHumanApprovalValue(t, formatArgScalar(ch.after))}
                                   </dd>
                                 </div>
                               ))}
@@ -460,7 +466,7 @@ function InboxDetail({
                           {Array.isArray(repreviewOutput.approvalPreview.warnings) && repreviewOutput.approvalPreview.warnings.length > 0 && (
                             <ul className="list-disc space-y-1 pl-4 text-warning">
                               {repreviewOutput.approvalPreview.warnings.map(warning => (
-                                <li key={warning}>{warning}</li>
+                                <li key={warning}>{resolveApprovalWarningText(t, warning)}</li>
                               ))}
                             </ul>
                           )}
