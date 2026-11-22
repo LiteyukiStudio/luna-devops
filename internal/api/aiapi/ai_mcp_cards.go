@@ -728,9 +728,9 @@ func mcpRenderCardToolDefinition() map[string]any {
 								"type":     "object",
 								"required": []string{"name"},
 								"properties": map[string]any{
-									"name":     map[string]any{"type": "string"},
-									"kind":     map[string]any{"type": "string"},
-									"stage":    map[string]any{"type": "string"},
+									"name":   map[string]any{"type": "string"},
+									"kind":   map[string]any{"type": "string"},
+									"stage":  map[string]any{"type": "string"},
 									"status": map[string]any{"type": "string"},
 									"replicas": map[string]any{
 										"anyOf": []map[string]any{

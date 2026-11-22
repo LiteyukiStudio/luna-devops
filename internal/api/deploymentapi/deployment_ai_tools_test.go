@@ -378,6 +378,7 @@ func TestDeliveryAndPipelineToolsPreserveExistingStateAndPreviewLocks(t *testing
 				&model.RepositoryBinding{},
 				&model.ArtifactRegistry{},
 				&model.BuildVariableSet{},
+				&model.ScopedResourceProjectBinding{},
 				&model.ProjectHookConfig{},
 				&model.DeploymentTarget{},
 				&model.DeploymentTargetHookBinding{},
@@ -647,7 +648,13 @@ func TestDeliveryAndPipelineToolsPreserveExistingStateAndPreviewLocks(t *testing
 	allowedVarSet := model.BuildVariableSet{
 		ID: "bvs_allowed", Name: "shared-node-vars", Scope: "project", OwnerRef: project.ID,
 	}
-	for _, rec := range []any{&privateOtherUserReg, &privateOtherProjectVarSet, &allowedVarSet} {
+	otherProjBinding := model.ScopedResourceProjectBinding{
+		ID: "srpb_other_proj", ResourceType: scopedResourceBuildVariableSet, ResourceID: privateOtherProjectVarSet.ID, ProjectID: "prj_other",
+	}
+	allowedProjBinding := model.ScopedResourceProjectBinding{
+		ID: "srpb_allowed", ResourceType: scopedResourceBuildVariableSet, ResourceID: allowedVarSet.ID, ProjectID: project.ID,
+	}
+	for _, rec := range []any{&privateOtherUserReg, &privateOtherProjectVarSet, &allowedVarSet, &otherProjBinding, &allowedProjBinding} {
 		if err := db.Create(rec).Error; err != nil {
 			t.Fatalf("seed scoped preview test record: %v", err)
 		}
