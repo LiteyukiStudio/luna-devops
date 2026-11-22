@@ -17,12 +17,14 @@ Luna DevOps 在 `https://<实例域名>/api/v1/mcp` 内置原生 Streamable HTTP
 Authorization: Bearer <YOUR_PAT>
 ```
 
-### 2. OAuth 2.0 应用
+### 2. OAuth 2.0 浏览器授权（支持动态客户端注册）
 
-在**账号设置 → 开发者应用**（OAuth 应用）创建应用，登记精确的回调地址（生产环境必须使用 HTTPS，本机开发允许 `localhost` HTTP）与允许申请的 Scope。支持 MCP OAuth 规范的客户端会自动读取以下元数据端点并完成 `authorization_code` + PKCE（`S256`）浏览器授权：
+支持 MCP OAuth 规范的客户端（如 Antigravity、Claude Code、Cursor）只需填入 `https://<实例域名>/api/v1/mcp`，无需预置 `client_id` 或 `client_secret`：客户端会自动发现以下元数据端点，通过 `POST /api/v1/oauth/register`（RFC 7591，支持公共客户端 `token_endpoint_auth_method: "none"`）动态注册，并完成 `authorization_code` + PKCE（`S256`）浏览器授权：
 
 - 受保护资源元数据：`/.well-known/oauth-protected-resource`
 - 授权服务器元数据：`/.well-known/oauth-authorization-server`
+
+如需固定管理客户端标识或密钥，也可在**账号设置 → 开发者应用**（OAuth 应用）手动登记精确回调地址（生产环境必须使用 HTTPS，本机开发允许 `localhost` / `127.0.0.1` HTTP）与允许申请的 Scope。
 
 ## 最短接入步骤
 

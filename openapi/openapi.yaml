@@ -188,11 +188,52 @@ paths:
         "401":
           description: Missing, invalid, expired, or revoked Bearer token.
 
+  /api/v1/oauth/register:
+    post:
+      operationId: registerOAuthClient
+      tags: [Auth]
+      summary: Dynamically register an OAuth 2.0 client (RFC 7591)
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: RFC 7591 OAuth 2.0 dynamic client registration endpoint for MCP and external OAuth clients.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthDynamicClientRegistrationInput"
+      responses:
+        "201":
+          description: Registered OAuth 2.0 client metadata and, for confidential clients, a one-time client secret.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthDynamicClientRegistrationResponse"
+        "400":
+          description: RFC 7591 client registration error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+        "429":
+          description: Dynamic client registration is temporarily rate limited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+        "500":
+          description: Dynamic client registration failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+
   /api/v1/oauth/token:
     post:
       operationId: exchangeOAuthToken
       tags: [Auth]
       summary: Exchange an OAuth authorization grant for tokens
+      security:
+        - {}
+        - OAuthClientBasic: []
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -214,6 +255,16 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+        "401":
+          description: OAuth client authentication failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+        "429":
+          description: OAuth client authentication is temporarily rate limited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
 
   /api/v1/oauth/revoke:
     post:
@@ -221,6 +272,9 @@ paths:
       tags: [Auth]
       summary: Revoke the token family containing an OAuth access or refresh token
       description: Revokes every access and refresh token issued by the same login family. Other login families and the consent grant remain active.
+      security:
+        - {}
+        - OAuthClientBasic: []
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -234,6 +288,26 @@ paths:
       responses:
         "200":
           description: The matching token family is revoked, or the supplied token was already invalid.
+        "400":
+          description: OAuth protocol error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+        "401":
+          description: OAuth client authentication failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+        "429":
+          description: OAuth client authentication is temporarily rate limited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+        "500":
+          description: OAuth family revocation failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
 
   /api/v1/public/configs:
     post:
@@ -4711,6 +4785,12 @@ paths:
         hidden: true
         exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
       parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
         - name: client_id
           in: query
           required: true
@@ -4723,7 +4803,7 @@ paths:
             type: string
         - name: scope
           in: query
-          required: true
+          required: false
           schema:
             type: string
         - name: state
@@ -11684,6 +11764,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: independent Agent callback service credential
+    OAuthClientBasic:
+      type: http
+      scheme: basic
+      description: RFC 6749 §2.3.1 HTTP Basic authentication for confidential OAuth 2.0 clients.
 
   parameters:
     BuildEnvironmentScope:
@@ -13091,6 +13175,7 @@ components:
         - homepageUrl
         - logoUrl
         - clientId
+        - registrationSource
         - redirectUris
         - allowedScopes
         - accessTokenLifetimeDays
@@ -13105,6 +13190,7 @@ components:
         homepageUrl: { type: string }
         logoUrl: { type: string }
         clientId: { type: string }
+        registrationSource: { type: string, enum: [manual, dynamic] }
         redirectUris:
           type: array
           items: { type: string, format: uri }
@@ -13138,6 +13224,7 @@ components:
         code_verifier: { type: string, writeOnly: true, x-luna-sensitive: true }
         redirect_uri: { type: string, format: uri }
         refresh_token: { type: string, writeOnly: true, x-luna-sensitive: true }
+        scope: { type: string }
       allOf:
         - if:
             properties:
@@ -13167,6 +13254,7 @@ components:
         - authorization_endpoint
         - token_endpoint
         - revocation_endpoint
+        - registration_endpoint
         - response_types_supported
         - grant_types_supported
         - token_endpoint_auth_methods_supported
@@ -13176,6 +13264,7 @@ components:
         authorization_endpoint: { type: string, format: uri }
         token_endpoint: { type: string, format: uri }
         revocation_endpoint: { type: string, format: uri }
+        registration_endpoint: { type: string, format: uri }
         scopes_supported:
           type: array
           items: { type: string }
@@ -13210,6 +13299,73 @@ components:
           type: array
           items: { type: string }
         resource_documentation: { type: string, format: uri }
+    OAuthDynamicClientRegistrationInput:
+      type: object
+      required: [redirect_uris]
+      properties:
+        redirect_uris:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { type: string, format: uri }
+        token_endpoint_auth_method:
+          type: string
+          enum: [none, client_secret_basic, client_secret_post]
+        grant_types:
+          type: array
+          items:
+            type: string
+            enum: [authorization_code, refresh_token]
+        response_types:
+          type: array
+          items:
+            type: string
+            enum: [code]
+        client_name: { type: string, maxLength: 100 }
+        client_uri: { type: string, format: uri }
+        logo_uri: { type: string, format: uri }
+        scope: { type: string }
+        software_id: { type: string, maxLength: 128 }
+        software_version: { type: string, maxLength: 64 }
+    OAuthDynamicClientRegistrationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - client_id
+        - client_id_issued_at
+        - redirect_uris
+        - token_endpoint_auth_method
+        - grant_types
+        - response_types
+        - client_name
+        - scope
+      properties:
+        client_id: { type: string }
+        client_secret: { type: string, readOnly: true, x-luna-sensitive: true }
+        client_id_issued_at: { type: integer }
+        client_secret_expires_at: { type: integer, minimum: 0 }
+        redirect_uris:
+          type: array
+          items: { type: string, format: uri }
+        token_endpoint_auth_method:
+          type: string
+          enum: [none, client_secret_basic, client_secret_post]
+        grant_types:
+          type: array
+          items:
+            type: string
+            enum: [authorization_code, refresh_token]
+        response_types:
+          type: array
+          items:
+            type: string
+            enum: [code]
+        client_name: { type: string }
+        client_uri: { type: string, format: uri }
+        logo_uri: { type: string, format: uri }
+        scope: { type: string }
+        software_id: { type: string }
+        software_version: { type: string }
     OAuthProtocolError:
       type: object
       additionalProperties: false
@@ -13223,6 +13379,8 @@ components:
             - unauthorized_client
             - unsupported_grant_type
             - invalid_scope
+            - invalid_redirect_uri
+            - invalid_client_metadata
             - authorization_pending
             - slow_down
             - access_denied

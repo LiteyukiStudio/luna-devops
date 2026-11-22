@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 142
+	latestMigrationVersion   = 143
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -106,6 +106,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000141_add_delivery_ai_diagnoses.down.sql":                  false,
 		"000142_add_runtime_ai_self_healing.up.sql":                  false,
 		"000142_add_runtime_ai_self_healing.down.sql":                false,
+		"000143_add_oauth_dynamic_client_registration.up.sql":        false,
+		"000143_add_oauth_dynamic_client_registration.down.sql":      false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -311,7 +313,58 @@ WHERE namespace.nspname = current_schema()
 	assertOAuthDeviceAndLunaCLIRemovalMigration(t, testDB, runner)
 	assertSingleColumnMigration(t, testDB, runner, 139, "ai.conversations", "approval_mode")
 	assertLegacyBaselineReconciliationMigration(t, testDB, runner)
+	assertOAuthDynamicClientRegistrationMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
+}
+
+func assertOAuthDynamicClientRegistrationMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	if err := runner.Migrate(latestMigrationVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("migrate to latest before OAuth DCR test: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO public.users (id, email, name, role) VALUES ('usr_mig_143', 'mig143@example.com', 'Mig 143', 'user')
+		ON CONFLICT (id) DO NOTHING;
+		INSERT INTO public.oauth_applications (
+			id, owner_user_id, name, client_id, client_secret_hash, token_endpoint_auth_method, registration_source, redirect_uris, allowed_scopes
+		) VALUES (
+			'oapp_mig_143_dyn', NULL, 'Dyn Client', 'cli_mig_143_dyn', '', 'none', 'dynamic', '["http://127.0.0.1:8080/cb"]', 'project:read'
+		);
+		INSERT INTO public.access_tokens (
+			id, user_id, name, scope, token_hash, source, oauth_application_id, oauth_grant_id, oauth_family_id
+		) VALUES (
+			'tok_mig_143_dyn', 'usr_mig_143', 'Dyn Client', 'project:read', 'hash_mig_143_dyn', 'oauth', 'oapp_mig_143_dyn', 'ogrt_mig_143', 'ofam_mig_143'
+		);
+	`).Error; err != nil {
+		t.Fatalf("seed dynamic OAuth app & token at version 143: %v", err)
+	}
+	// Bidirectional secret constraint must reject 'none' with a non-empty secret hash.
+	if err := db.Exec(`
+		INSERT INTO public.oauth_applications (
+			id, name, client_id, client_secret_hash, token_endpoint_auth_method, registration_source, redirect_uris, allowed_scopes
+		) VALUES (
+			'oapp_mig_143_bad', 'Bad', 'cli_mig_143_bad', 'non_empty_hash', 'none', 'dynamic', '["http://127.0.0.1:8080/cb"]', 'project:read'
+		)
+	`).Error; err == nil {
+		t.Fatal("expected chk_oauth_applications_public_secret_consistency to reject none client with non-empty hash")
+	}
+
+	if err := runner.Migrate(142); err != nil {
+		t.Fatalf("roll back migration 143 -> 142: %v", err)
+	}
+	var orphanTokens int64
+	if err := db.Table("access_tokens").Where("id = ?", "tok_mig_143_dyn").Count(&orphanTokens).Error; err != nil {
+		t.Fatalf("count orphan access_tokens after 143 rollback: %v", err)
+	}
+	if orphanTokens != 0 {
+		t.Fatalf("expected 000143.down.sql to delete dynamic OAuth access_tokens, got %d", orphanTokens)
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("reapply migration 143: %v", err)
+	}
+	if err := db.Exec(`DELETE FROM public.users WHERE id = 'usr_mig_143'`).Error; err != nil {
+		t.Fatalf("clean mig 143 user: %v", err)
+	}
 }
 
 func assertLegacyBaselineReconciliationMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {

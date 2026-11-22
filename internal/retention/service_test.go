@@ -80,8 +80,8 @@ func TestStandardQueriesContainTerminalGuardsAndHalfOpenRange(t *testing.T) {
 
 func TestExpiredAuthQueriesUseExpiry(t *testing.T) {
 	authPlan := plans[DatasetExpiredAuthData]
-	if len(authPlan.queries) != 2 {
-		t.Fatalf("expired auth query count = %d, want 2", len(authPlan.queries))
+	if len(authPlan.queries) != 5 {
+		t.Fatalf("expired auth query count = %d, want 5", len(authPlan.queries))
 	}
 	sessionDeleteSQL := authPlan.queries[0].deleteSQL
 	if !strings.Contains(sessionDeleteSQL, "session.expires_at <= ?") {
@@ -89,6 +89,15 @@ func TestExpiredAuthQueriesUseExpiry(t *testing.T) {
 	}
 	if !strings.Contains(authPlan.queries[1].countSQL, "email_registration_challenges") || !strings.Contains(authPlan.queries[1].deleteSQL, "expires_at <= ?") {
 		t.Fatal("expired email registration challenges must be included in authentication cleanup")
+	}
+	if !strings.Contains(authPlan.queries[2].countSQL, "oauth_authorization_codes") || !strings.Contains(authPlan.queries[2].deleteSQL, "expires_at <= ?") {
+		t.Fatal("expired OAuth authorization codes must be included in authentication cleanup")
+	}
+	if !strings.Contains(authPlan.queries[3].countSQL, "oauth_refresh_tokens") || !strings.Contains(authPlan.queries[3].deleteSQL, "expires_at <= ?") {
+		t.Fatal("expired OAuth refresh tokens must be included in authentication cleanup")
+	}
+	if !strings.Contains(authPlan.queries[4].countSQL, "app.registration_source = 'dynamic'") || !strings.Contains(authPlan.queries[4].deleteSQL, "NOT EXISTS") {
+		t.Fatal("abandoned dynamic OAuth applications must be included in authentication cleanup")
 	}
 }
 

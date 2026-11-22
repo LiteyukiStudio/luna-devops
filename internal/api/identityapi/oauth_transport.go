@@ -24,6 +24,7 @@ type oauthTokenInput struct {
 	CodeVerifier string `form:"code_verifier" binding:"required_if=GrantType authorization_code"`
 	RedirectURI  string `form:"redirect_uri" binding:"required_if=GrantType authorization_code"`
 	RefreshToken string `form:"refresh_token" binding:"required_if=GrantType refresh_token"`
+	Scope        string `form:"scope"`
 }
 
 type oauthTokenRevocationInput struct {
@@ -41,6 +42,7 @@ type oauthApplicationResponse struct {
 	HomepageURL             string     `json:"homepageUrl"`
 	LogoURL                 string     `json:"logoUrl"`
 	ClientID                string     `json:"clientId"`
+	RegistrationSource      string     `json:"registrationSource"`
 	RedirectURIs            []string   `json:"redirectUris"`
 	AllowedScopes           string     `json:"allowedScopes"`
 	AccessTokenLifetimeDays int        `json:"accessTokenLifetimeDays"`
@@ -83,11 +85,42 @@ type oauthAuthorizationDecisionResponse struct {
 	RedirectURL string `json:"redirectUrl"`
 }
 
+type oauthDynamicClientRegistrationInput struct {
+	RedirectURIs            []string `json:"redirect_uris" binding:"required"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	GrantTypes              []string `json:"grant_types"`
+	ResponseTypes           []string `json:"response_types"`
+	ClientName              string   `json:"client_name"`
+	ClientURI               string   `json:"client_uri"`
+	LogoURI                 string   `json:"logo_uri"`
+	Scope                   string   `json:"scope"`
+	SoftwareID              string   `json:"software_id"`
+	SoftwareVersion         string   `json:"software_version"`
+}
+
+type oauthDynamicClientRegistrationResponse struct {
+	ClientID                string   `json:"client_id"`
+	ClientSecret            string   `json:"client_secret,omitempty"`
+	ClientIDIssuedAt        int64    `json:"client_id_issued_at"`
+	ClientSecretExpiresAt   *int64   `json:"client_secret_expires_at,omitempty"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	GrantTypes              []string `json:"grant_types"`
+	ResponseTypes           []string `json:"response_types"`
+	ClientName              string   `json:"client_name"`
+	ClientURI               string   `json:"client_uri,omitempty"`
+	LogoURI                 string   `json:"logo_uri,omitempty"`
+	Scope                   string   `json:"scope"`
+	SoftwareID              string   `json:"software_id,omitempty"`
+	SoftwareVersion         string   `json:"software_version,omitempty"`
+}
+
 type oauthAuthorizationServerMetadataResponse struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
 	RevocationEndpoint                string   `json:"revocation_endpoint"`
+	RegistrationEndpoint              string   `json:"registration_endpoint"`
 	ScopesSupported                   []string `json:"scopes_supported,omitempty"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	GrantTypesSupported               []string `json:"grant_types_supported"`
@@ -122,6 +155,10 @@ func oauthApplicationToResponse(application model.OAuthApplication) oauthApplica
 	if redirectURIs == nil {
 		redirectURIs = []string{}
 	}
+	registrationSource := application.RegistrationSource
+	if registrationSource == "" {
+		registrationSource = model.OAuthRegistrationSourceManual
+	}
 	return oauthApplicationResponse{
 		ID:                      application.ID,
 		OwnerUserID:             application.OwnerUserID,
@@ -130,6 +167,7 @@ func oauthApplicationToResponse(application model.OAuthApplication) oauthApplica
 		HomepageURL:             application.HomepageURL,
 		LogoURL:                 application.LogoURL,
 		ClientID:                application.ClientID,
+		RegistrationSource:      registrationSource,
 		RedirectURIs:            redirectURIs,
 		AllowedScopes:           application.AllowedScopes,
 		AccessTokenLifetimeDays: application.AccessTokenLifetimeDays,

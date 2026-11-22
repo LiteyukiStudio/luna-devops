@@ -150,6 +150,23 @@ func UserCanAuthorizeOAuthScope(userRole, scopeText string) bool {
 	return true
 }
 
+func FilterUserAuthorizableOAuthScope(userRole, scopeText string) string {
+	normalized := NormalizeOAuthScope(scopeText)
+	if normalized == "" {
+		return ""
+	}
+	if IsPlatformAdmin(userRole) {
+		return normalized
+	}
+	filtered := make([]string, 0)
+	for _, scope := range splitCSV(normalized) {
+		if userAuthorizableOAuthScopes[scope] {
+			filtered = append(filtered, scope)
+		}
+	}
+	return strings.Join(filtered, ",")
+}
+
 func normalizeList(values []string) []string {
 	seen := map[string]bool{}
 	output := make([]string, 0, len(values))

@@ -24,6 +24,9 @@ func exchangeOAuthAuthorizationCodeValue(
 		if err != nil {
 			return err
 		}
+		if !oauthApplicationAllowsGrantType(application, "authorization_code") {
+			return errOAuthUnauthorizedClient
+		}
 		var snapshot model.OAuthAuthorizationCode
 		if err := tx.First(&snapshot, "code_hash = ?", hashToken(strings.TrimSpace(plainCode))).Error; err != nil {
 			return err
@@ -84,6 +87,7 @@ func exchangeOAuthRefreshTokenValue(
 	db *gorm.DB,
 	authentication oauthClientAuthentication,
 	plainRefreshToken string,
+	requestedScope string,
 	now time.Time,
 ) (oauthTokenResponse, error) {
 	var response oauthTokenResponse
@@ -92,6 +96,9 @@ func exchangeOAuthRefreshTokenValue(
 		application, err := lockOAuthClientApplication(tx, authentication, true)
 		if err != nil {
 			return err
+		}
+		if !oauthApplicationAllowsGrantType(application, "refresh_token") {
+			return errOAuthUnauthorizedClient
 		}
 		var snapshot model.OAuthRefreshToken
 		if err := tx.First(&snapshot, "token_hash = ?", hashToken(strings.TrimSpace(plainRefreshToken))).Error; err != nil {
@@ -140,10 +147,18 @@ func exchangeOAuthRefreshTokenValue(
 			reused = true
 			return nil
 		}
+		accessScope := refreshToken.Scope
+		if rawScope := strings.TrimSpace(requestedScope); rawScope != "" {
+			normalized := normalizeOAuthScope(rawScope)
+			if normalized == "" || !oauthScopeSubset(normalized, refreshToken.Scope) {
+				return errOAuthInvalidScope
+			}
+			accessScope = normalized
+		}
 		if err := tx.Model(&refreshToken).Update("consumed_at", now).Error; err != nil {
 			return err
 		}
-		issued, err := issueOAuthTokens(tx, application, grant, refreshToken.Scope, refreshToken.FamilyID, now)
+		issued, err := issueOAuthTokensWithRefreshScope(tx, application, grant, accessScope, refreshToken.Scope, refreshToken.FamilyID, now)
 		if err != nil {
 			return err
 		}

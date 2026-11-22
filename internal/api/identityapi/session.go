@@ -138,6 +138,17 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.token.invalid")
 		return model.User{}, false
 	}
+	if token.Source == model.AccessTokenSourceOAuth {
+		oauthApp, valid := h.loadActiveOAuthTokenAuthority(ctx, token)
+		if !valid {
+			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.token.invalid")
+			return model.User{}, false
+		}
+		if oauthApp.RegistrationSource == model.OAuthRegistrationSourceDynamic {
+			writeErrorCode(ctx, http.StatusForbidden, "auth.token.mcp_only", "Dynamically registered MCP OAuth tokens are restricted to /api/v1/mcp")
+			return model.User{}, false
+		}
+	}
 	missingScope, err := missingRequiredAccessTokenScope(token.Scope, ctx.FullPath(), ctx.Request.Method)
 	if err != nil {
 		writeScopeContractUnavailableError(ctx, err.Error())
@@ -178,6 +189,11 @@ func (h *Handlers) authenticateMCPBearerToken(ctx *gin.Context) (model.User, mod
 	if err != nil {
 		return model.User{}, model.AccessToken{}, false
 	}
+	if token.Source == model.AccessTokenSourceOAuth {
+		if _, valid := h.loadActiveOAuthTokenAuthority(ctx, token); !valid {
+			return model.User{}, model.AccessToken{}, false
+		}
+	}
 	var user model.User
 	if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", token.UserID, false).Error; err != nil {
 		return model.User{}, model.AccessToken{}, false
@@ -185,6 +201,27 @@ func (h *Handlers) authenticateMCPBearerToken(ctx *gin.Context) (model.User, mod
 	ctx.Set(currentAccessTokenContextKey, token)
 	ctx.Set(currentUserContextKey, user)
 	return user, token, true
+}
+
+func (h *Handlers) loadActiveOAuthTokenAuthority(ctx *gin.Context, token model.AccessToken) (model.OAuthApplication, bool) {
+	if strings.TrimSpace(token.OAuthApplicationID) == "" || strings.TrimSpace(token.OAuthGrantID) == "" || strings.TrimSpace(token.OAuthFamilyID) == "" {
+		return model.OAuthApplication{}, false
+	}
+	var application model.OAuthApplication
+	if err := h.dbFor(ctx).First(&application, "id = ? and revoked_at is null", token.OAuthApplicationID).Error; err != nil {
+		return model.OAuthApplication{}, false
+	}
+	var grant model.OAuthGrant
+	if err := h.dbFor(ctx).First(
+		&grant,
+		"id = ? and application_id = ? and user_id = ? and revoked_at is null",
+		token.OAuthGrantID,
+		application.ID,
+		token.UserID,
+	).Error; err != nil {
+		return model.OAuthApplication{}, false
+	}
+	return application, true
 }
 
 func currentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {

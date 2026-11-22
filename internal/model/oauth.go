@@ -1,6 +1,20 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const (
+	OAuthTokenEndpointAuthMethodNone              = "none"
+	OAuthTokenEndpointAuthMethodClientSecretBasic = "client_secret_basic"
+	OAuthTokenEndpointAuthMethodClientSecretPost  = "client_secret_post"
+
+	OAuthRegistrationSourceManual  = "manual"
+	OAuthRegistrationSourceDynamic = "dynamic"
+
+	OAuthDefaultGrantTypesJSON = `["authorization_code","refresh_token"]`
+)
 
 type OAuthApplication struct {
 	ID                      string     `gorm:"primaryKey" json:"id"`
@@ -11,12 +25,27 @@ type OAuthApplication struct {
 	LogoURL                 string     `json:"logoUrl"`
 	ClientID                string     `gorm:"uniqueIndex;not null" json:"clientId"`
 	ClientSecretHash        string     `gorm:"not null" json:"-"`
+	TokenEndpointAuthMethod string     `gorm:"not null;default:client_secret_basic" json:"tokenEndpointAuthMethod"`
+	RegistrationSource      string     `gorm:"not null;default:manual" json:"registrationSource"`
+	GrantTypes              string     `gorm:"type:text;not null" json:"-"`
 	RedirectURIs            string     `gorm:"type:text;not null" json:"-"`
 	AllowedScopes           string     `gorm:"type:text;not null" json:"allowedScopes"`
 	AccessTokenLifetimeDays int        `gorm:"not null;default:30" json:"accessTokenLifetimeDays"`
 	RevokedAt               *time.Time `gorm:"index" json:"revokedAt"`
 	CreatedAt               time.Time  `json:"createdAt"`
 	UpdatedAt               time.Time  `json:"updatedAt"`
+}
+
+func (a OAuthApplication) EffectiveTokenEndpointAuthMethod() string {
+	method := strings.TrimSpace(a.TokenEndpointAuthMethod)
+	if method == "" {
+		return OAuthTokenEndpointAuthMethodClientSecretBasic
+	}
+	return method
+}
+
+func (a OAuthApplication) IsPublicClient() bool {
+	return a.EffectiveTokenEndpointAuthMethod() == OAuthTokenEndpointAuthMethodNone
 }
 
 func (OAuthApplication) TableName() string { return "oauth_applications" }

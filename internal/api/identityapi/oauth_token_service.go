@@ -35,16 +35,34 @@ func lockOAuthClientApplication(tx *gorm.DB, authentication oauthClientAuthentic
 	if err != nil {
 		return model.OAuthApplication{}, err
 	}
-	if application.ClientID != authentication.clientID || authentication.public {
+	if application.ClientID != authentication.clientID {
 		return model.OAuthApplication{}, errOAuthInvalidClient
 	}
-	if authentication.clientSecretHash == "" || subtle.ConstantTimeCompare(
+	if authentication.public {
+		if !application.IsPublicClient() || authentication.clientSecretHash != "" || application.ClientSecretHash != "" {
+			return model.OAuthApplication{}, errOAuthInvalidClient
+		}
+		return application, nil
+	}
+	if application.IsPublicClient() || authentication.clientSecretHash == "" || application.ClientSecretHash == "" || subtle.ConstantTimeCompare(
 		[]byte(application.ClientSecretHash),
 		[]byte(authentication.clientSecretHash),
 	) != 1 {
 		return model.OAuthApplication{}, errOAuthInvalidClient
 	}
 	return application, nil
+}
+
+func oauthApplicationAllowsGrantType(application model.OAuthApplication, grantType string) bool {
+	grantType = strings.TrimSpace(grantType)
+	if grantType == "" {
+		return false
+	}
+	raw := strings.TrimSpace(application.GrantTypes)
+	if raw == "" {
+		return grantType == "authorization_code" || grantType == "refresh_token"
+	}
+	return containsString(decodeStringList(raw), grantType)
 }
 
 func lockOAuthExchangeUser(tx *gorm.DB, _ model.OAuthApplication, userID, scope string) (model.User, error) {
@@ -152,7 +170,7 @@ func recordOAuthAuthorizationConsent(tx *gorm.DB, code *model.OAuthAuthorization
 	if err != nil {
 		return err
 	}
-	if !exactRedirectURIAllowed(application, code.RedirectURI) {
+	if !oauthApplicationRedirectURIAllowed(application, code.RedirectURI) {
 		return errOAuthInvalidGrant
 	}
 	if code.CreatedAt.IsZero() {
@@ -162,20 +180,36 @@ func recordOAuthAuthorizationConsent(tx *gorm.DB, code *model.OAuthAuthorization
 }
 
 func issueOAuthTokens(tx *gorm.DB, application model.OAuthApplication, grant model.OAuthGrant, scope, familyID string, now time.Time) (oauthTokenResponse, error) {
-	scope = normalizeOAuthScope(scope)
-	if scope == "" || familyID == "" || !oauthScopeSubset(scope, grant.Scope) || !oauthApplicationAllowsScope(application, scope) {
+	return issueOAuthTokensWithRefreshScope(tx, application, grant, scope, scope, familyID, now)
+}
+
+func issueOAuthTokensWithRefreshScope(
+	tx *gorm.DB,
+	application model.OAuthApplication,
+	grant model.OAuthGrant,
+	accessScope string,
+	refreshScope string,
+	familyID string,
+	now time.Time,
+) (oauthTokenResponse, error) {
+	accessScope = normalizeOAuthScope(accessScope)
+	refreshScope = normalizeOAuthScope(refreshScope)
+	if accessScope == "" || refreshScope == "" || familyID == "" ||
+		!oauthScopeSubset(accessScope, refreshScope) ||
+		!oauthScopeSubset(refreshScope, grant.Scope) ||
+		!oauthApplicationAllowsScope(application, refreshScope) {
 		return oauthTokenResponse{}, errOAuthInvalidGrant
 	}
 	plainAccessToken := "lyo_" + randomHex(32)
 	accessToken := model.AccessToken{
-		ID: id.New("tok"), UserID: grant.UserID, Name: application.Name, Scope: scope,
+		ID: id.New("tok"), UserID: grant.UserID, Name: application.Name, Scope: accessScope,
 		TokenHash: hashToken(plainAccessToken), Source: "oauth", OAuthApplicationID: application.ID, OAuthGrantID: grant.ID,
 		OAuthFamilyID: familyID,
 	}
 	response := oauthTokenResponse{
 		AccessToken: plainAccessToken,
 		TokenType:   "Bearer",
-		Scope:       oauthScopeText(scope),
+		Scope:       oauthScopeText(accessScope),
 	}
 	if application.AccessTokenLifetimeDays > 0 {
 		expiresAt := now.Add(time.Duration(application.AccessTokenLifetimeDays) * 24 * time.Hour)
@@ -186,13 +220,13 @@ func issueOAuthTokens(tx *gorm.DB, application model.OAuthApplication, grant mod
 	if err := tx.Create(&accessToken).Error; err != nil {
 		return oauthTokenResponse{}, err
 	}
-	if application.AccessTokenLifetimeDays == 0 {
+	if application.AccessTokenLifetimeDays == 0 || !oauthApplicationAllowsGrantType(application, "refresh_token") {
 		return response, nil
 	}
 	plainRefreshToken := "lyo_refresh_" + randomHex(32)
 	refreshToken := model.OAuthRefreshToken{
 		ID: id.New("ortk"), ApplicationID: application.ID, GrantID: grant.ID, UserID: grant.UserID,
-		FamilyID: familyID, TokenHash: hashToken(plainRefreshToken), Scope: scope, ExpiresAt: now.Add(oauthRefreshTokenTTL),
+		FamilyID: familyID, TokenHash: hashToken(plainRefreshToken), Scope: refreshScope, ExpiresAt: now.Add(oauthRefreshTokenTTL),
 	}
 	if err := tx.Create(&refreshToken).Error; err != nil {
 		return oauthTokenResponse{}, err

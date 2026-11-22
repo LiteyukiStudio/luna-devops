@@ -2430,6 +2430,7 @@ export interface OAuthApplication {
   homepageUrl: string
   logoUrl: string
   clientId: string
+  registrationSource: 'manual' | 'dynamic'
   redirectUris: string[]
   allowedScopes: string
   accessTokenLifetimeDays: number

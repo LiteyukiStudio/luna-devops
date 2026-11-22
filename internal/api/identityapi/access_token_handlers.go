@@ -16,6 +16,9 @@ func (h *Handlers) ListAccessTokens(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	if !rejectOAuthTokenManagement(ctx) {
+		return
+	}
 
 	pagination := paginationFromQuery(ctx)
 	var tokens []model.AccessToken
@@ -53,6 +56,9 @@ func (h *Handlers) ListAccessTokenScopes(ctx *gin.Context) {
 func (h *Handlers) CreateAccessToken(ctx *gin.Context) {
 	user, ok := h.currentUser(ctx)
 	if !ok {
+		return
+	}
+	if !rejectOAuthTokenManagement(ctx) {
 		return
 	}
 
@@ -107,6 +113,9 @@ func (h *Handlers) RevokeAccessToken(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	if !rejectOAuthTokenManagement(ctx) {
+		return
+	}
 
 	var token model.AccessToken
 	if err := h.dbFor(ctx).First(&token, "id = ? and user_id = ? and source = ?", ctx.Param("tokenId"), user.ID, model.AccessTokenSourcePersonal).Error; err != nil {
@@ -127,6 +136,14 @@ type accessTokenInput struct {
 	Name          string `json:"name" binding:"required"`
 	Scope         string `json:"scope"`
 	ExpiresInDays int    `json:"expiresInDays"`
+}
+
+func rejectOAuthTokenManagement(ctx *gin.Context) bool {
+	if token, ok := currentAccessTokenFromContext(ctx); ok && token.Source == model.AccessTokenSourceOAuth {
+		writeErrorCode(ctx, http.StatusForbidden, "auth.token.oauth_forbidden", "Personal access tokens cannot be managed using an OAuth token")
+		return false
+	}
+	return true
 }
 
 func validAccessTokenLifetimeDays(days int) bool {

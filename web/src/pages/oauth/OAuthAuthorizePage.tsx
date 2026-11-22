@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { KeyRound, ShieldCheck, ShieldX } from 'lucide-react'
-import { useEffect } from 'react'
+import { AlertTriangle, KeyRound, ShieldCheck, ShieldX } from 'lucide-react'
+import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -20,6 +20,17 @@ export function OAuthAuthorizePage() {
   const session = useSession()
   const rawQuery = location.search.slice(1)
   const params = new URLSearchParams(location.search)
+  const redirectUri = params.get('redirect_uri') ?? ''
+  const callbackOrigin = useMemo(() => {
+    if (!redirectUri)
+      return ''
+    try {
+      return new URL(redirectUri).origin
+    }
+    catch {
+      return redirectUri
+    }
+  }, [redirectUri])
   const request = useQuery({
     queryKey: ['oauth-authorization-request', rawQuery],
     queryFn: () => api.getOAuthAuthorizationRequest(rawQuery),
@@ -30,8 +41,8 @@ export function OAuthAuthorizePage() {
     mutationFn: (approved: boolean) => api.decideOAuthAuthorization({
       approved,
       clientId: params.get('client_id') ?? '',
-      redirectUri: params.get('redirect_uri') ?? '',
-      scope: params.get('scope') ?? '',
+      redirectUri,
+      scope: request.data?.scope || params.get('scope') || '',
       state: params.get('state') ?? '',
       codeChallenge: params.get('code_challenge') ?? '',
       codeChallengeMethod: params.get('code_challenge_method') ?? '',
@@ -60,11 +71,27 @@ export function OAuthAuthorizePage() {
               {request.data.application.logoUrl
                 ? <img alt={request.data.application.name} className="size-12 rounded-control border border-border object-contain" src={request.data.application.logoUrl} />
                 : <div className="grid size-12 place-items-center rounded-control bg-primary-subtle text-primary-text"><KeyRound className="size-5" /></div>}
-              <div className="min-w-0">
-                <h2 className="font-semibold">{request.data.application.name}</h2>
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-semibold">{request.data.application.name}</h2>
+                  {request.data.application.registrationSource === 'dynamic' && (
+                    <Badge variant="outline">{t('oauthApps.dynamicClientBadge')}</Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">{request.data.application.description || t('oauthApps.noDescription')}</p>
+                {callbackOrigin && (
+                  <p className="text-xs font-mono text-muted-foreground break-all">
+                    {t('oauthApps.callbackTarget', { origin: callbackOrigin })}
+                  </p>
+                )}
               </div>
             </div>
+            {request.data.application.registrationSource === 'dynamic' && (
+              <div className="flex items-start gap-2 rounded-control border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                <span>{t('oauthApps.dynamicClientNotice')}</span>
+              </div>
+            )}
             <Surface className="grid gap-3 p-4" variant="inset">
               <p className="text-sm font-medium">{t('oauthApps.requestsAccess')}</p>
               <div className="flex flex-wrap gap-2">

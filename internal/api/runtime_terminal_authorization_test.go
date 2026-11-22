@@ -90,7 +90,9 @@ func TestOAuthFamilyRevocationInvalidatesStreamAndInteractiveTerminalRejectsBear
 	plainToken := "lyo_family_bound_identity"
 	user := model.User{ID: "usr_family_bound_identity", Email: "family-bound@example.com", Name: "Family Bound", Role: authz.PlatformRoleAdmin, Language: "en-US"}
 	application := model.OAuthApplication{
-		ID: "oapp_family_bound", Name: "OAuth Client", ClientID: "family-bound-client", RedirectURIs: "[]", AllowedScopes: "user:read", AccessTokenLifetimeDays: 30,
+		ID: "oapp_family_bound", Name: "OAuth Client", ClientID: "family-bound-client",
+		ClientSecretHash: transportapi.HashToken("family-bound-secret"),
+		RedirectURIs:     "[]", AllowedScopes: "user:read", AccessTokenLifetimeDays: 30,
 	}
 	grant := model.OAuthGrant{ID: "ogrt_family_bound_identity", ApplicationID: application.ID, UserID: user.ID, Scope: "user:read"}
 	accessToken := model.AccessToken{

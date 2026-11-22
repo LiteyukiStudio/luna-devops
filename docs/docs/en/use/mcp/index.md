@@ -17,12 +17,14 @@ Open **Account settings → Personal tokens** (Personal Access Tokens) in the co
 Authorization: Bearer <YOUR_PAT>
 ```
 
-### 2. OAuth 2.0 application
+### 2. OAuth 2.0 browser authorization (with Dynamic Client Registration)
 
-Open **Account settings → Developer apps** (OAuth Applications) to register an application with an exact Redirect URI (HTTPS in production; `localhost` HTTP allowed for local development) and Allowed Scopes. Standards-compliant MCP clients automatically discover endpoints from the metadata URLs below and complete `authorization_code` + PKCE (`S256`) browser authorization:
+Standards-compliant MCP clients (such as Antigravity, Claude Code, and Cursor) can connect directly to `https://<instance>/api/v1/mcp` without pre-provisioning a `client_id` or `client_secret`: they automatically discover the metadata endpoints below, dynamically register via `POST /api/v1/oauth/register` (RFC 7591, including public clients with `token_endpoint_auth_method: "none"`), and complete `authorization_code` + PKCE (`S256`) browser authorization:
 
 - Protected resource metadata: `/.well-known/oauth-protected-resource`
 - Authorization server metadata: `/.well-known/oauth-authorization-server`
+
+If you need fixed pre-registered credentials instead, open **Account settings → Developer apps** (OAuth Applications) to register an exact Redirect URI (HTTPS in production; `localhost` / `127.0.0.1` HTTP allowed for local development) and Allowed Scopes.
 
 ## Shortest configuration steps
 

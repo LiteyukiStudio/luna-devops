@@ -209,9 +209,16 @@ func oauthApplicationFromInput(ctx *gin.Context, user model.User, input oauthApp
 		return model.OAuthApplication{}, false
 	}
 	return model.OAuthApplication{
-		OwnerUserID: &user.ID,
-		Name:        name, Description: strings.TrimSpace(input.Description), HomepageURL: strings.TrimSpace(input.HomepageURL),
-		LogoURL: strings.TrimSpace(input.LogoURL), RedirectURIs: encodeStringList(redirectURIs), AllowedScopes: scope,
+		OwnerUserID:             &user.ID,
+		Name:                    name,
+		Description:             strings.TrimSpace(input.Description),
+		HomepageURL:             strings.TrimSpace(input.HomepageURL),
+		LogoURL:                 strings.TrimSpace(input.LogoURL),
+		TokenEndpointAuthMethod: model.OAuthTokenEndpointAuthMethodClientSecretBasic,
+		RegistrationSource:      model.OAuthRegistrationSourceManual,
+		GrantTypes:              model.OAuthDefaultGrantTypesJSON,
+		RedirectURIs:            encodeStringList(redirectURIs),
+		AllowedScopes:           scope,
 		AccessTokenLifetimeDays: input.AccessTokenLifetimeDays,
 	}, true
 }

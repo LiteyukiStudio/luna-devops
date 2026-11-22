@@ -345,3 +345,482 @@ func TestMCPStreamableHTTPEndToEnd(t *testing.T) {
 		t.Fatal("expected mcp.tools_call child span")
 	}
 }
+
+func TestMCPDynamicClientRegistrationPublicClientEndToEnd(t *testing.T) {
+	db := authIntegrationDB(t)
+	if err := db.AutoMigrate(&model.ProjectPin{}); err != nil {
+		t.Fatalf("migrate ProjectPin: %v", err)
+	}
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("PUBLIC_BASE_URL", "https://devops.example.com")
+	t.Setenv("SECRET_ENCRYPTION_KEY", "mcp-dcr-integration-secret-32byt")
+
+	user := model.User{
+		ID:       "usr_mcp_dcr_dev",
+		Email:    "mcp-dcr-dev@example.com",
+		Name:     "MCP Developer",
+		Role:     authz.PlatformRoleUser,
+		Language: "zh-CN",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionPlain := "sess_mcp_dcr_browser_login"
+	if err := db.Create(&model.UserSession{
+		ID:        "ses_mcp_dcr_1",
+		UserID:    user.ID,
+		TokenHash: transportapi.HashToken(sessionPlain),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{
+		ID:                 "prj_mcp_dcr",
+		Name:               "DCR 项目",
+		Identifier:         "dcr-proj",
+		BillingOwnerUserID: user.ID,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ProjectMember{
+		ID:        "pm_mcp_dcr",
+		ProjectID: project.ID,
+		UserID:    user.ID,
+		Role:      authz.ProjectRoleOwner,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	router := NewRouter(db, mustTestConfig(t))
+
+	// 1. Discover protected resource metadata -> authorization server metadata.
+	prmRec := httptest.NewRecorder()
+	router.ServeHTTP(prmRec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil))
+	if prmRec.Code != http.StatusOK {
+		t.Fatalf("protected resource metadata = %d %s", prmRec.Code, prmRec.Body.String())
+	}
+	var prm oauthProtectedResourceMetadataResponse
+	if err := json.Unmarshal(prmRec.Body.Bytes(), &prm); err != nil {
+		t.Fatal(err)
+	}
+	if len(prm.AuthorizationServers) != 1 || prm.AuthorizationServers[0] != "https://devops.example.com" {
+		t.Fatalf("authorization_servers = %#v", prm.AuthorizationServers)
+	}
+
+	asmRec := httptest.NewRecorder()
+	router.ServeHTTP(asmRec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
+	if asmRec.Code != http.StatusOK {
+		t.Fatalf("authorization server metadata = %d %s", asmRec.Code, asmRec.Body.String())
+	}
+	var asm oauthAuthorizationServerMetadataResponse
+	if err := json.Unmarshal(asmRec.Body.Bytes(), &asm); err != nil {
+		t.Fatal(err)
+	}
+	if asm.RegistrationEndpoint != "https://devops.example.com/api/v1/oauth/register" {
+		t.Fatalf("registration_endpoint = %q", asm.RegistrationEndpoint)
+	}
+	if !containsString(asm.TokenEndpointAuthMethodsSupported, "none") ||
+		!containsString(asm.TokenEndpointAuthMethodsSupported, "client_secret_basic") ||
+		!containsString(asm.TokenEndpointAuthMethodsSupported, "client_secret_post") {
+		t.Fatalf("token_endpoint_auth_methods_supported = %#v", asm.TokenEndpointAuthMethodsSupported)
+	}
+
+	// 2. RFC 7591 Dynamic Client Registration as a public client ("none").
+	redirectURI := "http://127.0.0.1:53124/oauth/callback"
+	regPayload := `{"client_name":"Antigravity MCP","redirect_uris":["` + redirectURI + `"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}`
+	regReq := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/register", strings.NewReader(regPayload))
+	regReq.Header.Set("Content-Type", "application/json")
+	regRec := httptest.NewRecorder()
+	router.ServeHTTP(regRec, regReq)
+	if regRec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/v1/oauth/register = %d %s", regRec.Code, regRec.Body.String())
+	}
+	if regRec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", regRec.Header().Get("Cache-Control"))
+	}
+	var regResp oauthDynamicClientRegistrationResponse
+	if err := json.Unmarshal(regRec.Body.Bytes(), &regResp); err != nil {
+		t.Fatal(err)
+	}
+	if regResp.ClientID == "" || regResp.ClientSecret != "" || regResp.ClientSecretExpiresAt != nil || regResp.TokenEndpointAuthMethod != "none" {
+		t.Fatalf("unexpected public client registration response: %#v", regResp)
+	}
+
+	// Anonymous dynamically registered clients must not pollute user's owned OAuth applications list.
+	appsRec := performCookieJSONRequest(router, http.MethodGet, "/api/v1/oauth/applications", sessionPlain, "")
+	if appsRec.Code != http.StatusOK || strings.Contains(appsRec.Body.String(), regResp.ClientID) {
+		t.Fatalf("ListOAuthApplications leaked dynamic client: %d %s", appsRec.Code, appsRec.Body.String())
+	}
+
+	// 3. Browser /oauth/authorize with PKCE S256 (even when MCP client passes full scopes_supported for a non-admin user, or omits scope).
+	verifier := strings.Repeat("p", 64)
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+
+	authPreviewQuery := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {regResp.ClientID},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {strings.Join(prm.ScopesSupported, " ")},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+	}
+	previewAuthRec := performCookieJSONRequest(router, http.MethodGet, "/api/v1/oauth/authorize?"+authPreviewQuery.Encode(), sessionPlain, "")
+	if previewAuthRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/oauth/authorize = %d %s", previewAuthRec.Code, previewAuthRec.Body.String())
+	}
+	var authPreview oauthAuthorizationRequest
+	if err := json.Unmarshal(previewAuthRec.Body.Bytes(), &authPreview); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(authPreview.Scope, "auth:manage") || !strings.Contains(authPreview.Scope, "project:read") {
+		t.Fatalf("expected non-admin scope narrowing on dynamic client, got %q", authPreview.Scope)
+	}
+	if authPreview.Application.RegistrationSource != "dynamic" {
+		t.Fatalf("expected registrationSource = dynamic on consent preview, got %q", authPreview.Application.RegistrationSource)
+	}
+
+	// Missing response_type on GET /api/v1/oauth/authorize must fail 400.
+	noRespTypeQuery := url.Values{
+		"client_id":             {regResp.ClientID},
+		"redirect_uri":          {redirectURI},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+	}
+	if noRT := performCookieJSONRequest(router, http.MethodGet, "/api/v1/oauth/authorize?"+noRespTypeQuery.Encode(), sessionPlain, ""); noRT.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on missing response_type, got %d %s", noRT.Code, noRT.Body.String())
+	}
+
+	// Missing PKCE must be rejected even for public clients.
+	missingPKCEBody, _ := json.Marshal(oauthAuthorizationDecisionInput{
+		Approved:            true,
+		ClientID:            regResp.ClientID,
+		RedirectURI:         redirectURI,
+		Scope:               authPreview.Scope,
+		CodeChallenge:       "short",
+		CodeChallengeMethod: "S256",
+	})
+	if badPKCE := performCookieJSONRequest(router, http.MethodPost, "/api/v1/oauth/authorize", sessionPlain, string(missingPKCEBody)); badPKCE.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid PKCE, got %d %s", badPKCE.Code, badPKCE.Body.String())
+	}
+
+	// POST /api/v1/oauth/authorize with Approved=true must reject un-narrowed admin scopes for non-admin user (no silent expansion).
+	escalatedApproveBody, _ := json.Marshal(oauthAuthorizationDecisionInput{
+		Approved:            true,
+		ClientID:            regResp.ClientID,
+		RedirectURI:         redirectURI,
+		Scope:               strings.Join(prm.ScopesSupported, " "),
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+	})
+	if escRec := performCookieJSONRequest(router, http.MethodPost, "/api/v1/oauth/authorize", sessionPlain, string(escalatedApproveBody)); escRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 on un-narrowed admin scope approval, got %d %s", escRec.Code, escRec.Body.String())
+	}
+
+	// RFC 8252 §7.3: public client re-authenticating on a new ephemeral loopback port succeeds, while binding the issued code to that exact port.
+	ephemeralRedirectURI := "http://127.0.0.1:61888/oauth/callback"
+	approveBody, _ := json.Marshal(oauthAuthorizationDecisionInput{
+		Approved:            true,
+		ClientID:            regResp.ClientID,
+		RedirectURI:         ephemeralRedirectURI,
+		Scope:               authPreview.Scope,
+		State:               "mcp-state-123",
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+	})
+	consentRec := performCookieJSONRequest(router, http.MethodPost, "/api/v1/oauth/authorize", sessionPlain, string(approveBody))
+	if consentRec.Code != http.StatusOK {
+		t.Fatalf("POST /api/v1/oauth/authorize = %d %s", consentRec.Code, consentRec.Body.String())
+	}
+	parsedRedirect, err := url.Parse(jsonString(t, consentRec.Body.Bytes(), "redirectUrl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCode := parsedRedirect.Query().Get("code")
+	if authCode == "" || parsedRedirect.Query().Get("state") != "mcp-state-123" || parsedRedirect.Host != "127.0.0.1:61888" {
+		t.Fatalf("unexpected redirect URL: %s", parsedRedirect.String())
+	}
+
+	// 4. Negative: public client sending extraneous client_secret, Basic auth, or malformed Authorization header MUST get 401 invalid_client + WWW-Authenticate without consuming code.
+	extraSecretRec := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {regResp.ClientID},
+		"client_secret": {"unexpected-secret"},
+		"code":          {authCode},
+		"redirect_uri":  {ephemeralRedirectURI},
+		"code_verifier": {verifier},
+	})
+	if extraSecretRec.Code != http.StatusUnauthorized || jsonString(t, extraSecretRec.Body.Bytes(), "error") != "invalid_client" || extraSecretRec.Header().Get("WWW-Authenticate") != "Basic" {
+		t.Fatalf("public client with extra secret = %d %s, want 401 invalid_client", extraSecretRec.Code, extraSecretRec.Body.String())
+	}
+
+	malformedAuthReq := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/token", strings.NewReader(url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {regResp.ClientID},
+		"code":          {authCode},
+		"redirect_uri":  {ephemeralRedirectURI},
+		"code_verifier": {verifier},
+	}.Encode()))
+	malformedAuthReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	malformedAuthReq.Header.Set("Authorization", "Bearer bogus")
+	malformedAuthRec := httptest.NewRecorder()
+	router.ServeHTTP(malformedAuthRec, malformedAuthReq)
+	if malformedAuthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("public client with non-Basic Authorization header = %d, want 401", malformedAuthRec.Code)
+	}
+
+	basicOnPublicReq := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/token", strings.NewReader(url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {authCode},
+		"redirect_uri":  {ephemeralRedirectURI},
+		"code_verifier": {verifier},
+	}.Encode()))
+	basicOnPublicReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	basicOnPublicReq.SetBasicAuth(regResp.ClientID, "unexpected-secret")
+	basicOnPublicRec := httptest.NewRecorder()
+	router.ServeHTTP(basicOnPublicRec, basicOnPublicReq)
+	if basicOnPublicRec.Code != http.StatusUnauthorized || jsonString(t, basicOnPublicRec.Body.Bytes(), "error") != "invalid_client" {
+		t.Fatalf("public client with Basic auth = %d %s, want 401 invalid_client", basicOnPublicRec.Code, basicOnPublicRec.Body.String())
+	}
+
+	// Port mismatch at token exchange (using original port instead of ephemeral port bound to code) MUST fail 400 invalid_grant.
+	wrongPortRec := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {regResp.ClientID},
+		"code":          {authCode},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {verifier},
+	})
+	if wrongPortRec.Code != http.StatusBadRequest || jsonString(t, wrongPortRec.Body.Bytes(), "error") != "invalid_grant" {
+		t.Fatalf("wrong port token exchange = %d %s, want 400 invalid_grant", wrongPortRec.Code, wrongPortRec.Body.String())
+	}
+
+	// 5. Exchange code for tokens as public client (client_id only + PKCE code_verifier + exact ephemeral redirect_uri).
+	tokenRec := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {regResp.ClientID},
+		"code":          {authCode},
+		"redirect_uri":  {ephemeralRedirectURI},
+		"code_verifier": {verifier},
+	})
+	if tokenRec.Code != http.StatusOK {
+		t.Fatalf("public client token exchange = %d %s", tokenRec.Code, tokenRec.Body.String())
+	}
+	var tokens oauthTokenResponse
+	if err := json.Unmarshal(tokenRec.Body.Bytes(), &tokens); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.AccessToken == "" || tokens.RefreshToken == "" {
+		t.Fatalf("expected access_token and refresh_token, got %#v", tokens)
+	}
+
+	// 6. Access /api/v1/mcp (initialize, tools/list, and L0 workspace_list_projects) using the issued Bearer token.
+	callMCP := func(bearer, payload string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(payload))
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := callMCP(tokens.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`); rec.Code != http.StatusOK {
+		t.Fatalf("MCP initialize = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := callMCP(tokens.AccessToken, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"search_tools"`) {
+		t.Fatalf("MCP tools/list = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := callMCP(tokens.AccessToken, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"execute_tool","arguments":{"toolName":"workspace_list_projects","arguments":{}}}}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "dcr-proj") {
+		t.Fatalf("MCP workspace_list_projects = %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Dynamic MCP OAuth token MUST NOT bypass /api/v1/mcp onto REST /api/v1/* or mint personal access tokens!
+	if restBypass := performBearerRequest(router, http.MethodGet, "/api/v1/projects", tokens.AccessToken, ""); restBypass.Code != http.StatusForbidden || !strings.Contains(restBypass.Body.String(), "auth.token.mcp_only") {
+		t.Fatalf("dynamic MCP token REST bypass = %d %s, want 403 auth.token.mcp_only", restBypass.Code, restBypass.Body.String())
+	}
+	if patMint := performBearerRequest(router, http.MethodPost, "/api/v1/access-tokens", tokens.AccessToken, `{"name":"escaped-pat","scope":"project:read"}`); patMint.Code != http.StatusForbidden {
+		t.Fatalf("dynamic MCP token PAT mint = %d %s, want 403", patMint.Code, patMint.Body.String())
+	}
+
+	// User can still inspect and manage the authorized grant in /api/v1/oauth/grants.
+	grantsRec := performCookieJSONRequest(router, http.MethodGet, "/api/v1/oauth/grants", sessionPlain, "")
+	if grantsRec.Code != http.StatusOK || !strings.Contains(grantsRec.Body.String(), "Antigravity MCP") {
+		t.Fatalf("ListMyOAuthGrants missing dynamic client grant: %d %s", grantsRec.Code, grantsRec.Body.String())
+	}
+
+	// 7. Refresh token rotation & RFC 6749 §6 scope validation for public client (client_id only).
+	badScopeRefresh := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {regResp.ClientID},
+		"refresh_token": {tokens.RefreshToken},
+		"scope":         {"auth:manage"},
+	})
+	if badScopeRefresh.Code != http.StatusBadRequest || jsonString(t, badScopeRefresh.Body.Bytes(), "error") != "invalid_scope" {
+		t.Fatalf("escalated refresh scope = %d %s, want 400 invalid_scope", badScopeRefresh.Code, badScopeRefresh.Body.String())
+	}
+
+	refreshRec := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {regResp.ClientID},
+		"refresh_token": {tokens.RefreshToken},
+		"scope":         {"project:read"},
+	})
+	if refreshRec.Code != http.StatusOK {
+		t.Fatalf("public client refresh_token = %d %s", refreshRec.Code, refreshRec.Body.String())
+	}
+	var rotated oauthTokenResponse
+	if err := json.Unmarshal(refreshRec.Body.Bytes(), &rotated); err != nil {
+		t.Fatal(err)
+	}
+	if rotated.AccessToken == "" || rotated.RefreshToken == "" || rotated.RefreshToken == tokens.RefreshToken || rotated.Scope != "project:read" {
+		t.Fatalf("unexpected rotated tokens: %#v", rotated)
+	}
+
+	// 8. Revoke token family for public client (client_id only).
+	badRevoke := performFormRequest(router, http.MethodPost, "/api/v1/oauth/revoke", url.Values{
+		"client_id":     {regResp.ClientID},
+		"client_secret": {"wrong"},
+		"token":         {rotated.AccessToken},
+	})
+	if badRevoke.Code != http.StatusUnauthorized {
+		t.Fatalf("public client revoke with secret = %d, want 401", badRevoke.Code)
+	}
+
+	revokeRec := performFormRequest(router, http.MethodPost, "/api/v1/oauth/revoke", url.Values{
+		"client_id": {regResp.ClientID},
+		"token":     {rotated.AccessToken},
+	})
+	if revokeRec.Code != http.StatusOK {
+		t.Fatalf("public client /api/v1/oauth/revoke = %d %s", revokeRec.Code, revokeRec.Body.String())
+	}
+	if rec := callMCP(rotated.AccessToken, `{"jsonrpc":"2.0","id":4,"method":"ping"}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on revoked MCP Bearer token, got %d", rec.Code)
+	}
+	revokedRefresh := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {regResp.ClientID},
+		"refresh_token": {rotated.RefreshToken},
+	})
+	if revokedRefresh.Code != http.StatusBadRequest || jsonString(t, revokedRefresh.Body.Bytes(), "error") != "invalid_grant" {
+		t.Fatalf("refresh after revoke = %d %s, want 400 invalid_grant", revokedRefresh.Code, revokedRefresh.Body.String())
+	}
+}
+
+func TestMCPDynamicClientRegistrationConfidentialClientCompatibility(t *testing.T) {
+	db := authIntegrationDB(t)
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("PUBLIC_BASE_URL", "https://devops.example.com")
+	t.Setenv("SECRET_ENCRYPTION_KEY", "mcp-dcr-confidential-secret-32by")
+
+	user := model.User{
+		ID:       "usr_mcp_dcr_conf",
+		Email:    "mcp-dcr-conf@example.com",
+		Name:     "Confidential Tester",
+		Role:     authz.PlatformRoleUser,
+		Language: "en-US",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionPlain := "sess_mcp_dcr_conf_1"
+	if err := db.Create(&model.UserSession{
+		ID:        "ses_mcp_dcr_conf",
+		UserID:    user.ID,
+		TokenHash: transportapi.HashToken(sessionPlain),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	router := NewRouter(db, mustTestConfig(t))
+
+	// Omitted token_endpoint_auth_method defaults to client_secret_basic and issues one-time secret; explicit grant_types=["authorization_code"] omits refresh_token.
+	redirectURI := "https://confidential.example.com/oauth/callback"
+	regReq := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/register", strings.NewReader(`{"client_name":"Confidential App","redirect_uris":["`+redirectURI+`"],"grant_types":["authorization_code"],"scope":"project:read"}`))
+	regReq.Header.Set("Content-Type", "application/json")
+	regRec := httptest.NewRecorder()
+	router.ServeHTTP(regRec, regReq)
+	if regRec.Code != http.StatusCreated {
+		t.Fatalf("confidential registration = %d %s", regRec.Code, regRec.Body.String())
+	}
+	var regResp oauthDynamicClientRegistrationResponse
+	if err := json.Unmarshal(regRec.Body.Bytes(), &regResp); err != nil {
+		t.Fatal(err)
+	}
+	if regResp.TokenEndpointAuthMethod != "client_secret_basic" || regResp.ClientSecret == "" || regResp.ClientSecretExpiresAt == nil || *regResp.ClientSecretExpiresAt != 0 {
+		t.Fatalf("unexpected confidential registration response: %#v", regResp)
+	}
+
+	// Verify DB never stores plaintext client_secret.
+	var stored model.OAuthApplication
+	if err := db.First(&stored, "client_id = ?", regResp.ClientID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.ClientSecretHash == "" || stored.ClientSecretHash == regResp.ClientSecret {
+		t.Fatalf("stored secret hash invalid: %q", stored.ClientSecretHash)
+	}
+
+	verifier := strings.Repeat("c", 64)
+	sum := sha256.Sum256([]byte(verifier))
+	approveBody, _ := json.Marshal(oauthAuthorizationDecisionInput{
+		Approved:            true,
+		ClientID:            regResp.ClientID,
+		RedirectURI:         redirectURI,
+		Scope:               "project:read",
+		CodeChallenge:       base64.RawURLEncoding.EncodeToString(sum[:]),
+		CodeChallengeMethod: "S256",
+	})
+	consentRec := performCookieJSONRequest(router, http.MethodPost, "/api/v1/oauth/authorize", sessionPlain, string(approveBody))
+	if consentRec.Code != http.StatusOK {
+		t.Fatalf("authorize = %d %s", consentRec.Code, consentRec.Body.String())
+	}
+	parsedRedirect, _ := url.Parse(jsonString(t, consentRec.Body.Bytes(), "redirectUrl"))
+	code := parsedRedirect.Query().Get("code")
+
+	// Confidential client without secret MUST fail 401 invalid_client.
+	noSecretRec := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {regResp.ClientID},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {verifier},
+	})
+	if noSecretRec.Code != http.StatusUnauthorized || jsonString(t, noSecretRec.Body.Bytes(), "error") != "invalid_client" {
+		t.Fatalf("confidential client without secret = %d %s, want 401 invalid_client", noSecretRec.Code, noSecretRec.Body.String())
+	}
+
+	// Dynamic client_secret_basic client attempting client_secret_post MUST fail 401 invalid_client.
+	postMethodRec := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {regResp.ClientID},
+		"client_secret": {regResp.ClientSecret},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {verifier},
+	})
+	if postMethodRec.Code != http.StatusUnauthorized || jsonString(t, postMethodRec.Body.Bytes(), "error") != "invalid_client" {
+		t.Fatalf("client_secret_basic client using post secret = %d %s, want 401 invalid_client", postMethodRec.Code, postMethodRec.Body.String())
+	}
+
+	// Valid Basic auth succeeds, and because grant_types excluded refresh_token, RefreshToken is omitted.
+	basicReq := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/token", strings.NewReader(url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {verifier},
+	}.Encode()))
+	basicReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	basicReq.SetBasicAuth(regResp.ClientID, regResp.ClientSecret)
+	basicRec := httptest.NewRecorder()
+	router.ServeHTTP(basicRec, basicReq)
+	if basicRec.Code != http.StatusOK {
+		t.Fatalf("confidential Basic token exchange = %d %s", basicRec.Code, basicRec.Body.String())
+	}
+	var tokens oauthTokenResponse
+	if err := json.Unmarshal(basicRec.Body.Bytes(), &tokens); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.AccessToken == "" || tokens.RefreshToken != "" {
+		t.Fatalf("expected access_token only for authorization_code-only client, got %#v", tokens)
+	}
+}

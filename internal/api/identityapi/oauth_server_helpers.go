@@ -7,23 +7,30 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
 const (
-	oauthAuthorizationCodeTTL = 5 * time.Minute
-	oauthRefreshTokenTTL      = 365 * 24 * time.Hour
-	oauthCredentialRateLimit  = 30
-	oauthIPRateLimit          = 300
-	oauthRateLimitWindow      = time.Minute
+	oauthAuthorizationCodeTTL             = 5 * time.Minute
+	oauthRefreshTokenTTL                  = 365 * 24 * time.Hour
+	oauthCredentialRateLimit              = 30
+	oauthIPRateLimit                      = 300
+	oauthDynamicRegistrationIPRateLimit   = 20
+	oauthDynamicRegistrationBurstLimit    = 200
+	oauthDynamicRegistrationMaxBodyBytes  = 16 * 1024
+	oauthRateLimitWindow                  = time.Minute
+	oauthDefaultDynamicClientLifetimeDays = 30
 )
 
 var allowedOAuthAccessTokenLifetimeDays = map[int]bool{0: true, 1: true, 7: true, 30: true, 90: true}
@@ -51,9 +58,15 @@ func decodeStringList(value string) []string {
 func normalizeOAuthRedirectURIs(values []string) ([]string, bool) {
 	normalized := make([]string, 0, len(values))
 	seen := map[string]bool{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] || !validOAuthRedirectURI(value) {
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if !validManualOAuthRedirectURI(value) {
+			return nil, false
+		}
+		if seen[value] {
 			continue
 		}
 		seen[value] = true
@@ -63,9 +76,29 @@ func normalizeOAuthRedirectURIs(values []string) ([]string, bool) {
 	return normalized, len(normalized) > 0 && len(normalized) <= 10
 }
 
-func validOAuthRedirectURI(value string) bool {
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" || parsed.Fragment != "" || parsed.User != nil {
+func validateDynamicClientRedirectURIs(values []string) ([]string, bool) {
+	if len(values) == 0 || len(values) > 10 {
+		return nil, false
+	}
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" || value != raw || !validDynamicOAuthRedirectURI(value) {
+			return nil, false
+		}
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		normalized = append(normalized, value)
+	}
+	return normalized, len(normalized) > 0 && len(normalized) <= 10
+}
+
+func validManualOAuthRedirectURI(value string) bool {
+	parsed, hostname, ok := parseWellFormedOAuthURI(value)
+	if !ok {
 		return false
 	}
 	if parsed.Scheme == "https" {
@@ -74,8 +107,145 @@ func validOAuthRedirectURI(value string) bool {
 	if parsed.Scheme != "http" {
 		return false
 	}
+	return isLoopbackOAuthHost(hostname)
+}
+
+func validDynamicOAuthRedirectURI(value string) bool {
+	parsed, hostname, ok := parseWellFormedOAuthURI(value)
+	if !ok {
+		return false
+	}
+	if parsed.Scheme == "http" {
+		return isLoopbackOAuthHost(hostname)
+	}
+	if parsed.Scheme != "https" {
+		return false
+	}
+	if isLoopbackOAuthHost(hostname) {
+		return true
+	}
+	return isPublicOAuthHost(hostname)
+}
+
+func parseWellFormedOAuthURI(value string) (*url.URL, string, bool) {
+	if value == "" || len(value) > 2048 || strings.Contains(value, "*") || strings.Contains(value, "#") {
+		return nil, "", false
+	}
+	for _, r := range value {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return nil, "", false
+		}
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || parsed.Opaque != "" || parsed.Fragment != "" || parsed.User != nil {
+		return nil, "", false
+	}
+	if portText := parsed.Port(); portText != "" {
+		port, portErr := strconv.Atoi(portText)
+		if portErr != nil || port < 1 || port > 65535 {
+			return nil, "", false
+		}
+	}
 	hostname := strings.ToLower(parsed.Hostname())
+	if hostname == "" {
+		return nil, "", false
+	}
+	return parsed, hostname, true
+}
+
+func isLoopbackOAuthHost(hostname string) bool {
 	return hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
+}
+
+func validDynamicClientMetadataURI(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return true
+	}
+	parsed, hostname, ok := parseWellFormedOAuthURI(value)
+	if !ok || parsed.Scheme != "https" {
+		return false
+	}
+	return isPublicOAuthHost(hostname)
+}
+
+var reservedNonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001::/23"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+}
+
+func isPublicOAuthHost(hostname string) bool {
+	if addr, err := netip.ParseAddr(hostname); err == nil {
+		addr = addr.Unmap()
+		if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() ||
+			addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() ||
+			addr.IsMulticast() || addr.IsUnspecified() {
+			return false
+		}
+		for _, prefix := range reservedNonPublicPrefixes {
+			if prefix.Contains(addr) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(hostname) > 253 || strings.ContainsAny(hostname, ":%") ||
+		strings.HasPrefix(hostname, ".") || strings.HasSuffix(hostname, ".") {
+		return false
+	}
+	for _, reservedSuffix := range []string{".localhost", ".local", ".internal", ".home.arpa"} {
+		if strings.HasSuffix(hostname, reservedSuffix) {
+			return false
+		}
+	}
+	labels := strings.Split(hostname, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if !isValidDNSLabel(label) {
+			return false
+		}
+	}
+	return isValidPublicTLDLabel(labels[len(labels)-1])
+}
+
+func isValidDNSLabel(label string) bool {
+	if len(label) < 1 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+		return false
+	}
+	for i := 0; i < len(label); i++ {
+		ch := label[i]
+		if !(ch >= 'a' && ch <= 'z') && !(ch >= '0' && ch <= '9') && ch != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidPublicTLDLabel(tld string) bool {
+	if len(tld) < 2 {
+		return false
+	}
+	if strings.HasPrefix(tld, "xn--") {
+		return len(tld) > 4
+	}
+	for i := 0; i < len(tld); i++ {
+		if tld[i] < 'a' || tld[i] > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 func validOptionalHTTPURL(value string) bool {
@@ -87,9 +257,25 @@ func validOptionalHTTPURL(value string) bool {
 	return err == nil && parsed.Host != "" && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.User == nil
 }
 
-func exactRedirectURIAllowed(application model.OAuthApplication, redirectURI string) bool {
+func oauthApplicationRedirectURIAllowed(application model.OAuthApplication, redirectURI string) bool {
 	for _, allowed := range decodeStringList(application.RedirectURIs) {
 		if subtle.ConstantTimeCompare([]byte(allowed), []byte(redirectURI)) == 1 {
+			return true
+		}
+	}
+	if !application.IsPublicClient() {
+		return false
+	}
+	requestedParsed, requestedHost, ok := parseWellFormedOAuthURI(redirectURI)
+	if !ok || requestedParsed.Scheme != "http" || !isLoopbackOAuthHost(requestedHost) {
+		return false
+	}
+	for _, allowed := range decodeStringList(application.RedirectURIs) {
+		allowedParsed, allowedHost, allowedOK := parseWellFormedOAuthURI(allowed)
+		if !allowedOK || allowedParsed.Scheme != "http" || allowedHost != requestedHost {
+			continue
+		}
+		if allowedParsed.Path == requestedParsed.Path && allowedParsed.RawQuery == requestedParsed.RawQuery {
 			return true
 		}
 	}
@@ -120,7 +306,7 @@ func oauthScopeText(scopeText string) string {
 }
 
 func validPKCEChallenge(value string) bool {
-	if len(value) < 43 || len(value) > 128 {
+	if len(value) != 43 {
 		return false
 	}
 	for _, char := range value {
@@ -134,6 +320,13 @@ func validPKCEChallenge(value string) bool {
 func verifyPKCE(verifier, challenge string) bool {
 	if len(verifier) < 43 || len(verifier) > 128 {
 		return false
+	}
+	for i := 0; i < len(verifier); i++ {
+		ch := verifier[i]
+		if !(ch >= 'a' && ch <= 'z') && !(ch >= 'A' && ch <= 'Z') && !(ch >= '0' && ch <= '9') &&
+			ch != '-' && ch != '.' && ch != '_' && ch != '~' {
+			return false
+		}
 	}
 	sum := sha256.Sum256([]byte(verifier))
 	actual := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -170,6 +363,10 @@ func (h *Handlers) oauthCookieUser(ctx *gin.Context) (model.User, bool) {
 }
 
 func oauthError(ctx *gin.Context, status int, code, description string) {
+	telemetry.SetHTTPError(ctx, "oauth."+code, description)
+	if status == http.StatusUnauthorized && ctx.Writer.Header().Get("WWW-Authenticate") == "" {
+		ctx.Header("WWW-Authenticate", "Basic")
+	}
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("Pragma", "no-cache")
 	ctx.JSON(status, oauthProtocolErrorResponse{
@@ -195,12 +392,39 @@ func (h *Handlers) authenticateOAuthTokenClient(
 	formClientSecret string,
 	credential string,
 ) (oauthClientAuthentication, bool) {
-	clientID, clientSecret, basicOK := ctx.Request.BasicAuth()
-	if !basicOK {
-		clientID = strings.TrimSpace(formClientID)
-		clientSecret = formClientSecret
+	rawAuthHeader := strings.TrimSpace(ctx.GetHeader("Authorization"))
+	basicClientID, basicSecret, basicOK := ctx.Request.BasicAuth()
+	basicDecodeFailed := false
+	if basicOK {
+		unescapedID, idErr := url.QueryUnescape(basicClientID)
+		unescapedSecret, secretErr := url.QueryUnescape(basicSecret)
+		if idErr != nil || secretErr != nil {
+			basicDecodeFailed = true
+		} else {
+			basicClientID = unescapedID
+			basicSecret = unescapedSecret
+		}
+	}
+	trimmedFormClientID := strings.TrimSpace(formClientID)
+	clientID := trimmedFormClientID
+	clientSecret := formClientSecret
+	if basicOK {
+		clientID = strings.TrimSpace(basicClientID)
+		clientSecret = basicSecret
 	}
 	if !h.allowOAuthTokenClientAttempt(ctx, clientID, flow, credential) {
+		return oauthClientAuthentication{}, false
+	}
+	if (rawAuthHeader != "" && !basicOK) || basicDecodeFailed {
+		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+		return oauthClientAuthentication{}, false
+	}
+	if basicOK && formClientSecret != "" {
+		oauthError(ctx, http.StatusBadRequest, "invalid_request", "Multiple client authentication mechanisms must not be used")
+		return oauthClientAuthentication{}, false
+	}
+	if basicOK && trimmedFormClientID != "" && trimmedFormClientID != clientID {
+		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 		return oauthClientAuthentication{}, false
 	}
 	var application model.OAuthApplication
@@ -208,14 +432,44 @@ func (h *Handlers) authenticateOAuthTokenClient(
 		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 		return oauthClientAuthentication{}, false
 	}
-	clientSecretHash := hashToken(clientSecret)
-	if clientSecret == "" || subtle.ConstantTimeCompare([]byte(application.ClientSecretHash), []byte(clientSecretHash)) != 1 {
+
+	switch application.EffectiveTokenEndpointAuthMethod() {
+	case model.OAuthTokenEndpointAuthMethodNone:
+		if basicOK || clientSecret != "" || formClientSecret != "" || application.ClientSecretHash != "" {
+			oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+			return oauthClientAuthentication{}, false
+		}
+		return oauthClientAuthentication{
+			applicationID: application.ID,
+			clientID:      application.ClientID,
+			public:        true,
+		}, true
+	case model.OAuthTokenEndpointAuthMethodClientSecretBasic, model.OAuthTokenEndpointAuthMethodClientSecretPost:
+		if application.RegistrationSource == model.OAuthRegistrationSourceDynamic {
+			if application.EffectiveTokenEndpointAuthMethod() == model.OAuthTokenEndpointAuthMethodClientSecretBasic && !basicOK {
+				oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+				return oauthClientAuthentication{}, false
+			}
+			if application.EffectiveTokenEndpointAuthMethod() == model.OAuthTokenEndpointAuthMethodClientSecretPost && basicOK {
+				oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+				return oauthClientAuthentication{}, false
+			}
+		}
+		clientSecretHash := hashToken(clientSecret)
+		if clientSecret == "" || application.ClientSecretHash == "" ||
+			subtle.ConstantTimeCompare([]byte(application.ClientSecretHash), []byte(clientSecretHash)) != 1 {
+			oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+			return oauthClientAuthentication{}, false
+		}
+		return oauthClientAuthentication{
+			applicationID:    application.ID,
+			clientID:         application.ClientID,
+			clientSecretHash: clientSecretHash,
+		}, true
+	default:
 		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 		return oauthClientAuthentication{}, false
 	}
-	return oauthClientAuthentication{
-		applicationID: application.ID, clientID: application.ClientID, clientSecretHash: clientSecretHash,
-	}, true
 }
 
 func normalizeOAuthScope(scopeText string) string {
@@ -267,7 +521,7 @@ func (h *Handlers) allowOAuthClientAttemptForFlow(ctx *gin.Context, clientID str
 	sourceIP := h.oauthClientSourceIP(ctx)
 	attempts := []oauthRateLimitAttempt{
 		{subject: "oauth_client_ip:" + sourceIP, limit: ipLimit},
-		{subject: "oauth_client_id:" + hashToken(strings.TrimSpace(clientID)), limit: credentialLimit},
+		{subject: "oauth_client_ip_id:" + sourceIP + ":" + hashToken(strings.TrimSpace(clientID)), limit: credentialLimit},
 	}
 	for _, attempt := range attempts {
 		allowed, err := h.rateLimiter.Allow(ctx.Request.Context(), attempt.subject, attempt.limit, oauthRateLimitWindow)
@@ -311,9 +565,43 @@ func ipInCIDRs(ip net.IP, cidrs []string) bool {
 	return false
 }
 
+func (h *Handlers) allowOAuthDynamicRegistrationAttempt(ctx *gin.Context) bool {
+	if h.rateLimiter == nil {
+		h.rateLimiter = newRateLimiter()
+	}
+	ipLimit := oauthDynamicRegistrationIPRateLimit
+	burstLimit := oauthDynamicRegistrationBurstLimit
+	if h.mode == "development" {
+		ipLimit = developmentRateLimit
+		burstLimit = developmentRateLimit
+	}
+	sourceIP := h.oauthClientSourceIP(ctx)
+	for _, attempt := range []struct {
+		subject string
+		limit   int
+	}{
+		{subject: "oauth_register_ip:" + sourceIP, limit: ipLimit},
+		{subject: "oauth_register_global", limit: burstLimit},
+	} {
+		allowed, err := h.rateLimiter.Allow(ctx.Request.Context(), attempt.subject, attempt.limit, oauthRateLimitWindow)
+		if allowed {
+			continue
+		}
+		if err != nil && h.mode == "development" {
+			continue
+		}
+		writeOAuthRateLimitError(ctx, "temporarily_unavailable", "Dynamic client registration is temporarily rate limited")
+		return false
+	}
+	return true
+}
+
 func writeOAuthRateLimitError(ctx *gin.Context, code, description string) {
 	ctx.Header("Retry-After", "60")
 	oauthError(ctx, http.StatusTooManyRequests, code, description)
 }
 
-const errOAuthInvalidScope oauthSentinelError = "invalid OAuth scope"
+const (
+	errOAuthInvalidScope       oauthSentinelError = "invalid OAuth scope"
+	errOAuthUnauthorizedClient oauthSentinelError = "unauthorized OAuth client"
+)

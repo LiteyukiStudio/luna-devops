@@ -79,12 +79,18 @@ func TestExpiredAuthCleanupPreservesFutureRecordsInPostgres(t *testing.T) {
 	if err := db.Exec(`
 CREATE TABLE user_sessions (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
 CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
+CREATE TABLE oauth_applications (id text PRIMARY KEY, registration_source text NOT NULL, created_at timestamptz NOT NULL);
+CREATE TABLE oauth_grants (id text PRIMARY KEY, application_id text NOT NULL);
+CREATE TABLE access_tokens (id text PRIMARY KEY, oauth_application_id text NOT NULL);
+CREATE TABLE oauth_authorization_codes (id text PRIMARY KEY, application_id text NOT NULL, expires_at timestamptz NOT NULL);
+CREATE TABLE oauth_refresh_tokens (id text PRIMARY KEY, application_id text NOT NULL, expires_at timestamptz NOT NULL);
 `).Error; err != nil {
 		t.Fatalf("create auth retention tables: %v", err)
 	}
 
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	old := now.AddDate(0, 0, -40)
+	recent := now.Add(-2 * time.Hour)
 	future := now.Add(24 * time.Hour)
 	if err := db.Exec("INSERT INTO user_sessions(id, expires_at) VALUES (?, ?), (?, ?)",
 		"session_old", old, "session_future", future).Error; err != nil {
@@ -92,6 +98,26 @@ CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at time
 	}
 	if err := db.Exec("INSERT INTO email_registration_challenges(id, expires_at) VALUES (?, ?), (?, ?)",
 		"registration_old", old, "registration_future", future).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(
+		"INSERT INTO oauth_applications(id, registration_source, created_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)",
+		"oapp_dyn_abandoned", "dynamic", old,
+		"oapp_dyn_with_grant", "dynamic", old,
+		"oapp_dyn_recent", "dynamic", recent,
+		"oapp_manual", "manual", old,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO oauth_grants(id, application_id) VALUES (?, ?)", "ogrt_active", "oapp_dyn_with_grant").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO oauth_authorization_codes(id, application_id, expires_at) VALUES (?, ?, ?), (?, ?, ?)",
+		"ocod_old", "oapp_manual", old, "ocod_future", "oapp_manual", future).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO oauth_refresh_tokens(id, application_id, expires_at) VALUES (?, ?, ?), (?, ?, ?)",
+		"ortk_old", "oapp_manual", old, "ortk_future", "oapp_manual", future).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,21 +128,29 @@ CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at time
 	if err != nil {
 		t.Fatalf("preview auth cleanup: %v", err)
 	}
-	if len(preview) != 1 || preview[0].Matched != 2 || preview[0].Deleted != 0 {
-		t.Fatalf("auth preview = %#v, want 2 matched", preview)
+	if len(preview) != 1 || preview[0].Matched != 5 || preview[0].Deleted != 0 {
+		t.Fatalf("auth preview = %#v, want 5 matched", preview)
 	}
 	results, err := service.Cleanup(t.Context(), []string{DatasetExpiredAuthData}, start, end, now)
 	if err != nil {
 		t.Fatalf("cleanup auth data: %v", err)
 	}
-	if len(results) != 1 || results[0].Matched != 2 || results[0].Deleted != 2 {
-		t.Fatalf("auth cleanup = %#v, want 2 matched/deleted", results)
+	if len(results) != 1 || results[0].Matched != 5 || results[0].Deleted != 5 {
+		t.Fatalf("auth cleanup = %#v, want 5 matched/deleted", results)
 	}
 
 	assertRowCount(t, db, "user_sessions", 1)
 	assertRowCount(t, db, "email_registration_challenges", 1)
+	assertRowCount(t, db, "oauth_authorization_codes", 1)
+	assertRowCount(t, db, "oauth_refresh_tokens", 1)
+	assertRowCount(t, db, "oauth_applications", 3)
 	assertIDExists(t, db, "user_sessions", "session_future")
 	assertIDExists(t, db, "email_registration_challenges", "registration_future")
+	assertIDExists(t, db, "oauth_authorization_codes", "ocod_future")
+	assertIDExists(t, db, "oauth_refresh_tokens", "ortk_future")
+	assertIDExists(t, db, "oauth_applications", "oapp_dyn_with_grant")
+	assertIDExists(t, db, "oauth_applications", "oapp_dyn_recent")
+	assertIDExists(t, db, "oauth_applications", "oapp_manual")
 }
 
 func TestRunAutomaticReadsConfigsAndHonorsZeroInPostgres(t *testing.T) {

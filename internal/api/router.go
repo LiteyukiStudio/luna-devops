@@ -152,6 +152,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.DELETE("/oauth/grants/:grantId", domains.identity.RevokeMyOAuthGrant)
 		v1.GET("/oauth/authorize", domains.identity.GetOAuthAuthorizationRequest)
 		v1.POST("/oauth/authorize", domains.identity.DecideOAuthAuthorization)
+		v1.POST("/oauth/register", domains.identity.RegisterOAuthClient)
 		v1.POST("/oauth/token", domains.identity.ExchangeOAuthToken)
 		v1.POST("/oauth/revoke", domains.identity.RevokeOAuthToken)
 		v1.GET("/users", domains.identity.ListUsers)
@@ -530,7 +531,11 @@ func requiresCSRForiginCheck(ctx *gin.Context) bool {
 		return false
 	}
 	path := ctx.Request.URL.Path
-	if path == "/api/v1/mcp" || strings.HasPrefix(path, "/api/v1/git/webhooks/") {
+	if path == "/api/v1/mcp" ||
+		path == "/api/v1/oauth/register" ||
+		path == "/api/v1/oauth/token" ||
+		path == "/api/v1/oauth/revoke" ||
+		strings.HasPrefix(path, "/api/v1/git/webhooks/") {
 		return false
 	}
 	return true

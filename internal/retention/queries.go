@@ -140,6 +140,66 @@ DELETE FROM email_registration_challenges AS target
 USING victims
 WHERE target.id = victims.id`,
 			},
+			{
+				requireExpired: true,
+				countSQL: `SELECT COUNT(*) AS count
+FROM oauth_authorization_codes
+WHERE expires_at >= ? AND expires_at < ? AND expires_at <= ?`,
+				deleteSQL: `WITH victims AS (
+    SELECT id
+    FROM oauth_authorization_codes
+    WHERE expires_at >= ? AND expires_at < ? AND expires_at <= ?
+    ORDER BY expires_at, id
+    LIMIT 1000
+)
+DELETE FROM oauth_authorization_codes AS target
+USING victims
+WHERE target.id = victims.id`,
+			},
+			{
+				requireExpired: true,
+				countSQL: `SELECT COUNT(*) AS count
+FROM oauth_refresh_tokens
+WHERE expires_at >= ? AND expires_at < ? AND expires_at <= ?`,
+				deleteSQL: `WITH victims AS (
+    SELECT id
+    FROM oauth_refresh_tokens
+    WHERE expires_at >= ? AND expires_at < ? AND expires_at <= ?
+    ORDER BY expires_at, id
+    LIMIT 1000
+)
+DELETE FROM oauth_refresh_tokens AS target
+USING victims
+WHERE target.id = victims.id`,
+			},
+			{
+				requireExpired: true,
+				countSQL: `SELECT COUNT(*) AS count
+FROM oauth_applications AS app
+WHERE app.registration_source = 'dynamic'
+  AND app.created_at >= ? AND app.created_at < ?
+  AND app.created_at <= (?::timestamptz - interval '24 hours')
+  AND NOT EXISTS (SELECT 1 FROM oauth_grants AS g WHERE g.application_id = app.id)
+  AND NOT EXISTS (SELECT 1 FROM access_tokens AS t WHERE t.oauth_application_id = app.id)
+  AND NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens AS r WHERE r.application_id = app.id)
+  AND NOT EXISTS (SELECT 1 FROM oauth_authorization_codes AS c WHERE c.application_id = app.id)`,
+				deleteSQL: `WITH victims AS (
+    SELECT app.id
+    FROM oauth_applications AS app
+    WHERE app.registration_source = 'dynamic'
+      AND app.created_at >= ? AND app.created_at < ?
+      AND app.created_at <= (?::timestamptz - interval '24 hours')
+      AND NOT EXISTS (SELECT 1 FROM oauth_grants AS g WHERE g.application_id = app.id)
+      AND NOT EXISTS (SELECT 1 FROM access_tokens AS t WHERE t.oauth_application_id = app.id)
+      AND NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens AS r WHERE r.application_id = app.id)
+      AND NOT EXISTS (SELECT 1 FROM oauth_authorization_codes AS c WHERE c.application_id = app.id)
+    ORDER BY app.created_at, app.id
+    LIMIT 1000
+)
+DELETE FROM oauth_applications AS target
+USING victims
+WHERE target.id = victims.id`,
+			},
 		},
 	},
 }
