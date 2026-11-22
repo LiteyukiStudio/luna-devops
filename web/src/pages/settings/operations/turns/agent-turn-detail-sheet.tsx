@@ -34,12 +34,12 @@ import { api } from '@/api'
 import { toolDisplayName } from '@/components/common/ai-assistant/tool-display-name'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
-import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { AgentTokenUsageStrip } from '@/pages/settings/operations/agent-token-usage'
 import {
@@ -180,6 +180,7 @@ export function AgentTurnDetailSheet({
 
   const traceDetail: AgentObservabilityTraceDetail | undefined = detail.data
   const traceUsage = traceDetail && traceDetail.traceId === traceId ? traceDetail.usage : null
+  const detailPending = Boolean(traceId) && detail.isPending
   const owner = effectiveTurn?.user.name || effectiveTurn?.user.email || '—'
   const canExportDiagnostic = Boolean(effectiveTurn && detail.data)
   const exportUnavailableLabel = t('operationsDashboardPage.turnDetail.exportUnavailable')
@@ -257,7 +258,7 @@ export function AgentTurnDetailSheet({
       <SheetContent
         className={cn(
           'max-w-none gap-0 p-0 sm:max-w-none transition-[width]',
-          isFullscreen ? 'w-screen' : 'w-[min(96vw,92rem)]',
+          isFullscreen ? 'w-dvw' : 'w-[min(96vw,92rem)]',
         )}
         side="right"
       >
@@ -361,18 +362,52 @@ export function AgentTurnDetailSheet({
         <div className="min-h-0 flex-1 overflow-auto p-6">
           {open && (
             <div className="grid gap-4">
-              <div className="grid gap-3">
-                <AgentTokenUsageStrip usage={traceUsage} />
-                <MetricGroup className="grid-cols-2 @2xl/metric-group:grid-cols-5">
-                  <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.duration')} value={(detail.data?.durationMs ?? effectiveTurn?.durationMs ?? 0) > 0 ? formatDuration(detail.data?.durationMs ?? effectiveTurn?.durationMs ?? 0) : '—'} />
-                  <MetricItem icon={<Bot className="size-4" />} label={t('operationsDashboardPage.traceDetail.modelCalls')} value={detail.data ? formatNumber(llmCount) : '—'} />
-                  <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(detail.data ? toolNodeCount : effectiveTurn?.toolCallCount)} />
-                  <MetricItem icon={<Network className="size-4" />} label={t('operationsDashboardPage.turnDetail.spans')} value={formatNumber(detail.data?.spanCount)} />
-                  <MetricItem icon={<TriangleAlert className="size-4" />} label={t('operationsDashboardPage.turnDetail.errorSpans')} value={formatNumber(detail.data?.errorCount)} tone={(detail.data?.errorCount ?? 0) > 0 ? 'danger' : 'success'} />
-                </MetricGroup>
-                {flow.payloadBreakdown && <AgentPayloadBreakdownBar breakdown={flow.payloadBreakdown} />}
-                {flow.initialContext && <AgentInitialContextBanner context={flow.initialContext} />}
-              </div>
+              {!(Boolean(traceId) && detail.isError && !effectiveTurn) && (
+                <div
+                  aria-busy={detailPending || undefined}
+                  aria-label={detailPending ? t('common.loading') : undefined}
+                  className="grid gap-3"
+                  role={detailPending ? 'status' : undefined}
+                >
+                  {!detail.isError && <AgentTokenUsageStrip loading={detailPending} usage={traceUsage} />}
+                  <MetricGroup className="grid-cols-2 @2xl/metric-group:grid-cols-5">
+                    <MetricItem
+                      icon={<Clock3 className="size-4" />}
+                      label={t('operationsDashboardPage.duration')}
+                      value={detailPending && !effectiveTurn?.durationMs
+                        ? <Skeleton className="h-7 w-16" />
+                        : (detail.data?.durationMs ?? effectiveTurn?.durationMs ?? 0) > 0
+                            ? formatDuration(detail.data?.durationMs ?? effectiveTurn?.durationMs ?? 0)
+                            : '—'}
+                    />
+                    <MetricItem
+                      icon={<Bot className="size-4" />}
+                      label={t('operationsDashboardPage.traceDetail.modelCalls')}
+                      value={detailPending ? <Skeleton className="h-7 w-12" /> : detail.data ? formatNumber(llmCount) : '—'}
+                    />
+                    <MetricItem
+                      icon={<Wrench className="size-4" />}
+                      label={t('operationsDashboardPage.toolCalls')}
+                      value={detailPending && effectiveTurn?.toolCallCount === undefined
+                        ? <Skeleton className="h-7 w-12" />
+                        : formatNumber(detail.data ? toolNodeCount : effectiveTurn?.toolCallCount)}
+                    />
+                    <MetricItem
+                      icon={<Network className="size-4" />}
+                      label={t('operationsDashboardPage.turnDetail.spans')}
+                      value={detailPending ? <Skeleton className="h-7 w-12" /> : formatNumber(detail.data?.spanCount)}
+                    />
+                    <MetricItem
+                      icon={<TriangleAlert className="size-4" />}
+                      label={t('operationsDashboardPage.turnDetail.errorSpans')}
+                      tone={!detail.data ? 'neutral' : detail.data.errorCount > 0 ? 'danger' : 'success'}
+                      value={detailPending ? <Skeleton className="h-7 w-12" /> : formatNumber(detail.data?.errorCount)}
+                    />
+                  </MetricGroup>
+                  {flow.payloadBreakdown && <AgentPayloadBreakdownBar breakdown={flow.payloadBreakdown} />}
+                  {flow.initialContext && <AgentInitialContextBanner context={flow.initialContext} />}
+                </div>
+              )}
 
               {!traceId && (
                 <EmptyState
@@ -382,16 +417,13 @@ export function AgentTurnDetailSheet({
                 />
               )}
 
-              {traceId && detail.isLoading && <ToolViewportSkeleton />}
-
               {traceId && detail.isError && (
-                <div className="grid gap-3">
-                  <ErrorState
-                    description={t('operationsDashboardPage.turnDetail.loadFailedDescription')}
-                    title={t('operationsDashboardPage.turnDetail.loadFailed')}
-                  />
-                  <div><Button variant="outline" onClick={() => void detail.refetch()}>{t('common.retry')}</Button></div>
-                </div>
+                <ErrorState
+                  description={t('operationsDashboardPage.turnDetail.loadFailedDescription')}
+                  retrying={detail.isFetching}
+                  title={t('operationsDashboardPage.turnDetail.loadFailed')}
+                  onRetry={() => void detail.refetch()}
+                />
               )}
 
               {detail.data && viewMode === 'flow' && (
@@ -492,49 +524,59 @@ export function AgentTurnDetailSheet({
                         <span>{t('operationsDashboardPage.traceDetail.timeline')}</span>
                         <span className="text-right">{t('operationsDashboardPage.duration')}</span>
                       </div>
-                      <div className="divide-y divide-border/70">
-                        {waterfallRows.map(({ span, depth, hasChildren }) => (
-                          <div
-                            key={span.spanId}
-                            className={cn(
-                              'grid min-h-11 w-full grid-cols-[minmax(16rem,42%)_1fr_5.5rem] items-center gap-3 px-4 py-2 text-left transition-colors',
-                              activeSpanId === span.spanId ? 'bg-primary-subtle/75' : 'hover:bg-surface-subtle/50',
-                            )}
-                          >
-                            <span className="flex min-w-0 items-center gap-1" style={{ paddingLeft: `${Math.min(depth, 8) * 14}px` }}>
-                              {hasChildren
-                                ? (
-                                    <Button
-                                      aria-expanded={!collapsedSpanIds.has(span.spanId)}
-                                      aria-label={t(collapsedSpanIds.has(span.spanId) ? 'operationsDashboardPage.traceDetail.expandSpan' : 'operationsDashboardPage.traceDetail.collapseSpan', { name: span.name })}
-                                      className="size-7 shrink-0"
-                                      size="icon"
-                                      variant="ghost"
-                                      onClick={() => toggleWaterfallSpan(span.spanId)}
+                      {waterfallRows.length === 0
+                        ? (
+                            <EmptyState
+                              description={t('operationsDashboardPage.turnDetail.noMatchingStepsDescription')}
+                              title={t('operationsDashboardPage.turnDetail.noMatchingSteps')}
+                              variant="plain"
+                            />
+                          )
+                        : (
+                            <div className="divide-y divide-border/70">
+                              {waterfallRows.map(({ span, depth, hasChildren }) => (
+                                <div
+                                  key={span.spanId}
+                                  className={cn(
+                                    'grid min-h-11 w-full grid-cols-[minmax(16rem,42%)_1fr_5.5rem] items-center gap-3 px-4 py-2 text-left transition-colors',
+                                    activeSpanId === span.spanId ? 'bg-primary-subtle/75' : 'hover:bg-surface-subtle/50',
+                                  )}
+                                >
+                                  <span className="flex min-w-0 items-center gap-1" style={{ paddingLeft: `${Math.min(depth, 8) * 14}px` }}>
+                                    {hasChildren
+                                      ? (
+                                          <Button
+                                            aria-expanded={!collapsedSpanIds.has(span.spanId)}
+                                            aria-label={t(collapsedSpanIds.has(span.spanId) ? 'operationsDashboardPage.traceDetail.expandSpan' : 'operationsDashboardPage.traceDetail.collapseSpan', { name: span.name })}
+                                            className="size-7 shrink-0"
+                                            size="icon"
+                                            variant="ghost"
+                                            onClick={() => toggleWaterfallSpan(span.spanId)}
+                                          >
+                                            {collapsedSpanIds.has(span.spanId) ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                                          </Button>
+                                        )
+                                      : <span className="size-7 shrink-0" />}
+                                    <button
+                                      className="flex min-w-0 flex-1 items-center gap-2 rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                      type="button"
+                                      onClick={() => setSelectedSpanId(span.spanId)}
                                     >
-                                      {collapsedSpanIds.has(span.spanId) ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-                                    </Button>
-                                  )
-                                : <span className="size-7 shrink-0" />}
-                              <button
-                                className="flex min-w-0 flex-1 items-center gap-2 rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                type="button"
-                                onClick={() => setSelectedSpanId(span.spanId)}
-                              >
-                                <WaterfallSpanIcon span={span} />
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-medium">{span.name}</span>
-                                  <span className="block truncate text-xs text-muted-foreground">{span.serviceName}</span>
-                                </span>
-                              </button>
-                            </span>
-                            <span className="relative h-5 overflow-hidden rounded-control bg-surface-subtle">
-                              <span className={cn('absolute top-1 h-3 min-w-1 rounded-sm', waterfallBarClass(span))} style={waterfallBarStyle(span, totalTraceDuration)} />
-                            </span>
-                            <span className="text-right font-mono text-xs">{formatDuration(span.durationMs)}</span>
-                          </div>
-                        ))}
-                      </div>
+                                      <WaterfallSpanIcon span={span} />
+                                      <span className="min-w-0">
+                                        <span className="block truncate text-sm font-medium">{span.name}</span>
+                                        <span className="block truncate text-xs text-muted-foreground">{span.serviceName}</span>
+                                      </span>
+                                    </button>
+                                  </span>
+                                  <span className="relative h-5 overflow-hidden rounded-control bg-surface-subtle">
+                                    <span className={cn('absolute top-1 h-3 min-w-1 rounded-sm', waterfallBarClass(span))} style={waterfallBarStyle(span, totalTraceDuration)} />
+                                  </span>
+                                  <span className="text-right font-mono text-xs">{formatDuration(span.durationMs)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                     </div>
 
                     {activeSpan && (

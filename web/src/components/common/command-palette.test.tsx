@@ -416,6 +416,18 @@ describe('command palette', () => {
     await user.click(within(alert).getByRole('button', { name: 'Retry' }))
     await waitFor(() => expect(mocks.searchPlatformResources).toHaveBeenCalledTimes(2))
   })
+
+  it('shows a scope prompt instead of No matching results when selecting a server-only scope with an empty query', async () => {
+    const user = userEvent.setup()
+    renderPalette(['/dashboard'])
+
+    await user.click(screen.getByRole('button', { name: 'Quick jump…' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
+
+    await user.click(within(dialog).getByRole('button', { name: 'Domains' }))
+    expect(within(dialog).getByText('Type keywords to search in Domains')).toBeInTheDocument()
+    expect(within(dialog).queryByText('No matching results')).not.toBeInTheDocument()
+  })
 })
 
 const currentUser: CurrentUser = {

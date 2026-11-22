@@ -24,11 +24,17 @@ const repositoryBindingDefaults: RepositoryBindingDialogFormInput = {
   defaultBranch: 'main',
   gitAccountId: '',
   owner: '',
+  providerId: '',
   repo: '',
 }
 
 /** 代码仓库选择 + 就地绑定新仓库；绑定成功后自动选中。 */
-export function RepositoryBindingField({ applicationId, onRepositoryChange, projectId, repositoryBindings }: {
+export function RepositoryBindingField({
+  applicationId,
+  onRepositoryChange,
+  projectId,
+  repositoryBindings,
+}: {
   applicationId: string
   projectId: string
   repositoryBindings: RepositoryBinding[]
@@ -46,6 +52,7 @@ export function RepositoryBindingField({ applicationId, onRepositoryChange, proj
     defaultBranch: z.string().optional(),
     gitAccountId: z.string().min(1, t('repositories.gitAccountRequired')),
     owner: z.string().min(1, t('repositories.ownerRequired')),
+    providerId: z.string().optional(),
     repo: z.string().min(1, t('repositories.repoRequired')),
   }), [t])
   const bindingForm = useForm<RepositoryBindingDialogFormInput, undefined, RepositoryBindingDialogForm>({
@@ -123,12 +130,16 @@ export function RepositoryBindingField({ applicationId, onRepositoryChange, proj
                   className="w-full min-w-0 flex-1"
                   onBlur={field.onBlur}
                 >
-                  <SelectValue placeholder={t('common.select')} />
+                  <SelectValue
+                    placeholder={repositoryBindings.length === 0 ? t('common.noOptions') : t('common.select')}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {repositoryBindings.map(binding => (
-                    <SelectItem key={binding.id} value={binding.id}>{`${binding.owner}/${binding.repo}`}</SelectItem>
-                  ))}
+                  {repositoryBindings.length === 0
+                    ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                    : repositoryBindings.map(binding => (
+                        <SelectItem key={binding.id} value={binding.id}>{`${binding.owner}/${binding.repo}`}</SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
             )}
@@ -139,16 +150,26 @@ export function RepositoryBindingField({ applicationId, onRepositoryChange, proj
           </Button>
           <DeferredRepositoryBindingDialog
             accounts={gitAccounts.data ?? []}
+            accountsError={dialogOpen && gitAccounts.isError}
+            accountsLoading={dialogOpen && gitAccounts.isPending}
+            accountsRetrying={gitAccounts.isFetching}
             branchLimited={branches.data?.limited}
             branches={branches.data?.items ?? []}
+            branchesError={Boolean(dialogOpen && accountId && owner && repo) && branches.isError}
             branchSearch={branchSearch}
-            branchesLoading={branches.isFetching}
+            branchesLoading={Boolean(dialogOpen && accountId && owner && repo) && (branches.isPending || branches.isFetching)}
             form={bindingForm}
             open={dialogOpen}
             pending={createBinding.isPending}
             providers={gitProviders.data ?? []}
+            providersError={dialogOpen && gitProviders.isError}
+            providersLoading={dialogOpen && gitProviders.isPending}
+            providersRetrying={gitProviders.isFetching}
             onBranchSearchChange={setBranchSearch}
             onOpenChange={open => open ? setDialogOpen(true) : closeDialog()}
+            onRetryAccounts={() => void gitAccounts.refetch()}
+            onRetryBranches={() => void branches.refetch()}
+            onRetryProviders={() => void gitProviders.refetch()}
             onSubmit={values => createBinding.mutate(values)}
           />
         </div>

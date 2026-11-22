@@ -5,12 +5,14 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 
 // anonymousGitModeAccountId 是公开仓库匿名访问占位符，与后端 anonymousGitAccountID 对应。
 const anonymousGitModeAccountId = 'anonymous'
@@ -27,16 +29,32 @@ export interface GitRepositoryPickerValue {
 
 export function GitRepositoryPicker({
   accounts,
+  accountsError = false,
+  accountsLoading = false,
+  accountsRetrying = false,
   disabled,
   providers,
+  providersError = false,
+  providersLoading = false,
+  providersRetrying = false,
   value,
   onChange,
+  onRetryAccounts,
+  onRetryProviders,
 }: {
   accounts: GitAccount[]
+  accountsError?: boolean
+  accountsLoading?: boolean
+  accountsRetrying?: boolean
   disabled?: boolean
   providers: GitProvider[]
+  providersError?: boolean
+  providersLoading?: boolean
+  providersRetrying?: boolean
   value: GitRepositoryPickerValue
   onChange: (value: GitRepositoryPickerValue) => void
+  onRetryAccounts?: () => void
+  onRetryProviders?: () => void
 }) {
   const { t } = useTranslation()
   const isAnonymous = value.gitAccountId === anonymousGitModeAccountId
@@ -108,74 +126,122 @@ export function GitRepositoryPicker({
         ? (
             <Field hint={t('repositories.gitPlatformHint')} label={t('repositories.gitPlatform')} required>
               {fieldControl => (
-                <Select
-                  disabled={disabled}
-                  value={value.providerId || undefined}
-                  onValueChange={(nextProviderId) => {
-                    onChange({ ...value, providerId: nextProviderId, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
-                    setSearch('')
-                  }}
-                >
-                  <SelectTrigger {...fieldControl} className="w-full">
-                    <SelectValue placeholder={t('repositories.selectGitPlatform')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {enabledProviders.map(provider => (
-                      <SelectItem key={provider.id} value={provider.id}>
-                        {`${provider.name} (${provider.type})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex min-w-0 gap-2">
+                  <Select
+                    disabled={disabled || providersLoading || providersError || enabledProviders.length === 0}
+                    value={!providersLoading && !providersError && enabledProviders.some(provider => provider.id === value.providerId) ? (value.providerId ?? '') : ''}
+                    onValueChange={(nextProviderId) => {
+                      onChange({ ...value, providerId: nextProviderId, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
+                      setSearch('')
+                    }}
+                  >
+                    <SelectTrigger {...fieldControl} className="min-w-0 flex-1">
+                      <SelectValue
+                        placeholder={providersLoading
+                          ? t('common.loading')
+                          : providersError
+                            ? t('common.unavailable')
+                            : enabledProviders.length === 0
+                              ? t('common.noOptions')
+                              : t('repositories.selectGitPlatform')}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {enabledProviders.map(provider => (
+                        <SelectItem key={provider.id} value={provider.id}>
+                          {`${provider.name} (${provider.type})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {providersError && onRetryProviders && (
+                    <Button disabled={providersRetrying} size="sm" type="button" variant="outline" onClick={onRetryProviders}>
+                      {t('common.retry')}
+                    </Button>
+                  )}
+                </div>
               )}
             </Field>
           )
         : (
             <Field hint={t('repositories.gitAccountHint')} label={t('repositories.gitAccount')} required>
               {fieldControl => (
-                <Select
-                  disabled={disabled}
-                  value={value.gitAccountId || undefined}
-                  onValueChange={(nextAccountId) => {
-                    onChange({ gitAccountId: nextAccountId, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
-                    setSearch('')
-                  }}
-                >
-                  <SelectTrigger {...fieldControl} className="w-full">
-                    <SelectValue placeholder={t('repositories.selectAccount')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map(account => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {gitAccountLabel(account)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex min-w-0 gap-2">
+                  <Select
+                    disabled={disabled || accountsLoading || accountsError || accounts.length === 0}
+                    value={!accountsLoading && !accountsError && accounts.some(account => account.id === value.gitAccountId) ? value.gitAccountId : ''}
+                    onValueChange={(nextAccountId) => {
+                      onChange({ gitAccountId: nextAccountId, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
+                      setSearch('')
+                    }}
+                  >
+                    <SelectTrigger {...fieldControl} className="min-w-0 flex-1">
+                      <SelectValue
+                        placeholder={accountsLoading
+                          ? t('common.loading')
+                          : accountsError
+                            ? t('common.unavailable')
+                            : accounts.length === 0
+                              ? t('common.noOptions')
+                              : t('repositories.selectAccount')}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map(account => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {gitAccountLabel(account)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {accountsError && onRetryAccounts && (
+                    <Button disabled={accountsRetrying} size="sm" type="button" variant="outline" onClick={onRetryAccounts}>
+                      {t('common.retry')}
+                    </Button>
+                  )}
+                </div>
               )}
             </Field>
           )}
       <Field hint={t('repositories.repositorySearchHint')} label={t('repositories.repositorySearch')} required>
-        <div className="flex gap-2">
-          <Input
-            disabled={disabled || !value.gitAccountId || (isAnonymous && !value.providerId)}
-            placeholder={t('repositories.repositorySearchPlaceholder')}
-            value={search}
-            onChange={event => setSearch(event.target.value)}
-            onFocus={() => {
-              if (value.owner && value.repo && !search)
-                setSearch(`${value.owner}/${value.repo}`)
-            }}
-          />
-          <Button disabled={disabled || !value.gitAccountId || (isAnonymous && !value.providerId) || repositories.isFetching} type="button" variant="secondary" onClick={() => repositories.refetch()}>
-            <Search size={16} />
-            {t('repositories.search')}
-          </Button>
-        </div>
+        {fieldControl => (
+          <div className="flex gap-2">
+            <Input
+              {...fieldControl}
+              disabled={disabled || !value.gitAccountId || (isAnonymous && !value.providerId)}
+              placeholder={t('repositories.repositorySearchPlaceholder')}
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              onFocus={() => {
+                if (value.owner && value.repo && !search)
+                  setSearch(`${value.owner}/${value.repo}`)
+              }}
+            />
+            <Button disabled={disabled || !value.gitAccountId || (isAnonymous && !value.providerId) || repositories.isFetching} type="button" variant="secondary" onClick={() => repositories.refetch()}>
+              <Search size={16} />
+              {t('repositories.search')}
+            </Button>
+          </div>
+        )}
       </Field>
       {value.gitAccountId && (isAnonymous ? Boolean(value.providerId) : true) && (
         <div className="grid max-h-56 gap-2 overflow-y-auto rounded-container border border-border p-2">
-          {(repositories.data?.items ?? []).map(repository => (
+          {repositories.isPending && (
+            <div aria-label={t('common.loading')} className="grid gap-2 p-1" role="status">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          )}
+          {repositories.isError && (
+            <ErrorState
+              description={t('repositories.loadFailedDescription')}
+              retrying={repositories.isFetching}
+              title={t('repositories.loadFailedTitle')}
+              onRetry={() => void repositories.refetch()}
+            />
+          )}
+          {repositories.isSuccess && repositories.data.items.map(repository => (
             <button
               key={repository.fullName}
               className="rounded-md px-3 py-2 text-left hover:bg-muted"

@@ -5,6 +5,7 @@ import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
@@ -16,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import {
   ALL_NOTIFICATION_EVENTS,
@@ -35,35 +37,69 @@ import {
 
 export function NotificationRuleDialog({
   applications,
+  applicationsError = false,
   applicationsLoading,
+  applicationsRetrying = false,
   channels,
+  channelsError = false,
+  channelsLoading = false,
+  channelsRetrying = false,
   contextMode,
   deploymentTargets,
+  deploymentTargetsError = false,
   deploymentTargetsLoading,
+  deploymentTargetsRetrying = false,
   fixedProjectId,
   open,
   projects,
+  projectsError = false,
   projectsLoading,
+  projectsRetrying = false,
   rule,
   saving,
   templates,
+  templatesError = false,
+  templatesLoading = false,
+  templatesRetrying = false,
   onClose,
+  onRetryApplications,
+  onRetryChannels,
+  onRetryDeploymentTargets,
+  onRetryProjects,
+  onRetryTemplates,
   onSave,
 }: {
   applications?: Application[]
+  applicationsError?: boolean
   applicationsLoading?: boolean
+  applicationsRetrying?: boolean
   channels: NotificationChannel[]
+  channelsError?: boolean
+  channelsLoading?: boolean
+  channelsRetrying?: boolean
   contextMode: 'project' | 'global'
   deploymentTargets?: DeploymentTarget[]
+  deploymentTargetsError?: boolean
   deploymentTargetsLoading?: boolean
+  deploymentTargetsRetrying?: boolean
   fixedProjectId?: string
   open: boolean
   projects?: Project[]
+  projectsError?: boolean
   projectsLoading?: boolean
+  projectsRetrying?: boolean
   rule?: NotificationRule
   saving: boolean
   templates?: NotificationTemplate[]
+  templatesError?: boolean
+  templatesLoading?: boolean
+  templatesRetrying?: boolean
   onClose: () => void
+  onRetryApplications?: () => void
+  onRetryChannels?: () => void
+  onRetryDeploymentTargets?: () => void
+  onRetryProjects?: () => void
+  onRetryTemplates?: () => void
   onSave: (payload: NotificationRulePayload, ruleId?: string) => void
 }) {
   if (!open)
@@ -75,18 +111,35 @@ export function NotificationRuleDialog({
       <NotificationRuleDialogBody
         key={dialogKey}
         applications={applications}
+        applicationsError={applicationsError}
         applicationsLoading={applicationsLoading}
+        applicationsRetrying={applicationsRetrying}
         channels={channels}
+        channelsError={channelsError}
+        channelsLoading={channelsLoading}
+        channelsRetrying={channelsRetrying}
         contextMode={contextMode}
         deploymentTargets={deploymentTargets}
+        deploymentTargetsError={deploymentTargetsError}
         deploymentTargetsLoading={deploymentTargetsLoading}
+        deploymentTargetsRetrying={deploymentTargetsRetrying}
         fixedProjectId={fixedProjectId}
         projects={projects}
+        projectsError={projectsError}
         projectsLoading={projectsLoading}
+        projectsRetrying={projectsRetrying}
         rule={rule}
         saving={saving}
         templates={templates}
+        templatesError={templatesError}
+        templatesLoading={templatesLoading}
+        templatesRetrying={templatesRetrying}
         onClose={onClose}
+        onRetryApplications={onRetryApplications}
+        onRetryChannels={onRetryChannels}
+        onRetryDeploymentTargets={onRetryDeploymentTargets}
+        onRetryProjects={onRetryProjects}
+        onRetryTemplates={onRetryTemplates}
         onSave={onSave}
       />
     </Dialog>
@@ -95,33 +148,67 @@ export function NotificationRuleDialog({
 
 function NotificationRuleDialogBody({
   applications,
+  applicationsError,
   applicationsLoading,
+  applicationsRetrying,
   channels,
+  channelsError,
+  channelsLoading,
+  channelsRetrying,
   contextMode,
   deploymentTargets,
+  deploymentTargetsError,
   deploymentTargetsLoading,
+  deploymentTargetsRetrying,
   fixedProjectId,
   projects,
+  projectsError,
   projectsLoading,
+  projectsRetrying,
   rule,
   saving,
   templates,
+  templatesError,
+  templatesLoading,
+  templatesRetrying,
   onClose,
+  onRetryApplications,
+  onRetryChannels,
+  onRetryDeploymentTargets,
+  onRetryProjects,
+  onRetryTemplates,
   onSave,
 }: {
   applications?: Application[]
+  applicationsError: boolean
   applicationsLoading?: boolean
+  applicationsRetrying: boolean
   channels: NotificationChannel[]
+  channelsError: boolean
+  channelsLoading: boolean
+  channelsRetrying: boolean
   contextMode: 'project' | 'global'
   deploymentTargets?: DeploymentTarget[]
+  deploymentTargetsError: boolean
   deploymentTargetsLoading?: boolean
+  deploymentTargetsRetrying: boolean
   fixedProjectId?: string
   projects?: Project[]
+  projectsError: boolean
   projectsLoading?: boolean
+  projectsRetrying: boolean
   rule?: NotificationRule
   saving: boolean
   templates?: NotificationTemplate[]
+  templatesError: boolean
+  templatesLoading: boolean
+  templatesRetrying: boolean
   onClose: () => void
+  onRetryApplications?: () => void
+  onRetryChannels?: () => void
+  onRetryDeploymentTargets?: () => void
+  onRetryProjects?: () => void
+  onRetryTemplates?: () => void
   onSave: (payload: NotificationRulePayload, ruleId?: string) => void
 }) {
   const { t } = useTranslation()
@@ -186,11 +273,13 @@ function NotificationRuleDialogBody({
 
   const staleApplicationsExhausted = applications !== undefined
     && !applicationsLoading
+    && !applicationsError
     && values.applicationIds.length > 0
     && activeApplicationIds.length === 0
 
   const staleDeploymentTargetsExhausted = deploymentTargets !== undefined
     && !deploymentTargetsLoading
+    && !deploymentTargetsError
     && values.deploymentTargetIds.length > 0
     && activeDeploymentTargetIds.length === 0
 
@@ -206,18 +295,25 @@ function NotificationRuleDialogBody({
       || (values.deploymentTargetIds.length > 0 && Boolean(deploymentTargetsLoading))))
     || (contextMode === 'global' && values.scope === 'projects' && values.projectIds.length > 0 && Boolean(projectsLoading))
 
+  const filterOptionsError = (contextMode === 'project'
+    && ((values.applicationIds.length > 0 && applicationsError)
+      || (values.deploymentTargetIds.length > 0 && deploymentTargetsError)))
+    || (contextMode === 'global' && values.scope === 'projects' && projectsError)
+    || (contextMode === 'global' && Boolean(values.templateId) && templatesError)
+    || (channelsError && channels.length === 0)
+
   const advancedFilterValid = contextMode !== 'global' || parseNotificationRuleAdvancedFilter(values.filterText) !== null
   const payload = buildNotificationRulePayload({
-    availableApplications: applications,
+    availableApplications: applicationsError ? undefined : applications,
     availableChannels: channels,
-    availableDeploymentTargets: deploymentTargets,
-    availableProjects: projects,
-    availableTemplates: templates,
+    availableDeploymentTargets: deploymentTargetsError ? undefined : deploymentTargets,
+    availableProjects: projectsError ? undefined : projects,
+    availableTemplates: templatesError ? undefined : templates,
     contextMode,
     fixedProjectId,
     values,
   })
-  const canSave = payload !== null && !filterOptionsLoading
+  const canSave = payload !== null && !filterOptionsLoading && !filterOptionsError && !channelsLoading && !templatesLoading
 
   const toggleEvent = (eventType: string, checked: boolean) => {
     const next = checked
@@ -236,12 +332,14 @@ function NotificationRuleDialogBody({
   }
 
   const submit = form.handleSubmit((submittedValues) => {
+    if (filterOptionsLoading || filterOptionsError || channelsLoading || templatesLoading)
+      return
     const nextPayload = buildNotificationRulePayload({
-      availableApplications: applications,
+      availableApplications: applicationsError ? undefined : applications,
       availableChannels: channels,
-      availableDeploymentTargets: deploymentTargets,
-      availableProjects: projects,
-      availableTemplates: templates,
+      availableDeploymentTargets: deploymentTargetsError ? undefined : deploymentTargets,
+      availableProjects: projectsError ? undefined : projects,
+      availableTemplates: templatesError ? undefined : templates,
       contextMode,
       fixedProjectId,
       values: submittedValues,
@@ -267,22 +365,37 @@ function NotificationRuleDialogBody({
 
           {contextMode === 'global' && (
             <Field label={t('notificationsPage.template')}>
-              {fieldControl => (
-                <Select
-                  value={toSelectValue(resolvedTemplates.some(item => item.id === values.templateId) ? values.templateId : '')}
-                  onValueChange={next => form.setValue('templateId', fromSelectValue(next), { shouldDirty: true })}
-                >
-                  <SelectTrigger {...fieldControl} className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={EMPTY_SELECT_VALUE}>{t('notificationsPage.defaultTemplate')}</SelectItem>
-                    {resolvedTemplates.map(item => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              {(fieldControl) => {
+                const selectedTemplateMissing = (templatesLoading || templatesError)
+                  && Boolean(values.templateId)
+                  && !resolvedTemplates.some(item => item.id === values.templateId)
+                return (
+                  <div className="flex min-w-0 gap-2">
+                    <Select
+                      disabled={templatesLoading || templatesError}
+                      value={selectedTemplateMissing
+                        ? ''
+                        : toSelectValue(resolvedTemplates.some(item => item.id === values.templateId) ? values.templateId : '')}
+                      onValueChange={next => form.setValue('templateId', fromSelectValue(next), { shouldDirty: true })}
+                    >
+                      <SelectTrigger {...fieldControl} className="min-w-0 flex-1">
+                        <SelectValue placeholder={templatesLoading ? t('common.loading') : templatesError ? t('common.unavailable') : undefined} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={EMPTY_SELECT_VALUE}>{t('notificationsPage.defaultTemplate')}</SelectItem>
+                        {resolvedTemplates.map(item => (
+                          <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {templatesError && onRetryTemplates && (
+                      <Button disabled={templatesRetrying} size="sm" type="button" variant="outline" onClick={onRetryTemplates}>
+                        {t('common.retry')}
+                      </Button>
+                    )}
+                  </div>
+                )
+              }}
             </Field>
           )}
 
@@ -314,18 +427,31 @@ function NotificationRuleDialogBody({
                 ? (
                     <Field
                       className="md:col-span-2"
-                      error={!projectsLoading && selectedActiveProjectCount === 0 ? t('notificationsPage.ruleProjectsRequired') : undefined}
+                      error={!projectsLoading && !projectsError && selectedActiveProjectCount === 0 ? t('notificationsPage.ruleProjectsRequired') : undefined}
                       hint={t('notificationsPage.ruleProjectsHint')}
                       label={t('notificationsPage.ruleProjects')}
                       required
                     >
-                      <ProjectSpaceMultiSelect
-                        loading={projectsLoading}
-                        projects={resolvedProjects}
-                        pruneUnknownValues
-                        value={values.projectIds}
-                        onChange={projectIds => form.setValue('projectIds', projectIds, { shouldDirty: true, shouldValidate: true })}
-                      />
+                      {fieldControl => (
+                        <div className="flex min-w-0 gap-2">
+                          <ProjectSpaceMultiSelect
+                            {...fieldControl}
+                            className="min-w-0 flex-1"
+                            disabled={projectsError}
+                            error={projectsError}
+                            loading={projectsLoading}
+                            projects={resolvedProjects}
+                            pruneUnknownValues={projects !== undefined && !projectsLoading && !projectsError}
+                            value={values.projectIds}
+                            onChange={projectIds => form.setValue('projectIds', projectIds, { shouldDirty: true, shouldValidate: true })}
+                          />
+                          {projectsError && onRetryProjects && (
+                            <Button disabled={projectsRetrying} size="sm" type="button" variant="outline" onClick={onRetryProjects}>
+                              {t('common.retry')}
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </Field>
                   )
                 : (
@@ -342,42 +468,68 @@ function NotificationRuleDialogBody({
                 error={staleApplicationsExhausted ? t('errors.notification.rule_application_not_found') : undefined}
                 label={t('notificationsPage.filterApplications')}
               >
-                <SearchMultiSelect
-                  loading={applicationsLoading}
-                  options={applicationOptions}
-                  placeholder={t('notificationsPage.filterApplicationsPlaceholder')}
-                  pruneUnknownValues
-                  searchPlaceholder={t('notificationsPage.filterApplicationsSearch')}
-                  selectedLabel={selected => selected.map(item => item.label).join(', ')}
-                  value={values.applicationIds}
-                  onValueChange={(next) => {
-                    form.setValue('applicationIds', next, { shouldDirty: true, shouldValidate: true })
-                    if (deploymentTargets && next.length > 0) {
-                      const targetById = new Map(deploymentTargets.map(target => [target.id, target]))
-                      const prunedTargets = values.deploymentTargetIds.filter((id) => {
-                        const target = targetById.get(id)
-                        return !target || next.includes(target.applicationId)
-                      })
-                      if (prunedTargets.length !== values.deploymentTargetIds.length)
-                        form.setValue('deploymentTargetIds', prunedTargets, { shouldDirty: true, shouldValidate: true })
-                    }
-                  }}
-                />
+                {fieldControl => (
+                  <div className="flex min-w-0 gap-2">
+                    <SearchMultiSelect
+                      {...fieldControl}
+                      className="min-w-0 flex-1"
+                      disabled={applicationsError}
+                      error={applicationsError}
+                      loading={applicationsLoading}
+                      options={applicationOptions}
+                      placeholder={t('notificationsPage.filterApplicationsPlaceholder')}
+                      pruneUnknownValues={applications !== undefined && !applicationsLoading && !applicationsError}
+                      searchPlaceholder={t('notificationsPage.filterApplicationsSearch')}
+                      selectedLabel={selected => selected.map(item => item.label).join(', ')}
+                      value={values.applicationIds}
+                      onValueChange={(next) => {
+                        form.setValue('applicationIds', next, { shouldDirty: true, shouldValidate: true })
+                        if (deploymentTargets && !deploymentTargetsError && next.length > 0) {
+                          const targetById = new Map(deploymentTargets.map(target => [target.id, target]))
+                          const prunedTargets = values.deploymentTargetIds.filter((id) => {
+                            const target = targetById.get(id)
+                            return !target || next.includes(target.applicationId)
+                          })
+                          if (prunedTargets.length !== values.deploymentTargetIds.length)
+                            form.setValue('deploymentTargetIds', prunedTargets, { shouldDirty: true, shouldValidate: true })
+                        }
+                      }}
+                    />
+                    {applicationsError && onRetryApplications && (
+                      <Button disabled={applicationsRetrying} size="sm" type="button" variant="outline" onClick={onRetryApplications}>
+                        {t('common.retry')}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </Field>
               <Field
                 error={staleDeploymentTargetsExhausted ? t('errors.notification.rule_deployment_target_not_found') : undefined}
                 label={t('notificationsPage.filterDeploymentTargets')}
               >
-                <SearchMultiSelect
-                  loading={deploymentTargetsLoading}
-                  options={deploymentTargetOptions}
-                  placeholder={t('notificationsPage.filterDeploymentTargetsPlaceholder')}
-                  pruneUnknownValues
-                  searchPlaceholder={t('notificationsPage.filterDeploymentTargetsSearch')}
-                  selectedLabel={selected => selected.map(item => item.label).join(', ')}
-                  value={values.deploymentTargetIds}
-                  onValueChange={next => form.setValue('deploymentTargetIds', next, { shouldDirty: true, shouldValidate: true })}
-                />
+                {fieldControl => (
+                  <div className="flex min-w-0 gap-2">
+                    <SearchMultiSelect
+                      {...fieldControl}
+                      className="min-w-0 flex-1"
+                      disabled={deploymentTargetsError}
+                      error={deploymentTargetsError}
+                      loading={deploymentTargetsLoading}
+                      options={deploymentTargetOptions}
+                      placeholder={t('notificationsPage.filterDeploymentTargetsPlaceholder')}
+                      pruneUnknownValues={deploymentTargets !== undefined && !deploymentTargetsLoading && !deploymentTargetsError}
+                      searchPlaceholder={t('notificationsPage.filterDeploymentTargetsSearch')}
+                      selectedLabel={selected => selected.map(item => item.label).join(', ')}
+                      value={values.deploymentTargetIds}
+                      onValueChange={next => form.setValue('deploymentTargetIds', next, { shouldDirty: true, shouldValidate: true })}
+                    />
+                    {deploymentTargetsError && onRetryDeploymentTargets && (
+                      <Button disabled={deploymentTargetsRetrying} size="sm" type="button" variant="outline" onClick={onRetryDeploymentTargets}>
+                        {t('common.retry')}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </Field>
             </>
           )}
@@ -429,7 +581,20 @@ function NotificationRuleDialogBody({
 
         <Field label={t('notificationsPage.channels')} required>
           <div className="grid gap-2.5 rounded-container border border-border p-3">
-            {channels.length === 0 && (
+            {channelsLoading && channels.length === 0 && (
+              <div aria-label={t('common.loading')} className="grid gap-2" role="status">
+                <Skeleton className="h-6 w-full" />
+                <Skeleton className="h-6 w-4/5" />
+              </div>
+            )}
+            {!channelsLoading && channelsError && channels.length === 0 && (
+              <ErrorState
+                retrying={channelsRetrying}
+                title={t('errors.request.failed')}
+                onRetry={onRetryChannels}
+              />
+            )}
+            {!channelsLoading && !channelsError && channels.length === 0 && (
               <p className="text-sm text-muted-foreground">{t('notificationsPage.emptyChannels')}</p>
             )}
             {channels.map((channel) => {

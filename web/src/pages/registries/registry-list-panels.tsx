@@ -8,6 +8,7 @@ import { DataList } from '@/components/common/data-list'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 const IMAGE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
@@ -32,6 +33,7 @@ interface RegistriesPanelProps {
   loading: boolean
   toolbar?: ReactNode
   projectMap: Record<string, { name: string }>
+  projectsLoading?: boolean
   pagination: PageState<ArtifactRegistry>
   testing: boolean
   onCreate?: () => void
@@ -47,6 +49,7 @@ export function RegistriesPanel({
   items,
   loading,
   projectMap,
+  projectsLoading = false,
   pagination,
   testing,
   toolbar,
@@ -78,9 +81,9 @@ export function RegistriesPanel({
           header: t('common.scope'),
           width: 'normal',
           render: registry => (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <StatusBadge>{scopeLabel(registry.scope, t)}</StatusBadge>
-              {projectScopeBadges(registry.projectIds, projectMap)}
+              {projectScopeBadges(registry.projectIds, projectMap, projectsLoading)}
               {registry.isDefault && <StatusBadge>{t('common.default')}</StatusBadge>}
             </div>
           ),
@@ -176,12 +179,27 @@ interface CredentialsPanelProps {
   toolbar?: ReactNode
   pagination: PageState<CredentialWithRegistry>
   projectMap: Record<string, { name: string }>
+  projectsLoading?: boolean
+  registriesLoading?: boolean
   onCreate?: () => void
   onEdit: (credential: CredentialWithRegistry) => void
   onDelete: (credential: CredentialWithRegistry) => void
 }
 
-export function CredentialsPanel({ canManageGlobal = false, error, items, loading, pagination, projectMap, toolbar, onCreate, onDelete, onEdit }: CredentialsPanelProps) {
+export function CredentialsPanel({
+  canManageGlobal = false,
+  error,
+  items,
+  loading,
+  pagination,
+  projectMap,
+  projectsLoading = false,
+  registriesLoading = false,
+  toolbar,
+  onCreate,
+  onDelete,
+  onEdit,
+}: CredentialsPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -198,7 +216,14 @@ export function CredentialsPanel({ canManageGlobal = false, error, items, loadin
             </div>
           ),
         },
-        { key: 'registry', header: t('registries'), width: 'secondary', render: credential => credential.registryName },
+        {
+          key: 'registry',
+          header: t('registries'),
+          width: 'secondary',
+          render: credential => (!credential.registryName && registriesLoading)
+            ? <Skeleton className="h-4 w-24" />
+            : (credential.registryName || credential.registryId),
+        },
         {
           key: 'template',
           header: t('registriesPage.imageTemplate'),
@@ -217,9 +242,9 @@ export function CredentialsPanel({ canManageGlobal = false, error, items, loadin
           header: t('registriesPage.credentialAccessScope'),
           width: 'normal',
           render: credential => (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <StatusBadge>{scopeLabel(credential.scope, t)}</StatusBadge>
-              {projectScopeBadges(credential.projectIds, projectMap)}
+              {projectScopeBadges(credential.projectIds, projectMap, projectsLoading)}
             </div>
           ),
         },
@@ -293,11 +318,12 @@ interface ImagesPanelProps {
   loading: boolean
   toolbar?: ReactNode
   registries: ArtifactRegistry[]
+  registriesLoading?: boolean
   pagination: PageState<ContainerImage>
   onCreate?: () => void
 }
 
-export function ImagesPanel({ error, images, loading, registries, pagination, toolbar, onCreate }: ImagesPanelProps) {
+export function ImagesPanel({ error, images, loading, registries, registriesLoading = false, pagination, toolbar, onCreate }: ImagesPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -314,7 +340,17 @@ export function ImagesPanel({ error, images, loading, registries, pagination, to
             />
           ),
         },
-        { key: 'registry', header: t('registries'), width: 'secondary', render: image => registries.find(registry => registry.id === image.registryId)?.name ?? image.registryId },
+        {
+          key: 'registry',
+          header: t('registries'),
+          width: 'secondary',
+          render: (image) => {
+            const matchedRegistry = registries.find(registry => registry.id === image.registryId)
+            if (!matchedRegistry && registriesLoading)
+              return <Skeleton className="h-4 w-24" />
+            return matchedRegistry?.name ?? image.registryId
+          },
+        },
         { key: 'source', header: t('common.type'), mobile: 'hidden', width: 'status', render: image => <StatusBadge>{image.sourceType}</StatusBadge> },
         { key: 'scan', header: t('common.status'), width: 'status', render: image => <StatusValueBadge value={image.scanStatus} /> },
         { key: 'digest', header: t('registriesPage.digest'), mobile: 'hidden', width: 'compact', render: image => image.digest ? <CheckCircle2 aria-label={image.digest} className="size-4 text-success" /> : '-' },
@@ -364,8 +400,12 @@ function dataListPagination<T>(
   }
 }
 
-function projectScopeBadges(projectIds: string[] | undefined, projectMap: Record<string, { name: string }>) {
-  return (projectIds ?? []).map(projectId => (
+function projectScopeBadges(projectIds: string[] | undefined, projectMap: Record<string, { name: string }>, projectsLoading = false) {
+  if (!projectIds?.length)
+    return null
+  if (projectsLoading && projectIds.some(projectId => !projectMap[projectId]))
+    return <Skeleton className="h-4 w-24" />
+  return projectIds.map(projectId => (
     <StatusBadge key={projectId}>{projectMap[projectId]?.name ?? projectId}</StatusBadge>
   ))
 }

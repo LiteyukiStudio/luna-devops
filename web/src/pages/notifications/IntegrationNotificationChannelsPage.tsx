@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
@@ -37,6 +38,7 @@ export function IntegrationNotificationChannelsPage() {
   const [scopeFilter, setScopeFilter] = useState<'all' | 'project' | 'global'>('all')
   const [dialogState, setDialogState] = useState<{
     channel?: NotificationChannel
+    defaultProjectIds?: string[]
     mode: NotificationChannelMode
   } | null>(null)
   const [testTarget, setTestTarget] = useState<NotificationChannel | null>(null)
@@ -128,13 +130,19 @@ export function IntegrationNotificationChannelsPage() {
       header: t('notificationsPage.name'),
       width: 'primary',
       render: (item) => {
-        const sub = item.presetId
-          ? (presetNameById.get(item.presetId) ?? item.presetId)
-          : (item.adapterKind === 'smtp' ? t('notificationsPage.adapters.smtp') : t('notificationsPage.adapters.webhook'))
+        const presetLabel = item.presetId ? presetNameById.get(item.presetId) : undefined
         return (
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{item.name}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{sub}</p>
+            {item.presetId && !presetLabel && presets.isPending
+              ? <Skeleton className="mt-1 h-3.5 w-20" />
+              : (
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {item.presetId
+                      ? (presetLabel ?? item.presetId)
+                      : (item.adapterKind === 'smtp' ? t('notificationsPage.adapters.smtp') : t('notificationsPage.adapters.webhook'))}
+                  </p>
+                )}
           </div>
         )
       },
@@ -150,11 +158,15 @@ export function IntegrationNotificationChannelsPage() {
         const namedProjects = boundIds.map(id => projectNameById.get(id)).filter((name): name is string => Boolean(name))
         return (
           <div className="flex flex-wrap items-center gap-1.5">
-            <StatusBadge tone="neutral">
-              {namedProjects.length > 0
-                ? namedProjects.slice(0, 2).join(', ') + (boundIds.length > 2 ? ` +${boundIds.length - 2}` : '')
-                : t('notificationsPage.boundProjectsCount', { count: boundIds.length })}
-            </StatusBadge>
+            {boundIds.length > 0 && namedProjects.length === 0 && projects.isPending
+              ? <Skeleton className="h-5 w-24 rounded-control" />
+              : (
+                  <StatusBadge tone="neutral">
+                    {namedProjects.length > 0
+                      ? namedProjects.slice(0, 2).join(', ') + (boundIds.length > 2 ? ` +${boundIds.length - 2}` : '')
+                      : t('notificationsPage.boundProjectsCount', { count: boundIds.length })}
+                  </StatusBadge>
+                )}
             {item.canManage === false && (
               <span className="inline-flex items-center gap-1">
                 <StatusBadge tone="warning">{t('notificationsPage.sharedReadOnlyBadge')}</StatusBadge>
@@ -248,7 +260,7 @@ export function IntegrationNotificationChannelsPage() {
         )
       },
     },
-  ], [presetNameById, projectNameById, t])
+  ], [presetNameById, presets.isPending, projectNameById, projects.isPending, t])
 
   const total = channels.data?.total ?? 0
   const pagination = total > 0
@@ -280,7 +292,13 @@ export function IntegrationNotificationChannelsPage() {
           {t('common.refresh')}
         </Button>
         {canCreate && (
-          <Button type="button" onClick={() => setDialogState({ mode: 'preset' })}>
+          <Button
+            type="button"
+            onClick={() => setDialogState({
+              defaultProjectIds: projects.data?.[0] ? [projects.data[0].id] : undefined,
+              mode: 'preset',
+            })}
+          >
             <Plus className="size-4" />
             {t('notificationsPage.createChannel')}
           </Button>
@@ -309,7 +327,7 @@ export function IntegrationNotificationChannelsPage() {
             }
           : undefined}
         items={channels.data?.items ?? []}
-        loading={channels.isLoading}
+        loading={channels.isPending}
         pagination={pagination}
         rowKey={item => item.id}
         search={{
@@ -351,13 +369,21 @@ export function IntegrationNotificationChannelsPage() {
         allowGlobalScope={canViewAll}
         channel={dialogState?.channel}
         defaultMode={dialogState?.mode ?? 'preset'}
-        defaultProjectIds={projects.data?.[0] ? [projects.data[0].id] : []}
+        defaultProjectIds={dialogState?.defaultProjectIds ?? (projects.data?.[0] ? [projects.data[0].id] : [])}
         defaultScope="project"
         manageableProjects={projects.data ?? []}
         open={Boolean(dialogState)}
         presets={presets.data ?? []}
+        presetsError={presets.isError}
+        presetsLoading={presets.isPending}
+        presetsRetrying={presets.isFetching}
+        projectsError={projects.isError}
+        projectsLoading={projects.isPending}
+        projectsRetrying={projects.isFetching}
         saving={saveChannel.isPending}
         onClose={() => setDialogState(null)}
+        onRetryPresets={() => void presets.refetch()}
+        onRetryProjects={() => void projects.refetch()}
         onSave={(payload, channelId) => saveChannel.mutate({ channelId, payload })}
       />
 

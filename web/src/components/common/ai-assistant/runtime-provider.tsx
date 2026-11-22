@@ -49,8 +49,11 @@ import { useAIToolDebugMode } from './tool-debug-mode'
 
 export interface AIAssistantRuntimeProviderProps {
   capabilities?: AICapabilities
+  capabilitiesError?: Error | null
+  capabilitiesRetrying?: boolean
   children: ReactNode
   initiallyOpen?: boolean
+  onRetryCapabilities?: () => void
 }
 
 type RuntimeConversationSessionAction
@@ -66,7 +69,14 @@ function runtimeConversationSessionReducer(
     : aiConversationSessionReducer(state, action)
 }
 
-export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOpen = false }: AIAssistantRuntimeProviderProps) {
+export function AIAssistantRuntimeProvider({
+  capabilities,
+  capabilitiesError = null,
+  capabilitiesRetrying = false,
+  children,
+  initiallyOpen = false,
+  onRetryCapabilities,
+}: AIAssistantRuntimeProviderProps) {
   const { i18n, t } = useTranslation()
   const { user } = useSession()
   const queryClient = useQueryClient()
@@ -740,6 +750,8 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     <AIAssistantRuntimeContext
       value={{
         capabilities,
+        capabilitiesError,
+        capabilitiesRetrying,
         canCreateConversation: Boolean(newConversationModel),
         canDebugInternalTools,
         closeAssistant,
@@ -750,6 +762,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
           canceling: cancelingSelected,
           canCancel: Boolean(activeRunId && selectedConversationId),
           models: aiModels.data ?? [],
+          modelsLoading: Boolean(enabled && surfaceVisible && aiModels.isPending),
           modelAvailable: Boolean(selectedModel),
           modelChanging: modelChangingSelected,
           contextUsage: streamState.contextUsage,
@@ -782,6 +795,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
         creatingConversation: createConversation.isPending,
         enabled,
         executeAction,
+        onRetryCapabilities,
         open: enabled && open,
         openAssistant,
         readLastDispatchedActionRun,

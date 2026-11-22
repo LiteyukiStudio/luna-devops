@@ -12,7 +12,6 @@ import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
-import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -99,15 +98,6 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
     },
   }), [form])
 
-  if (variableSets.isError) {
-    return (
-      <ErrorState
-        description={t('buildsPage.variableSetLoadFailedDescription')}
-        title={t('buildsPage.variableSetLoadFailedTitle')}
-      />
-    )
-  }
-
   return (
     <Card className="min-w-0 overflow-hidden p-0">
       <div className="border-b border-border px-4 py-4">
@@ -129,7 +119,7 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
                 ? (
                     <>
                       <EditActionButton label={t('common.edit')} onClick={() => openDialog(item)} />
-                      <Button size="sm" variant="ghost" onClick={() => setSetToDelete(item)}>
+                      <Button size="sm" type="button" variant="ghost" onClick={() => setSetToDelete(item)}>
                         <Trash2 className="size-4" />
                         {t('common.delete')}
                       </Button>
@@ -140,7 +130,16 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
           ) },
         ]}
         emptyTitle={t('buildsPage.emptyVariableSets')}
+        error={variableSets.isError
+          ? {
+              description: t('buildsPage.variableSetLoadFailedDescription'),
+              onRetry: () => void variableSets.refetch(),
+              retrying: variableSets.isFetching,
+              title: t('buildsPage.variableSetLoadFailedTitle'),
+            }
+          : undefined}
         items={variableSets.data?.items ?? []}
+        loading={Boolean(projectId) && variableSets.isPending}
         pagination={{
           page: variableSets.data?.page ?? page,
           pageSize: variableSets.data?.pageSize ?? pageSize,

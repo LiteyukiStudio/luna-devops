@@ -19,6 +19,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
+import { SettingsSkeleton } from '@/components/common/loading-states'
 import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -271,8 +272,18 @@ export function AccountNotificationsPanel() {
     },
   ], [retryDelivery, t])
 
-  if (preferences.isError)
-    return <ErrorState title={t('accountPage.notifications.loadFailedTitle')} description={t('accountPage.notifications.loadFailedDescription')} />
+  if (preferences.isPending)
+    return <SettingsSkeleton />
+  if (preferences.isError) {
+    return (
+      <ErrorState
+        description={t('accountPage.notifications.loadFailedDescription')}
+        retrying={preferences.isFetching}
+        title={t('accountPage.notifications.loadFailedTitle')}
+        onRetry={() => void preferences.refetch()}
+      />
+    )
+  }
 
   return (
     <div className="grid gap-4">
@@ -330,44 +341,71 @@ export function AccountNotificationsPanel() {
       <Section
         title={<SectionTitle description={t('accountPage.notifications.channelsDescription')} title={t('accountPage.notifications.channelsTitle')} />}
         tools={(
-          <Button disabled={presets.isLoading || presets.isError || !presets.data?.length} size="sm" type="button" variant="outline" onClick={() => setChannelDialog({})}>
+          <Button disabled={presets.isPending || presets.isError || !presets.data?.length} size="sm" type="button" variant="outline" onClick={() => setChannelDialog({})}>
             <Plus className="size-4" />
             {t('accountPage.notifications.createChannel')}
           </Button>
         )}
         variant="bordered"
       >
-        {channels.isError
-          ? <ErrorState title={t('accountPage.notifications.channelsLoadFailedTitle')} description={t('accountPage.notifications.channelsLoadFailedDescription')} />
-          : (
-              <DataList
-                columns={channelColumns}
-                emptyDescription={t('accountPage.notifications.emptyChannelsDescription')}
-                emptyTitle={t('accountPage.notifications.emptyChannels')}
-                framed={false}
-                items={channels.data?.items ?? []}
-                loading={channels.isLoading}
-                pagination={pageFor(channels.data, channelPage, setChannelPage, t)}
-                rowKey={item => item.id}
-              />
-            )}
+        {(channels.data?.items.length ?? 0) > 0 && presets.isError && !channels.isError && (
+          <div className="mb-3">
+            <ErrorState
+              retrying={presets.isFetching}
+              title={t('errors.request.failed')}
+              onRetry={() => void presets.refetch()}
+            />
+          </div>
+        )}
+        <DataList
+          columns={channelColumns}
+          emptyDescription={t('accountPage.notifications.emptyChannelsDescription')}
+          emptyTitle={t('accountPage.notifications.emptyChannels')}
+          error={channels.isError
+            ? {
+                description: t('accountPage.notifications.channelsLoadFailedDescription'),
+                onRetry: () => {
+                  void channels.refetch()
+                  if (presets.isError)
+                    void presets.refetch()
+                },
+                retrying: channels.isFetching || presets.isFetching,
+                title: t('accountPage.notifications.channelsLoadFailedTitle'),
+              }
+            : !channels.isPending && (channels.data?.items.length ?? 0) === 0 && presets.isError
+                ? {
+                    onRetry: () => void presets.refetch(),
+                    retrying: presets.isFetching,
+                    title: t('errors.request.failed'),
+                  }
+                : undefined}
+          framed={false}
+          items={channels.data?.items ?? []}
+          loading={channels.isPending}
+          pagination={pageFor(channels.data, channelPage, setChannelPage, t)}
+          rowKey={item => item.id}
+        />
       </Section>
 
       <Section title={<SectionTitle description={t('accountPage.notifications.deliveriesDescription')} title={t('accountPage.notifications.deliveriesTitle')} />} variant="bordered">
-        {deliveries.isError
-          ? <ErrorState title={t('accountPage.notifications.deliveriesLoadFailedTitle')} description={t('accountPage.notifications.deliveriesLoadFailedDescription')} />
-          : (
-              <DataList
-                columns={deliveryColumns}
-                emptyTitle={t('accountPage.notifications.emptyDeliveries')}
-                framed={false}
-                items={deliveries.data?.items ?? []}
-                loading={deliveries.isLoading}
-                pagination={pageFor(deliveries.data, deliveryPage, setDeliveryPage, t)}
-                rowKey={item => item.id}
-                onRowClick={item => setSelectedDeliveryId(item.id)}
-              />
-            )}
+        <DataList
+          columns={deliveryColumns}
+          emptyTitle={t('accountPage.notifications.emptyDeliveries')}
+          error={deliveries.isError
+            ? {
+                description: t('accountPage.notifications.deliveriesLoadFailedDescription'),
+                onRetry: () => void deliveries.refetch(),
+                retrying: deliveries.isFetching,
+                title: t('accountPage.notifications.deliveriesLoadFailedTitle'),
+              }
+            : undefined}
+          framed={false}
+          items={deliveries.data?.items ?? []}
+          loading={deliveries.isPending}
+          pagination={pageFor(deliveries.data, deliveryPage, setDeliveryPage, t)}
+          rowKey={item => item.id}
+          onRowClick={item => setSelectedDeliveryId(item.id)}
+        />
       </Section>
 
       {channelDialog && (

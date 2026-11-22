@@ -11,7 +11,6 @@ import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -83,81 +82,84 @@ export function AIModelManagement() {
   return (
     <div className="mt-4 max-w-3xl">
       <div className="grid gap-4">
-        {models.isError
-          ? <ErrorState title={t('settings.ai.models.loadFailed')} />
-          : (
-              <DataList
-                columns={[
-                  {
-                    key: 'name',
-                    header: t('settings.ai.models.name'),
-                    render: model => (
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{model.name}</p>
-                        <p className="text-xs text-muted-foreground">{t('settings.ai.models.priceSummary', { input: model.inputCreditsPerMillion, output: model.outputCreditsPerMillion })}</p>
-                        <p className="text-xs text-muted-foreground">{t('settings.ai.models.capabilitySummary', { contextTokens: model.maxContextTokens, outputTokens: model.maxOutputTokens })}</p>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'status',
-                    header: t('common.status'),
-                    render: model => <StatusValueBadge labelKeyPrefix="settings.ai.models" value={model.enabled ? 'enabled' : 'disabled'} />,
-                  },
-                  {
-                    key: 'actions',
-                    header: t('common.actions'),
-                    mobileActions: 'inline',
-                    className: 'text-right whitespace-nowrap',
-                    width: 'actions',
-                    render: model => (
-                      <div className="flex justify-end">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button aria-label={t('settings.ai.models.actions', { name: model.name })} size="icon" type="button" variant="ghost">
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => startEdit(model)}>
-                              <Pencil className="size-4" />
-                              {t('settings.ai.models.edit')}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(model)}>
-                              <Trash2 className="size-4" />
-                              {t('settings.ai.models.delete')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    ),
-                  },
-                ]}
-                emptyActions={(
-                  <Button type="button" variant="outline" onClick={startCreate}>
-                    <Plus className="size-4" />
-                    {t('settings.ai.models.add')}
-                  </Button>
-                )}
-                emptyTitle={t('settings.ai.models.empty')}
-                items={models.data ?? []}
-                loading={models.isLoading}
-                rowKey={model => model.id}
-                title={(
-                  <span className="inline-flex items-center gap-1.5">
-                    {t('settings.ai.models.title')}
-                    <HelpTip label={t('settings.ai.models.title')}>{t('settings.ai.models.description')}</HelpTip>
-                  </span>
-                )}
-                toolbarActions={(
-                  <Button size="sm" type="button" variant="outline" onClick={startCreate}>
-                    <Plus className="size-4" />
-                    {t('settings.ai.models.add')}
-                  </Button>
-                )}
-              />
-            )}
+        <DataList
+          columns={[
+            {
+              key: 'name',
+              header: t('settings.ai.models.name'),
+              render: model => (
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{model.name}</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.ai.models.priceSummary', { input: model.inputCreditsPerMillion, output: model.outputCreditsPerMillion })}</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.ai.models.capabilitySummary', { contextTokens: model.maxContextTokens, outputTokens: model.maxOutputTokens })}</p>
+                </div>
+              ),
+            },
+            {
+              key: 'status',
+              header: t('common.status'),
+              render: model => <StatusValueBadge labelKeyPrefix="settings.ai.models" value={model.enabled ? 'enabled' : 'disabled'} />,
+            },
+            {
+              key: 'actions',
+              header: t('common.actions'),
+              mobileActions: 'inline',
+              className: 'text-right whitespace-nowrap',
+              width: 'actions',
+              render: model => (
+                <div className="flex justify-end">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button aria-label={t('settings.ai.models.actions', { name: model.name })} size="icon" type="button" variant="ghost">
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => startEdit(model)}>
+                        <Pencil className="size-4" />
+                        {t('settings.ai.models.edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(model)}>
+                        <Trash2 className="size-4" />
+                        {t('settings.ai.models.delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ),
+            },
+          ]}
+          emptyActions={(
+            <Button type="button" variant="outline" onClick={startCreate}>
+              <Plus className="size-4" />
+              {t('settings.ai.models.add')}
+            </Button>
+          )}
+          emptyTitle={t('settings.ai.models.empty')}
+          error={models.isError
+            ? {
+                onRetry: () => void models.refetch(),
+                retrying: models.isFetching,
+                title: t('settings.ai.models.loadFailed'),
+              }
+            : undefined}
+          items={models.data ?? []}
+          loading={models.isPending}
+          rowKey={model => model.id}
+          title={(
+            <span className="inline-flex items-center gap-1.5">
+              {t('settings.ai.models.title')}
+              <HelpTip label={t('settings.ai.models.title')}>{t('settings.ai.models.description')}</HelpTip>
+            </span>
+          )}
+          toolbarActions={(
+            <Button size="sm" type="button" variant="outline" onClick={startCreate}>
+              <Plus className="size-4" />
+              {t('settings.ai.models.add')}
+            </Button>
+          )}
+        />
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

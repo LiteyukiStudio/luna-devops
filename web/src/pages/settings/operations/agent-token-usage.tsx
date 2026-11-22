@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, BrainCircuit, CircleHelp, Database, DatabaseZap, Gauge } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -34,7 +35,7 @@ const detailUsageFields: TokenUsageField[] = [
 
 const cacheHitRateField: TokenUsageField = { key: 'cacheHitRate', labelKey: 'cacheHitRate', icon: Gauge, valueKind: 'percentage' }
 
-export function AgentTokenUsageStrip({ className, usage }: { className?: string, usage?: AgentTokenUsage | null }) {
+export function AgentTokenUsageStrip({ className, loading = false, usage }: { className?: string, loading?: boolean, usage?: AgentTokenUsage | null }) {
   const { t, i18n } = useTranslation()
   return (
     <div className="@container/agent-usage">
@@ -63,7 +64,9 @@ export function AgentTokenUsageStrip({ className, usage }: { className?: string,
                 </TooltipProvider>
               )}
             </dt>
-            <dd className="mt-1 font-mono text-base font-semibold tabular-nums">{formatAgentUsageValue(usage?.[key], i18n.language, valueKind)}</dd>
+            <dd className="mt-1 font-mono text-base font-semibold tabular-nums">
+              {loading ? <Skeleton className="mt-0.5 h-5 w-14" /> : formatAgentUsageValue(usage?.[key], i18n.language, valueKind)}
+            </dd>
           </div>
         ))}
       </dl>

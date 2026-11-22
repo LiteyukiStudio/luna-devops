@@ -1,4 +1,4 @@
-import type { BillingDisplay, BillingListPage } from './billing-list-cells'
+import type { BillingDisplay, BillingListError, BillingListPage } from './billing-list-cells'
 import type { BillingDeploymentSpend, Project } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { Rocket } from 'lucide-react'
@@ -11,16 +11,20 @@ import { ApplicationCell, DeploymentTargetCell, ProjectCell, SpendAmount } from 
 export function BillingDeploymentSpendList({
   billingDisplay,
   data,
+  error,
   loading,
   page,
   projectMap,
+  projectsLoading = false,
   onPageChange,
 }: {
   billingDisplay: BillingDisplay
   data?: BillingListPage<BillingDeploymentSpend>
+  error?: BillingListError
   loading: boolean
   page: number
   projectMap: Map<string, Project>
+  projectsLoading?: boolean
   onPageChange: (page: number) => void
 }) {
   const { t } = useTranslation()
@@ -29,7 +33,15 @@ export function BillingDeploymentSpendList({
       key: 'project',
       header: t('billingPage.project'),
       width: 'primary',
-      render: item => <ProjectCell project={projectMap.get(item.projectId)} fallbackName={item.projectName} fallbackIdentifier={item.projectIdentifier} unknownLabel={t('billingPage.unknownProject')} />,
+      render: item => (
+        <ProjectCell
+          fallbackIdentifier={item.projectIdentifier}
+          fallbackName={item.projectName}
+          loading={Boolean(item.projectId) && projectsLoading}
+          project={projectMap.get(item.projectId)}
+          unknownLabel={t('billingPage.unknownProject')}
+        />
+      ),
     },
     {
       key: 'application',
@@ -86,7 +98,7 @@ export function BillingDeploymentSpendList({
       width: 'number',
       render: item => <SpendAmount value={item.otherCredits} billingDisplay={billingDisplay} />,
     },
-  ], [billingDisplay, projectMap, t])
+  ], [billingDisplay, projectMap, projectsLoading, t])
 
   return (
     <DataList
@@ -94,8 +106,9 @@ export function BillingDeploymentSpendList({
       emptyDescription={t('billingPage.emptyDeploymentSpendDescription')}
       emptyTitle={t('billingPage.emptyDeploymentSpendTitle')}
       emptyIcon={<Rocket className="size-5" />}
+      error={error}
       items={data?.items ?? []}
-      loading={loading}
+      loading={loading && !error}
       pagination={{
         page: data?.page ?? page,
         pageInfoLabel: t('billingPage.deploymentSpendPageInfo', {

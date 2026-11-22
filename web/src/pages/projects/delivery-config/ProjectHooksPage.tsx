@@ -10,8 +10,6 @@ import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
-import { EmptyState } from '@/components/common/empty-state'
-import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -96,15 +94,6 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
     },
   }), [form])
 
-  if (hooks.isError) {
-    return (
-      <ErrorState
-        description={t('projectHooks.loadFailedDescription')}
-        title={t('projectHooks.loadFailedTitle')}
-      />
-    )
-  }
-
   return (
     <Card className="min-w-0 overflow-hidden p-0">
       <div className="border-b border-border px-4 py-4">
@@ -113,48 +102,54 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{t('projectHooks.description')}</p>
         </div>
       </div>
-      {(hooks.data?.items.length ?? 0) > 0
-        ? (
-            <DataList
-              framed={false}
-              columns={[
-                { key: 'name', header: t('common.name'), className: 'w-52 px-4 py-3 align-middle', render: item => <span className="block max-w-44 truncate" title={item.name}>{item.name}</span> },
-                { key: 'shell', header: t('projectHooks.shell'), className: 'w-24 px-4 py-3 align-middle', render: item => t(`projectHooks.shells.${item.shell}`) },
-                { key: 'failurePolicy', header: t('projectHooks.failurePolicy'), className: 'w-32 px-4 py-3 align-middle', render: item => t(`projectHooks.failurePolicies.${item.failurePolicy}`) },
-                { key: 'timeout', header: t('projectHooks.timeoutSeconds'), className: 'w-24 px-4 py-3 align-middle', render: item => `${item.timeoutSeconds}s` },
-                { key: 'actions', header: t('common.actions'), className: 'whitespace-nowrap text-right', render: item => (
-                  <div className="flex justify-end gap-2">
-                    <EditActionButton label={t('common.edit')} onClick={() => openDialog(item)} />
-                    <Button size="sm" variant="ghost" onClick={() => setHookToDelete(item)}>
-                      <Trash2 className="size-4" />
-                      {t('common.delete')}
-                    </Button>
-                  </div>
-                ) },
-              ]}
-              emptyTitle={t('projectHooks.emptyTitle')}
-              items={hooks.data?.items ?? []}
-              pagination={{
-                page: hooks.data?.page ?? page,
-                pageSize: hooks.data?.pageSize ?? pageSize,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-                total: hooks.data?.total ?? 0,
-                totalPages: hooks.data?.totalPages ?? 0,
-                pageInfoLabel: t('pagination.pageInfo', {
-                  page: hooks.data?.page ?? page,
-                  total: hooks.data?.total ?? 0,
-                  totalPages: hooks.data?.totalPages ?? 0,
-                }),
-                onPageChange: setPage,
-                onPageSizeChange: (nextPageSize) => {
-                  setPageSize(nextPageSize)
-                  setPage(1)
-                },
-              }}
-              rowKey={item => item.id}
-            />
-          )
-        : <EmptyState description={t('projectHooks.emptyDescription')} title={t('projectHooks.emptyTitle')} variant="plain" />}
+      <DataList
+        framed={false}
+        columns={[
+          { key: 'name', header: t('common.name'), className: 'w-52 px-4 py-3 align-middle', render: item => <span className="block max-w-44 truncate" title={item.name}>{item.name}</span> },
+          { key: 'shell', header: t('projectHooks.shell'), className: 'w-24 px-4 py-3 align-middle', render: item => t(`projectHooks.shells.${item.shell}`) },
+          { key: 'failurePolicy', header: t('projectHooks.failurePolicy'), className: 'w-32 px-4 py-3 align-middle', render: item => t(`projectHooks.failurePolicies.${item.failurePolicy}`) },
+          { key: 'timeout', header: t('projectHooks.timeoutSeconds'), className: 'w-24 px-4 py-3 align-middle', render: item => `${item.timeoutSeconds}s` },
+          { key: 'actions', header: t('common.actions'), className: 'whitespace-nowrap text-right', render: item => (
+            <div className="flex justify-end gap-2">
+              <EditActionButton label={t('common.edit')} onClick={() => openDialog(item)} />
+              <Button size="sm" type="button" variant="ghost" onClick={() => setHookToDelete(item)}>
+                <Trash2 className="size-4" />
+                {t('common.delete')}
+              </Button>
+            </div>
+          ) },
+        ]}
+        emptyDescription={t('projectHooks.emptyDescription')}
+        emptyTitle={t('projectHooks.emptyTitle')}
+        error={hooks.isError
+          ? {
+              description: t('projectHooks.loadFailedDescription'),
+              onRetry: () => void hooks.refetch(),
+              retrying: hooks.isFetching,
+              title: t('projectHooks.loadFailedTitle'),
+            }
+          : undefined}
+        items={hooks.data?.items ?? []}
+        loading={Boolean(projectId) && hooks.isPending}
+        pagination={{
+          page: hooks.data?.page ?? page,
+          pageSize: hooks.data?.pageSize ?? pageSize,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          total: hooks.data?.total ?? 0,
+          totalPages: hooks.data?.totalPages ?? 0,
+          pageInfoLabel: t('pagination.pageInfo', {
+            page: hooks.data?.page ?? page,
+            total: hooks.data?.total ?? 0,
+            totalPages: hooks.data?.totalPages ?? 0,
+          }),
+          onPageChange: setPage,
+          onPageSizeChange: (nextPageSize) => {
+            setPageSize(nextPageSize)
+            setPage(1)
+          },
+        }}
+        rowKey={item => item.id}
+      />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>

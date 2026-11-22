@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { UsageRing } from '@/components/common/usage-ring'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { isAIInputWithinLimit } from './input-size'
 
@@ -35,6 +36,7 @@ export interface AIAssistantComposerProps {
   /** 当前页面上下文提示，例如“应用：Demo / Web”（不含站点后缀）。 */
   contextLabel?: string
   models?: AIModelOption[]
+  modelsLoading?: boolean
   modelAvailable?: boolean
   modelChanging?: boolean
   modelSelectionDisabled?: boolean
@@ -166,6 +168,7 @@ export function AIAssistantComposer({
   contextKind = 'page',
   contextLabel,
   models = [],
+  modelsLoading = false,
   modelAvailable = true,
   modelChanging = false,
   modelSelectionDisabled = false,
@@ -199,6 +202,7 @@ export function AIAssistantComposer({
       : `${maxInputBytes} B`
   const submitEnabled = Boolean(normalizedDraft) && !busy && canSubmit && !inputTooLarge
   const selectedModel = models.find(model => model.id === selectedModelId)
+  const isModelInitialLoading = modelsLoading && models.length === 0
   const approvalModes = getApprovalModeCatalog(t)
   const selectedApprovalOption = approvalModes.find(option => option.value === approvalMode) ?? approvalModes[1]!
   const ApprovalIcon = selectedApprovalOption.icon
@@ -219,9 +223,9 @@ export function AIAssistantComposer({
   const modelValue = (
     <>
       <span className="truncate">
-        <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
+        <SelectValue placeholder={isModelInitialLoading ? t('common.loading') : t('aiAssistant.modelEmpty')} />
       </span>
-      {modelChanging
+      {modelChanging || isModelInitialLoading
         ? <LoaderCircle className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
         : <ChevronDown className="size-3 shrink-0 opacity-60" />}
     </>
@@ -320,7 +324,7 @@ export function AIAssistantComposer({
             <div className={cn('flex min-w-0 items-center justify-between gap-1.5', page ? 'px-1.5 pb-1 pointer-fine:px-2 pointer-fine:pb-1.5' : 'px-2 pb-1.5')}>
               <Select
                 disabled={modelSelectionDisabled || modelChanging || models.length === 0}
-                value={selectedModelId ?? ''}
+                value={selectedModel ? selectedModel.id : ''}
                 onValueChange={onModelChange}
               >
                 <SelectTrigger
@@ -461,7 +465,9 @@ export function AIAssistantComposer({
                             used={0}
                           />
                         )
-                      : <UnavailableContextUsageRing />}
+                      : isModelInitialLoading
+                        ? <Skeleton aria-hidden="true" className="size-4 shrink-0 rounded-full" />
+                        : <UnavailableContextUsageRing />}
                 </div>
 
                 {activeRun && !waitingInput
@@ -507,7 +513,7 @@ export function AIAssistantComposer({
             </div>
           </div>
         </div>
-        {!modelAvailable && <p className={cn('mt-1.5 px-1 text-danger', page ? 'text-sm' : 'text-xs')}>{t('aiAssistant.modelUnavailable')}</p>}
+        {!modelsLoading && !modelAvailable && <p className={cn('mt-1.5 px-1 text-danger', page ? 'text-sm' : 'text-xs')}>{t('aiAssistant.modelUnavailable')}</p>}
         <p
           className={cn(
             'mt-1.5 truncate px-1 text-center',

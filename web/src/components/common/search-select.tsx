@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Check, ChevronDown, Search, X } from 'lucide-react'
+import { Check, ChevronDown, LoaderCircle, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ interface SearchSelectCommonProps {
   'className'?: string
   'disabled'?: boolean
   'emptyLabel'?: string
+  'error'?: boolean
   'filterLocally'?: boolean
   'id'?: string
   'limited'?: boolean
@@ -61,6 +62,7 @@ export function SearchSelect({
   className,
   disabled,
   emptyLabel,
+  error,
   filterLocally,
   id,
   limited,
@@ -81,6 +83,8 @@ export function SearchSelect({
   const visibleOptions = useVisibleOptions(options, searchState.value, maxVisible, filterLocally ?? search === undefined)
   const selected = options.find(option => option.value === value)
   const isLimited = limited || visibleOptions.total > visibleOptions.items.length
+  const showTriggerLoading = Boolean(loading && !selected && (options.length === 0 || Boolean(value)))
+  const showTriggerError = Boolean(!loading && error && !selected && (options.length === 0 || Boolean(value)))
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -95,11 +99,25 @@ export function SearchSelect({
         placeholder={!selected}
         size={size}
       >
-        {selected?.icon}
-        <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? placeholder ?? t('common.select')}</span>
+        {showTriggerLoading
+          ? (
+              <>
+                <LoaderCircle aria-hidden="true" className={cn(size === 'sm' ? 'size-3.5' : 'size-4', 'shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none')} />
+                <span className="min-w-0 flex-1 truncate text-left">{t('common.loading')}</span>
+              </>
+            )
+          : showTriggerError
+            ? <span className="min-w-0 flex-1 truncate text-left">{t('common.unavailable')}</span>
+            : (
+                <>
+                  {selected?.icon}
+                  <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? placeholder ?? t('common.select')}</span>
+                </>
+              )}
       </SelectTriggerButton>
       <SearchOptionsContent
         emptyLabel={emptyLabel}
+        error={error}
         isLimited={isLimited}
         loading={loading}
         options={visibleOptions.items}
@@ -135,6 +153,7 @@ export function SearchMultiSelect({
   className,
   disabled,
   emptyLabel,
+  error,
   filterLocally,
   id,
   limited,
@@ -154,11 +173,15 @@ export function SearchMultiSelect({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const searchState = useSearchState(search, onSearchChange)
-  const visibleOptions = useVisibleOptions(options, searchState.value, maxVisible, filterLocally ?? search === undefined)
+  const filterLocallyResolved = filterLocally ?? search === undefined
+  const visibleOptions = useVisibleOptions(options, searchState.value, maxVisible, filterLocallyResolved)
   const selectedValues = useMemo(() => new Set(value), [value])
   const selectedOptions = useMemo(() => options.filter(option => selectedValues.has(option.value)), [options, selectedValues])
   const isLimited = limited || visibleOptions.total > visibleOptions.items.length
-  const shouldPruneUnknown = Boolean(pruneUnknownValues) && !loading && !limited
+  const isRemoteFiltered = !filterLocallyResolved && searchState.value.trim().length > 0
+  const shouldPruneUnknown = Boolean(pruneUnknownValues) && !loading && !error && !limited && !isRemoteFiltered
+  const showTriggerLoading = Boolean(loading && selectedOptions.length === 0 && (options.length === 0 || value.length > 0))
+  const showTriggerError = Boolean(!loading && error && selectedOptions.length === 0 && (options.length === 0 || value.length > 0))
   const label = selectedLabel?.(selectedOptions)
     ?? (selectedOptions.length === 1 ? selectedOptions[0]?.label : '')
     ?? ''
@@ -192,10 +215,20 @@ export function SearchMultiSelect({
         placeholder={selectedOptions.length === 0}
         size={size}
       >
-        <span className="min-w-0 flex-1 truncate text-left">{summary}</span>
+        {showTriggerLoading
+          ? (
+              <>
+                <LoaderCircle aria-hidden="true" className={cn(size === 'sm' ? 'size-3.5' : 'size-4', 'shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none')} />
+                <span className="min-w-0 flex-1 truncate text-left">{t('common.loading')}</span>
+              </>
+            )
+          : showTriggerError
+            ? <span className="min-w-0 flex-1 truncate text-left">{t('common.unavailable')}</span>
+            : <span className="min-w-0 flex-1 truncate text-left">{summary}</span>}
       </SelectTriggerButton>
       <SearchOptionsContent
         emptyLabel={emptyLabel}
+        error={error}
         footer={(selectedOptions.length > 0 || (shouldPruneUnknown && value.length > 0)) && (
           <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <span>{t('common.selectedCount', { count: selectedOptions.length })}</span>
@@ -274,8 +307,9 @@ function SelectTriggerButton({
   )
 }
 
-function SearchOptionsContent({ emptyLabel, footer, isLimited, loading, options, renderOption, search, searchPlaceholder, size, onSearchChange }: {
+function SearchOptionsContent({ emptyLabel, error, footer, isLimited, loading, options, renderOption, search, searchPlaceholder, size, onSearchChange }: {
   emptyLabel?: string
+  error?: boolean
   footer?: ReactNode
   isLimited: boolean
   loading?: boolean
@@ -304,8 +338,9 @@ function SearchOptionsContent({ emptyLabel, footer, isLimited, loading, options,
         />
       </div>
       <div className="min-h-0 overflow-y-auto overscroll-contain p-1" onWheel={event => event.stopPropagation()}>
-        {loading && <p className={cn('px-3 py-2 text-muted-foreground', size === 'sm' ? 'text-xs' : 'text-sm')}>{t('common.loading')}</p>}
-        {!loading && options.length === 0 && <p className={cn('px-3 py-2 text-muted-foreground', size === 'sm' ? 'text-xs' : 'text-sm')}>{emptyLabel ?? t('common.noOptions')}</p>}
+        {loading && <p className={cn('px-3 py-2 text-muted-foreground', size === 'sm' ? 'text-xs' : 'text-sm')} role="status">{t('common.loading')}</p>}
+        {!loading && error && options.length === 0 && <p className={cn('px-3 py-2 text-danger', size === 'sm' ? 'text-xs' : 'text-sm')} role="alert">{t('common.unavailable')}</p>}
+        {!loading && !error && options.length === 0 && <p className={cn('px-3 py-2 text-muted-foreground', size === 'sm' ? 'text-xs' : 'text-sm')}>{emptyLabel ?? t('common.noOptions')}</p>}
         {!loading && options.map(renderOption)}
         {!loading && isLimited && <p className="px-3 py-2 text-xs text-muted-foreground">{t('common.searchSelectLimited', { count: options.length })}</p>}
       </div>

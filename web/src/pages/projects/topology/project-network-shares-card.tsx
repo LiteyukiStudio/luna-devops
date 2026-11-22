@@ -11,6 +11,7 @@ import { api, ApiError } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EgressExceptionWarning } from '@/components/common/egress-exception-warning'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField } from '@/components/common/form-field'
 import { SearchSelect } from '@/components/common/search-select'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -122,7 +123,7 @@ function ShareList({ canManage, direction, projectId }: { canManage: boolean, di
         emptyTitle={t(`projectTopology.networkShares.${direction}.emptyTitle`)}
         error={shares.isError ? { title: t('projectTopology.networkShares.loadFailed'), onRetry: () => void shares.refetch(), retrying: shares.isFetching } : undefined}
         items={shares.data?.items ?? []}
-        loading={shares.isLoading}
+        loading={shares.isPending}
         pagination={{
           page: shares.data?.page ?? page,
           pageSize: shares.data?.pageSize ?? pageSize,
@@ -225,27 +226,38 @@ function ShareFormDialog({ onOpenChange, onSaved, projectId }: { onOpenChange: (
             <DialogDescription>{t('projectTopology.networkShares.createDescription')}</DialogDescription>
           </DialogHeader>
           <EgressExceptionWarning clusterId={selectedClusterId || undefined} context="share" projectId={projectId} />
-          <FormField error={errors.deploymentTargetId?.message} label={t('projectTopology.networkShares.target')} required>
-            <Controller
-              control={form.control}
-              name="deploymentTargetId"
-              render={({ field }) => (
-                <SearchSelect
-                  ariaLabel={t('projectTopology.networkShares.target')}
-                  loading={topology.isFetching}
-                  options={targetOptions}
-                  value={field.value}
-                  onValueChange={field.onChange}
+          {topology.isError
+            ? (
+                <ErrorState
+                  description={t('projectTopology.loadFailedDescription')}
+                  retrying={topology.isFetching}
+                  title={t('projectTopology.loadFailed')}
+                  onRetry={() => void topology.refetch()}
                 />
+              )
+            : (
+                <FormField error={errors.deploymentTargetId?.message} label={t('projectTopology.networkShares.target')} required>
+                  <Controller
+                    control={form.control}
+                    name="deploymentTargetId"
+                    render={({ field }) => (
+                      <SearchSelect
+                        ariaLabel={t('projectTopology.networkShares.target')}
+                        loading={topology.isPending}
+                        options={targetOptions}
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      />
+                    )}
+                  />
+                </FormField>
               )}
-            />
-          </FormField>
           <FormField error={errors.consumerProjectIdentifier?.message} hint={t('projectTopology.networkShares.consumerHint')} label={t('projectTopology.networkShares.consumer')} required>
             <Input className="font-mono" {...form.register('consumerProjectIdentifier')} />
           </FormField>
           <DialogFooter>
             <DialogClose asChild><Button disabled={save.isPending} type="button" variant="outline">{t('common.cancel')}</Button></DialogClose>
-            <Button disabled={save.isPending} type="submit">{t('projectTopology.networkShares.create')}</Button>
+            <Button disabled={save.isPending || topology.isPending || topology.isError} type="submit">{t('projectTopology.networkShares.create')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

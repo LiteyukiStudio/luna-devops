@@ -8,9 +8,11 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
+import { ErrorState } from '@/components/common/error-state'
 import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
+import { SettingsSkeleton } from '@/components/common/loading-states'
 import { PageChromeTools } from '@/components/common/page-chrome'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -108,193 +110,214 @@ export function AIAssistantSettingsPanel() {
   const agentConcurrentRuns = form.watch('agentConcurrentRuns')
   const webProxyEnabled = form.watch('webProxyEnabled')
   const observabilityEnabled = form.watch('observabilityEnabled')
+
   return (
     <>
-      <form className="grid max-w-3xl gap-5" onSubmit={form.handleSubmit(values => save.mutate(values))}>
-        <PageChromeTools>
-          <Button
-            disabled={!runtimeDefaultsReady || save.isPending}
-            type="button"
-            variant="outline"
-            onClick={restoreRuntimeDefaults}
-          >
-            <RotateCcw aria-hidden="true" className="size-4" />
-            {t('settings.restoreDefaults')}
-          </Button>
-        </PageChromeTools>
-        <Surface className="grid gap-5 p-6" variant="bordered">
-          <Controller
-            control={form.control}
-            name="enabled"
-            render={({ field }) => <ControlledCheckboxField description={t('settings.ai.enabledHint')} field={field}>{t('settings.ai.enabled')}</ControlledCheckboxField>}
-          />
-          <Field hint={t('settings.ai.accessModeHint')} label={t('settings.ai.accessMode')} required>
-            {fieldControl => (
-              <Controller
-                control={form.control}
-                name="accessMode"
-                render={({ field }) => (
-                  <Select name={field.name} value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all_authenticated">{t('settings.ai.accessModeAllAuthenticated')}</SelectItem>
-                      <SelectItem value="admins">{t('settings.ai.accessModeAdmins')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
+      {configs.isPending || definitions.isPending
+        ? <SettingsSkeleton />
+        : configs.isError || definitions.isError
+          ? (
+              <div className="max-w-3xl">
+                <ErrorState
+                  description={t('settings.configDefinitionsFailedDescription')}
+                  retrying={configs.isFetching || definitions.isFetching}
+                  title={t('settings.configDefinitionsFailedTitle')}
+                  onRetry={() => {
+                    if (configs.isError)
+                      void configs.refetch()
+                    if (definitions.isError)
+                      void definitions.refetch()
+                  }}
+                />
+              </div>
+            )
+          : (
+              <form className="grid max-w-3xl gap-5" onSubmit={form.handleSubmit(values => save.mutate(values))}>
+                <PageChromeTools>
+                  <Button
+                    disabled={!runtimeDefaultsReady || save.isPending}
+                    type="button"
+                    variant="outline"
+                    onClick={restoreRuntimeDefaults}
+                  >
+                    <RotateCcw aria-hidden="true" className="size-4" />
+                    {t('settings.restoreDefaults')}
+                  </Button>
+                </PageChromeTools>
+                <Surface className="grid gap-5 p-6" variant="bordered">
+                  <Controller
+                    control={form.control}
+                    name="enabled"
+                    render={({ field }) => <ControlledCheckboxField description={t('settings.ai.enabledHint')} field={field}>{t('settings.ai.enabled')}</ControlledCheckboxField>}
+                  />
+                  <Field hint={t('settings.ai.accessModeHint')} label={t('settings.ai.accessMode')} required>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="accessMode"
+                        render={({ field }) => (
+                          <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all_authenticated">{t('settings.ai.accessModeAllAuthenticated')}</SelectItem>
+                              <SelectItem value="admins">{t('settings.ai.accessModeAdmins')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
+                  </Field>
+                  <div className="grid gap-4 @xl/workspace:grid-cols-2">
+                    <Field error={errors.baseUrl?.message} hint={t('settings.ai.baseUrlHint')} label={t('settings.ai.baseUrl')} required>
+                      <Input autoComplete="url" placeholder="https://api.example.com/v1" {...form.register('baseUrl')} />
+                    </Field>
+                    <Field hint={t('settings.ai.providerCompatibilityHint')} label={t('settings.ai.providerCompatibility')} required>
+                      {fieldControl => (
+                        <Controller
+                          control={form.control}
+                          name="providerCompatibility"
+                          render={({ field }) => (
+                            <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                              <SelectTrigger {...fieldControl} ref={field.ref} aria-label={t('settings.ai.providerCompatibility')} className="w-full" onBlur={field.onBlur}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">{t('settings.ai.providerCompatibilityAuto')}</SelectItem>
+                                <SelectItem value="openai">{t('settings.ai.providerCompatibilityOpenAI')}</SelectItem>
+                                <SelectItem value="deepseek">{t('settings.ai.providerCompatibilityDeepSeek')}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      )}
+                    </Field>
+                  </div>
+                  <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
+                    <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
+                  </Field>
+                  <Field hint={t('settings.ai.promptCacheKeyModeHint')} label={t('settings.ai.promptCacheKeyMode')} required>
+                    {fieldControl => (
+                      <Controller
+                        control={form.control}
+                        name="promptCacheKeyMode"
+                        render={({ field }) => (
+                          <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger {...fieldControl} ref={field.ref} aria-label={t('settings.ai.promptCacheKeyMode')} className="w-full" onBlur={field.onBlur}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="auto">{t('settings.ai.promptCacheKeyModeAuto')}</SelectItem>
+                              <SelectItem value="enabled">{t('settings.ai.promptCacheKeyModeEnabled')}</SelectItem>
+                              <SelectItem value="disabled">{t('settings.ai.promptCacheKeyModeDisabled')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
+                  </Field>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="text-sm font-medium" id="channel-affinity-label">{t('settings.ai.channelAffinity')}</span>
+                      <HelpTip id="channel-affinity-description" label={t('settings.ai.channelAffinity')}>
+                        {t('settings.ai.channelAffinityDescription')}
+                        {' '}
+                        {t('settings.ai.channelAffinityTip')}
+                      </HelpTip>
+                    </div>
+                    <Controller
+                      control={form.control}
+                      name="channelAffinityEnabled"
+                      render={({ field }) => (
+                        <Switch
+                          aria-describedby="channel-affinity-description"
+                          aria-labelledby="channel-affinity-label"
+                          checked={field.value}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          onCheckedChange={field.onChange}
+                        />
+                      )}
+                    />
+                  </div>
+                  <ProgressiveSection
+                    description={t('settings.ai.runtimeDescription')}
+                    storageKey="luna-settings-ai-runtime-open"
+                    summary={t('settings.ai.runtimeSummary', {
+                      providerTimeout: providerTimeoutSeconds,
+                      retries: maxRequestRetries,
+                      runTimeout: runTimeoutSeconds,
+                      concurrency: agentConcurrentRuns,
+                    })}
+                    title={t('settings.ai.runtimeTitle')}
+                  >
+                    <div className="grid gap-4 @xl/workspace:grid-cols-2">
+                      <Field error={errors.providerTimeoutSeconds?.message} hint={t('settings.ai.providerTimeoutHint')} label={t('settings.ai.providerTimeout')}>
+                        <Input max={900} min={1} step={1} type="number" {...form.register('providerTimeoutSeconds', { valueAsNumber: true })} />
+                      </Field>
+                      <Field error={errors.maxRequestRetries?.message} hint={t('settings.ai.maxRequestRetriesHint')} label={t('settings.ai.maxRequestRetries')}>
+                        <Input max={10} min={0} step={1} type="number" {...form.register('maxRequestRetries', { valueAsNumber: true })} />
+                      </Field>
+                      <Field error={errors.runTimeoutSeconds?.message} hint={t('settings.ai.runTimeoutHint')} label={t('settings.ai.runTimeout')}>
+                        <Input max={7200} min={30} step={1} type="number" {...form.register('runTimeoutSeconds', { valueAsNumber: true })} />
+                      </Field>
+                      <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
+                        <Input max={100} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
+                      </Field>
+                    </div>
+                  </ProgressiveSection>
+                  <ProgressiveSection
+                    description={t('settings.ai.observabilityDescription')}
+                    storageKey="luna-settings-ai-observability-open"
+                    summary={observabilityEnabled ? t('settings.ai.observabilitySummaryEnabled') : t('settings.ai.observabilitySummaryDisabled')}
+                    title={t('settings.ai.observabilityTitle')}
+                  >
+                    <Controller
+                      control={form.control}
+                      name="observabilityEnabled"
+                      render={({ field }) => <ControlledCheckboxField description={t('settings.ai.observabilityEnabledHint')} field={field}>{t('settings.ai.observabilityEnabled')}</ControlledCheckboxField>}
+                    />
+                    <ObservabilitySourceFields form={form} source="prometheus" />
+                    <ObservabilitySourceFields form={form} source="loki" tenant />
+                    <ObservabilitySourceFields form={form} source="tempo" tenant />
+                    <p className="text-xs text-muted-foreground">{t('settings.ai.observabilitySaveWarning')}</p>
+                  </ProgressiveSection>
+                  <ProgressiveSection
+                    description={t('settings.ai.webProxyDescription')}
+                    storageKey="luna-settings-ai-web-proxy-open"
+                    summary={webProxyEnabled ? t('settings.ai.webProxySummaryEnabled') : t('settings.ai.webProxySummaryDirect')}
+                    title={t('settings.ai.webProxyTitle')}
+                  >
+                    <div className="grid gap-4">
+                      <Controller
+                        control={form.control}
+                        name="webProxyEnabled"
+                        render={({ field }) => <ControlledCheckboxField description={t('settings.ai.webProxyEnabledHint')} field={field}>{t('settings.ai.webProxyEnabled')}</ControlledCheckboxField>}
+                      />
+                      <Field error={errors.webProxyPool?.message} hint={t('settings.ai.webProxyPoolHint')} label={t('settings.ai.webProxyPool')}>
+                        <Textarea
+                          autoComplete="off"
+                          className="min-h-28 font-mono text-sm"
+                          placeholder={form.getValues('webProxyPoolConfigured') ? t('settings.ai.secretUnchanged') : 'http://user:password@proxy.example.com:888'}
+                          {...form.register('webProxyPool')}
+                        />
+                      </Field>
+                    </div>
+                  </ProgressiveSection>
+                  <p className="text-sm leading-6 text-muted-foreground">{t('settings.ai.securitySummary')}</p>
+                </Surface>
+                <FloatingFormSaveBar
+                  open={form.formState.isDirty}
+                  pending={save.isPending}
+                  saveDisabled={!form.formState.isValid}
+                  saveLabel={t('settings.saveConfig')}
+                  tone={form.formState.isValid ? 'primary' : 'danger'}
+                  onDiscard={() => form.reset(configs.data ? aiSettingsFormValues(configs.data) : defaults)}
+                />
+              </form>
             )}
-          </Field>
-          <div className="grid gap-4 @xl/workspace:grid-cols-2">
-            <Field error={errors.baseUrl?.message} hint={t('settings.ai.baseUrlHint')} label={t('settings.ai.baseUrl')} required>
-              <Input autoComplete="url" placeholder="https://api.example.com/v1" {...form.register('baseUrl')} />
-            </Field>
-            <Field hint={t('settings.ai.providerCompatibilityHint')} label={t('settings.ai.providerCompatibility')} required>
-              {fieldControl => (
-                <Controller
-                  control={form.control}
-                  name="providerCompatibility"
-                  render={({ field }) => (
-                    <Select name={field.name} value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger {...fieldControl} ref={field.ref} aria-label={t('settings.ai.providerCompatibility')} className="w-full" onBlur={field.onBlur}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="auto">{t('settings.ai.providerCompatibilityAuto')}</SelectItem>
-                        <SelectItem value="openai">{t('settings.ai.providerCompatibilityOpenAI')}</SelectItem>
-                        <SelectItem value="deepseek">{t('settings.ai.providerCompatibilityDeepSeek')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              )}
-            </Field>
-          </div>
-          <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
-            <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
-          </Field>
-          <Field hint={t('settings.ai.promptCacheKeyModeHint')} label={t('settings.ai.promptCacheKeyMode')} required>
-            {fieldControl => (
-              <Controller
-                control={form.control}
-                name="promptCacheKeyMode"
-                render={({ field }) => (
-                  <Select name={field.name} value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger {...fieldControl} ref={field.ref} aria-label={t('settings.ai.promptCacheKeyMode')} className="w-full" onBlur={field.onBlur}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">{t('settings.ai.promptCacheKeyModeAuto')}</SelectItem>
-                      <SelectItem value="enabled">{t('settings.ai.promptCacheKeyModeEnabled')}</SelectItem>
-                      <SelectItem value="disabled">{t('settings.ai.promptCacheKeyModeDisabled')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            )}
-          </Field>
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="text-sm font-medium" id="channel-affinity-label">{t('settings.ai.channelAffinity')}</span>
-              <HelpTip id="channel-affinity-description" label={t('settings.ai.channelAffinity')}>
-                {t('settings.ai.channelAffinityDescription')}
-                {' '}
-                {t('settings.ai.channelAffinityTip')}
-              </HelpTip>
-            </div>
-            <Controller
-              control={form.control}
-              name="channelAffinityEnabled"
-              render={({ field }) => (
-                <Switch
-                  aria-describedby="channel-affinity-description"
-                  aria-labelledby="channel-affinity-label"
-                  checked={field.value}
-                  name={field.name}
-                  ref={field.ref}
-                  onBlur={field.onBlur}
-                  onCheckedChange={field.onChange}
-                />
-              )}
-            />
-          </div>
-          <ProgressiveSection
-            description={t('settings.ai.runtimeDescription')}
-            storageKey="luna-settings-ai-runtime-open"
-            summary={t('settings.ai.runtimeSummary', {
-              providerTimeout: providerTimeoutSeconds,
-              retries: maxRequestRetries,
-              runTimeout: runTimeoutSeconds,
-              concurrency: agentConcurrentRuns,
-            })}
-            title={t('settings.ai.runtimeTitle')}
-          >
-            <div className="grid gap-4 @xl/workspace:grid-cols-2">
-              <Field error={errors.providerTimeoutSeconds?.message} hint={t('settings.ai.providerTimeoutHint')} label={t('settings.ai.providerTimeout')}>
-                <Input max={900} min={1} step={1} type="number" {...form.register('providerTimeoutSeconds', { valueAsNumber: true })} />
-              </Field>
-              <Field error={errors.maxRequestRetries?.message} hint={t('settings.ai.maxRequestRetriesHint')} label={t('settings.ai.maxRequestRetries')}>
-                <Input max={10} min={0} step={1} type="number" {...form.register('maxRequestRetries', { valueAsNumber: true })} />
-              </Field>
-              <Field error={errors.runTimeoutSeconds?.message} hint={t('settings.ai.runTimeoutHint')} label={t('settings.ai.runTimeout')}>
-                <Input max={7200} min={30} step={1} type="number" {...form.register('runTimeoutSeconds', { valueAsNumber: true })} />
-              </Field>
-              <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
-                <Input max={100} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
-              </Field>
-            </div>
-          </ProgressiveSection>
-          <ProgressiveSection
-            description={t('settings.ai.observabilityDescription')}
-            storageKey="luna-settings-ai-observability-open"
-            summary={observabilityEnabled ? t('settings.ai.observabilitySummaryEnabled') : t('settings.ai.observabilitySummaryDisabled')}
-            title={t('settings.ai.observabilityTitle')}
-          >
-            <Controller
-              control={form.control}
-              name="observabilityEnabled"
-              render={({ field }) => <ControlledCheckboxField description={t('settings.ai.observabilityEnabledHint')} field={field}>{t('settings.ai.observabilityEnabled')}</ControlledCheckboxField>}
-            />
-            <ObservabilitySourceFields form={form} source="prometheus" />
-            <ObservabilitySourceFields form={form} source="loki" tenant />
-            <ObservabilitySourceFields form={form} source="tempo" tenant />
-            <p className="text-xs text-muted-foreground">{t('settings.ai.observabilitySaveWarning')}</p>
-          </ProgressiveSection>
-          <ProgressiveSection
-            description={t('settings.ai.webProxyDescription')}
-            storageKey="luna-settings-ai-web-proxy-open"
-            summary={webProxyEnabled ? t('settings.ai.webProxySummaryEnabled') : t('settings.ai.webProxySummaryDirect')}
-            title={t('settings.ai.webProxyTitle')}
-          >
-            <div className="grid gap-4">
-              <Controller
-                control={form.control}
-                name="webProxyEnabled"
-                render={({ field }) => <ControlledCheckboxField description={t('settings.ai.webProxyEnabledHint')} field={field}>{t('settings.ai.webProxyEnabled')}</ControlledCheckboxField>}
-              />
-              <Field error={errors.webProxyPool?.message} hint={t('settings.ai.webProxyPoolHint')} label={t('settings.ai.webProxyPool')}>
-                <Textarea
-                  autoComplete="off"
-                  className="min-h-28 font-mono text-sm"
-                  placeholder={form.getValues('webProxyPoolConfigured') ? t('settings.ai.secretUnchanged') : 'http://user:password@proxy.example.com:888'}
-                  {...form.register('webProxyPool')}
-                />
-              </Field>
-            </div>
-          </ProgressiveSection>
-          <p className="text-sm leading-6 text-muted-foreground">{t('settings.ai.securitySummary')}</p>
-        </Surface>
-        <FloatingFormSaveBar
-          open={form.formState.isDirty}
-          pending={save.isPending}
-          saveDisabled={!form.formState.isValid}
-          saveLabel={t('settings.saveConfig')}
-          tone={form.formState.isValid ? 'primary' : 'danger'}
-          onDiscard={() => form.reset(configs.data ? aiSettingsFormValues(configs.data) : defaults)}
-        />
-      </form>
       <AIModelManagement />
     </>
   )

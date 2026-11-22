@@ -101,7 +101,7 @@ export function ClusterEgressExceptionsDialog({ cluster, onOpenChange }: {
           emptyTitle={t('clustersPage.egressExceptions.emptyTitle')}
           error={exceptions.isError ? { title: t('clustersPage.egressExceptions.loadFailed'), onRetry: () => void exceptions.refetch(), retrying: exceptions.isFetching } : undefined}
           items={exceptions.data?.items ?? []}
-          loading={exceptions.isLoading}
+          loading={exceptions.isPending}
           pagination={{
             page: exceptions.data?.page ?? page,
             pageSize: exceptions.data?.pageSize ?? pageSize,

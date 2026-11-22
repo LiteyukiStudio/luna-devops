@@ -297,7 +297,7 @@ export function ProjectAIDiagnosisHistorySection({ projectId }: { projectId: str
             }
           : undefined}
         items={items}
-        loading={historyQuery.isLoading}
+        loading={historyQuery.isPending}
         pagination={historyQuery.data && historyQuery.data.total > 0
           ? {
               page,

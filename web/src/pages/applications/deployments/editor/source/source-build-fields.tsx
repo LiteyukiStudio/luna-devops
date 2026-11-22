@@ -74,7 +74,8 @@ export function SourceFields({
   const repository = sourceType === 'repository'
   const binding = repositoryBindings.find(item => item.id === repositoryBindingId)
   const buildOptionsQuery = repositoryBuildOptionsQuery(binding)
-  const buildOptions = useQuery({ ...buildOptionsQuery, enabled: repository && Boolean(buildOptionsQuery.enabled) })
+  const buildOptionsEnabled = repository && Boolean(buildOptionsQuery.enabled)
+  const buildOptions = useQuery({ ...buildOptionsQuery, enabled: buildOptionsEnabled })
   const buildTemplates = useQuery({ queryKey: ['build-templates'], queryFn: () => api.listBuildTemplates(), enabled: repository, staleTime: 5 * 60 * 1000 })
   const registry = registries.find(item => item.id === registryId)
   const dockerfiles = buildOptions.data?.dockerfiles ?? []
@@ -243,10 +244,12 @@ export function SourceFields({
                       render={({ field }) => (
                         <Select value={field.value || undefined} onValueChange={field.onChange}>
                           <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
-                            <SelectValue placeholder={t('common.select')} />
+                            <SelectValue placeholder={registries.length === 0 ? t('common.noOptions') : t('common.select')} />
                           </SelectTrigger>
                           <SelectContent>
-                            {registries.map(item => <SelectItem key={item.id} value={item.id}>{registryOptionLabel(item)}</SelectItem>)}
+                            {registries.length === 0
+                              ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                              : registries.map(item => <SelectItem key={item.id} value={item.id}>{registryOptionLabel(item)}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}
@@ -278,10 +281,10 @@ export function SourceFields({
                 </FormField>
               </div>
 
-              {Boolean(buildOptionsQuery.enabled) && buildOptions.isLoading && (
+              {buildOptionsEnabled && buildOptions.isLoading && (
                 <Skeleton className="h-8 w-full rounded-control" />
               )}
-              {buildOptions.isError && (
+              {buildOptionsEnabled && buildOptions.isError && (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border bg-surface-subtle px-3 py-2 text-xs text-muted-foreground">
                   <span>{t('deploymentsPage.buildOptionsLoadFailed')}</span>
                   <Button disabled={buildOptions.isFetching} size="sm" type="button" variant="outline" onClick={() => void buildOptions.refetch()}>
@@ -314,9 +317,10 @@ export function SourceFields({
                   <ApplicationBuildTemplateFields
                     dockerfileSuggestions={dockerfiles}
                     recommendedTemplateIds={buildOptions.data?.recommendedTemplateIds ?? []}
+                    showNoDockerfileNotice={Boolean(binding) && buildOptions.isSuccess && dockerfiles.length === 0}
                     templates={buildTemplates.data ?? []}
                     templatesError={buildTemplates.isError}
-                    templatesLoading={buildTemplates.isLoading}
+                    templatesLoading={buildTemplates.isPending}
                     templatesRetrying={buildTemplates.isFetching}
                     onRetryTemplates={() => void buildTemplates.refetch()}
                   />
@@ -329,12 +333,12 @@ export function SourceFields({
                             {...fieldControl}
                             className="font-mono"
                             list="deployment-target-dockerfile-options"
-                            placeholder={t('deploymentsPage.dockerfilePathPlaceholder')}
+                            placeholder={buildOptionsEnabled && buildOptions.isLoading ? t('common.loading') : t('deploymentsPage.dockerfilePathPlaceholder')}
                           />
                           <datalist id="deployment-target-dockerfile-options">
                             {dockerfiles.map(option => <option key={option} value={option} />)}
                           </datalist>
-                          {buildOptions.isFetching && !buildOptions.isLoading && <p className="text-xs text-muted-foreground">{t('apps.detectingRepository')}</p>}
+                          {buildOptionsEnabled && buildOptions.isFetching && <p className="text-xs text-muted-foreground">{t('apps.detectingRepository')}</p>}
                         </div>
                       )}
                     </FormField>

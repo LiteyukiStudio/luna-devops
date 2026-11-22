@@ -8,6 +8,7 @@ import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
 import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
+import { SettingsSkeleton } from '@/components/common/loading-states'
 import { Surface } from '@/components/common/surface'
 
 type FormValues = AuthRegistrationSettings
@@ -40,8 +41,18 @@ export function AuthRegistrationSettingsPanel() {
     onError: error => toast.error(error.message),
   })
 
-  if (settings.isError)
-    return <ErrorState title={t('settings.registration.loadFailedTitle')} description={t('settings.registration.loadFailedDescription')} />
+  if (settings.isPending)
+    return <SettingsSkeleton />
+  if (settings.isError) {
+    return (
+      <ErrorState
+        description={t('settings.registration.loadFailedDescription')}
+        retrying={settings.isFetching}
+        title={t('settings.registration.loadFailedTitle')}
+        onRetry={() => void settings.refetch()}
+      />
+    )
+  }
 
   return (
     <form className="grid max-w-3xl gap-5" onSubmit={form.handleSubmit(values => save.mutate(values))}>
@@ -79,7 +90,7 @@ export function AuthRegistrationSettingsPanel() {
       <FloatingFormSaveBar
         open={form.formState.isDirty}
         pending={save.isPending}
-        saveDisabled={settings.isLoading || !form.formState.isValid}
+        saveDisabled={!form.formState.isValid}
         saveLabel={t('settings.registration.save')}
         tone={form.formState.isValid ? 'primary' : 'danger'}
         onDiscard={() => form.reset(settings.data ? settingsToForm(settings.data) : defaultValues)}

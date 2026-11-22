@@ -1,6 +1,7 @@
 import type { User } from '@/api'
 import type { useBillingDisplay } from '@/lib/billing-display'
 import { useTranslation } from 'react-i18next'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { UserSelect } from '@/components/common/user-select'
 import { Button } from '@/components/ui/button'
@@ -18,11 +19,14 @@ export function BillingWalletTransactionDialog({
   type,
   userId,
   userItems,
+  usersError = false,
   usersLoading,
+  usersRetrying = false,
   onAmountChange,
   onConfirm,
   onDescriptionChange,
   onOpenChange,
+  onRetryUsers,
   onTypeChange,
   onUserIdChange,
 }: {
@@ -34,11 +38,14 @@ export function BillingWalletTransactionDialog({
   type: 'credit' | 'adjustment'
   userId: string
   userItems: User[]
+  usersError?: boolean
   usersLoading: boolean
+  usersRetrying?: boolean
   onAmountChange: (value: string) => void
   onConfirm: () => void
   onDescriptionChange: (value: string) => void
   onOpenChange: (open: boolean) => void
+  onRetryUsers?: () => void
   onTypeChange: (value: 'credit' | 'adjustment') => void
   onUserIdChange: (value: string) => void
 }) {
@@ -53,14 +60,27 @@ export function BillingWalletTransactionDialog({
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <Field label={t('billingPage.user')}>
-            <UserSelect
-              disabled={usersLoading}
-              emptyLabel={t('billingPage.emptyUsers')}
-              placeholder={t('billingPage.selectUser')}
-              users={userItems}
-              value={userId}
-              onChange={onUserIdChange}
-            />
+            {fieldControl => (
+              <div className="grid gap-2">
+                <UserSelect
+                  {...fieldControl}
+                  emptyLabel={t('billingPage.emptyUsers')}
+                  error={usersError}
+                  loading={usersLoading}
+                  placeholder={t('billingPage.selectUser')}
+                  users={userItems}
+                  value={userId}
+                  onChange={onUserIdChange}
+                />
+                {!usersLoading && usersError && (
+                  <ErrorState
+                    retrying={usersRetrying}
+                    title={t('errors.request.failed')}
+                    onRetry={onRetryUsers}
+                  />
+                )}
+              </div>
+            )}
           </Field>
           <Field hint={t('billingPage.walletTransactionTypeHint')} label={t('billingPage.walletTransactionType')}>
             <Select value={type} onValueChange={value => onTypeChange(value as 'credit' | 'adjustment')}>
@@ -95,7 +115,7 @@ export function BillingWalletTransactionDialog({
             {t('common.cancel')}
           </Button>
           <Button
-            disabled={isPending || !userId || !amount.trim()}
+            disabled={isPending || usersLoading || usersError || !userId || !amount.trim()}
             type="button"
             onClick={onConfirm}
           >

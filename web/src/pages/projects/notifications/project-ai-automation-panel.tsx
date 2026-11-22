@@ -201,17 +201,18 @@ export function ProjectAIAutomationPanel({
     )
   }
 
-  if (configQuery.isLoading || !configQuery.data) {
-    if (configQuery.isError) {
-      return (
-        <ErrorState
-          description={configQuery.error instanceof Error ? configQuery.error.message : t('notificationsPage.loadFailedDescription')}
-          retrying={configQuery.isFetching}
-          title={t('notificationsPage.loadFailedTitle')}
-          onRetry={() => void configQuery.refetch()}
-        />
-      )
-    }
+  if (configQuery.isError) {
+    return (
+      <ErrorState
+        description={configQuery.error instanceof Error ? configQuery.error.message : t('notificationsPage.loadFailedDescription')}
+        retrying={configQuery.isFetching}
+        title={t('notificationsPage.loadFailedTitle')}
+        onRetry={() => void configQuery.refetch()}
+      />
+    )
+  }
+
+  if (configQuery.isPending) {
     return <OverviewSkeleton />
   }
 

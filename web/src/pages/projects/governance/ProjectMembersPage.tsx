@@ -58,6 +58,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
   const [pageSize, setPageSize] = useState(10)
   const [memberSearch, setMemberSearch] = useState('')
   const [selectedUsers, setSelectedUsers] = useState<ProjectMemberCandidate[]>([])
+  const hasMemberSearch = memberSearch.trim().length > 0
   const members = useQuery({
     queryKey: ['project-members', projectId, page, pageSize],
     queryFn: () => api.listProjectMembersPage(projectId, { page, pageSize, sortBy: 'createdAt', sortOrder: 'asc' }),
@@ -66,7 +67,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
   const memberCandidates = useQuery({
     queryKey: ['project-member-candidates', projectId, memberSearch],
     queryFn: () => api.searchProjectMemberCandidates(projectId, { search: memberSearch, limit: 20 }),
-    enabled: dialogOpen && Boolean(projectId) && memberSearch.trim().length > 0,
+    enabled: dialogOpen && Boolean(projectId) && hasMemberSearch,
   })
   const form = useForm<MemberForm>({
     resolver: zodResolver(schema),
@@ -129,7 +130,6 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
 
   return (
     <div className="grid gap-6">
-      {members.isError && <ErrorState title={t('projectMembers.loadFailedTitle')} description={t('projectMembers.loadFailedDescription')} />}
       <DataList
         toolbarActions={!embedded
           ? (
@@ -194,7 +194,16 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
         ]}
         emptyDescription={t('projectMembers.emptyDescription')}
         emptyTitle={t('projectMembers.emptyTitle')}
+        error={members.isError
+          ? {
+              description: t('projectMembers.loadFailedDescription'),
+              onRetry: () => void members.refetch(),
+              retrying: members.isFetching,
+              title: t('projectMembers.loadFailedTitle'),
+            }
+          : undefined}
         items={members.data?.items ?? []}
+        loading={Boolean(projectId) && members.isPending}
         pagination={{
           page: members.data?.page ?? page,
           pageSize: members.data?.pageSize ?? pageSize,
@@ -235,10 +244,13 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => createMember.mutate(values))}>
             <Field hint={t('projectMembers.userSearchHint')} label={t('projectMembers.userSearch')} required>
               <SearchMultiSelect
-                emptyLabel={t('projectMembers.noUserResults')}
+                emptyLabel={hasMemberSearch
+                  ? t('projectMembers.noUserResults')
+                  : t('projectMembers.userSearchHint')}
+                error={hasMemberSearch && memberCandidates.isError}
                 filterLocally={false}
                 limited={(memberCandidates.data?.length ?? 0) >= 20}
-                loading={memberCandidates.isFetching}
+                loading={hasMemberSearch && (memberCandidates.isPending || memberCandidates.isFetching)}
                 options={candidateOptions}
                 placeholder={t('projectMembers.userSearchPlaceholder')}
                 search={memberSearch}
@@ -252,6 +264,14 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
                 }}
               />
             </Field>
+            {hasMemberSearch && memberCandidates.isError && (
+              <ErrorState
+                description={memberCandidates.error instanceof Error ? memberCandidates.error.message : undefined}
+                retrying={memberCandidates.isFetching}
+                title={t('errors.request.failed')}
+                onRetry={() => void memberCandidates.refetch()}
+              />
+            )}
             <Field error={form.formState.errors.role?.message} hint={t('projectMembers.roleHint')} label={t('projectMembers.role')} required>
               {fieldControl => (
                 <Controller

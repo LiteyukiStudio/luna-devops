@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { api, ApiError } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { CodeEditor } from '@/components/common/code-editor'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
@@ -78,12 +79,16 @@ const clusterDefaults: ClusterForm = {
   status: 'unknown',
 }
 
-export function ClusterFormDialog({ editingCluster, open, projects, user, onOpenChange, onSaved }: {
+export function ClusterFormDialog({ editingCluster, open, projects, projectsError = false, projectsLoading = false, projectsRetrying = false, user, onOpenChange, onRetryProjects, onSaved }: {
   editingCluster: RuntimeCluster | null
   open: boolean
   projects: Project[]
+  projectsError?: boolean
+  projectsLoading?: boolean
+  projectsRetrying?: boolean
   user?: CurrentUser
   onOpenChange: (open: boolean) => void
+  onRetryProjects?: () => void
   onSaved: () => void
 }) {
   const { t } = useTranslation()
@@ -237,7 +242,26 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                 </Field>
                 {scope === 'project' && (
                   <Field label={t('projectSpaces.title')} required>
-                    <ProjectSpaceMultiSelect projects={projects} value={form.watch('projectIds')} onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })} />
+                    {fieldControl => (
+                      !projectsLoading && projectsError && projects.length === 0
+                        ? (
+                            <ErrorState
+                              retrying={projectsRetrying}
+                              title={t('errors.request.failed')}
+                              onRetry={onRetryProjects}
+                            />
+                          )
+                        : (
+                            <ProjectSpaceMultiSelect
+                              {...fieldControl}
+                              error={projectsError}
+                              loading={projectsLoading}
+                              projects={projects}
+                              value={form.watch('projectIds')}
+                              onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                            />
+                          )
+                    )}
                   </Field>
                 )}
                 <Field hint={t('clustersPage.maxConcurrentBuildsHint')} label={t('clustersPage.maxConcurrentBuilds')} required>
@@ -490,7 +514,7 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
             <DialogClose asChild>
               <Button disabled={saveCluster.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
             </DialogClose>
-            <Button disabled={!form.formState.isValid || !policyValidation.success || saveCluster.isPending || kubeconfigInspection.error || (kubeconfigContextSelectionRequired && !effectiveKubeconfigContext)} type="submit">{editingCluster ? t('common.save') : t('deploymentsPage.createCluster')}</Button>
+            <Button disabled={!form.formState.isValid || !policyValidation.success || saveCluster.isPending || kubeconfigInspection.error || (kubeconfigContextSelectionRequired && !effectiveKubeconfigContext) || (scope === 'project' && (projectsLoading || (projectsError && projects.length === 0)))} type="submit">{editingCluster ? t('common.save') : t('deploymentsPage.createCluster')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

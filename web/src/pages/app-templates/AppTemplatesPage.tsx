@@ -15,6 +15,7 @@ import { PageShell } from '@/components/common/page-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { InstallTemplateSheet } from './install-template-sheet'
@@ -165,21 +166,29 @@ export function AppTemplatesPage() {
       )}
       <div className="flex flex-col gap-3 @2xl/workspace:flex-row @2xl/workspace:items-start @2xl/workspace:justify-between">
         <div aria-label={t('appTemplatesPage.categoryFilter')} className="flex min-w-0 flex-wrap gap-1.5" role="group">
-          <CategoryChip
-            count={keywordMatches.length}
-            label={t('appTemplatesPage.allCategories')}
-            selected={category === ALL_CATEGORIES}
-            onSelect={() => setCategory(ALL_CATEGORIES)}
-          />
-          {categories.map(item => (
-            <CategoryChip
-              key={item}
-              count={categoryCounts.get(item) ?? 0}
-              label={templateCategoryLabel(item, t)}
-              selected={category === item}
-              onSelect={() => setCategory(item)}
-            />
-          ))}
+          {templates.isPending
+            ? Array.from({ length: 4 }, (_, index) => (
+                <Skeleton key={index} className="h-7 w-20 rounded-full" />
+              ))
+            : !templates.isError && (
+                <>
+                  <CategoryChip
+                    count={keywordMatches.length}
+                    label={t('appTemplatesPage.allCategories')}
+                    selected={category === ALL_CATEGORIES}
+                    onSelect={() => setCategory(ALL_CATEGORIES)}
+                  />
+                  {categories.map(item => (
+                    <CategoryChip
+                      key={item}
+                      count={categoryCounts.get(item) ?? 0}
+                      label={templateCategoryLabel(item, t)}
+                      selected={category === item}
+                      onSelect={() => setCategory(item)}
+                    />
+                  ))}
+                </>
+              )}
         </div>
         <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
           <Input
@@ -219,57 +228,57 @@ export function AppTemplatesPage() {
         </div>
       </div>
 
-      {templates.isError && (
-        <ErrorState
-          retrying={templates.isFetching}
-          title={templates.error.message}
-          onRetry={() => void templates.refetch()}
-        />
-      )}
-      {templates.isLoading && <TemplateGridSkeleton />}
-      {templates.isSuccess && (
-        visibleTemplates.length === 0
+      {templates.isPending
+        ? <TemplateGridSkeleton />
+        : templates.isError
           ? (
-              filtered
-                ? (
-                    <EmptyState
-                      actions={<Button type="button" variant="outline" onClick={clearFilters}>{t('appTemplatesPage.clearFilters')}</Button>}
-                      description={t('appTemplatesPage.noResultsDescription')}
-                      icon={<SearchX className="size-5" />}
-                      mode="filtered"
-                      title={t('appTemplatesPage.noResultsTitle')}
-                    />
-                  )
-                : (
-                    <EmptyState
-                      actions={canManagePlatformTemplates && (
-                        <div className="flex flex-wrap items-center justify-center gap-2">
-                          <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
-                            <Upload className="size-4" />
-                            {t('appTemplatesPage.platformAdmin.importJson')}
-                          </Button>
-                          <Button type="button" onClick={openCreateDialog}>
-                            <Plus className="size-4" />
-                            {t('appTemplatesPage.platformAdmin.create')}
-                          </Button>
-                        </div>
-                      )}
-                      description={t('appTemplatesPage.emptyDescription')}
-                      title={t('appTemplatesPage.emptyTitle')}
-                    />
-                  )
+              <ErrorState
+                retrying={templates.isFetching}
+                title={templates.error.message}
+                onRetry={() => void templates.refetch()}
+              />
             )
-          : featuredTemplates.length > 0
+          : visibleTemplates.length === 0
             ? (
-                <>
-                  <TemplateSection templates={featuredTemplates} title={t('appTemplatesPage.featuredSection')} titleId="app-templates-featured" onOpen={setSelectedTemplateOverride} />
-                  {remainingTemplates.length > 0 && (
-                    <TemplateSection templates={remainingTemplates} title={t('appTemplatesPage.allTemplatesSection')} titleId="app-templates-all" onOpen={setSelectedTemplateOverride} />
-                  )}
-                </>
+                filtered
+                  ? (
+                      <EmptyState
+                        actions={<Button type="button" variant="outline" onClick={clearFilters}>{t('appTemplatesPage.clearFilters')}</Button>}
+                        description={t('appTemplatesPage.noResultsDescription')}
+                        icon={<SearchX className="size-5" />}
+                        mode="filtered"
+                        title={t('appTemplatesPage.noResultsTitle')}
+                      />
+                    )
+                  : (
+                      <EmptyState
+                        actions={canManagePlatformTemplates && (
+                          <div className="flex flex-wrap items-center justify-center gap-2">
+                            <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
+                              <Upload className="size-4" />
+                              {t('appTemplatesPage.platformAdmin.importJson')}
+                            </Button>
+                            <Button type="button" onClick={openCreateDialog}>
+                              <Plus className="size-4" />
+                              {t('appTemplatesPage.platformAdmin.create')}
+                            </Button>
+                          </div>
+                        )}
+                        description={t('appTemplatesPage.emptyDescription')}
+                        title={t('appTemplatesPage.emptyTitle')}
+                      />
+                    )
               )
-            : <TemplateGrid templates={visibleTemplates} onOpen={setSelectedTemplateOverride} />
-      )}
+            : featuredTemplates.length > 0
+              ? (
+                  <>
+                    <TemplateSection templates={featuredTemplates} title={t('appTemplatesPage.featuredSection')} titleId="app-templates-featured" onOpen={setSelectedTemplateOverride} />
+                    {remainingTemplates.length > 0 && (
+                      <TemplateSection templates={remainingTemplates} title={t('appTemplatesPage.allTemplatesSection')} titleId="app-templates-all" onOpen={setSelectedTemplateOverride} />
+                    )}
+                  </>
+                )
+              : <TemplateGrid templates={visibleTemplates} onOpen={setSelectedTemplateOverride} />}
 
       <InstallTemplateSheet
         exporting={exportMutation.isPending && exportMutation.variables === selectedTemplate?.id}

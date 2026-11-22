@@ -76,16 +76,15 @@ export function DashboardPage() {
     )
   }
 
-  if (!dashboard.data) {
+  if (dashboard.isPending) {
     return <PageShell width="full"><OverviewSkeleton /></PageShell>
   }
 
   const overview = dashboard.data
   const activeTasks = overview.summary.activeBuilds + overview.summary.activeReleases
   const recentApplications = recentApplicationRows(overview, recentProjects, applicationQueries.map(query => query.data?.items ?? []))
-  const applicationsLoading = applicationQueries.some(query => query.isLoading)
+  const applicationsLoading = applicationQueries.some(query => query.isPending)
   const applicationsFailed = applicationQueries.some(query => query.isError)
-  const allApplicationsFailed = recentProjects.length > 0 && applicationQueries.every(query => query.isError)
   const applicationsRetrying = applicationQueries.some(query => query.isFetching)
   const retryFailedApplications = () => {
     applicationQueries.forEach((query) => {
@@ -112,7 +111,6 @@ export function DashboardPage() {
 
       <div className="grid min-w-0 items-start gap-section @4xl/workspace:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
         <RecentApplications
-          allFailed={allApplicationsFailed}
           failed={applicationsFailed}
           loading={applicationsLoading}
           retrying={applicationsRetrying}
@@ -165,7 +163,7 @@ function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[]
   )
 }
 
-function RecentApplications({ allFailed, failed, loading, onRetry, retrying, rows, visibility }: { allFailed: boolean, failed: boolean, loading: boolean, onRetry: () => void, retrying: boolean, rows: RecentApplicationRow[], visibility: ResultVisibility }) {
+function RecentApplications({ failed, loading, onRetry, retrying, rows, visibility }: { failed: boolean, loading: boolean, onRetry: () => void, retrying: boolean, rows: RecentApplicationRow[], visibility: ResultVisibility }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const detailPath = (row: RecentApplicationRow) => `/projects/${row.project.id}/apps/${row.application.id}`
@@ -223,7 +221,7 @@ function RecentApplications({ allFailed, failed, loading, onRetry, retrying, row
         emptyDescription={t('dashboardPage.noRecentAppsDescription')}
         emptyIcon={<AppWindow className="size-5" />}
         emptyTitle={t('dashboardPage.noRecentApps')}
-        error={allFailed && rows.length === 0
+        error={!loading && failed && rows.length === 0
           ? {
               description: t('dashboardPage.appsPartiallyUnavailable'),
               onRetry,
@@ -232,12 +230,19 @@ function RecentApplications({ allFailed, failed, loading, onRetry, retrying, row
             }
           : undefined}
         items={rows}
-        loading={loading && rows.length === 0}
+        loading={loading}
         rowActionLabel={row => t('dashboardPage.openApplication', { name: row.application.name })}
         rowKey={row => row.application.id}
         onRowClick={row => navigate(detailPath(row))}
       />
-      {failed && rows.length > 0 && <p className="text-xs text-muted-foreground">{t('dashboardPage.appsPartiallyUnavailable')}</p>}
+      {!loading && failed && rows.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
+          <p>{t('dashboardPage.appsPartiallyUnavailable')}</p>
+          <Button disabled={retrying} size="sm" type="button" variant="outline" onClick={onRetry}>
+            {t('common.retry')}
+          </Button>
+        </div>
+      )}
     </Section>
   )
 }
@@ -407,7 +412,7 @@ function PlatformReadiness({ overview, visibility }: { overview: DashboardOvervi
 
 function ReadinessRow({ item, kind, label, to }: { item: DashboardReadinessItem, kind: 'clusters' | 'registries', label: string, to: string }) {
   const { t } = useTranslation()
-  const value = kind === 'clusters' ? `${item.available}/${item.total}` : item.total
+  const value = item.status === 'unavailable' ? '—' : kind === 'clusters' ? `${item.available}/${item.total}` : item.total
   return (
     <div className="flex items-center justify-between gap-3">
       <dt>

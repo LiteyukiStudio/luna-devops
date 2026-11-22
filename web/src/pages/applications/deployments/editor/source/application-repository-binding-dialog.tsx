@@ -19,6 +19,7 @@ export interface RepositoryBindingDialogForm {
   defaultBranch?: string
   gitAccountId: string
   owner: string
+  providerId?: string
   repo: string
 }
 
@@ -28,42 +29,65 @@ export interface RepositoryBindingDialogFormInput {
   defaultBranch?: string
   gitAccountId: string
   owner: string
+  providerId?: string
   repo: string
 }
 
 interface ApplicationRepositoryBindingDialogProps {
   accounts: GitAccount[]
+  accountsError?: boolean
+  accountsLoading?: boolean
+  accountsRetrying?: boolean
   branchLimited?: boolean
   branches: GitBranch[]
+  branchesError?: boolean
   branchSearch: string
   branchesLoading: boolean
   form: UseFormReturn<RepositoryBindingDialogFormInput, undefined, RepositoryBindingDialogForm>
   open: boolean
   pending: boolean
   providers: GitProvider[]
+  providersError?: boolean
+  providersLoading?: boolean
+  providersRetrying?: boolean
   onBranchSearchChange: (value: string) => void
   onOpenChange: (open: boolean) => void
+  onRetryAccounts?: () => void
+  onRetryBranches?: () => void
+  onRetryProviders?: () => void
   onSubmit: (values: RepositoryBindingDialogForm) => void
 }
 
 export function ApplicationRepositoryBindingDialog({
   accounts,
+  accountsError = false,
+  accountsLoading = false,
+  accountsRetrying = false,
   branchLimited,
   branches,
+  branchesError = false,
   branchSearch,
   branchesLoading,
   form,
   onBranchSearchChange,
   onOpenChange,
+  onRetryAccounts,
+  onRetryBranches,
+  onRetryProviders,
   onSubmit,
   open,
   pending,
   providers,
+  providersError = false,
+  providersLoading = false,
+  providersRetrying = false,
 }: ApplicationRepositoryBindingDialogProps) {
   const { t } = useTranslation()
   const selectedAccountId = form.watch('gitAccountId')
   const selectedOwner = form.watch('owner')
   const selectedRepo = form.watch('repo')
+  const branchesEnabled = Boolean(selectedAccountId && selectedOwner && selectedRepo)
+  const canSubmitAccount = selectedAccountId === 'anonymous' || (!accountsLoading && accounts.length > 0)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -79,22 +103,32 @@ export function ApplicationRepositoryBindingDialog({
           </div>
           <GitRepositoryPicker
             accounts={accounts}
+            accountsError={accountsError}
+            accountsLoading={accountsLoading}
+            accountsRetrying={accountsRetrying}
             providers={providers}
+            providersError={providersError}
+            providersLoading={providersLoading}
+            providersRetrying={providersRetrying}
             value={{
               cloneUrl: form.watch('cloneUrl') || '',
               defaultBranch: form.watch('defaultBranch') || 'main',
               gitAccountId: selectedAccountId || '',
               owner: selectedOwner || '',
+              providerId: form.watch('providerId') || '',
               repo: selectedRepo || '',
             }}
             onChange={(next) => {
               form.setValue('gitAccountId', next.gitAccountId, { shouldDirty: true, shouldValidate: true })
+              form.setValue('providerId', next.providerId ?? '', { shouldDirty: true, shouldValidate: true })
               form.setValue('owner', next.owner, { shouldDirty: true, shouldValidate: true })
               form.setValue('repo', next.repo, { shouldDirty: true, shouldValidate: true })
               form.setValue('cloneUrl', next.cloneUrl, { shouldDirty: true, shouldValidate: true })
               form.setValue('defaultBranch', next.defaultBranch || 'main', { shouldDirty: true, shouldValidate: true })
               onBranchSearchChange('')
             }}
+            onRetryAccounts={onRetryAccounts}
+            onRetryProviders={onRetryProviders}
           />
           <div className="grid gap-3 md:grid-cols-3">
             <Field error={form.formState.errors.owner?.message} label={t('repositories.owner')} required>
@@ -104,18 +138,32 @@ export function ApplicationRepositoryBindingDialog({
               <Input {...form.register('repo')} aria-invalid={Boolean(form.formState.errors.repo)} placeholder={t('repositories.repoPlaceholder')} />
             </Field>
             <Field error={form.formState.errors.defaultBranch?.message} label={t('repositories.defaultBranch')}>
-              <SearchSelect
-                disabled={!selectedAccountId || !selectedOwner || !selectedRepo}
-                emptyLabel={t('repositories.noBranches')}
-                limited={branchLimited}
-                loading={branchesLoading}
-                options={branchOptions(branches, form.watch('defaultBranch'))}
-                placeholder={t('repositories.defaultBranchPlaceholder')}
-                search={branchSearch}
-                value={form.watch('defaultBranch') || ''}
-                onSearchChange={onBranchSearchChange}
-                onValueChange={value => form.setValue('defaultBranch', value, { shouldDirty: true, shouldValidate: true })}
-              />
+              {fieldControl => (
+                <div className="grid gap-1.5">
+                  <SearchSelect
+                    {...fieldControl}
+                    disabled={!branchesEnabled}
+                    emptyLabel={branchesError ? t('common.unavailable') : t('repositories.noBranches')}
+                    error={branchesEnabled && branchesError}
+                    limited={branchLimited}
+                    loading={branchesLoading}
+                    options={branchOptions(branches, form.watch('defaultBranch'))}
+                    placeholder={branchesLoading ? t('common.loading') : t('repositories.defaultBranchPlaceholder')}
+                    search={branchSearch}
+                    value={form.watch('defaultBranch') || ''}
+                    onSearchChange={onBranchSearchChange}
+                    onValueChange={value => form.setValue('defaultBranch', value, { shouldDirty: true, shouldValidate: true })}
+                  />
+                  {branchesEnabled && branchesError && onRetryBranches && (
+                    <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                      <span>{t('common.unavailable')}</span>
+                      <Button disabled={branchesLoading} size="sm" type="button" variant="outline" onClick={onRetryBranches}>
+                        {t('common.retry')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </Field>
           </div>
           <div className="grid gap-3">
@@ -139,7 +187,7 @@ export function ApplicationRepositoryBindingDialog({
             <DialogClose asChild>
               <Button disabled={pending} type="button" variant="outline">{t('common.cancel')}</Button>
             </DialogClose>
-            <Button disabled={pending || accounts.length === 0 || !form.formState.isValid} type="submit">
+            <Button disabled={pending || !canSubmitAccount || !form.formState.isValid} type="submit">
               <Plus className="size-4" />
               {t('repositories.bindRepository')}
             </Button>

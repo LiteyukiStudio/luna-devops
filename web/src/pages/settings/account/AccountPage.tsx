@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TabsContent } from '@/components/ui/tabs'
 import { BrandColorPresetField } from '@/pages/settings/appearance/brand-color-preset-field'
 import { AccessTokensPanel } from './access-tokens-panel'
@@ -356,62 +357,110 @@ function IdentityBindingsPanel() {
   return (
     <Section
       title={t('settings.boundIdentities')}
-      tools={providerItems.length > 0 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" type="button" variant="outline">
-              <Link2 className="size-4" />
-              {t('settings.bindProviderTitle')}
-              <ChevronDown className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {providerItems.map(provider => (
-              <DropdownMenuItem
-                key={provider.id}
-                onSelect={() => {
-                  window.location.href = oidcStartUrl(provider.id, 'bind', '/settings/account')
-                }}
-              >
-                {t('settings.bindProvider', { provider: provider.name })}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+      tools={providers.isPending
+        ? <Skeleton className="h-8 w-28 rounded-control" />
+        : providerItems.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" type="button" variant="outline">
+                <Link2 className="size-4" />
+                {t('settings.bindProviderTitle')}
+                <ChevronDown className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {providerItems.map(provider => (
+                <DropdownMenuItem
+                  key={provider.id}
+                  onSelect={() => {
+                    window.location.href = oidcStartUrl(provider.id, 'bind', '/settings/account')
+                  }}
+                >
+                  {t('settings.bindProvider', { provider: provider.name })}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       variant="bordered"
     >
-      {providers.isError && <ErrorState title={t('settings.providerLoadFailedTitle')} description={t('settings.providerLoadFailedDescription')} />}
-      {identities.isError
-        ? <ErrorState title={t('settings.identityLoadFailedTitle')} description={t('settings.identityLoadFailedDescription')} />
-        : identities.data?.length === 0
-          ? <EmptyState description={t('settings.noIdentitiesDescription')} icon={<Link2 className="size-5" />} title={t('settings.noIdentitiesTitle')} variant="plain" />
-          : (
-              <ul className="divide-y divide-border">
-                {(identities.data ?? []).map(identity => (
-                  <li key={identity.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate font-medium">{identity.providerName}</p>
-                        <StatusValueBadge value={identity.emailVerified ? 'verified' : 'unverified'} />
-                      </div>
-                      <p className="truncate text-sm text-muted-foreground">{identity.email || identity.username || identity.subject}</p>
+      {identities.isPending
+        ? (
+            <div aria-label={t('common.loading')} className="divide-y divide-border" role="status">
+              {Array.from({ length: 2 }, (_, index) => (
+                <div key={index} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                  <div className="grid min-w-0 flex-1 gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-5 w-16 rounded-control" />
                     </div>
-                    <ConfirmDialog
-                      confirmText={t('settings.unbindIdentity')}
-                      description={t('settings.unbindIdentityDescription', { provider: identity.providerName })}
-                      pending={unbind.isPending}
-                      title={t('settings.unbindIdentity')}
-                      onConfirm={() => unbind.mutateAsync(identity.id).then(() => undefined)}
-                    >
-                      <Button aria-label={t('settings.unbindIdentity')} size="icon" variant="ghost">
-                        <Unlink className="size-4" />
-                      </Button>
-                    </ConfirmDialog>
-                  </li>
-                ))}
-              </ul>
-            )}
+                    <Skeleton className="h-3.5 w-44 max-w-full" />
+                  </div>
+                  <Skeleton className="size-9 shrink-0 rounded-control" />
+                </div>
+              ))}
+            </div>
+          )
+        : identities.isError
+          ? (
+              <ErrorState
+                description={t('settings.identityLoadFailedDescription')}
+                retrying={identities.isFetching || providers.isFetching}
+                title={t('settings.identityLoadFailedTitle')}
+                onRetry={() => {
+                  void identities.refetch()
+                  if (providers.isError)
+                    void providers.refetch()
+                }}
+              />
+            )
+          : identities.data.length === 0
+            ? providers.isError
+              ? (
+                  <ErrorState
+                    description={t('settings.providerLoadFailedDescription')}
+                    retrying={providers.isFetching}
+                    title={t('settings.providerLoadFailedTitle')}
+                    onRetry={() => void providers.refetch()}
+                  />
+                )
+              : <EmptyState description={t('settings.noIdentitiesDescription')} icon={<Link2 className="size-5" />} title={t('settings.noIdentitiesTitle')} variant="plain" />
+            : (
+                <div className="grid gap-4">
+                  {providers.isError && (
+                    <ErrorState
+                      description={t('settings.providerLoadFailedDescription')}
+                      retrying={providers.isFetching}
+                      title={t('settings.providerLoadFailedTitle')}
+                      onRetry={() => void providers.refetch()}
+                    />
+                  )}
+                  <ul className="divide-y divide-border">
+                    {identities.data.map(identity => (
+                      <li key={identity.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate font-medium">{identity.providerName}</p>
+                            <StatusValueBadge value={identity.emailVerified ? 'verified' : 'unverified'} />
+                          </div>
+                          <p className="truncate text-sm text-muted-foreground">{identity.email || identity.username || identity.subject}</p>
+                        </div>
+                        <ConfirmDialog
+                          confirmText={t('settings.unbindIdentity')}
+                          description={t('settings.unbindIdentityDescription', { provider: identity.providerName })}
+                          pending={unbind.isPending}
+                          title={t('settings.unbindIdentity')}
+                          onConfirm={() => unbind.mutateAsync(identity.id).then(() => undefined)}
+                        >
+                          <Button aria-label={t('settings.unbindIdentity')} size="icon" variant="ghost">
+                            <Unlink className="size-4" />
+                          </Button>
+                        </ConfirmDialog>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
     </Section>
   )
 }

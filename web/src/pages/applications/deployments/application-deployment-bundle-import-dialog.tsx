@@ -16,6 +16,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import i18next from '@/i18n'
 
 import '@/i18n/lazy/deployment-bundle'
@@ -230,6 +231,17 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
                   </div>
                 </div>
               </section>
+
+              {previewing && !preview && (
+                <section aria-busy="true" className="grid gap-3" data-slot="bundle-preview-skeleton">
+                  <div className="flex items-center justify-between gap-2">
+                    <Skeleton className="h-5 w-36" />
+                    <Skeleton className="h-5 w-20" />
+                  </div>
+                  <Skeleton className="h-24 w-full rounded-control" />
+                  <Skeleton className="h-24 w-full rounded-control" />
+                </section>
+              )}
 
               {preview && (
                 <section className="grid gap-4">
@@ -449,26 +461,58 @@ function ReferenceMappingField({ applicationId, onChange, projectId, reference, 
           </Select>
         </div>
         <Select
-          value={value}
+          disabled={loading || (loadFailed && candidates.length === 0)}
+          value={!loading && !(loadFailed && candidates.length === 0) && candidates.some(candidate => candidate.id === value) ? value : ''}
           onValueChange={(nextValue) => {
+            if (!nextValue)
+              return
             setRetainedCandidate(candidates.find(candidate => candidate.id === nextValue))
             onChange(nextValue)
           }}
         >
           <SelectTrigger aria-label={t('deploymentsPage.bundleImport.selectReference', { reference: source })}>
-            <SelectValue placeholder={t('deploymentsPage.bundleImport.selectDestination')} />
+            <SelectValue
+              placeholder={
+                loading
+                  ? t('common.loading')
+                  : loadFailed && candidates.length === 0
+                    ? t('common.unavailable')
+                    : candidates.length === 0
+                      ? t('common.noOptions')
+                      : t('deploymentsPage.bundleImport.selectDestination')
+              }
+            />
           </SelectTrigger>
           <SelectContent>
-            {candidates.map(candidate => (
-              <SelectItem key={candidate.id} disabled={!candidate.compatible} value={candidate.id}>
-                {candidate.name}
-                {candidate.description ? ` · ${candidate.description}` : ''}
-              </SelectItem>
-            ))}
+            {loading
+              ? <SelectItem disabled value="__loading__">{t('common.loading')}</SelectItem>
+              : loadFailed && candidates.length === 0
+                ? <SelectItem disabled value="__error__">{t('common.unavailable')}</SelectItem>
+                : candidates.length === 0
+                  ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                  : candidates.map(candidate => (
+                      <SelectItem key={candidate.id} disabled={!candidate.compatible} value={candidate.id}>
+                        {candidate.name}
+                        {candidate.description ? ` · ${candidate.description}` : ''}
+                      </SelectItem>
+                    ))}
           </SelectContent>
         </Select>
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>{loadFailed ? t('deploymentsPage.bundleImport.candidatesLoadFailed') : t('deploymentsPage.bundleImport.candidateCount', { count: candidatePage.total })}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={loadFailed ? 'text-danger' : undefined} role={loadFailed ? 'alert' : undefined}>
+              {loading
+                ? t('common.loading')
+                : loadFailed
+                  ? t('deploymentsPage.bundleImport.candidatesLoadFailed')
+                  : t('deploymentsPage.bundleImport.candidateCount', { count: candidatePage.total })}
+            </span>
+            {loadFailed && (
+              <Button disabled={loading} size="sm" type="button" variant="outline" onClick={() => void loadCandidates(candidatePage.page)}>
+                {t('common.retry')}
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-1">
             <Button aria-label={t('deploymentsPage.bundleImport.previousCandidates')} disabled={loading || candidatePage.page <= 1} size="sm" type="button" variant="ghost" onClick={() => void loadCandidates(candidatePage.page - 1)}><ChevronLeft className="size-4" /></Button>
             <span>{t('deploymentsPage.bundleImport.candidatePage', { page: candidatePage.page, totalPages: Math.max(candidatePage.totalPages, 1) })}</span>

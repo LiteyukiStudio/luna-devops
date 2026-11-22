@@ -38,7 +38,7 @@ export interface BuildsPanelHandle {
 }
 
 type TriggerForm = Partial<BuildRun>
-interface BuildLogStreamState { jobId: string, content: string, streaming: boolean }
+interface BuildLogStreamState { attempt: number, content: string, error: boolean, jobId: string, streaming: boolean }
 
 const triggerDefaults: TriggerForm = { applicationId: '', buildEnvironmentId: '', buildCpuRequest: defaultBuildCpuRequest, buildMemoryRequest: defaultBuildMemoryRequest, buildTimeoutSeconds: defaultBuildTimeoutSeconds, deploymentTargetId: '', sourceBranch: '', targetImageRef: '', targetRegistryId: '', triggerType: 'manual' }
 
@@ -47,22 +47,67 @@ function uniqueBuildFilterValues(values: Array<string | undefined>) {
     .sort((left, right) => left.localeCompare(right))
 }
 
-export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, binding, deploymentTargets, buildJobs, buildRuns, listState, projectId, projectIdentifier, ref, registries, repositoryBindings }: {
+export function ApplicationBuildsPanel({
+  applicationId,
+  applicationIdentifier,
+  binding,
+  buildJobs,
+  buildJobsError = false,
+  buildJobsLoading = false,
+  buildJobsRetrying = false,
+  buildRuns,
+  deploymentTargets,
+  deploymentTargetsError = false,
+  deploymentTargetsLoading = false,
+  deploymentTargetsRetrying = false,
+  listState,
+  onRetryBuildJobs,
+  onRetryDeploymentTargets,
+  onRetryRegistries,
+  onRetryRepositoryBindings,
+  projectId,
+  projectIdentifier,
+  ref,
+  registries,
+  registriesError = false,
+  registriesLoading = false,
+  registriesRetrying = false,
+  repositoryBindings,
+  repositoryBindingsError = false,
+  repositoryBindingsLoading = false,
+  repositoryBindingsRetrying = false,
+}: {
   applicationId: string
   applicationIdentifier: string
   binding?: { defaultBranch: string, gitAccountId: string, owner: string, repo: string }
   repositoryBindings: RepositoryBinding[]
+  repositoryBindingsError?: boolean
+  repositoryBindingsLoading?: boolean
+  repositoryBindingsRetrying?: boolean
   deploymentTargets: DeploymentTarget[]
+  deploymentTargetsError?: boolean
+  deploymentTargetsLoading?: boolean
+  deploymentTargetsRetrying?: boolean
   buildJobs: BuildJob[]
+  buildJobsError?: boolean
+  buildJobsLoading?: boolean
+  buildJobsRetrying?: boolean
   buildRuns: BuildRun[]
   listState?: {
     loading: boolean
     error?: { onRetry: () => void, retrying: boolean }
   }
+  onRetryBuildJobs?: () => void
+  onRetryDeploymentTargets?: () => void
+  onRetryRegistries?: () => void
+  onRetryRepositoryBindings?: () => void
   projectId: string
   projectIdentifier: string
   ref?: Ref<BuildsPanelHandle>
   registries: ArtifactRegistry[]
+  registriesError?: boolean
+  registriesLoading?: boolean
+  registriesRetrying?: boolean
 }) {
   const { i18n, t } = useTranslation()
   const location = useLocation()
@@ -84,7 +129,8 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
   const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
   const [environmentVariableRows, setEnvironmentVariableRows] = useState<KeyValueRow[]>([])
   const [environmentSecretRows, setEnvironmentSecretRows] = useState<KeyValueRow[]>([])
-  const [logStreamState, setLogStreamState] = useState<BuildLogStreamState>({ jobId: '', content: '', streaming: false })
+  const [logRetryAttempt, setLogRetryAttempt] = useState(0)
+  const [logStreamState, setLogStreamState] = useState<BuildLogStreamState>({ attempt: 0, content: '', error: false, jobId: '', streaming: false })
   const form = useForm<TriggerForm>({ defaultValues: triggerDefaults, mode: 'onChange' })
   const selectedDeploymentTarget = deploymentTargets.find(config => config.id === form.watch('deploymentTargetId')) ?? firstSelectableDeploymentTarget(deploymentTargets)
   const selectedBinding = repositoryBindings.find(item => item.id === selectedDeploymentTarget?.repositoryBindingId) ?? binding
@@ -172,8 +218,10 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     return null
   }, [activeHashRunId, buildJobMap, manualLogTarget])
   const logJobId = effectiveLogJob?.id ?? ''
-  const logContent = logStreamState.jobId === logJobId ? logStreamState.content : ''
-  const logStreaming = Boolean(logJobId) && (logStreamState.jobId !== logJobId || logStreamState.streaming)
+  const logStreamMatches = logStreamState.jobId === logJobId && logStreamState.attempt === logRetryAttempt
+  const logContent = logStreamMatches ? logStreamState.content : ''
+  const logStreamError = Boolean(logJobId) && logStreamMatches && logStreamState.error
+  const logStreaming = Boolean(logJobId) && (!logStreamMatches || logStreamState.streaming)
   const runsTotal = buildRunsPage.data?.total ?? 0
   const branchFilterOptions = useMemo(() => uniqueBuildFilterValues([
     selectedBinding?.defaultBranch,
@@ -298,6 +346,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
 
   const openTriggerDialog = () => {
     const defaultConfig = firstSelectableDeploymentTarget(deploymentTargets)
+    const defaultBinding = repositoryBindings.find(item => item.id === defaultConfig?.repositoryBindingId) ?? binding
     const fallbackRegistry = defaultConfig?.targetRegistryId
       ? registries.find(registry => registry.id === defaultConfig.targetRegistryId)
       : resolveDefaultRegistry(registries)
@@ -310,7 +359,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       buildCpuRequest: defaultConfig?.buildCpuRequest || defaultBuildCpuRequest,
       buildMemoryRequest: defaultConfig?.buildMemoryRequest || defaultBuildMemoryRequest,
       buildTimeoutSeconds: defaultConfig?.buildTimeoutSeconds || defaultBuildTimeoutSeconds,
-      sourceBranch: (repositoryBindings.find(item => item.id === defaultConfig?.repositoryBindingId) ?? binding)?.defaultBranch || 'main',
+      sourceBranch: defaultBinding ? (defaultBinding.defaultBranch || 'main') : '',
       targetImageRef: deploymentTargetImageRef(defaultConfig) || defaultTargetImageRef(fallbackRegistry, projectIdentifier, applicationIdentifier),
       targetRegistryId,
     })
@@ -331,8 +380,10 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
         const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
         if (active && payload.content) {
           setLogStreamState(current => ({
+            attempt: logRetryAttempt,
+            content: (current.jobId === logJobId && current.attempt === logRetryAttempt ? current.content : '') + payload.content,
+            error: false,
             jobId: logJobId,
-            content: (current.jobId === logJobId ? current.content : '') + payload.content,
             streaming: true,
           }))
         }
@@ -344,8 +395,10 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       if (!active)
         return
       setLogStreamState(current => ({
+        attempt: logRetryAttempt,
+        content: current.jobId === logJobId && current.attempt === logRetryAttempt ? current.content : '',
+        error: false,
         jobId: logJobId,
-        content: current.jobId === logJobId ? current.content : '',
         streaming: false,
       }))
       stream.close()
@@ -358,8 +411,10 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       if (!active)
         return
       setLogStreamState(current => ({
+        attempt: logRetryAttempt,
+        content: current.jobId === logJobId && current.attempt === logRetryAttempt ? current.content : '',
+        error: true,
         jobId: logJobId,
-        content: current.jobId === logJobId ? current.content : '',
         streaming: false,
       }))
       stream.close()
@@ -370,11 +425,15 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       stream.removeEventListener('done', handleDone)
       stream.close()
     }
-  }, [logJobId, projectId, queryClient])
+  }, [logJobId, logRetryAttempt, projectId, queryClient])
 
-  // 仅当打开弹窗时镜像站尚未加载完成且用户未改动对应字段时，补齐初始默认镜像站，不覆盖用户草稿。
+  // 仅当打开弹窗时前置元数据尚未加载完成且用户未改动对应字段时，补齐初始默认值，不覆盖用户草稿。
   useEffect(() => {
-    if (!dialogOpen || !registries.length || form.getValues('targetRegistryId') || form.formState.dirtyFields.targetRegistryId)
+    if (!dialogOpen)
+      return
+    if (selectedBinding && !form.getValues('sourceBranch') && !form.formState.dirtyFields.sourceBranch)
+      form.setValue('sourceBranch', selectedBinding.defaultBranch || 'main', { shouldValidate: true })
+    if (!registries.length || form.getValues('targetRegistryId') || form.formState.dirtyFields.targetRegistryId)
       return
     const defaultRegistry = resolveDefaultRegistry(registries)
     if (!defaultRegistry)
@@ -382,7 +441,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     form.setValue('targetRegistryId', defaultRegistry.id, { shouldValidate: true })
     if (!form.getValues('targetImageRef') && !form.formState.dirtyFields.targetImageRef)
       form.setValue('targetImageRef', defaultTargetImageRef(defaultRegistry, projectIdentifier, applicationIdentifier), { shouldValidate: true })
-  }, [applicationIdentifier, dialogOpen, form, projectIdentifier, registries])
+  }, [applicationIdentifier, dialogOpen, form, projectIdentifier, registries, selectedBinding])
 
   return (
     <div className="grid gap-4">
@@ -441,7 +500,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
             }
           : undefined}
         items={pagedRuns}
-        loading={Boolean(listState?.loading || buildRunsPage.isLoading)}
+        loading={Boolean(listState?.loading || buildRunsPage.isPending || repositoryBindingsLoading)}
         pagination={{
           page: buildRunsPage.data?.page ?? runsPage,
           pageSize: buildRunsPage.data?.pageSize ?? runsPageSize,
@@ -493,64 +552,157 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
             <DialogBody className="grid gap-3">
               <Field error={form.formState.errors.deploymentTargetId?.message} hint={t('buildsPage.buildConfigHint')} label={t('buildsPage.buildConfig')} required>
                 {fieldControl => (
-                  <Controller
-                    control={form.control}
-                    name="deploymentTargetId"
-                    rules={{ required: t('common.required') }}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value || undefined}
-                        onValueChange={(next) => {
-                          field.onChange(next)
-                          applyDeploymentTargetDefaults(next)
-                        }}
-                      >
-                        <SelectTrigger {...fieldControl} className="w-full">
-                          <SelectValue placeholder={t('common.select')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {deploymentTargets.map(config => (
-                            <SelectItem key={config.id} value={config.id}>{config.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <div className="grid gap-1.5">
+                    <Controller
+                      control={form.control}
+                      name="deploymentTargetId"
+                      rules={{ required: t('common.required') }}
+                      render={({ field }) => (
+                        <Select
+                          disabled={deploymentTargetsLoading || deploymentTargetsError}
+                          value={!deploymentTargetsLoading && !deploymentTargetsError && deploymentTargets.some(config => config.id === field.value) ? field.value : ''}
+                          onValueChange={(next) => {
+                            if (!next)
+                              return
+                            field.onChange(next)
+                            applyDeploymentTargetDefaults(next)
+                          }}
+                        >
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue
+                              placeholder={
+                                deploymentTargetsLoading
+                                  ? t('common.loading')
+                                  : deploymentTargetsError
+                                    ? t('common.unavailable')
+                                    : deploymentTargets.length === 0
+                                      ? t('common.noOptions')
+                                      : t('common.select')
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {deploymentTargets.length === 0
+                              ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                              : deploymentTargets.map(config => (
+                                  <SelectItem key={config.id} value={config.id}>{config.name}</SelectItem>
+                                ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {deploymentTargetsError && onRetryDeploymentTargets && (
+                      <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                        <span>{t('common.unavailable')}</span>
+                        <Button disabled={deploymentTargetsRetrying} size="sm" type="button" variant="outline" onClick={onRetryDeploymentTargets}>
+                          {t('common.retry')}
+                        </Button>
+                      </div>
                     )}
-                  />
+                  </div>
                 )}
               </Field>
               <Field error={form.formState.errors.sourceBranch?.message} label={t('repositories.defaultBranch')} required>
-                <SearchSelect
-                  disabled={!selectedBinding}
-                  emptyLabel={selectedBinding ? t('common.noOptions') : t('buildsPage.repositoryBindingRequired')}
-                  limited={branches.data?.limited}
-                  loading={branches.isFetching}
-                  options={branchOptions(branches.data?.items ?? [], form.watch('sourceBranch'))}
-                  placeholder={t('repositories.defaultBranchPlaceholder')}
-                  search={branchSearch}
-                  value={form.watch('sourceBranch') || ''}
-                  onSearchChange={setBranchSearch}
-                  onValueChange={value => form.setValue('sourceBranch', value, { shouldDirty: true, shouldValidate: true })}
-                />
+                {fieldControl => (
+                  <div className="grid gap-1.5">
+                    <SearchSelect
+                      {...fieldControl}
+                      disabled={repositoryBindingsLoading || repositoryBindingsError || !selectedBinding}
+                      emptyLabel={
+                        repositoryBindingsLoading
+                          ? t('common.loading')
+                          : repositoryBindingsError || branches.isError
+                            ? t('common.unavailable')
+                            : selectedBinding
+                              ? t('common.noOptions')
+                              : t('buildsPage.repositoryBindingRequired')
+                      }
+                      error={repositoryBindingsError || (Boolean(selectedBinding) && branches.isError)}
+                      limited={branches.data?.limited}
+                      loading={repositoryBindingsLoading || (!repositoryBindingsError && Boolean(selectedBinding) && (branches.isPending || branches.isFetching))}
+                      options={repositoryBindingsLoading || repositoryBindingsError ? [] : branchOptions(branches.data?.items ?? [], form.watch('sourceBranch'))}
+                      placeholder={
+                        repositoryBindingsLoading
+                          ? t('common.loading')
+                          : repositoryBindingsError
+                            ? t('common.unavailable')
+                            : t('repositories.defaultBranchPlaceholder')
+                      }
+                      search={branchSearch}
+                      value={repositoryBindingsLoading || repositoryBindingsError ? '' : (form.watch('sourceBranch') || '')}
+                      onSearchChange={setBranchSearch}
+                      onValueChange={value => form.setValue('sourceBranch', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                    {repositoryBindingsError
+                      ? (
+                          <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                            <span>{t('common.unavailable')}</span>
+                            {onRetryRepositoryBindings && (
+                              <Button disabled={repositoryBindingsRetrying} size="sm" type="button" variant="outline" onClick={onRetryRepositoryBindings}>
+                                {t('common.retry')}
+                              </Button>
+                            )}
+                          </div>
+                        )
+                      : Boolean(selectedBinding) && branches.isError && (
+                        <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                          <span>{t('common.unavailable')}</span>
+                          <Button disabled={branches.isFetching} size="sm" type="button" variant="outline" onClick={() => void branches.refetch()}>
+                            {t('common.retry')}
+                          </Button>
+                        </div>
+                      )}
+                  </div>
+                )}
               </Field>
               <Field error={form.formState.errors.targetRegistryId?.message} label={t('buildsPage.targetRegistry')} required>
                 {fieldControl => (
-                  <Controller
-                    control={form.control}
-                    name="targetRegistryId"
-                    rules={{ required: t('common.required') }}
-                    render={({ field }) => (
-                      <Select value={field.value || undefined} onValueChange={field.onChange}>
-                        <SelectTrigger {...fieldControl} className="w-full">
-                          <SelectValue placeholder={t('common.select')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {registries.map(registry => (
-                            <SelectItem key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <div className="grid gap-1.5">
+                    <Controller
+                      control={form.control}
+                      name="targetRegistryId"
+                      rules={{ required: t('common.required') }}
+                      render={({ field }) => (
+                        <Select
+                          disabled={registriesLoading || registriesError}
+                          value={!registriesLoading && !registriesError && registries.some(registry => registry.id === field.value) ? field.value : ''}
+                          onValueChange={(next) => {
+                            if (next)
+                              field.onChange(next)
+                          }}
+                        >
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue
+                              placeholder={
+                                registriesLoading
+                                  ? t('common.loading')
+                                  : registriesError
+                                    ? t('common.unavailable')
+                                    : registries.length === 0
+                                      ? t('common.noOptions')
+                                      : t('common.select')
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {registries.length === 0
+                              ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                              : registries.map(registry => (
+                                  <SelectItem key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</SelectItem>
+                                ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {registriesError && onRetryRegistries && (
+                      <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                        <span>{t('common.unavailable')}</span>
+                        <Button disabled={registriesRetrying} size="sm" type="button" variant="outline" onClick={onRetryRegistries}>
+                          {t('common.retry')}
+                        </Button>
+                      </div>
                     )}
-                  />
+                  </div>
                 )}
               </Field>
               <Field error={form.formState.errors.targetImageRef?.message} hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
@@ -619,18 +771,21 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
                     )}
                   </Field>
                   <Field hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
-                    <div className="flex h-9 overflow-hidden rounded-control border border-input bg-background shadow-xs transition focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50">
-                      <Input
-                        className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-3 shadow-none focus-visible:ring-0"
-                        min={1}
-                        type="number"
-                        value={buildTimeoutMinutes}
-                        onChange={event => form.setValue('buildTimeoutSeconds', Math.max(1, Number(event.target.value) || 1) * 60, { shouldDirty: true, shouldValidate: true })}
-                      />
-                      <span className="flex shrink-0 items-center border-l border-border px-3 text-sm font-medium text-muted-foreground">
-                        {t('buildsPage.minutesUnit')}
-                      </span>
-                    </div>
+                    {fieldControl => (
+                      <div className="flex h-9 overflow-hidden rounded-control border border-input bg-background shadow-xs transition focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50">
+                        <Input
+                          {...fieldControl}
+                          className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-3 shadow-none focus-visible:ring-0"
+                          min={1}
+                          type="number"
+                          value={buildTimeoutMinutes}
+                          onChange={event => form.setValue('buildTimeoutSeconds', Math.max(1, Number(event.target.value) || 1) * 60, { shouldDirty: true, shouldValidate: true })}
+                        />
+                        <span className="flex shrink-0 items-center border-l border-border px-3 text-sm font-medium text-muted-foreground">
+                          {t('buildsPage.minutesUnit')}
+                        </span>
+                      </div>
+                    )}
                   </Field>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -651,9 +806,13 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
         applicationId={applicationId}
         content={logContent}
         job={effectiveLogJob}
+        jobsError={buildJobsError}
+        jobsLoading={buildJobsLoading}
         loading={logStreaming}
         projectId={projectId}
+        retrying={Boolean(buildJobsRetrying || logStreaming)}
         run={activeLogRun}
+        streamError={logStreamError}
         onActionExecuted={() => {
           void queryClient.invalidateQueries({ queryKey: ['build-runs', projectId] })
           void queryClient.invalidateQueries({ queryKey: ['build-runs-page', projectId] })
@@ -665,6 +824,11 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
           setManualLogTarget(null)
           if (currentHashToken)
             setDismissedHashToken(currentHashToken)
+        }}
+        onRetry={() => {
+          if (buildJobsError)
+            onRetryBuildJobs?.()
+          setLogRetryAttempt(attempt => attempt + 1)
         }}
       />
       <BuildEnvironmentEditorDialog

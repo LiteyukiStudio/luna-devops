@@ -40,6 +40,12 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }))
 
+vi.mock('@/components/common/code-editor', () => ({
+  CodeEditor: ({ placeholder, value, onChange }: { placeholder?: string, value: string, onChange?: (value: string) => void }) => (
+    <textarea placeholder={placeholder} value={value} onChange={event => onChange?.(event.target.value)} />
+  ),
+}))
+
 const cluster: RuntimeCluster = {
   id: 'clu_test',
   name: 'Test cluster',
@@ -92,6 +98,7 @@ const cluster: RuntimeCluster = {
 describe('clusters page visibility', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
+    window.history.replaceState(null, '', '/')
     await i18next.changeLanguage('en-US')
     mocks.session.user = { id: 'usr_admin', role: 'platform_admin' }
     mocks.listProjects.mockResolvedValue([])
@@ -141,6 +148,50 @@ describe('clusters page visibility', () => {
 
     expect(await screen.findByText('Unable to load cluster resources')).toBeInTheDocument()
     expect(screen.getByText('The live Kubernetes resource query failed. Check the cluster connection and permissions, then retry.')).toBeInTheDocument()
+  })
+
+  it('shows loading skeletons instead of empty cluster state while clusterOptions is pending', async () => {
+    mocks.listRuntimeClusters.mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    const { container } = renderPage()
+
+    await user.click(screen.getByRole('tab', { name: 'Workloads' }))
+
+    expect(screen.getByRole('combobox', { name: 'Select cluster' })).toHaveTextContent('Loading...')
+    expect(screen.queryByText(i18next.t('clustersPage.noResourceClusterTitle'))).not.toBeInTheDocument()
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+  })
+
+  it('shows cluster load error with retry on resource tabs when clusterOptions fails', async () => {
+    mocks.listRuntimeClusters
+      .mockRejectedValueOnce(new Error('gateway timeout'))
+      .mockResolvedValueOnce([cluster])
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: 'Workloads' }))
+
+    expect(await screen.findByText(i18next.t('clustersPage.clustersLoadFailedTitle'))).toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('clustersPage.noResourceClusterTitle'))).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(mocks.listRuntimeClusterResourcesPage).toHaveBeenCalled())
+  })
+
+  it('shows retryable ErrorState in ClusterFormDialog when scope is project and projects fail to load', async () => {
+    mocks.listProjects
+      .mockRejectedValueOnce(new Error('projects failed'))
+      .mockResolvedValueOnce([{ id: 'prj_1', identifier: 'alpha', name: 'Alpha', description: '' }])
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: i18next.t('deploymentsPage.createCluster') }))
+    await user.click(await screen.findByRole('combobox', { name: i18next.t('common.scope') }))
+    await user.click(await screen.findByRole('option', { name: i18next.t('codeRepositoriesView.scopeProject') }))
+
+    expect(await screen.findByText(i18next.t('errors.request.failed'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    expect(await screen.findByRole('button', { name: new RegExp(i18next.t('projectSpaces.title')) })).toHaveAttribute('id')
   })
 })
 

@@ -11,17 +11,25 @@ import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Skeleton } from '@/components/ui/skeleton'
 import { normalizeGitBaseUrl } from './code-repositories-utils'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
+interface PanelErrorState {
+  onRetry: () => void
+  retrying: boolean
+}
+
 export function ProvidersPanel({
   canManage,
+  error,
   loading,
   page,
   pageSize,
   providers,
   projectMap,
+  projectsLoading = false,
   toolbar,
   total,
   totalPages,
@@ -32,11 +40,13 @@ export function ProvidersPanel({
   onPageSizeChange,
 }: {
   canManage: boolean
+  error?: PanelErrorState
   loading: boolean
   page: number
   pageSize: number
   providers: GitProvider[]
   projectMap: Record<string, string>
+  projectsLoading?: boolean
   toolbar?: ReactNode
   total: number
   totalPages: number
@@ -71,9 +81,9 @@ export function ProvidersPanel({
           header: t('common.scope'),
           width: 'normal',
           render: provider => (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <StatusBadge>{scopeLabel(provider.scope, t)}</StatusBadge>
-              {projectScopeBadges(provider.projectIds, projectMap)}
+              {projectScopeBadges(provider.projectIds, projectMap, projectsLoading)}
             </div>
           ),
         },
@@ -105,6 +115,11 @@ export function ProvidersPanel({
       emptyTitle={t('codeRepositoriesView.noProvidersTitle')}
       emptyDescription={t('codeRepositoriesView.noProvidersDescription')}
       emptyIcon={<GitBranch className="size-5" />}
+      error={error && {
+        ...error,
+        description: t('codeRepositoriesView.loadFailedDescription'),
+        title: t('codeRepositoriesView.loadFailedTitle'),
+      }}
       items={providers}
       loading={loading}
       pagination={{
@@ -126,11 +141,14 @@ export function ProvidersPanel({
 export function CredentialsPanel({
   canManageGlobal = false,
   credentials,
+  error,
   loading,
   page,
   pageSize,
   providers,
+  providersLoading = false,
   projectMap,
+  projectsLoading = false,
   refreshPending,
   toolbar,
   total,
@@ -144,11 +162,14 @@ export function CredentialsPanel({
 }: {
   canManageGlobal?: boolean
   credentials: GitAccount[]
+  error?: PanelErrorState
   loading: boolean
   page: number
   pageSize: number
   providers: GitProvider[]
+  providersLoading?: boolean
   projectMap: Record<string, string>
+  projectsLoading?: boolean
   refreshPending: boolean
   toolbar?: ReactNode
   total: number
@@ -162,7 +183,9 @@ export function CredentialsPanel({
 }) {
   const { t } = useTranslation()
   const oauthProviders = providers.filter(provider => isGitOAuthReady(provider))
-  const oauthBlockedProviders = providers.filter(provider => provider.enabled && provider.authType === 'oauth' && !isGitOAuthReady(provider))
+  const oauthBlockedProviders = providersLoading || Boolean(error)
+    ? []
+    : providers.filter(provider => provider.enabled && provider.authType === 'oauth' && !isGitOAuthReady(provider))
   return (
     <div className="grid gap-4">
       {oauthBlockedProviders.length > 0 && (
@@ -190,15 +213,15 @@ export function CredentialsPanel({
               </div>
             ),
           },
-          { key: 'provider', header: t('codeRepositoriesView.provider'), width: 'secondary', render: credential => <ProviderNameBadge provider={providers.find(provider => provider.id === credential.providerId)} providerId={credential.providerId} /> },
+          { key: 'provider', header: t('codeRepositoriesView.provider'), width: 'secondary', render: credential => <ProviderNameBadge loading={providersLoading} provider={providers.find(provider => provider.id === credential.providerId)} providerId={credential.providerId} /> },
           {
             key: 'scope',
             header: t('common.scope'),
             width: 'normal',
             render: credential => (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge>{scopeLabel(credential.scope, t)}</StatusBadge>
-                {projectScopeBadges(credential.projectIds, projectMap)}
+                {projectScopeBadges(credential.projectIds, projectMap, projectsLoading)}
               </div>
             ),
           },
@@ -246,6 +269,11 @@ export function CredentialsPanel({
         emptyTitle={t('codeRepositoriesView.noCredentialsTitle')}
         emptyDescription={t('codeRepositoriesView.noCredentialsDescription')}
         emptyIcon={<KeyRound className="size-5" />}
+        error={error && {
+          ...error,
+          description: t('codeRepositoriesView.loadFailedDescription'),
+          title: t('codeRepositoriesView.loadFailedTitle'),
+        }}
         items={credentials}
         loading={loading}
         pagination={{
@@ -337,7 +365,9 @@ function scopeLabel(scope: string, t: ReturnType<typeof useTranslation>['t']) {
   return t(`codeRepositoriesView.scope${scope.charAt(0).toUpperCase()}${scope.slice(1)}`, { defaultValue: scope })
 }
 
-function ProviderNameBadge({ provider, providerId }: { provider?: GitProvider, providerId: string }) {
+function ProviderNameBadge({ loading = false, provider, providerId }: { loading?: boolean, provider?: GitProvider, providerId: string }) {
+  if (!provider && loading)
+    return <Skeleton className="h-4 w-24" />
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
       <GitProviderIcon baseUrl={provider?.baseUrl} className="size-4 shrink-0" type={provider?.type ?? 'github'} />
@@ -499,8 +529,12 @@ export function CredentialOAuthGuide({ provider }: { provider: GitProvider }) {
   )
 }
 
-function projectScopeBadges(projectIds: string[] | undefined, projectMap: Record<string, string>) {
-  return (projectIds ?? []).map(projectId => (
+function projectScopeBadges(projectIds: string[] | undefined, projectMap: Record<string, string>, projectsLoading = false) {
+  if (!projectIds?.length)
+    return null
+  if (projectsLoading && projectIds.some(projectId => !projectMap[projectId]))
+    return <Skeleton className="h-4 w-24" />
+  return projectIds.map(projectId => (
     <StatusBadge key={projectId}>{projectMap[projectId] ?? projectId}</StatusBadge>
   ))
 }

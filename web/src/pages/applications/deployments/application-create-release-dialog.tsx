@@ -56,11 +56,14 @@ export function ApplicationCreateReleaseDialog({
   const candidates = imageCandidates.data?.items.length ? imageCandidates.data.items : fallbackCandidates
   const selectedCandidateKey = selectedCandidateValue(candidates, form.watch('buildRunId'), imageRef)
   const imageSummary = imageRef || (selectedBuildRun ? buildRunImageRef(selectedBuildRun) : '')
-  const registryHint = imageCandidates.data?.registryAvailable
-    ? t('deploymentsPage.releaseImageCandidateRegistryHint')
-    : imageCandidates.data?.fallbackUsed || imageCandidates.isError
-      ? t('deploymentsPage.releaseImageCandidateFallbackHint')
-      : t('deploymentsPage.releaseImageCandidateLoadingHint')
+  const candidatesLoadingEmpty = imageCandidates.isLoading && candidates.length === 0
+  const registryHint = imageCandidates.isLoading
+    ? t('deploymentsPage.releaseImageCandidateLoadingHint')
+    : imageCandidates.data?.registryAvailable
+      ? t('deploymentsPage.releaseImageCandidateRegistryHint')
+      : imageCandidates.data?.fallbackUsed || imageCandidates.isError
+        ? t('deploymentsPage.releaseImageCandidateFallbackHint')
+        : undefined
 
   const applyCandidate = (key: string) => {
     const candidate = candidates.find(item => item.key === key)
@@ -86,16 +89,42 @@ export function ApplicationCreateReleaseDialog({
           {selectedTarget?.sourceType !== 'image' && (
             <Field error={form.formState.errors.imageRef?.message} hint={registryHint} label={t('deploymentsPage.releaseImageCandidate')} required>
               {fieldControl => (
-                <Select value={selectedCandidateKey || undefined} onValueChange={applyCandidate}>
-                  <SelectTrigger {...fieldControl} className="w-full">
-                    <SelectValue placeholder={t('common.select')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {candidates.map(candidate => (
-                      <SelectItem key={candidate.key} value={candidate.key}>{candidate.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid gap-1.5">
+                  <Select
+                    disabled={candidatesLoadingEmpty}
+                    value={selectedCandidateKey || undefined}
+                    onValueChange={applyCandidate}
+                  >
+                    <SelectTrigger {...fieldControl} className="w-full">
+                      <SelectValue
+                        placeholder={
+                          candidatesLoadingEmpty
+                            ? t('common.loading')
+                            : candidates.length === 0
+                              ? t('common.noOptions')
+                              : t('common.select')
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {candidatesLoadingEmpty
+                        ? <SelectItem disabled value="__loading__">{t('common.loading')}</SelectItem>
+                        : candidates.length === 0
+                          ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                          : candidates.map(candidate => (
+                              <SelectItem key={candidate.key} value={candidate.key}>{candidate.label}</SelectItem>
+                            ))}
+                    </SelectContent>
+                  </Select>
+                  {imageCandidates.isError && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground" role="alert">
+                      <span>{t('common.unavailable')}</span>
+                      <Button disabled={imageCandidates.isFetching} size="sm" type="button" variant="outline" onClick={() => void imageCandidates.refetch()}>
+                        {t('common.retry')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
             </Field>
           )}

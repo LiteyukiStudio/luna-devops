@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { DataListSkeleton } from '@/components/common/loading-states'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -29,7 +30,18 @@ type ClusterResourceRow = ClusterResource & {
   hasChildren?: boolean
   parentId?: string
 }
-export function ClusterResourcesPanel({ items, loading, pagination, selectedCluster, selectedResourceKeys, tab, user, onDeleteResource, onOpenConsole, onOpenEvents, onOpenYAML, onSelectionChange }: {
+export function ClusterResourcesPanel({ clusterOptionsError, clusterOptionsLoading = false, error, items, loading, pagination, selectedCluster, selectedResourceKeys, tab, user, onDeleteResource, onOpenConsole, onOpenEvents, onOpenYAML, onSelectionChange }: {
+  clusterOptionsError?: {
+    onRetry: () => void
+    retrying: boolean
+  }
+  clusterOptionsLoading?: boolean
+  error?: {
+    description?: string
+    onRetry?: () => void
+    retrying?: boolean
+    title: string
+  }
   items: ClusterResource[]
   loading: boolean
   pagination?: ClusterResourcePagination
@@ -80,6 +92,19 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
         return validKeys.filter(key => key !== resource.id)
       return [...validKeys, resource.id]
     })
+  }
+  if (clusterOptionsLoading) {
+    return <DataListSkeleton columns={6} />
+  }
+  if (clusterOptionsError) {
+    return (
+      <ErrorState
+        description={t('clustersPage.clustersLoadFailedDescription')}
+        retrying={clusterOptionsError.retrying}
+        title={t('clustersPage.clustersLoadFailedTitle')}
+        onRetry={clusterOptionsError.onRetry}
+      />
+    )
   }
   if (!selectedCluster) {
     return (
@@ -183,8 +208,9 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
       ]}
       emptyDescription={t('clustersPage.resourceEmptyDescription')}
       emptyTitle={t(`clustersPage.${tab}EmptyTitle`)}
+      error={error}
       items={rowItems}
-      loading={loading}
+      loading={loading && !error}
       pagination={pagination}
       rowKey={item => item.id}
       selection={{
@@ -222,10 +248,27 @@ function clusterResourceName(item: ClusterResource, includeNamespace: boolean) {
   return item.name
 }
 
-export function ClusterResourceEventsList({ events, loading }: { events: ClusterResourceEvent[], loading: boolean }) {
+export function ClusterResourceEventsList({ error, events, loading }: {
+  error?: {
+    onRetry: () => void
+    retrying: boolean
+  }
+  events: ClusterResourceEvent[]
+  loading: boolean
+}) {
   const { t } = useTranslation()
   if (loading)
     return <DataListSkeleton columns={3} rows={4} />
+  if (error) {
+    return (
+      <ErrorState
+        description={t('clustersPage.resourceLoadFailedDescription')}
+        retrying={error.retrying}
+        title={t('clustersPage.resourceLoadFailedTitle')}
+        onRetry={error.onRetry}
+      />
+    )
+  }
   if (events.length === 0) {
     return (
       <EmptyState

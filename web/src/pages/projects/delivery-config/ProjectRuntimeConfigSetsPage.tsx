@@ -10,7 +10,6 @@ import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
-import { ErrorState } from '@/components/common/error-state'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
 import { RuntimeConfigSetDialog } from '@/components/common/runtime-config-set-dialog'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -109,15 +108,6 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
     },
   }), [form])
 
-  if (configSets.isError) {
-    return (
-      <ErrorState
-        description={t('runtimeConfigSets.loadFailedDescription')}
-        title={t('runtimeConfigSets.loadFailedTitle')}
-      />
-    )
-  }
-
   return (
     <Card className="min-w-0 overflow-hidden p-0">
       <div className="border-b border-border px-4 py-4">
@@ -138,7 +128,7 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
             return (
               <div className="flex justify-end gap-2">
                 <EditActionButton disabled={deleting} label={t('common.edit')} onClick={() => openDialog(item)} />
-                <Button disabled={deleting} size="sm" variant="ghost" onClick={() => setSetToDelete(item)}>
+                <Button disabled={deleting} size="sm" type="button" variant="ghost" onClick={() => setSetToDelete(item)}>
                   <Trash2 className="size-4" />
                   {t('common.delete')}
                 </Button>
@@ -147,7 +137,16 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
           } },
         ]}
         emptyTitle={t('runtimeConfigSets.emptyTitle')}
+        error={configSets.isError
+          ? {
+              description: t('runtimeConfigSets.loadFailedDescription'),
+              onRetry: () => void configSets.refetch(),
+              retrying: configSets.isFetching,
+              title: t('runtimeConfigSets.loadFailedTitle'),
+            }
+          : undefined}
         items={configSets.data?.items ?? []}
+        loading={Boolean(projectId) && configSets.isPending}
         pagination={{
           page: configSets.data?.page ?? page,
           pageSize: configSets.data?.pageSize ?? pageSize,

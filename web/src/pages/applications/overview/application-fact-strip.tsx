@@ -20,13 +20,33 @@ import { latestByDate } from './application-facts'
  * 运行状态与当前版本直接展示后端统一结论（runtime），页面不再自行聚合。
  * 各部署配置的明细只在“部署”Tab 展示，事实条只给出跳转入口。
  */
-export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, onViewDeployments, routes, runtime, runtimeError }: {
+export function ApplicationFactStrip({
+  buildRuns,
+  buildRunsError = false,
+  buildRunsLoading = false,
+  deploymentTargets,
+  deploymentTargetsLoading = false,
+  loading = false,
+  onViewDeployments,
+  routes,
+  routesError = false,
+  routesLoading = false,
+  runtime,
+  runtimeError = false,
+  runtimeLoading = false,
+}: {
   buildRuns: BuildRun[]
+  buildRunsError?: boolean
+  buildRunsLoading?: boolean
   deploymentTargets: DeploymentTarget[]
-  loading: boolean
+  deploymentTargetsLoading?: boolean
+  loading?: boolean
   routes: GatewayRoute[]
+  routesError?: boolean
+  routesLoading?: boolean
   runtime?: Application
-  runtimeError: boolean
+  runtimeError?: boolean
+  runtimeLoading?: boolean
   /** 当前不在“部署”Tab 时提供，用于从运行状态跳到各部署配置明细。 */
   onViewDeployments?: () => void
 }) {
@@ -36,6 +56,10 @@ export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, on
   const currentRelease = runtime?.currentRelease
   const currentReleaseTarget = currentRelease ? deploymentTargets.find(target => target.id === currentRelease.deploymentTargetId) : undefined
   const latestBuild = latestByDate(buildRuns, run => run.createdAt)
+  const runtimeCellLoading = loading || (!runtime && runtimeLoading)
+  const routesCellLoading = loading || routesLoading
+  const versionCellLoading = loading || (!runtime && runtimeLoading) || (Boolean(currentRelease) && deploymentTargetsLoading)
+  const buildCellLoading = loading || buildRunsLoading
 
   return (
     <dl
@@ -43,7 +67,7 @@ export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, on
       className="grid gap-px overflow-hidden rounded-container border border-border bg-border shadow-surface-sm @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-4"
       data-slot="application-fact-strip"
     >
-      <Fact label={t('apps.runtimeStatus')} loading={loading}>
+      <Fact label={t('apps.runtimeStatus')} loading={runtimeCellLoading}>
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
           {summary
             ? <ReplicaStatusIndicator desiredReplicas={summary.desiredReplicas} readyReplicas={summary.readyReplicas} status={summary.status} />
@@ -56,38 +80,44 @@ export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, on
           )}
         </div>
       </Fact>
-      <Fact label={t('apps.primaryAccess')} loading={loading}>
-        {primaryRoute
-          ? (
-              <div className="flex min-w-0 items-center gap-2">
-                <AccessUrlLink className="min-w-0 text-sm" url={gatewayRouteAccessUrl(primaryRoute)} />
-                {primaryRoute.status !== 'ready' && <StatusBadge className="shrink-0" tone="warning">{t('apps.primaryAccessNotReady')}</StatusBadge>}
-              </div>
-            )
-          : <span className="text-sm text-muted-foreground">{t('apps.noAccessRoute')}</span>}
+      <Fact label={t('apps.primaryAccess')} loading={routesCellLoading}>
+        {routesError
+          ? <span className="text-sm text-muted-foreground">{t('common.unavailable')}</span>
+          : primaryRoute
+            ? (
+                <div className="flex min-w-0 items-center gap-2">
+                  <AccessUrlLink className="min-w-0 text-sm" url={gatewayRouteAccessUrl(primaryRoute)} />
+                  {primaryRoute.status !== 'ready' && <StatusBadge className="shrink-0" tone="warning">{t('apps.primaryAccessNotReady')}</StatusBadge>}
+                </div>
+              )
+            : <span className="text-sm text-muted-foreground">{t('apps.noAccessRoute')}</span>}
       </Fact>
-      <Fact label={t('apps.currentVersion')} loading={loading}>
-        {currentRelease
-          ? (
-              <div className="grid min-w-0 gap-0.5">
-                <CopyableHoverText className="min-w-0 font-mono text-sm" display={shortImageRef(currentRelease.imageRef)} value={currentRelease.imageRef} />
-                <span className="truncate text-xs text-muted-foreground">
-                  {[currentReleaseTarget?.name, formatSmartDateTime(currentRelease.deployedAt, t)].filter(Boolean).join(' · ')}
-                </span>
-              </div>
-            )
-          : <span className="text-sm text-muted-foreground">{t('apps.noCurrentVersion')}</span>}
+      <Fact label={t('apps.currentVersion')} loading={versionCellLoading}>
+        {runtimeError
+          ? <span className="text-sm text-muted-foreground">{t('common.unavailable')}</span>
+          : currentRelease
+            ? (
+                <div className="grid min-w-0 gap-0.5">
+                  <CopyableHoverText className="min-w-0 font-mono text-sm" display={shortImageRef(currentRelease.imageRef)} value={currentRelease.imageRef} />
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[currentReleaseTarget?.name, formatSmartDateTime(currentRelease.deployedAt, t)].filter(Boolean).join(' · ')}
+                  </span>
+                </div>
+              )
+            : <span className="text-sm text-muted-foreground">{t('apps.noCurrentVersion')}</span>}
       </Fact>
-      <Fact label={t('apps.latestBuild')} loading={loading}>
-        {latestBuild
-          ? (
-              <StatusIndicator
-                detail={formatSmartDateTime(latestBuild.createdAt, t)}
-                label={t(`buildsPage.statuses.${latestBuild.status}`, { defaultValue: latestBuild.status })}
-                state={statusIndicatorStateFor(latestBuild.status)}
-              />
-            )
-          : <span className="text-sm text-muted-foreground">{t('apps.noRecentBuild')}</span>}
+      <Fact label={t('apps.latestBuild')} loading={buildCellLoading}>
+        {buildRunsError
+          ? <span className="text-sm text-muted-foreground">{t('common.unavailable')}</span>
+          : latestBuild
+            ? (
+                <StatusIndicator
+                  detail={formatSmartDateTime(latestBuild.createdAt, t)}
+                  label={t(`buildsPage.statuses.${latestBuild.status}`, { defaultValue: latestBuild.status })}
+                  state={statusIndicatorStateFor(latestBuild.status)}
+                />
+              )
+            : <span className="text-sm text-muted-foreground">{t('apps.noRecentBuild')}</span>}
       </Fact>
     </dl>
   )

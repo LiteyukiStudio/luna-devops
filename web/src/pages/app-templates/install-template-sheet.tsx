@@ -186,22 +186,28 @@ export function InstallTemplateSheet({
                 )}
               </div>
             </SheetHeader>
-            {templateDetail.isError && (
-              <div className="p-5">
-                <ErrorState title={templateDetail.error.message} />
-              </div>
-            )}
-            {!templateDetail.isError && !template && <InstallFormSkeleton />}
-            {template && (
-              <InstallTemplateForm
-                key={template.id}
-                installing={installing}
-                template={template}
-                onCancel={onClose}
-                onInstallProject={payload => installTemplate.mutate(payload)}
-                onInstallSystem={payload => installSystemTemplate.mutate(payload)}
-              />
-            )}
+            {templateDetail.isPending
+              ? <InstallFormSkeleton />
+              : templateDetail.isError
+                ? (
+                    <div className="p-5">
+                      <ErrorState
+                        retrying={templateDetail.isFetching}
+                        title={templateDetail.error.message}
+                        onRetry={() => void templateDetail.refetch()}
+                      />
+                    </div>
+                  )
+                : template && (
+                  <InstallTemplateForm
+                    key={template.id}
+                    installing={installing}
+                    template={template}
+                    onCancel={onClose}
+                    onInstallProject={payload => installTemplate.mutate(payload)}
+                    onInstallSystem={payload => installSystemTemplate.mutate(payload)}
+                  />
+                )}
           </>
         )}
       </SheetContent>
@@ -267,12 +273,24 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
     queryFn: () => api.getProject(projectId),
     enabled: !systemComponent && Boolean(projectId),
   })
+  const clustersEnabled = systemComponent || Boolean(projectId)
   const clusters = useQuery({
     queryKey: ['runtime-clusters', systemComponent ? 'system' : projectId],
     queryFn: () => api.listRuntimeClusters(systemComponent ? undefined : projectId),
-    enabled: systemComponent || Boolean(projectId),
+    enabled: clustersEnabled,
     ...liveObservationQueryPolicy,
   })
+  const clustersLoading = (!systemComponent && projects.isPending) || (clustersEnabled && clusters.isPending)
+  const clustersError = clustersEnabled && clusters.isError
+  const upstreamVolumeLoading = (!systemComponent && projects.isPending) || (Boolean(projectId) && clusters.isPending)
+  const upstreamVolumeError = (!systemComponent && projects.isError) || (Boolean(projectId) && clusters.isError)
+  const upstreamVolumeRetrying = (!systemComponent && projects.isFetching) || (Boolean(projectId) && clusters.isFetching)
+  const retryUpstreamVolume = () => {
+    if (!systemComponent && projects.isError)
+      void projects.refetch()
+    if (Boolean(projectId) && clusters.isError)
+      void clusters.refetch()
+  }
   const clusterItems = clusters.data ?? []
   const effectiveCluster = clusterItems.find(cluster => cluster.id === clusterId)
     ?? clusterItems.find(cluster => cluster.isDefault)
@@ -361,43 +379,80 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
           ? (
               <Field error={errors.clusterId?.message} label={t('appTemplatesPage.runtimeCluster')} required>
                 {fieldControl => (
-                  <Controller
-                    control={control}
-                    name="clusterId"
-                    render={({ field }) => (
-                      <Select
-                        disabled={clusters.isLoading || installing}
-                        value={field.value || undefined}
-                        onValueChange={(next) => {
-                          if (next)
-                            field.onChange(next)
-                        }}
-                      >
-                        <SelectTrigger {...fieldControl} className="w-full">
-                          <SelectValue placeholder={t('appTemplatesPage.selectRuntimeCluster')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {clusterOptions}
-                        </SelectContent>
-                      </Select>
+                  <div className="grid gap-1.5">
+                    <Controller
+                      control={control}
+                      name="clusterId"
+                      render={({ field }) => (
+                        <Select
+                          disabled={clustersLoading || clustersError || installing}
+                          value={!clustersLoading && !clustersError && clusterItems.some(cluster => cluster.id === field.value) ? field.value : ''}
+                          onValueChange={(next) => {
+                            if (next)
+                              field.onChange(next)
+                          }}
+                        >
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue
+                              placeholder={
+                                clustersLoading
+                                  ? t('common.loading')
+                                  : clustersError
+                                    ? t('common.unavailable')
+                                    : clusterItems.length === 0
+                                      ? t('common.noOptions')
+                                      : t('appTemplatesPage.selectRuntimeCluster')
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {clusterItems.length === 0
+                              ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                              : clusterOptions}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {clustersError && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-danger" role="alert">
+                        <span>{t('common.unavailable')}</span>
+                        <Button disabled={clusters.isFetching} size="sm" type="button" variant="outline" onClick={() => void clusters.refetch()}>
+                          {t('common.retry')}
+                        </Button>
+                      </div>
                     )}
-                  />
+                  </div>
                 )}
               </Field>
             )
           : (
               <>
                 <Field label={t('projectSpaces.title')} required>
-                  <ProjectSpaceSelect
-                    disabled={projectItems.length === 0 || installing}
-                    projects={projectItems}
-                    value={projectId}
-                    onChange={(value) => {
-                      setValue('projectId', value)
-                      setValue('clusterId', '')
-                      resetVolumes()
-                    }}
-                  />
+                  {fieldControl => (
+                    <div className="grid gap-1.5">
+                      <ProjectSpaceSelect
+                        {...fieldControl}
+                        disabled={projects.isPending || projects.isError || projectItems.length === 0 || installing}
+                        error={projects.isError}
+                        loading={projects.isPending}
+                        projects={projectItems}
+                        value={projectId}
+                        onChange={(value) => {
+                          setValue('projectId', value)
+                          setValue('clusterId', '')
+                          resetVolumes()
+                        }}
+                      />
+                      {projects.isError && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-danger" role="alert">
+                          <span>{t('common.unavailable')}</span>
+                          <Button disabled={projects.isFetching} size="sm" type="button" variant="outline" onClick={() => void projects.refetch()}>
+                            {t('common.retry')}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </Field>
                 <Field error={errors.applicationName?.message} label={t('appTemplatesPage.applicationName')} required>
                   <Input {...register('applicationName')} />
@@ -507,33 +562,57 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label={t('appTemplatesPage.runtimeCluster')}>
                         {fieldControl => (
-                          <Controller
-                            control={control}
-                            name="clusterId"
-                            render={({ field }) => (
-                              <Select
-                                disabled={clusters.isLoading || installing}
-                                value={toSelectValue(field.value)}
-                                onValueChange={(next) => {
-                                  if (!next)
-                                    return
-                                  const nextClusterId = fromSelectValue(next)
-                                  if (nextClusterId === field.value)
-                                    return
-                                  field.onChange(nextClusterId)
-                                  resetVolumes()
-                                }}
-                              >
-                                <SelectTrigger {...fieldControl} className="w-full">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value={EMPTY_SELECT_VALUE}>{t('appTemplatesPage.defaultCluster')}</SelectItem>
-                                  {clusterOptions}
-                                </SelectContent>
-                              </Select>
+                          <div className="grid gap-1.5">
+                            <Controller
+                              control={control}
+                              name="clusterId"
+                              render={({ field }) => (
+                                <Select
+                                  disabled={clustersLoading || clustersError || installing}
+                                  value={toSelectValue(field.value)}
+                                  onValueChange={(next) => {
+                                    if (!next)
+                                      return
+                                    const nextClusterId = fromSelectValue(next)
+                                    if (nextClusterId === field.value)
+                                      return
+                                    field.onChange(nextClusterId)
+                                    resetVolumes()
+                                  }}
+                                >
+                                  <SelectTrigger {...fieldControl} className="w-full">
+                                    <SelectValue
+                                      placeholder={
+                                        clustersLoading
+                                          ? t('common.loading')
+                                          : clustersError
+                                            ? t('common.unavailable')
+                                            : t('appTemplatesPage.defaultCluster')
+                                      }
+                                    />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value={EMPTY_SELECT_VALUE}>
+                                      {clustersLoading
+                                        ? t('common.loading')
+                                        : clustersError
+                                          ? t('common.unavailable')
+                                          : t('appTemplatesPage.defaultCluster')}
+                                    </SelectItem>
+                                    {clusterOptions}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            />
+                            {clustersError && (
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-danger" role="alert">
+                                <span>{t('common.unavailable')}</span>
+                                <Button disabled={clusters.isFetching} size="sm" type="button" variant="outline" onClick={() => void clusters.refetch()}>
+                                  {t('common.retry')}
+                                </Button>
+                              </div>
                             )}
-                          />
+                          </div>
                         )}
                       </Field>
                       <Field label={t('appTemplatesPage.deploymentName')}>
@@ -584,12 +663,16 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                                                 disabled={installing}
                                                 mode={mode}
                                                 projectId={projectId}
+                                                upstreamError={upstreamVolumeError}
+                                                upstreamLoading={upstreamVolumeLoading}
+                                                upstreamRetrying={upstreamVolumeRetrying}
                                                 value={field.value ?? ''}
                                                 onChange={(value) => {
                                                   if (value)
                                                     setValue('clusterId', effectiveClusterId)
                                                   field.onChange(value)
                                                 }}
+                                                onRetryUpstream={retryUpstreamVolume}
                                               />
                                             )}
                                           />
@@ -658,12 +741,16 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                                         disabled={installing}
                                         mode={projectVolumeMode}
                                         projectId={projectId}
+                                        upstreamError={upstreamVolumeError}
+                                        upstreamLoading={upstreamVolumeLoading}
+                                        upstreamRetrying={upstreamVolumeRetrying}
                                         value={field.value}
                                         onChange={(value) => {
                                           if (value)
                                             setValue('clusterId', effectiveClusterId)
                                           field.onChange(value)
                                         }}
+                                        onRetryUpstream={retryUpstreamVolume}
                                       />
                                     )}
                                   />

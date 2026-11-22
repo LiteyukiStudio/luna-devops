@@ -466,7 +466,7 @@ export function NotificationsPage() {
                 }
               : undefined}
             items={channels.data?.items ?? []}
-            loading={channels.isLoading}
+            loading={channels.isPending}
             pagination={pagination(channels.data, channelPage, setChannelPage, t)}
             rowKey={item => item.id}
           />
@@ -485,7 +485,7 @@ export function NotificationsPage() {
                 }
               : undefined}
             items={templates.data?.items ?? []}
-            loading={templates.isLoading}
+            loading={templates.isPending}
             pagination={pagination(templates.data, templatePage, setTemplatePage, t)}
             rowKey={item => item.id}
           />
@@ -505,7 +505,7 @@ export function NotificationsPage() {
                 }
               : undefined}
             items={rules.data?.items ?? []}
-            loading={rules.isLoading}
+            loading={rules.isPending}
             pagination={pagination(rules.data, rulePage, setRulePage, t)}
             rowKey={item => item.id}
           />
@@ -519,7 +519,7 @@ export function NotificationsPage() {
             error={deliveries.isError}
             eventIdFilter={eventIdFilter}
             eventTypeFilter={deliveryEventType}
-            loading={deliveries.isLoading}
+            loading={deliveries.isPending}
             page={deliveryPage}
             retrying={retryDelivery.isPending}
             retryingLoad={deliveries.isFetching}
@@ -543,8 +543,16 @@ export function NotificationsPage() {
         manageableProjects={projectOptions.data ?? []}
         open={Boolean(channelDialog)}
         presets={presets.data ?? []}
+        presetsError={presets.isError}
+        presetsLoading={presets.isPending}
+        presetsRetrying={presets.isFetching}
+        projectsError={projectOptions.isError}
+        projectsLoading={projectOptions.isPending}
+        projectsRetrying={projectOptions.isFetching}
         saving={saveChannel.isPending}
         onClose={() => setChannelDialog(null)}
+        onRetryPresets={() => void presets.refetch()}
+        onRetryProjects={() => void projectOptions.refetch()}
         onSave={(payload, channelId) => saveChannel.mutate({ channelId, payload })}
       />
 
@@ -559,14 +567,25 @@ export function NotificationsPage() {
 
       <NotificationRuleDialog
         channels={globalChannelOptions}
+        channelsError={channelOptions.isError}
+        channelsLoading={channelOptions.isPending}
+        channelsRetrying={channelOptions.isFetching}
         contextMode="global"
         open={Boolean(ruleDialog)}
         projects={projectOptions.data}
-        projectsLoading={projectOptions.isLoading}
+        projectsError={projectOptions.isError}
+        projectsLoading={projectOptions.isPending}
+        projectsRetrying={projectOptions.isFetching}
         rule={ruleDialog?.rule}
         saving={saveRule.isPending}
         templates={templateOptions.data?.items}
+        templatesError={templateOptions.isError}
+        templatesLoading={templateOptions.isPending}
+        templatesRetrying={templateOptions.isFetching}
         onClose={() => setRuleDialog(null)}
+        onRetryChannels={() => void channelOptions.refetch()}
+        onRetryProjects={() => void projectOptions.refetch()}
+        onRetryTemplates={() => void templateOptions.refetch()}
         onSave={(payload, ruleId) => saveRule.mutate({ payload, ruleId })}
       />
 

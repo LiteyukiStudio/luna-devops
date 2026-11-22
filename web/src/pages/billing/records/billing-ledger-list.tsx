@@ -1,4 +1,4 @@
-import type { BillingDisplay, BillingListPage } from './billing-list-cells'
+import type { BillingDisplay, BillingListError, BillingListPage } from './billing-list-cells'
 import type { BillingLedgerEntry, Project } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { ReceiptText } from 'lucide-react'
@@ -14,16 +14,20 @@ import { ApplicationCell, ProjectCell, ResourceCell } from './billing-list-cells
 export function BillingLedgerList({
   billingDisplay,
   data,
+  error,
   loading,
   page,
   projectMap,
+  projectsLoading = false,
   onPageChange,
 }: {
   billingDisplay: BillingDisplay
   data?: BillingListPage<BillingLedgerEntry>
+  error?: BillingListError
   loading: boolean
   page: number
   projectMap: Map<string, Project>
+  projectsLoading?: boolean
   onPageChange: (page: number) => void
 }) {
   const { t } = useTranslation()
@@ -33,7 +37,7 @@ export function BillingLedgerList({
       header: t('billingPage.project'),
       width: 'primary',
       render: item => item.projectId
-        ? <ProjectCell project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />
+        ? <ProjectCell loading={projectsLoading} project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />
         : <span className="text-sm text-muted-foreground">{t('billingPage.accountTransaction')}</span>,
     },
     {
@@ -101,7 +105,7 @@ export function BillingLedgerList({
       width: 'compact',
       render: item => formatSmartDateTime(item.occurredAt, t),
     },
-  ], [billingDisplay, projectMap, t])
+  ], [billingDisplay, projectMap, projectsLoading, t])
 
   return (
     <DataList
@@ -109,8 +113,9 @@ export function BillingLedgerList({
       emptyDescription={t('billingPage.emptyLedgerDescription')}
       emptyTitle={t('billingPage.emptyLedgerTitle')}
       emptyIcon={<ReceiptText className="size-5" />}
+      error={error}
       items={data?.items ?? []}
-      loading={loading}
+      loading={loading && !error}
       pagination={{
         page: data?.page ?? page,
         pageInfoLabel: t('billingPage.ledgerPageInfo', {

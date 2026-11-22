@@ -9,12 +9,14 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { eligibleBillingOwnerTransferMembers } from './billing-owner-transfer'
 
 const transferFormSchema = z.object({
@@ -23,7 +25,21 @@ const transferFormSchema = z.object({
 
 type TransferForm = z.infer<typeof transferFormSchema>
 
-export function BillingOwnerTransferDialog({ members, project }: { members: ProjectMember[], project: Project }) {
+export function BillingOwnerTransferDialog({
+  members,
+  membersError = false,
+  membersLoading = false,
+  membersRetrying = false,
+  onRetryMembers,
+  project,
+}: {
+  members: ProjectMember[]
+  membersError?: boolean
+  membersLoading?: boolean
+  membersRetrying?: boolean
+  onRetryMembers?: () => void
+  project: Project
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -74,42 +90,64 @@ export function BillingOwnerTransferDialog({ members, project }: { members: Proj
 
         <form className="grid gap-4" onSubmit={form.handleSubmit(values => transfer.mutate(values.recipientUserId))}>
           <div className="grid gap-4 py-2">
-            {candidates.length > 0
+            {membersLoading
               ? (
-                  <Field
-                    required
-                    error={form.formState.errors.recipientUserId ? t('projectSpaces.billingOwnerTransfer.recipientRequired') : undefined}
-                    hint={t('projectSpaces.billingOwnerTransfer.recipientHint')}
-                    label={t('projectSpaces.billingOwnerTransfer.recipient')}
-                  >
-                    <Select
-                      value={form.watch('recipientUserId')}
-                      onValueChange={value => form.setValue('recipientUserId', value, { shouldDirty: true, shouldValidate: true })}
-                    >
-                      <SelectTrigger aria-invalid={Boolean(form.formState.errors.recipientUserId)} className="w-full">
-                        <SelectValue placeholder={t('projectSpaces.billingOwnerTransfer.recipientPlaceholder')} />
-                      </SelectTrigger>
-                      <SelectContent position="popper">
-                        {candidates.map(member => (
-                          <SelectItem key={member.userId} value={member.userId}>
-                            <UserAvatar className="size-6" user={member} />
-                            <span className="min-w-0">
-                              <span className="block truncate font-medium">{member.name || member.email}</span>
-                              <span className="block truncate text-xs text-muted-foreground">{member.email}</span>
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
+                  <div className="grid gap-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-9 w-full" />
+                  </div>
                 )
-              : (
-                  <Alert>
-                    <Inbox />
-                    <AlertTitle>{t('projectSpaces.billingOwnerTransfer.noCandidatesTitle')}</AlertTitle>
-                    <AlertDescription>{t('projectSpaces.billingOwnerTransfer.noCandidatesDescription')}</AlertDescription>
-                  </Alert>
-                )}
+              : membersError
+                ? (
+                    <ErrorState
+                      description={t('projectMembers.loadFailedDescription')}
+                      retrying={membersRetrying}
+                      title={t('projectMembers.loadFailedTitle')}
+                      onRetry={onRetryMembers}
+                    />
+                  )
+                : candidates.length > 0
+                  ? (
+                      <Field
+                        required
+                        error={form.formState.errors.recipientUserId ? t('projectSpaces.billingOwnerTransfer.recipientRequired') : undefined}
+                        hint={t('projectSpaces.billingOwnerTransfer.recipientHint')}
+                        label={t('projectSpaces.billingOwnerTransfer.recipient')}
+                      >
+                        {(fieldControl) => {
+                          const recipientUserId = form.watch('recipientUserId')
+                          const hasSelectedOwnerOption = candidates.some(member => member.userId === recipientUserId)
+                          return (
+                            <Select
+                              value={hasSelectedOwnerOption ? recipientUserId : ''}
+                              onValueChange={value => form.setValue('recipientUserId', value, { shouldDirty: true, shouldValidate: true })}
+                            >
+                              <SelectTrigger {...fieldControl} className="w-full">
+                                <SelectValue placeholder={t('projectSpaces.billingOwnerTransfer.recipientPlaceholder')} />
+                              </SelectTrigger>
+                              <SelectContent position="popper">
+                                {candidates.map(member => (
+                                  <SelectItem key={member.userId} value={member.userId}>
+                                    <UserAvatar className="size-6" user={member} />
+                                    <span className="min-w-0">
+                                      <span className="block truncate font-medium">{member.name || member.email}</span>
+                                      <span className="block truncate text-xs text-muted-foreground">{member.email}</span>
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )
+                        }}
+                      </Field>
+                    )
+                  : (
+                      <Alert>
+                        <Inbox />
+                        <AlertTitle>{t('projectSpaces.billingOwnerTransfer.noCandidatesTitle')}</AlertTitle>
+                        <AlertDescription>{t('projectSpaces.billingOwnerTransfer.noCandidatesDescription')}</AlertDescription>
+                      </Alert>
+                    )}
 
             <Alert>
               <ArrowRightLeft />
@@ -122,7 +160,7 @@ export function BillingOwnerTransferDialog({ members, project }: { members: Proj
             <Button disabled={transfer.isPending} type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               {t('common.cancel')}
             </Button>
-            <Button disabled={!form.formState.isValid || transfer.isPending} type="submit">
+            <Button disabled={membersLoading || membersError || candidates.length === 0 || !form.formState.isValid || transfer.isPending} type="submit">
               {transfer.isPending ? t('common.loading') : t('projectSpaces.billingOwnerTransfer.submit')}
             </Button>
           </DialogFooter>

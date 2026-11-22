@@ -189,6 +189,35 @@ describe('dashboard page', () => {
     expect(screen.queryByRole('combobox', { name: 'View range' })).not.toBeInTheDocument()
     expect(await screen.findByRole('link', { name: 'View all events' })).toHaveAttribute('href', '/events?visibility=related')
   })
+
+  it('shows skeletons while recent application queries are pending and ErrorState when a project query fails with zero loaded rows', async () => {
+    const fixture = dashboardOverviewFixture()
+    fixture.projects = [
+      { ...fixture.projects[0]!, id: 'prj_empty', name: 'Empty project', applicationCount: 0 },
+      { ...fixture.projects[0]!, id: 'prj_broken', name: 'Broken project', applicationCount: 2 },
+    ]
+    mocks.getDashboard.mockResolvedValue(fixture)
+    mocks.listApplicationsPage.mockReturnValueOnce(new Promise(() => undefined)).mockReturnValueOnce(new Promise(() => undefined))
+
+    const { container, unmount } = renderPage()
+    expect(await screen.findByText('Frequent project spaces')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    expect(screen.queryByText('No applications yet')).not.toBeInTheDocument()
+    unmount()
+
+    const user = userEvent.setup()
+    mocks.listApplicationsPage
+      .mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc', total: 0, totalPages: 0 })
+      .mockRejectedValueOnce(new Error('cluster unreachable'))
+      .mockResolvedValueOnce({ items: [applicationFixture()], page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc', total: 1, totalPages: 1 })
+
+    renderPage()
+    expect(await screen.findByText(i18next.t('dashboardPage.recentAppsLoadFailedTitle'))).toBeInTheDocument()
+    expect(screen.queryByText('No applications yet')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    expect(await screen.findByRole('link', { name: 'API' })).toBeInTheDocument()
+  })
 })
 
 function renderPage(initialEntries = ['/dashboard']) {

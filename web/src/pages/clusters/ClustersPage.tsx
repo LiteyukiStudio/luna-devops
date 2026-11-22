@@ -8,7 +8,6 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
-import { ErrorState } from '@/components/common/error-state'
 import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
 import { PageShell } from '@/components/common/page-shell'
 import { Button } from '@/components/ui/button'
@@ -125,15 +124,21 @@ export function ClustersPage() {
               : (
                   <>
                     <Select
-                      disabled={resourceClusters.length === 0}
-                      value={resources.selectedResourceCluster?.id || undefined}
+                      disabled={clusterOptions.isPending || clusterOptions.isError || resourceClusters.length === 0}
+                      value={resources.selectedResourceCluster?.id ?? ''}
                       onValueChange={resources.selectResourceCluster}
                     >
                       <SelectTrigger
                         aria-label={t('clustersPage.selectResourceCluster')}
                         className="w-52 max-w-full"
                       >
-                        <SelectValue placeholder={t('clustersPage.noResourceClusterTitle')} />
+                        <SelectValue
+                          placeholder={clusterOptions.isPending
+                            ? t('common.loading')
+                            : clusterOptions.isError
+                              ? t('common.unavailable')
+                              : t('clustersPage.noResourceClusterTitle')}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {resourceClusters.map(cluster => (
@@ -184,9 +189,9 @@ export function ClustersPage() {
                   retrying: clusters.isFetching,
                 }
               : undefined}
-            loading={clusters.isLoading}
+            loading={clusters.isPending}
             pressureByClusterId={clusterPressure.byClusterId}
-            pressureLoading={clusterPressure.isPending}
+            pressureLoading={clusterPressure.isLoading}
             pagination={{
               page: clusters.data?.page ?? clusterPage,
               pageSize: clusters.data?.pageSize ?? clusterPageSize,
@@ -199,6 +204,7 @@ export function ClustersPage() {
               },
             }}
             projects={projects.data ?? []}
+            projectsLoading={projects.isPending}
             user={user}
             onCreate={() => openClusterDialog()}
             onDelete={setClusterToDelete}
@@ -209,31 +215,35 @@ export function ClustersPage() {
         </TabsContent>
         {RESOURCE_TABS.map(tab => (
           <TabsContent key={tab} value={tab}>
-            {activeTab === tab && resources.clusterResources.isError
-              ? (
-                  <ErrorState
-                    description={t('clustersPage.resourceLoadFailedDescription')}
-                    retrying={resources.clusterResources.isFetching}
-                    title={t('clustersPage.resourceLoadFailedTitle')}
-                    onRetry={() => void resources.clusterResources.refetch()}
-                  />
-                )
-              : (
-                  <ClusterResourcesPanel
-                    items={activeTab === tab ? resources.activeResourceItems : []}
-                    loading={activeTab === tab && resources.clusterResources.isFetching}
-                    pagination={activeTab === tab ? resources.resourcePagination : undefined}
-                    selectedCluster={resources.selectedResourceCluster}
-                    selectedResourceKeys={activeTab === tab ? resources.selectedResourceKeys : []}
-                    tab={tab}
-                    user={user}
-                    onDeleteResource={resources.setResourceToDelete}
-                    onOpenConsole={resources.setConsoleResource}
-                    onOpenEvents={resources.setEventResource}
-                    onOpenYAML={resources.setYamlResource}
-                    onSelectionChange={resources.setSelectedResourceKeys}
-                  />
-                )}
+            <ClusterResourcesPanel
+              clusterOptionsError={activeTab === tab && clusterOptions.isError
+                ? {
+                    onRetry: () => void clusterOptions.refetch(),
+                    retrying: clusterOptions.isFetching,
+                  }
+                : undefined}
+              clusterOptionsLoading={activeTab === tab && clusterOptions.isPending}
+              error={activeTab === tab && resources.clusterResources.isError
+                ? {
+                    description: t('clustersPage.resourceLoadFailedDescription'),
+                    onRetry: () => void resources.clusterResources.refetch(),
+                    retrying: resources.clusterResources.isFetching,
+                    title: t('clustersPage.resourceLoadFailedTitle'),
+                  }
+                : undefined}
+              items={activeTab === tab ? resources.activeResourceItems : []}
+              loading={activeTab === tab && Boolean(resources.selectedResourceCluster) && resources.clusterResources.isPending}
+              pagination={activeTab === tab ? resources.resourcePagination : undefined}
+              selectedCluster={resources.selectedResourceCluster}
+              selectedResourceKeys={activeTab === tab ? resources.selectedResourceKeys : []}
+              tab={tab}
+              user={user}
+              onDeleteResource={resources.setResourceToDelete}
+              onOpenConsole={resources.setConsoleResource}
+              onOpenEvents={resources.setEventResource}
+              onOpenYAML={resources.setYamlResource}
+              onSelectionChange={resources.setSelectedResourceKeys}
+            />
           </TabsContent>
         ))}
       </ContentTabs>
@@ -245,8 +255,12 @@ export function ClustersPage() {
             editingCluster={editingCluster}
             open={dialogOpen}
             projects={projects.data ?? []}
+            projectsError={projects.isError}
+            projectsLoading={projects.isPending}
+            projectsRetrying={projects.isFetching}
             user={user}
             onOpenChange={setDialogOpen}
+            onRetryProjects={() => void projects.refetch()}
             onSaved={() => {
               setDialogOpen(false)
               setEditingCluster(null)
@@ -283,11 +297,23 @@ export function ClustersPage() {
             deleteResourcesPending={resources.deleteResources.isPending}
             eventResource={resources.eventResource}
             events={resources.resourceEvents.data ?? []}
-            eventsLoading={resources.resourceEvents.isFetching}
+            eventsError={resources.resourceEvents.isError
+              ? {
+                  onRetry: () => void resources.resourceEvents.refetch(),
+                  retrying: resources.resourceEvents.isFetching,
+                }
+              : undefined}
+            eventsLoading={Boolean(resources.selectedResourceCluster?.id && resources.eventResource) && resources.resourceEvents.isPending}
             resourceToDelete={resources.resourceToDelete}
             resourcesToDelete={resources.resourcesToDelete}
             yaml={resources.resourceYAML.data}
-            yamlLoading={resources.resourceYAML.isFetching}
+            yamlError={resources.resourceYAML.isError
+              ? {
+                  onRetry: () => void resources.resourceYAML.refetch(),
+                  retrying: resources.resourceYAML.isFetching,
+                }
+              : undefined}
+            yamlLoading={Boolean(resources.selectedResourceCluster?.id && resources.yamlResource) && resources.resourceYAML.isPending}
             yamlResource={resources.yamlResource}
             onCloseConsole={() => resources.setConsoleResource(null)}
             onCloseEvents={() => resources.setEventResource(null)}

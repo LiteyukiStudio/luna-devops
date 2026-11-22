@@ -12,7 +12,6 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
-import { ErrorState } from '@/components/common/error-state'
 import { PageShell } from '@/components/common/page-shell'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
@@ -261,67 +260,73 @@ export function CodeRepositoriesPage() {
             initial={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
-            {(activeTab === 'providers' ? providers.isError : credentials.isError)
+            {activeTab === 'providers'
               ? (
-                  <ErrorState
-                    description={t('codeRepositoriesView.loadFailedDescription')}
-                    retrying={activeTab === 'providers' ? providers.isFetching : credentials.isFetching}
-                    title={t('codeRepositoriesView.loadFailedTitle')}
-                    onRetry={() => void (activeTab === 'providers' ? providers.refetch() : credentials.refetch())}
+                  <ProvidersPanel
+                    canManage={Boolean(canManageProviders)}
+                    error={providers.isError
+                      ? {
+                          onRetry: () => void providers.refetch(),
+                          retrying: providers.isFetching,
+                        }
+                      : undefined}
+                    loading={providers.isPending}
+                    page={providers.data?.page ?? providerPage}
+                    pageSize={providers.data?.pageSize ?? providerPageSize}
+                    providers={providers.data?.items ?? []}
+                    projectMap={projectMap}
+                    projectsLoading={projects.isPending}
+                    toolbar={visibilitySelect}
+                    total={providers.data?.total ?? 0}
+                    totalPages={providers.data?.totalPages ?? 0}
+                    onCreate={openCreateProviderDialog}
+                    onDelete={setProviderToDelete}
+                    onEdit={(provider) => {
+                      setEditingProvider(provider)
+                      setProviderDialogOpen(true)
+                    }}
+                    onPageChange={setProviderPage}
+                    onPageSizeChange={(pageSize) => {
+                      setProviderPageSize(pageSize)
+                      setProviderPage(1)
+                    }}
                   />
                 )
-              : activeTab === 'providers'
-                ? (
-                    <ProvidersPanel
-                      canManage={Boolean(canManageProviders)}
-                      loading={providers.isLoading}
-                      page={providers.data?.page ?? providerPage}
-                      pageSize={providers.data?.pageSize ?? providerPageSize}
-                      providers={providers.data?.items ?? []}
-                      projectMap={projectMap}
-                      toolbar={visibilitySelect}
-                      total={providers.data?.total ?? 0}
-                      totalPages={providers.data?.totalPages ?? 0}
-                      onCreate={openCreateProviderDialog}
-                      onDelete={setProviderToDelete}
-                      onEdit={(provider) => {
-                        setEditingProvider(provider)
-                        setProviderDialogOpen(true)
-                      }}
-                      onPageChange={setProviderPage}
-                      onPageSizeChange={(pageSize) => {
-                        setProviderPageSize(pageSize)
-                        setProviderPage(1)
-                      }}
-                    />
-                  )
-                : (
-                    <CredentialsPanel
-                      canManageGlobal={canViewAll}
-                      credentials={credentialItems}
-                      loading={credentials.isLoading}
-                      page={credentials.data?.page ?? credentialPage}
-                      pageSize={credentials.data?.pageSize ?? credentialPageSize}
-                      providers={providerOptionItems}
-                      projectMap={projectMap}
-                      refreshPending={refreshCredential.isPending}
-                      toolbar={visibilitySelect}
-                      total={credentials.data?.total ?? 0}
-                      totalPages={credentials.data?.totalPages ?? 0}
-                      onCreate={openCreateCredentialDialog}
-                      onDelete={setCredentialToDelete}
-                      onEdit={(credential) => {
-                        setEditingCredential(credential)
-                        setCredentialDialogOpen(true)
-                      }}
-                      onPageChange={setCredentialPage}
-                      onPageSizeChange={(pageSize) => {
-                        setCredentialPageSize(pageSize)
-                        setCredentialPage(1)
-                      }}
-                      onRefresh={credential => refreshCredential.mutate(credential.id)}
-                    />
-                  )}
+              : (
+                  <CredentialsPanel
+                    canManageGlobal={canViewAll}
+                    credentials={credentialItems}
+                    error={credentials.isError
+                      ? {
+                          onRetry: () => void credentials.refetch(),
+                          retrying: credentials.isFetching,
+                        }
+                      : undefined}
+                    loading={credentials.isPending}
+                    page={credentials.data?.page ?? credentialPage}
+                    pageSize={credentials.data?.pageSize ?? credentialPageSize}
+                    providers={providerOptionItems}
+                    providersLoading={providerOptions.isPending}
+                    projectMap={projectMap}
+                    projectsLoading={projects.isPending}
+                    refreshPending={refreshCredential.isPending}
+                    toolbar={visibilitySelect}
+                    total={credentials.data?.total ?? 0}
+                    totalPages={credentials.data?.totalPages ?? 0}
+                    onCreate={openCreateCredentialDialog}
+                    onDelete={setCredentialToDelete}
+                    onEdit={(credential) => {
+                      setEditingCredential(credential)
+                      setCredentialDialogOpen(true)
+                    }}
+                    onPageChange={setCredentialPage}
+                    onPageSizeChange={(pageSize) => {
+                      setCredentialPageSize(pageSize)
+                      setCredentialPage(1)
+                    }}
+                    onRefresh={credential => refreshCredential.mutate(credential.id)}
+                  />
+                )}
           </motion.div>
         </TabsContent>
       </ContentTabs>
@@ -333,6 +338,10 @@ export function CodeRepositoriesPage() {
         hasAnotherGithubProvider={hasAnotherGithubProvider}
         pending={saveProvider.isPending}
         projects={projects.data ?? []}
+        projectsError={projects.isError}
+        projectsLoading={projects.isPending}
+        projectsRetrying={projects.isFetching}
+        onRetryProjects={() => void projects.refetch()}
         onSubmit={values => saveProvider.mutate(values)}
         onOpenChange={(open) => {
           setProviderDialogOpen(open)
@@ -348,12 +357,20 @@ export function CodeRepositoriesPage() {
         form={credentialForm}
         pending={saveCredential.isPending}
         projects={projects.data ?? []}
+        projectsError={projects.isError}
+        projectsLoading={projects.isPending}
+        projectsRetrying={projects.isFetching}
         providers={providerOptionItems}
+        providersError={providerOptions.isError}
+        providersLoading={providerOptions.isPending}
+        providersRetrying={providerOptions.isFetching}
         onOpenChange={(open) => {
           setCredentialDialogOpen(open)
           if (!open)
             setEditingCredential(null)
         }}
+        onRetryProjects={() => void projects.refetch()}
+        onRetryProviders={() => void providerOptions.refetch()}
         onSubmit={values => saveCredential.mutate(values)}
       />
 

@@ -11,6 +11,7 @@ import { api } from '@/api'
 import { ErrorState } from '@/components/common/error-state'
 import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
+import { SettingsSkeleton } from '@/components/common/loading-states'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -51,8 +52,18 @@ export function MailSettingsPanel() {
     onError: error => toast.error(error.message),
   })
 
-  if (settings.isError)
-    return <ErrorState title={t('settings.mail.loadFailedTitle')} description={t('settings.mail.loadFailedDescription')} />
+  if (settings.isPending)
+    return <SettingsSkeleton />
+  if (settings.isError) {
+    return (
+      <ErrorState
+        description={t('settings.mail.loadFailedDescription')}
+        retrying={settings.isFetching}
+        title={t('settings.mail.loadFailedTitle')}
+        onRetry={() => void settings.refetch()}
+      />
+    )
+  }
 
   const passwordSet = settings.data?.passwordSet ?? false
   const testRecipientValid = z.string().email().safeParse(testRecipient.trim()).success
@@ -129,7 +140,7 @@ export function MailSettingsPanel() {
             <Input value={testRecipient} type="email" onChange={event => setTestRecipient(event.target.value)} />
           </Field>
           <Button
-            disabled={!testRecipientValid || test.isPending || settings.isLoading || form.formState.isDirty || !settings.data?.host}
+            disabled={!testRecipientValid || test.isPending || form.formState.isDirty || !settings.data?.host}
             type="button"
             variant="outline"
             onClick={() => test.mutate(testRecipient.trim())}
@@ -142,7 +153,7 @@ export function MailSettingsPanel() {
       <FloatingFormSaveBar
         open={form.formState.isDirty}
         pending={save.isPending}
-        saveDisabled={settings.isLoading || !form.formState.isValid}
+        saveDisabled={!form.formState.isValid}
         saveLabel={t('settings.mail.save')}
         tone={form.formState.isValid ? 'primary' : 'danger'}
         onDiscard={() => form.reset(settings.data ? mailSettingsToForm(settings.data) : defaultMailSettingsFormValues)}

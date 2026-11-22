@@ -12,6 +12,7 @@ import { api, oidcStartUrl } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageMotion } from '@/components/common/motion'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -19,6 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const schema = z.object({
@@ -71,6 +73,27 @@ export function LoginPage() {
   function prefillRecentUser(email: string) {
     form.setValue('email', email, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
     form.setValue('password', '', { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+  }
+
+  if (!session.initialized || Boolean(session.user)) {
+    return (
+      <div className="grid min-h-dvh min-w-0 place-items-center bg-primary-subtle px-3 py-4 text-foreground sm:px-6 sm:py-6 lg:px-4 lg:py-8">
+        <Card aria-label={t('common.loading')} className="grid w-full max-w-md gap-5 p-6 sm:p-8" role="status">
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-11 shrink-0 rounded-feature" />
+            <div className="grid flex-1 gap-2">
+              <Skeleton className="h-5 w-36" />
+              <Skeleton className="h-4 w-52 max-w-full" />
+            </div>
+          </div>
+          <div className="grid gap-3">
+            <Skeleton className="h-9 w-full rounded-control" />
+            <Skeleton className="h-9 w-full rounded-control" />
+            <Skeleton className="h-9 w-full rounded-control" />
+          </div>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -160,23 +183,39 @@ export function LoginPage() {
                     </Button>
                   )}
                 </form>
-                {(providers.data ?? []).length > 0 && (
-                  <div className="mt-5 grid gap-2 border-t border-border pt-5">
-                    {(providers.data ?? []).map(provider => (
-                      <Button
-                        key={provider.id}
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          window.location.href = oidcStartUrl(provider.id, 'login')
-                        }}
-                      >
-                        <LogIn size={16} />
-                        {t('loginPage.useProviderLogin', { provider: provider.name })}
-                      </Button>
-                    ))}
-                  </div>
-                )}
+                {providers.isPending
+                  ? (
+                      <div aria-label={t('common.loading')} className="mt-5 grid gap-2 border-t border-border pt-5" role="status">
+                        <Skeleton className="h-9 w-full rounded-control" />
+                      </div>
+                    )
+                  : providers.isError
+                    ? (
+                        <div className="mt-5 border-t border-border pt-5">
+                          <ErrorState
+                            retrying={providers.isFetching}
+                            title={t('errors.request.failed')}
+                            onRetry={() => void providers.refetch()}
+                          />
+                        </div>
+                      )
+                    : (providers.data ?? []).length > 0 && (
+                        <div className="mt-5 grid gap-2 border-t border-border pt-5">
+                          {(providers.data ?? []).map(provider => (
+                            <Button
+                              key={provider.id}
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                window.location.href = oidcStartUrl(provider.id, 'login')
+                              }}
+                            >
+                              <LogIn size={16} />
+                              {t('loginPage.useProviderLogin', { provider: provider.name })}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
               </div>
             </div>
           </div>

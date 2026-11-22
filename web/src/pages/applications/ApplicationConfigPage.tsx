@@ -17,7 +17,7 @@ import { api } from '@/api'
 import { ApplicationBasicFields } from '@/components/common/application-basic-fields'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
-import { OverviewSkeleton, ToolViewportSkeleton } from '@/components/common/loading-states'
+import { OverviewSkeleton, SettingsSkeleton, ToolViewportSkeleton } from '@/components/common/loading-states'
 import { PageShell } from '@/components/common/page-shell'
 import { Section } from '@/components/common/section'
 import { Button } from '@/components/ui/button'
@@ -170,12 +170,22 @@ export function ApplicationConfigPage() {
     queryKey: ['application-runtime', projectId, applicationId, succeededReleaseSignature],
     queryFn: () => api.getApplicationRuntime(projectId, applicationId),
     enabled: Boolean(projectId && applicationId),
-    placeholderData: previous => previous,
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === projectId
+      && previousQuery?.queryKey[2] === applicationId
+      && !previousQuery.state.error
+      && previousData?.id === applicationId
+        ? previousData
+        : undefined,
     refetchInterval: statusRefetchInterval((releases.data ?? []).some(release => release.status === 'pending' || release.status === 'running')),
   })
   const deploymentTargetRows = deploymentTargets.data ?? []
-  // 实时观察失败时不沿用上一次的成功结论。
-  const runtimeSummary = applicationRuntime.isError ? undefined : applicationRuntime.data?.deploymentSummary
+  // 实时观察失败或跨应用切换时不沿用上一次的成功结论。
+  const runtimeData = applicationRuntime.isError || applicationRuntime.data?.id !== applicationId
+    ? undefined
+    : applicationRuntime.data
+  const runtimeLoading = !runtimeData && applicationRuntime.isPending
+  const runtimeSummary = runtimeData?.deploymentSummary
 
   const binding = useMemo(() => (repositoryBindings.data ?? []).find(item => item.applicationId === applicationId), [applicationId, repositoryBindings.data])
   const appRepositoryBindings = useMemo(() => (repositoryBindings.data ?? []).filter(item => item.applicationId === applicationId), [applicationId, repositoryBindings.data])
@@ -294,8 +304,9 @@ export function ApplicationConfigPage() {
           : { ...(buildBlocker ?? { action: openBuildTask, actionLabel: t('buildsPage.triggerBuild') }), reason: t('apps.prerequisites.releaseNeedsBuild') }
   // 概览汇总这些查询；任一失败时如实报错，不能把失败当作“尚未创建”去引导用户。
   const overviewQueries = [deploymentTargets, releases, buildRuns, routes, repositoryBindings]
-  const overviewFailedQueries = overviewQueries.filter(query => query.isError)
-  const buildListQueries = [buildRuns, buildJobs]
+  const overviewFailedQueries = [...overviewQueries, applicationRuntime].filter(query => query.isError)
+  const overviewLoading = overviewQueries.some(query => query.isPending) || runtimeLoading
+  const buildListQueries = [buildRuns, buildJobs, repositoryBindings]
   const buildListFailedQueries = buildListQueries.filter(query => query.isError)
   const deploymentListQueries = [deploymentTargets, releases]
   const deploymentListFailedQueries = deploymentListQueries.filter(query => query.isError)
@@ -308,11 +319,16 @@ export function ApplicationConfigPage() {
     <PageShell spacing="compact" width="full">
       <ApplicationFactStrip
         buildRuns={appBuildRuns}
+        buildRunsError={buildRuns.isError}
+        buildRunsLoading={buildRuns.isPending}
         deploymentTargets={deploymentTargetRows}
-        loading={applicationRuntime.isLoading || deploymentTargets.isLoading || routes.isLoading || buildRuns.isLoading}
+        deploymentTargetsLoading={deploymentTargets.isPending}
         routes={appRoutes}
-        runtime={applicationRuntime.isError ? undefined : applicationRuntime.data}
+        routesError={routes.isError}
+        routesLoading={routes.isPending}
+        runtime={runtimeData}
         runtimeError={applicationRuntime.isError}
+        runtimeLoading={runtimeLoading}
         onViewDeployments={activeTab === 'deployments' ? undefined : () => changeTab('deployments')}
       />
       <ContentTabs
@@ -369,17 +385,17 @@ export function ApplicationConfigPage() {
         onValueChange={value => changeTab(normalizeApplicationTab(value))}
       >
         <TabsContent value="overview">
-          {overviewFailedQueries.length > 0
-            ? (
-                <ErrorState
-                  description={t('apps.overviewLoadFailedDescription')}
-                  retrying={overviewFailedQueries.some(query => query.isFetching)}
-                  title={t('apps.overviewLoadFailedTitle')}
-                  onRetry={() => overviewFailedQueries.forEach(query => void query.refetch())}
-                />
-              )
-            : overviewQueries.some(query => query.isLoading)
-              ? <OverviewSkeleton />
+          {overviewLoading
+            ? <OverviewSkeleton />
+            : overviewFailedQueries.length > 0
+              ? (
+                  <ErrorState
+                    description={t('apps.overviewLoadFailedDescription')}
+                    retrying={overviewFailedQueries.some(query => query.isFetching)}
+                    title={t('apps.overviewLoadFailedTitle')}
+                    onRetry={() => overviewFailedQueries.forEach(query => void query.refetch())}
+                  />
+                )
               : (
                   <ApplicationOverviewPanel
                     buildRuns={appBuildRuns}
@@ -387,6 +403,8 @@ export function ApplicationConfigPage() {
                     releases={appReleases}
                     repositoryBindings={appRepositoryBindings}
                     routes={appRoutes}
+                    runtimeError={applicationRuntime.isError}
+                    runtimeLoading={runtimeLoading}
                     runtimeSummary={runtimeSummary}
                     onBindRepository={openRepositoryBindingTask}
                     onCreateDeploymentTarget={openDeploymentTargetTask}
@@ -397,37 +415,41 @@ export function ApplicationConfigPage() {
                 )}
         </TabsContent>
         <TabsContent value="settings">
-          <div className="grid gap-section">
-            <Section description={t('apps.configDescription')} title={t('apps.basicInfo')} variant="bordered">
-              <form id={APPLICATION_CONFIG_FORM_ID} onSubmit={updateForm.handleSubmit(values => updateApplication.mutate(values))}>
-                <ApplicationBasicFields
-                  compact
-                  icon={updateForm.watch('icon')}
-                  nameError={updateForm.formState.errors.name?.message}
-                  nameField={updateForm.register('name')}
-                  identifierError={updateForm.formState.errors.identifier?.message}
-                  identifierField={updateForm.register('identifier')}
-                  identifierMaxLength={APPLICATION_IDENTIFIER_MAX_LENGTH}
-                  identifierReadOnly
-                  onIconChange={icon => updateForm.setValue('icon', icon, { shouldDirty: true, shouldValidate: true })}
-                />
-                <div className="mt-4 flex justify-end border-t border-border pt-4">
-                  <Button disabled={updateApplication.isPending || !updateForm.formState.isValid} type="submit">
-                    <Save size={16} />
-                    {t('apps.saveConfig')}
-                  </Button>
+          {application.isPending
+            ? <SettingsSkeleton />
+            : (
+                <div className="grid gap-section">
+                  <Section description={t('apps.configDescription')} title={t('apps.basicInfo')} variant="bordered">
+                    <form id={APPLICATION_CONFIG_FORM_ID} onSubmit={updateForm.handleSubmit(values => updateApplication.mutate(values))}>
+                      <ApplicationBasicFields
+                        compact
+                        icon={updateForm.watch('icon')}
+                        nameError={updateForm.formState.errors.name?.message}
+                        nameField={updateForm.register('name')}
+                        identifierError={updateForm.formState.errors.identifier?.message}
+                        identifierField={updateForm.register('identifier')}
+                        identifierMaxLength={APPLICATION_IDENTIFIER_MAX_LENGTH}
+                        identifierReadOnly
+                        onIconChange={icon => updateForm.setValue('icon', icon, { shouldDirty: true, shouldValidate: true })}
+                      />
+                      <div className="mt-4 flex justify-end border-t border-border pt-4">
+                        <Button disabled={updateApplication.isPending || !updateForm.formState.isValid} type="submit">
+                          <Save size={16} />
+                          {t('apps.saveConfig')}
+                        </Button>
+                      </div>
+                    </form>
+                  </Section>
+                  <Section description={t('apps.repositorySectionDescription')} title={t('apps.repoBinding')}>
+                    <Suspense fallback={<TabFallback />}>
+                      <RepositoryBindingsPage
+                        applicationId={applicationId}
+                        projectId={projectId}
+                      />
+                    </Suspense>
+                  </Section>
                 </div>
-              </form>
-            </Section>
-            <Section description={t('apps.repositorySectionDescription')} title={t('apps.repoBinding')}>
-              <Suspense fallback={<TabFallback />}>
-                <RepositoryBindingsPage
-                  applicationId={applicationId}
-                  projectId={projectId}
-                />
-              </Suspense>
-            </Section>
-          </div>
+              )}
         </TabsContent>
         <TabsContent value="builds">
           <Suspense fallback={<TabFallback />}>
@@ -437,11 +459,20 @@ export function ApplicationConfigPage() {
               applicationIdentifier={application.data?.identifier ?? ''}
               binding={binding}
               repositoryBindings={appRepositoryBindings}
+              repositoryBindingsError={repositoryBindings.isError}
+              repositoryBindingsLoading={repositoryBindings.isPending}
+              repositoryBindingsRetrying={repositoryBindings.isFetching}
               buildJobs={appBuildJobs}
+              buildJobsError={buildJobs.isError}
+              buildJobsLoading={buildJobs.isPending}
+              buildJobsRetrying={buildJobs.isFetching}
               deploymentTargets={deploymentTargetRows}
+              deploymentTargetsError={deploymentTargets.isError}
+              deploymentTargetsLoading={deploymentTargets.isPending}
+              deploymentTargetsRetrying={deploymentTargets.isFetching}
               buildRuns={appBuildRuns}
               listState={{
-                loading: buildListQueries.some(query => query.isLoading),
+                loading: buildListQueries.some(query => query.isPending),
                 error: buildListFailedQueries.length > 0
                   ? {
                       retrying: buildListFailedQueries.some(query => query.isFetching),
@@ -452,6 +483,13 @@ export function ApplicationConfigPage() {
               projectId={projectId}
               projectIdentifier={project.data?.identifier ?? ''}
               registries={registries.data ?? []}
+              registriesError={registries.isError}
+              registriesLoading={registries.isPending}
+              registriesRetrying={registries.isFetching}
+              onRetryBuildJobs={() => void buildJobs.refetch()}
+              onRetryDeploymentTargets={() => void deploymentTargets.refetch()}
+              onRetryRegistries={() => void registries.refetch()}
+              onRetryRepositoryBindings={() => void repositoryBindings.refetch()}
             />
           </Suspense>
         </TabsContent>
@@ -463,7 +501,7 @@ export function ApplicationConfigPage() {
               buildRuns={appBuildRuns}
               deploymentTargets={deploymentTargetRows}
               listState={{
-                loading: deploymentListQueries.some(query => query.isLoading),
+                loading: deploymentListQueries.some(query => query.isPending),
                 error: deploymentListFailedQueries.length > 0
                   ? {
                       retrying: deploymentListFailedQueries.some(query => query.isFetching),
@@ -475,6 +513,8 @@ export function ApplicationConfigPage() {
               projectWebConsoleEnabled={project.data?.webConsoleEnabled ?? true}
               releases={appReleases}
               routes={appRoutes}
+              routesError={routes.isError}
+              routesLoading={routes.isPending}
               runtimeSummary={runtimeSummary}
             />
           </Suspense>
@@ -487,7 +527,7 @@ export function ApplicationConfigPage() {
               applicationIdentifier={application.data?.identifier ?? ''}
               deploymentTargets={deploymentTargetRows}
               listState={{
-                loading: gatewayListQueries.some(query => query.isLoading),
+                loading: gatewayListQueries.some(query => query.isPending),
                 error: gatewayListFailedQueries.length > 0
                   ? {
                       retrying: gatewayListFailedQueries.some(query => query.isFetching),

@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { toneForResourceStatus } from './application-topology-utils'
 
@@ -62,50 +63,68 @@ export function ApplicationTopologyPanel({ applicationId, projectId }: Applicati
     [topology.data?.edges, visibleNodeIds],
   )
 
-  if (topology.isError) {
-    return (
-      <div className="grid gap-3">
-        <ErrorState
-          title={t('apps.topology.loadFailed')}
-          description={t('apps.topology.loadFailedDescription')}
-        />
-        <Button className="justify-self-start" variant="outline" onClick={() => topology.refetch()}>{t('common.retry')}</Button>
-      </div>
-    )
-  }
-
-  if (topology.isLoading) {
+  if (topology.isPending) {
     return <ToolViewportSkeleton />
   }
 
-  if (!topology.data?.targets.length) {
+  if (topology.isError) {
+    return (
+      <ErrorState
+        description={t('apps.topology.loadFailedDescription')}
+        retrying={topology.isFetching}
+        title={t('apps.topology.loadFailed')}
+        onRetry={() => void topology.refetch()}
+      />
+    )
+  }
+
+  if (!topology.data.targets.length) {
     return <EmptyState title={t('apps.topology.noTargets')} description={t('apps.topology.noTargetsDescription')} />
   }
 
   return (
     <div className="grid gap-3">
-      {(logicalTopology.data?.edges.length ?? 0) > 0 && (
-        <Surface className="grid gap-3 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold">{t('apps.topology.logicalDependencies')}</h2>
-            <Link className="text-sm text-primary-text hover:underline" to={`/projects/${projectId}?tab=topology`}>{t('apps.topology.openProjectTopology')}</Link>
-          </div>
-          <div className="grid gap-2 @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-3">
-            {logicalTopology.data?.edges.map((edge) => {
-              const upstream = edge.target === applicationId
-              const relatedId = upstream ? edge.source : edge.target
-              const related = logicalTopology.data.nodes.find(node => node.id === relatedId)
-              return (
-                <Link key={edge.id} className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 py-2 transition-colors hover:border-primary-border" to={`/projects/${projectId}/apps/${relatedId}`}>
-                  <span className="shrink-0 text-xs text-muted-foreground">{t(upstream ? 'apps.topology.upstream' : 'apps.topology.downstream')}</span>
-                  <span className="min-w-0 flex-1 truncate font-medium">{related?.name ?? relatedId}</span>
-                  <StatusValueBadge labelKeyPrefix="projectTopology.statuses" value={edge.status} />
-                </Link>
-              )
-            })}
-          </div>
-        </Surface>
-      )}
+      {logicalTopology.isPending
+        ? (
+            <Surface aria-busy="true" className="grid gap-3 p-3">
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-9 w-full rounded-control" />
+            </Surface>
+          )
+        : logicalTopology.isError
+          ? (
+              <Surface className="flex flex-wrap items-center justify-between gap-3 p-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-semibold">{t('apps.topology.logicalDependencies')}</span>
+                  <span className="text-xs text-muted-foreground">{t('common.unavailable')}</span>
+                </div>
+                <Button disabled={logicalTopology.isFetching} size="sm" type="button" variant="outline" onClick={() => void logicalTopology.refetch()}>
+                  {t('common.retry')}
+                </Button>
+              </Surface>
+            )
+          : logicalTopology.data.edges.length > 0 && (
+            <Surface className="grid gap-3 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold">{t('apps.topology.logicalDependencies')}</h2>
+                <Link className="text-sm text-primary-text hover:underline" to={`/projects/${projectId}?tab=topology`}>{t('apps.topology.openProjectTopology')}</Link>
+              </div>
+              <div className="grid gap-2 @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-3">
+                {logicalTopology.data.edges.map((edge) => {
+                  const upstream = edge.target === applicationId
+                  const relatedId = upstream ? edge.source : edge.target
+                  const related = logicalTopology.data.nodes.find(node => node.id === relatedId)
+                  return (
+                    <Link key={edge.id} className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 py-2 transition-colors hover:border-primary-border" to={`/projects/${projectId}/apps/${relatedId}`}>
+                      <span className="shrink-0 text-xs text-muted-foreground">{t(upstream ? 'apps.topology.upstream' : 'apps.topology.downstream')}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium">{related?.name ?? relatedId}</span>
+                      <StatusValueBadge labelKeyPrefix="projectTopology.statuses" value={edge.status} />
+                    </Link>
+                  )
+                })}
+              </div>
+            </Surface>
+          )}
       {topology.data.warnings.length > 0 && (
         <Alert variant="warning">
           <Boxes />

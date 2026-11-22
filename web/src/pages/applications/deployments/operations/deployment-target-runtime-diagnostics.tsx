@@ -132,6 +132,7 @@ export function DeploymentTargetRuntimePodsList({
                     <RuntimePodCard
                       key={pod.name}
                       locale={locale}
+                      metricsLoading={metricsStream.kind === 'connecting'}
                       pod={pod}
                       podMetrics={podMetricsByName.get(pod.name)}
                       release={release}
@@ -242,6 +243,7 @@ export function DeploymentTargetRuntimeEventsSection({
 
 function RuntimePodCard({
   locale,
+  metricsLoading = false,
   pod,
   podMetrics,
   release,
@@ -252,6 +254,7 @@ function RuntimePodCard({
   onViewPodLogs,
 }: {
   locale: string
+  metricsLoading?: boolean
   pod: DeploymentTargetRuntimePod
   podMetrics?: DeploymentTargetPodMetrics
   release?: Release
@@ -333,6 +336,7 @@ function RuntimePodCard({
         <PodResourceMiniRing
           label={t('deploymentsPage.metricsCpu')}
           limitText={replicaCpuLimitText}
+          loading={metricsLoading}
           locale={locale}
           percent={podMetrics?.cpuUsagePercent}
           usedText={podCpuUsedText}
@@ -340,6 +344,7 @@ function RuntimePodCard({
         <PodResourceMiniRing
           label={t('deploymentsPage.metricsMemory')}
           limitText={replicaMemoryLimitText}
+          loading={metricsLoading}
           locale={locale}
           percent={podMetrics?.memoryUsagePercent}
           usedText={podMemoryUsedText}

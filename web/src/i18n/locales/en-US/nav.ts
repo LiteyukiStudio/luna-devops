@@ -30,6 +30,7 @@ const nav = {
     placeholder: 'Search apps, domains, templates, repos, IDs, or pages (try app: / host: / template:)…',
     empty: 'No matching results',
     contextEmptyHint: 'Type to search in {{context}}, or press Backspace for global search',
+    scopeEmptyHint: 'Type keywords to search in {{scope}}',
     clearContextChip: 'Remove {{context}} filter and return to global search',
     searching: 'Searching platform resources…',
     searchFailed: 'Could not search platform resources. Try again.',

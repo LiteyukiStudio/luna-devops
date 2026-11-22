@@ -26,50 +26,55 @@ export function HookBindingsFields({ projectId }: { projectId: string }) {
   return (
     <div className="grid gap-3">
       <SwitchField description={t('deploymentsPage.deploymentHooksEnabledHint')} label={t('deploymentsPage.deploymentHooksEnabled')} name="buildHooksEnabled" />
-      {hooks.isLoading && <Skeleton className="h-10 w-full rounded-control" />}
-      {hooks.isError && (
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>{t('projectHooks.loadFailedDescription')}</span>
-            <Button disabled={hooks.isFetching} size="sm" type="button" variant="outline" onClick={() => void hooks.refetch()}>
-              <RotateCw className="size-3.5" />
-              {t('common.retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {hooks.isSuccess && hookItems.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyDeploymentHooks')}</p>
-      )}
-      {fields.length > 0 && (
-        <ol className="grid gap-2">
-          {fields.map((field, index) => (
-            <HookBindingRow
-              key={field.id}
-              disabled={!canEdit}
-              hooks={hookItems}
-              imageSource={sourceType === 'image'}
-              index={index}
-              isFirst={index === 0}
-              isLast={index === fields.length - 1}
-              onMove={direction => move(index, index + direction)}
-              onRemove={() => remove(index)}
-            />
-          ))}
-        </ol>
-      )}
-      <div>
-        <Button
-          disabled={!canEdit}
-          size="sm"
-          type="button"
-          variant="outline"
-          onClick={() => append({ hookConfigId: hookItems[0]?.id ?? '', phase: 'preDeployment' })}
-        >
-          <Plus className="size-4" />
-          {t('deploymentsPage.addHookBinding')}
-        </Button>
-      </div>
+      {hooks.isPending
+        ? <Skeleton className="h-10 w-full rounded-control" />
+        : hooks.isError
+          ? (
+              <Alert variant="destructive">
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{t('projectHooks.loadFailedDescription')}</span>
+                  <Button disabled={hooks.isFetching} size="sm" type="button" variant="outline" onClick={() => void hooks.refetch()}>
+                    <RotateCw className="size-3.5" />
+                    {t('common.retry')}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )
+          : hookItems.length === 0 && fields.length === 0
+            ? <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyDeploymentHooks')}</p>
+            : (
+                <>
+                  {fields.length > 0 && (
+                    <ol className="grid gap-2">
+                      {fields.map((field, index) => (
+                        <HookBindingRow
+                          key={field.id}
+                          disabled={!canEdit}
+                          hooks={hookItems}
+                          imageSource={sourceType === 'image'}
+                          index={index}
+                          isFirst={index === 0}
+                          isLast={index === fields.length - 1}
+                          onMove={direction => move(index, index + direction)}
+                          onRemove={() => remove(index)}
+                        />
+                      ))}
+                    </ol>
+                  )}
+                  <div>
+                    <Button
+                      disabled={!canEdit}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      onClick={() => append({ hookConfigId: hookItems[0]?.id ?? '', phase: 'preDeployment' })}
+                    >
+                      <Plus className="size-4" />
+                      {t('deploymentsPage.addHookBinding')}
+                    </Button>
+                  </div>
+                </>
+              )}
     </div>
   )
 }

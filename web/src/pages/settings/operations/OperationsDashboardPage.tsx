@@ -22,6 +22,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { isPlatformAdmin } from '@/lib/roles'
 import { AgentToolDetailSheet } from '@/pages/settings/operations/tools/agent-tool-detail-sheet'
@@ -47,14 +48,16 @@ export function OperationsDashboardPage() {
   if (!platformAdmin)
     return <ForbiddenPage />
 
-  if (configs.isLoading)
+  if (configs.isPending)
     return <ToolViewportSkeleton />
 
   if (configs.isError) {
     return (
       <ErrorState
         description={t('operationsDashboardPage.loadFailedDescription')}
+        retrying={configs.isFetching}
         title={t('operationsDashboardPage.loadFailedTitle')}
+        onRetry={() => void configs.refetch()}
       />
     )
   }
@@ -269,6 +272,9 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
     return <ObservabilityConfigEmpty title={t('operationsDashboardPage.agentDisabledTitle')} description={t('operationsDashboardPage.agentDisabledDescription')} />
   }
   const data = overview.data
+  const overviewLoading = active && enabled && overview.isPending
+  const turnsLoading = active && enabled && dataTab === 'turns' && turns.isPending
+  const toolsLoading = active && enabled && dataTab === 'tools' && tools.isPending
   const dataTabs = (
     <span className="flex items-center gap-1.5">
       <TabsList aria-label={t('operationsDashboardPage.dataScope')}>
@@ -296,20 +302,49 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
         </Select>
         <Button aria-label={t('common.refresh')} disabled={workspaceFetching} size="icon" variant="outline" onClick={refreshWorkspace}><RefreshCw className={workspaceFetching ? 'animate-spin' : ''} /></Button>
       </PageChromeTools>
-      {overview.isLoading && <ToolViewportSkeleton />}
-      {overview.isError && <ErrorState title={t('operationsDashboardPage.agentLoadFailedTitle')} description={t('operationsDashboardPage.agentLoadFailedDescription')} />}
-      {data && (
-        <div className="grid gap-3">
-          <AgentTokenUsageStrip usage={data.summary} />
-          <MetricGroup className="grid-cols-2 @2xl/metric-group:grid-cols-5 @4xl/metric-group:grid-cols-5">
-            <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(data.summary.toolCalls)} />
-            <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} value={`${toolSuccessRate.toFixed(1)}%`} tone={successRateTone(toolSuccessRate)} />
-            <MetricItem icon={<MessagesSquare className="size-4" />} label={t('operationsDashboardPage.turnCount')} value={formatNumber(data.summary.turnCount)} />
-            <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.turnSuccessRate')} value={`${successRate.toFixed(1)}%`} tone={successRate >= 95 ? 'success' : successRate >= 85 ? 'warning' : 'danger'} />
-            <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.runDurationP95')} value={formatSeconds(data.summary.runDurationP95)} />
-          </MetricGroup>
-        </div>
-      )}
+      {overview.isError
+        ? (
+            <ErrorState
+              description={t('operationsDashboardPage.agentLoadFailedDescription')}
+              retrying={overview.isFetching}
+              title={t('operationsDashboardPage.agentLoadFailedTitle')}
+              onRetry={() => void overview.refetch()}
+            />
+          )
+        : (
+            <div className="grid gap-3">
+              <AgentTokenUsageStrip loading={overviewLoading} usage={data?.summary} />
+              <MetricGroup className="grid-cols-2 @2xl/metric-group:grid-cols-5 @4xl/metric-group:grid-cols-5">
+                <MetricItem
+                  icon={<Wrench className="size-4" />}
+                  label={t('operationsDashboardPage.toolCalls')}
+                  value={overviewLoading ? <Skeleton className="h-7 w-16" /> : formatNumber(data?.summary.toolCalls)}
+                />
+                <MetricItem
+                  icon={<CircleGauge className="size-4" />}
+                  label={t('operationsDashboardPage.toolSuccessRate')}
+                  tone={overviewLoading || !data ? 'neutral' : successRateTone(toolSuccessRate)}
+                  value={overviewLoading ? <Skeleton className="h-7 w-16" /> : `${toolSuccessRate.toFixed(1)}%`}
+                />
+                <MetricItem
+                  icon={<MessagesSquare className="size-4" />}
+                  label={t('operationsDashboardPage.turnCount')}
+                  value={overviewLoading ? <Skeleton className="h-7 w-16" /> : formatNumber(data?.summary.turnCount)}
+                />
+                <MetricItem
+                  icon={<CircleGauge className="size-4" />}
+                  label={t('operationsDashboardPage.turnSuccessRate')}
+                  tone={overviewLoading || !data ? 'neutral' : successRate >= 95 ? 'success' : successRate >= 85 ? 'warning' : 'danger'}
+                  value={overviewLoading ? <Skeleton className="h-7 w-16" /> : `${successRate.toFixed(1)}%`}
+                />
+                <MetricItem
+                  icon={<Clock3 className="size-4" />}
+                  label={t('operationsDashboardPage.runDurationP95')}
+                  value={overviewLoading ? <Skeleton className="h-7 w-16" /> : formatSeconds(data?.summary.runDurationP95 ?? Number.NaN)}
+                />
+              </MetricGroup>
+            </div>
+          )}
       <Tabs
         value={dataTab}
         onValueChange={(value) => {
@@ -319,64 +354,72 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
         }}
       >
         <TabsContent value="turns">
-          {turns.isError
-            ? <ErrorState title={t('operationsDashboardPage.turnsLoadFailed')} description={t('operationsDashboardPage.turnsLoadFailedDescription')} />
-            : (
-                <DataList
-                  columns={turnColumns}
-                  constrainedHeight
-                  emptyDescription={t('operationsDashboardPage.noRunsDescription')}
-                  emptyMode={turnSearch ? 'filtered' : 'actionable'}
-                  emptyTitle={t('operationsDashboardPage.noRuns')}
-                  items={turns.data?.items ?? []}
-                  loading={turns.isLoading}
-                  pagination={{
-                    page: turnPage,
-                    pageSize: turnPageSize,
-                    total: turns.data?.total ?? 0,
-                    totalPages: turns.data?.totalPages ?? 0,
-                    pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
-                    onPageChange: setTurnPage,
-                    onPageSizeChange: changeTurnPageSize,
-                  }}
-                  rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
-                  rowKey={item => item.id}
-                  search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
-                  title={dataTabs}
-                  viewportOffset={28}
-                  onRowClick={setSelectedTurn}
-                />
-              )}
+          <DataList
+            columns={turnColumns}
+            constrainedHeight
+            emptyDescription={t('operationsDashboardPage.noRunsDescription')}
+            emptyMode={turnSearch ? 'filtered' : 'actionable'}
+            emptyTitle={t('operationsDashboardPage.noRuns')}
+            error={turns.isError
+              ? {
+                  description: t('operationsDashboardPage.turnsLoadFailedDescription'),
+                  onRetry: () => void turns.refetch(),
+                  retrying: turns.isFetching,
+                  title: t('operationsDashboardPage.turnsLoadFailed'),
+                }
+              : undefined}
+            items={turns.data?.items ?? []}
+            loading={turnsLoading}
+            pagination={{
+              page: turnPage,
+              pageSize: turnPageSize,
+              total: turns.data?.total ?? 0,
+              totalPages: turns.data?.totalPages ?? 0,
+              pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
+              onPageChange: setTurnPage,
+              onPageSizeChange: changeTurnPageSize,
+            }}
+            rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
+            rowKey={item => item.id}
+            search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
+            title={dataTabs}
+            viewportOffset={28}
+            onRowClick={setSelectedTurn}
+          />
         </TabsContent>
         <TabsContent value="tools">
-          {tools.isError
-            ? <ErrorState title={t('operationsDashboardPage.toolsLoadFailed')} description={t('operationsDashboardPage.toolsLoadFailedDescription')} />
-            : (
-                <DataList
-                  columns={toolColumns}
-                  constrainedHeight
-                  emptyDescription={t('operationsDashboardPage.noToolsDescription')}
-                  emptyMode={toolSearch ? 'filtered' : 'actionable'}
-                  emptyTitle={t('operationsDashboardPage.noTools')}
-                  items={tools.data?.items ?? []}
-                  loading={tools.isLoading}
-                  pagination={{
-                    page: toolPage,
-                    pageSize: toolPageSize,
-                    total: tools.data?.total ?? 0,
-                    totalPages: tools.data?.totalPages ?? 0,
-                    pageInfoLabel: t('pagination.pageInfo', { page: tools.data?.page ?? toolPage, totalPages: tools.data?.totalPages ?? 0, total: tools.data?.total ?? 0 }),
-                    onPageChange: setToolPage,
-                    onPageSizeChange: changeToolPageSize,
-                  }}
-                  rowActionLabel={item => t('operationsDashboardPage.openToolLabel', { tool: item.operationId })}
-                  rowKey={item => item.operationId}
-                  search={{ value: toolSearch, placeholder: t('operationsDashboardPage.searchTools'), onChange: changeToolSearch }}
-                  title={dataTabs}
-                  viewportOffset={28}
-                  onRowClick={setSelectedTool}
-                />
-              )}
+          <DataList
+            columns={toolColumns}
+            constrainedHeight
+            emptyDescription={t('operationsDashboardPage.noToolsDescription')}
+            emptyMode={toolSearch ? 'filtered' : 'actionable'}
+            emptyTitle={t('operationsDashboardPage.noTools')}
+            error={tools.isError
+              ? {
+                  description: t('operationsDashboardPage.toolsLoadFailedDescription'),
+                  onRetry: () => void tools.refetch(),
+                  retrying: tools.isFetching,
+                  title: t('operationsDashboardPage.toolsLoadFailed'),
+                }
+              : undefined}
+            items={tools.data?.items ?? []}
+            loading={toolsLoading}
+            pagination={{
+              page: toolPage,
+              pageSize: toolPageSize,
+              total: tools.data?.total ?? 0,
+              totalPages: tools.data?.totalPages ?? 0,
+              pageInfoLabel: t('pagination.pageInfo', { page: tools.data?.page ?? toolPage, totalPages: tools.data?.totalPages ?? 0, total: tools.data?.total ?? 0 }),
+              onPageChange: setToolPage,
+              onPageSizeChange: changeToolPageSize,
+            }}
+            rowActionLabel={item => t('operationsDashboardPage.openToolLabel', { tool: item.operationId })}
+            rowKey={item => item.operationId}
+            search={{ value: toolSearch, placeholder: t('operationsDashboardPage.searchTools'), onChange: changeToolSearch }}
+            title={dataTabs}
+            viewportOffset={28}
+            onRowClick={setSelectedTool}
+          />
         </TabsContent>
       </Tabs>
       <AgentTurnDetailSheet key={selectedTurn?.id ?? 'turn-closed'} turn={selectedTurn} onOpenChange={open => !open && setSelectedTurn(null)} />

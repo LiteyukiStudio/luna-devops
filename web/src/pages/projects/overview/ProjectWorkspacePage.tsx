@@ -105,7 +105,7 @@ export function ProjectWorkspacePage() {
       </PageShell>
     )
   }
-  if (project.isLoading) {
+  if (project.isPending) {
     return (
       <PageShell>
         {isOverview ? <OverviewSkeleton /> : <ToolViewportSkeleton />}
@@ -141,8 +141,12 @@ export function ProjectWorkspacePage() {
               <ProjectTopologyPanel
                 key={projectId}
                 applications={applications.data ?? []}
+                applicationsError={applications.isError}
+                applicationsLoading={Boolean(projectId) && applications.isPending}
+                applicationsRetrying={applications.isFetching}
                 canManage={canManageTopology}
                 projectId={projectId}
+                onRetryApplications={() => void applications.refetch()}
               />
             </div>
           </Suspense>
@@ -172,6 +176,8 @@ export function ProjectWorkspacePage() {
         return (
           <ProjectOverviewDashboard
             applications={applications.data ?? []}
+            applicationsError={applications.isError}
+            applicationsLoading={applications.isPending}
             builds={recentBuilds.data?.items ?? []}
             buildsError={recentBuilds.isError
               ? {
@@ -179,7 +185,7 @@ export function ProjectWorkspacePage() {
                   retrying: recentBuilds.isFetching,
                 }
               : undefined}
-            buildsLoading={recentBuilds.isLoading}
+            buildsLoading={recentBuilds.isPending}
             buildTotal={recentBuilds.data?.total ?? 0}
             events={recentEvents.data?.items ?? []}
             eventsError={recentEvents.isError
@@ -188,15 +194,24 @@ export function ProjectWorkspacePage() {
                   retrying: recentEvents.isFetching,
                 }
               : undefined}
-            eventsLoading={recentEvents.isLoading}
-            initialLoading={overview.isLoading && !overview.data && recentBuilds.isLoading && recentEvents.isLoading}
+            eventsLoading={recentEvents.isPending}
+            initialLoading={overview.isPending && recentBuilds.isPending && recentEvents.isPending}
             members={members.data ?? []}
+            membersError={members.isError}
+            membersLoading={members.isPending}
+            membersRetrying={members.isFetching}
             project={currentProject}
             canTransferBillingOwnership={projectActionAllowed(currentUserActions, ProjectAction.ProjectOwnerOnly) && currentProject?.billingOwnerUserId === user?.id}
             overview={overview.data}
+            overviewLoading={overview.isPending}
             overviewUnavailable={overview.isError}
             runtimeConfigSetCount={runtimeConfigSets.data?.length ?? 0}
+            runtimeConfigSetsError={runtimeConfigSets.isError}
+            runtimeConfigSetsLoading={runtimeConfigSets.isPending}
             variableSetCount={variableSets.data?.length ?? 0}
+            variableSetsError={variableSets.isError}
+            variableSetsLoading={variableSets.isPending}
+            onRetryMembers={() => void members.refetch()}
           />
         )
     }
@@ -275,6 +290,8 @@ interface SectionRetryState {
 
 function ProjectOverviewDashboard({
   applications,
+  applicationsError,
+  applicationsLoading,
   buildTotal,
   builds,
   buildsError,
@@ -285,13 +302,24 @@ function ProjectOverviewDashboard({
   eventsLoading,
   initialLoading,
   members,
+  membersError,
+  membersLoading,
+  membersRetrying,
+  onRetryMembers,
   overview,
+  overviewLoading,
   overviewUnavailable,
   project,
   runtimeConfigSetCount,
+  runtimeConfigSetsError,
+  runtimeConfigSetsLoading,
   variableSetCount,
+  variableSetsError,
+  variableSetsLoading,
 }: {
   applications: Application[]
+  applicationsError?: boolean
+  applicationsLoading?: boolean
   buildTotal: number
   builds: BuildRun[]
   buildsError?: SectionRetryState
@@ -302,11 +330,20 @@ function ProjectOverviewDashboard({
   eventsLoading?: boolean
   initialLoading?: boolean
   members: ProjectMember[]
+  membersError?: boolean
+  membersLoading?: boolean
+  membersRetrying?: boolean
+  onRetryMembers?: () => void
   overview?: ProjectOverview
+  overviewLoading?: boolean
   overviewUnavailable: boolean
   project?: Project
   runtimeConfigSetCount: number
+  runtimeConfigSetsError?: boolean
+  runtimeConfigSetsLoading?: boolean
   variableSetCount: number
+  variableSetsError?: boolean
+  variableSetsLoading?: boolean
 }) {
   const { t } = useTranslation()
   const failedBuilds = builds.filter(build => ['failed', 'timeout'].includes(build.status)).length
@@ -323,33 +360,57 @@ function ProjectOverviewDashboard({
   return (
     <div className="grid gap-section">
       <MetricGroup>
-        <MetricItem href="?tab=apps" icon={<Package className="size-4" />} label={t('projectSpaces.apps')} value={overview?.applications ?? '-'} />
         <MetricItem
-          emphasis={buildTotal > 0}
+          emphasis={!overviewLoading && !overviewUnavailable && (overview?.applications ?? 0) > 0}
+          href="?tab=apps"
+          icon={<Package className="size-4" />}
+          label={t('projectSpaces.apps')}
+          value={overviewLoading
+            ? <Skeleton className="h-8 w-16" />
+            : overviewUnavailable
+              ? t('common.unavailable')
+              : (overview?.applications ?? 0)}
+        />
+        <MetricItem
+          emphasis={!buildsLoading && !buildsError && buildTotal > 0}
           href={project && projectEventsPath(project.id, 'build')}
           icon={<Activity className="size-4" />}
           label={t('projectSpaces.buildsMetric')}
-          meta={builds.length > 0 ? t('projectSpaces.recentBuildsFailedMeta', { count: builds.length, failed: failedBuilds }) : undefined}
-          tone={failedBuilds > 0 ? 'danger' : 'neutral'}
-          value={buildsError ? '-' : buildTotal}
+          meta={!buildsLoading && !buildsError && builds.length > 0 ? t('projectSpaces.recentBuildsFailedMeta', { count: builds.length, failed: failedBuilds }) : undefined}
+          tone={!buildsLoading && !buildsError && failedBuilds > 0 ? 'danger' : 'neutral'}
+          value={buildsLoading
+            ? <Skeleton className="h-8 w-16" />
+            : buildsError
+              ? t('common.unavailable')
+              : buildTotal}
         />
         <MetricItem
-          emphasis={activeReleases > 0 || failedReleases > 0}
+          emphasis={!overviewLoading && !overviewUnavailable && (activeReleases > 0 || failedReleases > 0)}
           href={project && projectEventsPath(project.id, 'release')}
           icon={<Rocket className="size-4" />}
           label={t('projectSpaces.activeReleasesMetric')}
-          meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases, days: overview?.failedReleaseWindowDays }) : undefined}
-          tone={failedReleases > 0 ? 'danger' : activeReleases > 0 ? 'warning' : 'neutral'}
-          value={overview ? activeReleases : '-'}
+          meta={!overviewLoading && !overviewUnavailable && failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases, days: overview?.failedReleaseWindowDays }) : undefined}
+          tone={!overviewLoading && !overviewUnavailable ? (failedReleases > 0 ? 'danger' : activeReleases > 0 ? 'warning' : 'neutral') : 'neutral'}
+          value={overviewLoading
+            ? <Skeleton className="h-8 w-16" />
+            : overviewUnavailable
+              ? t('common.unavailable')
+              : activeReleases}
         />
         <MetricItem
-          emphasis={Boolean(accessRoutes && accessRoutes.total > 0)}
+          emphasis={!overviewLoading && !accessRoutesUnavailable && Boolean(accessRoutes && accessRoutes.total > 0)}
           href={project && projectEventsPath(project.id, 'gateway')}
           icon={<Globe2 className="size-4" />}
           label={t('projectSpaces.accessHealth')}
-          meta={accessRoutesUnavailable ? t('projectSpaces.accessHealthUnavailable') : undefined}
-          tone={accessRoutesUnavailable || accessRoutes?.status === 'degraded' ? 'warning' : 'neutral'}
-          value={accessRoutes && accessRoutes.ready !== undefined ? `${accessRoutes.ready}/${accessRoutes.total}` : '-'}
+          meta={!overviewLoading && accessRoutesUnavailable ? t('projectSpaces.accessHealthUnavailable') : undefined}
+          tone={!overviewLoading && (accessRoutesUnavailable || accessRoutes?.status === 'degraded') ? 'warning' : 'neutral'}
+          value={overviewLoading
+            ? <Skeleton className="h-8 w-16" />
+            : accessRoutesUnavailable
+              ? t('common.unavailable')
+              : accessRoutes && accessRoutes.ready !== undefined
+                ? `${accessRoutes.ready}/${accessRoutes.total}`
+                : t('common.unavailable')}
         />
       </MetricGroup>
 
@@ -381,7 +442,7 @@ function ProjectOverviewDashboard({
                                 {build.imageRef || build.targetRepository || build.id}
                               </div>
                               <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {projectBuildMeta(build, applications, t)}
+                                {projectBuildMeta(build, applications, Boolean(applicationsLoading), Boolean(applicationsError), t)}
                               </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
@@ -401,19 +462,41 @@ function ProjectOverviewDashboard({
             <ProjectBillingOwnerItem
               canTransfer={canTransferBillingOwnership}
               members={members}
+              membersError={membersError}
+              membersLoading={membersLoading}
+              membersRetrying={membersRetrying}
               project={project}
+              onRetryMembers={onRetryMembers}
             />
             <DescriptionListItem
               label={t('buildsPage.variablesAndSecrets')}
-              value={project ? <Link className={overviewValueLinkClassName} to={projectWorkspaceSectionPath(project.id, 'shared-config')}>{t('projectSpaces.variableSetCount', { count: variableSetCount })}</Link> : undefined}
+              value={variableSetsLoading
+                ? <Skeleton className="h-5 w-28" />
+                : variableSetsError
+                  ? <span className="text-muted-foreground">{t('common.unavailable')}</span>
+                  : project
+                    ? <Link className={overviewValueLinkClassName} to={projectWorkspaceSectionPath(project.id, 'shared-config')}>{t('projectSpaces.variableSetCount', { count: variableSetCount })}</Link>
+                    : undefined}
             />
             <DescriptionListItem
               label={t('runtimeConfigSets.tab')}
-              value={project ? <Link className={overviewValueLinkClassName} to={`${projectWorkspaceSectionPath(project.id, 'shared-config')}&${projectSharedConfigTabParam}=runtime-configs`}>{t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })}</Link> : undefined}
+              value={runtimeConfigSetsLoading
+                ? <Skeleton className="h-5 w-28" />
+                : runtimeConfigSetsError
+                  ? <span className="text-muted-foreground">{t('common.unavailable')}</span>
+                  : project
+                    ? <Link className={overviewValueLinkClassName} to={`${projectWorkspaceSectionPath(project.id, 'shared-config')}&${projectSharedConfigTabParam}=runtime-configs`}>{t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })}</Link>
+                    : undefined}
             />
             <DescriptionListItem
               label={t('projectSpaces.members')}
-              value={project ? <Link className={overviewValueLinkClassName} to={projectWorkspaceSectionPath(project.id, 'members')}>{t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })}</Link> : undefined}
+              value={membersLoading
+                ? <Skeleton className="h-5 w-36" />
+                : membersError
+                  ? <span className="text-muted-foreground">{t('common.unavailable')}</span>
+                  : project
+                    ? <Link className={overviewValueLinkClassName} to={projectWorkspaceSectionPath(project.id, 'members')}>{t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })}</Link>
+                    : undefined}
             />
           </dl>
         </Section>
@@ -470,14 +553,39 @@ function ProjectOverviewDashboard({
   )
 }
 
-function ProjectBillingOwnerItem({ canTransfer, members, project }: { canTransfer: boolean, members: ProjectMember[], project?: Project }) {
+function ProjectBillingOwnerItem({
+  canTransfer,
+  members,
+  membersError,
+  membersLoading,
+  membersRetrying,
+  onRetryMembers,
+  project,
+}: {
+  canTransfer: boolean
+  members: ProjectMember[]
+  membersError?: boolean
+  membersLoading?: boolean
+  membersRetrying?: boolean
+  onRetryMembers?: () => void
+  project?: Project
+}) {
   const { t } = useTranslation()
   const owner = project?.billingOwner
   return (
     <div className="grid min-w-0 gap-1" data-slot="description-list-item">
       <div className="flex items-center justify-between gap-3">
         <dt className="text-xs text-muted-foreground">{t('projectSpaces.billingOwner')}</dt>
-        {canTransfer && project && <BillingOwnerTransferDialog members={members} project={project} />}
+        {canTransfer && project && (
+          <BillingOwnerTransferDialog
+            members={members}
+            membersError={membersError}
+            membersLoading={membersLoading}
+            membersRetrying={membersRetrying}
+            project={project}
+            onRetryMembers={onRetryMembers}
+          />
+        )}
       </div>
       <dd className="min-w-0 text-sm">
         {owner
@@ -512,8 +620,24 @@ function localizedBuildTrigger(triggerType: BuildRun['triggerType'], t: ReturnTy
   }
 }
 
-function projectBuildMeta(build: BuildRun, applications: Application[], t: ReturnType<typeof useTranslation>['t']) {
+function projectBuildMeta(
+  build: BuildRun,
+  applications: Application[],
+  applicationsLoading: boolean,
+  applicationsError: boolean,
+  t: ReturnType<typeof useTranslation>['t'],
+) {
   const app = applications.find(application => application.id === build.applicationId)
   const source = build.sourceTag || build.sourceBranch || build.sourceCommit || '-'
-  return [app?.name ?? t('projectSpaces.unknownApplication'), source, localizedBuildTrigger(build.triggerType, t)].join(' · ')
+  const trigger = localizedBuildTrigger(build.triggerType, t)
+  if (!app && applicationsLoading) {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1.5 align-middle">
+        <Skeleton className="inline-block h-3.5 w-20 shrink-0" />
+        <span className="truncate">{`· ${source} · ${trigger}`}</span>
+      </span>
+    )
+  }
+  const appName = app?.name ?? (applicationsError ? t('common.unavailable') : t('projectSpaces.unknownApplication'))
+  return [appName, source, trigger].join(' · ')
 }

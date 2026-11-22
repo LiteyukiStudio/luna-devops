@@ -238,7 +238,10 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                 <GatewayRouteFormFields
                   control={form.control}
                   deploymentTargets={deploymentTargetOptions}
+                  domainSuffixError={runtimeClusters.isError}
+                  domainSuffixLoading={runtimeClusters.isPending}
                   domainSuffixOptions={domainSuffixOptions}
+                  domainSuffixRetrying={runtimeClusters.isFetching}
                   enabledField={enabledField}
                   errors={form.formState.errors}
                   hostField={form.register('host')}
@@ -250,6 +253,7 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                     form.setValue('servicePort', deploymentTargetPrimaryServicePort(target), { shouldDirty: true, shouldValidate: true })
                     form.setValue('domainSuffix', firstGatewayDomainSuffix(target, runtimeClusters.data ?? []), { shouldDirty: true, shouldValidate: true })
                   }}
+                  onRetryDomainSuffix={() => void runtimeClusters.refetch()}
                 />
               </ProgressiveSection>
               <ProgressiveSection

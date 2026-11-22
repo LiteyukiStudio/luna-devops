@@ -4,11 +4,13 @@ import type { NotificationChannel, NotificationChannelPayload, NotificationPrese
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { Bot, FlaskConical, Mail, Webhook } from 'lucide-react'
+import { useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
@@ -16,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import {
@@ -36,8 +39,16 @@ export function NotificationChannelDialog({
   manageableProjects,
   open,
   presets,
+  presetsError = false,
+  presetsLoading = false,
+  presetsRetrying = false,
+  projectsError = false,
+  projectsLoading = false,
+  projectsRetrying = false,
   saving,
   onClose,
+  onRetryPresets,
+  onRetryProjects,
   onSave,
 }: {
   allowGlobalScope?: boolean
@@ -48,14 +59,22 @@ export function NotificationChannelDialog({
   manageableProjects: Project[]
   open: boolean
   presets: NotificationPreset[]
+  presetsError?: boolean
+  presetsLoading?: boolean
+  presetsRetrying?: boolean
+  projectsError?: boolean
+  projectsLoading?: boolean
+  projectsRetrying?: boolean
   saving: boolean
   onClose: () => void
+  onRetryPresets?: () => void
+  onRetryProjects?: () => void
   onSave: (payload: NotificationChannelPayload, channelId?: string) => void
 }) {
   if (!open)
     return null
 
-  const dialogKey = channel ? `edit-${channel.id}` : `new-${defaultMode}-${defaultScope}-${defaultProjectIds.join(',')}`
+  const dialogKey = channel ? `edit-${channel.id}` : `new-${defaultMode}-${defaultScope}`
   return (
     <Dialog open onOpenChange={nextOpen => !nextOpen && onClose()}>
       <NotificationChannelDialogBody
@@ -67,8 +86,16 @@ export function NotificationChannelDialog({
         defaultScope={defaultScope}
         manageableProjects={manageableProjects}
         presets={presets}
+        presetsError={presetsError}
+        presetsLoading={presetsLoading}
+        presetsRetrying={presetsRetrying}
+        projectsError={projectsError}
+        projectsLoading={projectsLoading}
+        projectsRetrying={projectsRetrying}
         saving={saving}
         onClose={onClose}
+        onRetryPresets={onRetryPresets}
+        onRetryProjects={onRetryProjects}
         onSave={onSave}
       />
     </Dialog>
@@ -83,8 +110,16 @@ function NotificationChannelDialogBody({
   defaultScope,
   manageableProjects,
   presets,
+  presetsError,
+  presetsLoading,
+  presetsRetrying,
+  projectsError,
+  projectsLoading,
+  projectsRetrying,
   saving,
   onClose,
+  onRetryPresets,
+  onRetryProjects,
   onSave,
 }: {
   allowGlobalScope: boolean
@@ -94,8 +129,16 @@ function NotificationChannelDialogBody({
   defaultScope: 'project' | 'global'
   manageableProjects: Project[]
   presets: NotificationPreset[]
+  presetsError: boolean
+  presetsLoading: boolean
+  presetsRetrying: boolean
+  projectsError: boolean
+  projectsLoading: boolean
+  projectsRetrying: boolean
   saving: boolean
   onClose: () => void
+  onRetryPresets?: () => void
+  onRetryProjects?: () => void
   onSave: (payload: NotificationChannelPayload, channelId?: string) => void
 }) {
   const { t } = useTranslation()
@@ -106,16 +149,31 @@ function NotificationChannelDialogBody({
       defaultProjectIds,
       defaultScope,
       presets,
+      presetsError,
+      presetsLoading,
     }),
     mode: 'onChange',
     resolver: zodResolver(notificationChannelFormSchema),
   })
 
+  const [projectIdsEdited, setProjectIdsEdited] = useState(false)
   const values = form.watch()
+  const effectiveMode: NotificationChannelMode = !channel && values.mode === 'preset' && !presetsLoading && !presetsError && presets.length === 0
+    ? 'webhook'
+    : values.mode
   const selectedPreset = presets.find(item => item.id === values.presetId) ?? presets[0]
-  const headersValid = values.mode !== 'webhook' || parseStringHeadersJson(values.webhookHeadersJson) !== null
-  const payload = buildScopedChannelPayload(values, channel, presets)
-  const draftTestPayload = buildChannelDraftTestPayload(values, channel, presets)
+  const effectiveProjectIds = !channel && !projectIdsEdited && values.projectIds.length === 0 && defaultProjectIds.length > 0
+    ? defaultProjectIds
+    : values.projectIds
+  const effectiveValues = {
+    ...values,
+    mode: effectiveMode,
+    presetId: selectedPreset?.id ?? values.presetId,
+    projectIds: effectiveProjectIds,
+  }
+  const headersValid = effectiveMode !== 'webhook' || parseStringHeadersJson(values.webhookHeadersJson) !== null
+  const payload = buildScopedChannelPayload(effectiveValues, channel, presets)
+  const draftTestPayload = buildChannelDraftTestPayload(effectiveValues, channel, presets)
   const existingSecrets = channel?.secretSet ?? {}
 
   const draftTestMutation = useMutation({
@@ -125,7 +183,19 @@ function NotificationChannelDialogBody({
   })
 
   const submit = form.handleSubmit((submittedValues) => {
-    const nextPayload = buildScopedChannelPayload(submittedValues, channel, presets)
+    const resolvedSubmittedMode: NotificationChannelMode = !channel && submittedValues.mode === 'preset' && !presetsLoading && !presetsError && presets.length === 0
+      ? 'webhook'
+      : submittedValues.mode
+    const resolvedPreset = presets.find(item => item.id === submittedValues.presetId) ?? presets[0]
+    const resolvedProjectIds = !channel && !projectIdsEdited && submittedValues.projectIds.length === 0 && defaultProjectIds.length > 0
+      ? defaultProjectIds
+      : submittedValues.projectIds
+    const nextPayload = buildScopedChannelPayload({
+      ...submittedValues,
+      mode: resolvedSubmittedMode,
+      presetId: resolvedPreset?.id ?? submittedValues.presetId,
+      projectIds: resolvedProjectIds,
+    }, channel, presets)
     if (!nextPayload) {
       toast.error(t('notificationsPage.channelInvalid'))
       return
@@ -147,7 +217,7 @@ function NotificationChannelDialogBody({
                   {fieldControl => (
                     <Select
                       disabled
-                      value={values.mode}
+                      value={effectiveMode}
                       onValueChange={(next) => {
                         const nextMode = next as NotificationChannelMode
                         form.setValue('mode', nextMode, { shouldDirty: true, shouldValidate: true })
@@ -157,7 +227,7 @@ function NotificationChannelDialogBody({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(presets.length > 0 || values.mode === 'preset') && (
+                        {(presets.length > 0 || effectiveMode === 'preset') && (
                           <SelectItem value="preset">{t('notificationsPage.modePreset')}</SelectItem>
                         )}
                         <SelectItem value="webhook">{t('notificationsPage.modeWebhook')}</SelectItem>
@@ -173,13 +243,16 @@ function NotificationChannelDialogBody({
                     aria-label={t('notificationsPage.channelMode')}
                     className={cn(
                       'grid gap-2.5',
-                      presets.length > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
+                      (presets.length > 0 || presetsLoading || presetsError) ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
                     )}
                     role="radiogroup"
                   >
-                    {presets.length > 0 && (
+                    {presetsLoading && presets.length === 0 && (
+                      <Skeleton aria-label={t('common.loading')} className="h-[74px] w-full rounded-control" role="status" />
+                    )}
+                    {(presets.length > 0 || (!presetsLoading && presetsError)) && (
                       <ChannelModeCard
-                        checked={values.mode === 'preset'}
+                        checked={effectiveMode === 'preset'}
                         hint={t('notificationsPage.modePresetHint')}
                         icon={<Bot className="size-4" />}
                         title={t('notificationsPage.modePresetShort')}
@@ -187,14 +260,14 @@ function NotificationChannelDialogBody({
                       />
                     )}
                     <ChannelModeCard
-                      checked={values.mode === 'webhook'}
+                      checked={effectiveMode === 'webhook'}
                       hint={t('notificationsPage.modeWebhookHint')}
                       icon={<Webhook className="size-4" />}
                       title={t('notificationsPage.modeWebhook')}
                       onSelect={() => form.setValue('mode', 'webhook', { shouldDirty: true, shouldValidate: true })}
                     />
                     <ChannelModeCard
-                      checked={values.mode === 'smtp'}
+                      checked={effectiveMode === 'smtp'}
                       hint={t('notificationsPage.modeSmtpHint')}
                       icon={<Mail className="size-4" />}
                       title={t('notificationsPage.modeSmtpShort')}
@@ -229,37 +302,70 @@ function NotificationChannelDialogBody({
           <Field
             className={cn((allowGlobalScope && channel) || (!allowGlobalScope && !channel) ? 'md:col-span-2' : undefined)}
             label={t('notificationsPage.name')}
-            required={values.mode !== 'preset'}
+            required={effectiveMode !== 'preset'}
           >
             <Input
               {...form.register('name')}
-              placeholder={values.mode === 'preset' ? selectedPreset?.name : undefined}
+              placeholder={effectiveMode === 'preset' ? selectedPreset?.name : undefined}
             />
           </Field>
 
           {values.scope === 'project' && (
             <Field
               className="md:col-span-2"
-              error={values.projectIds.length === 0 ? t('notificationsPage.ruleProjectsRequired') : undefined}
+              error={!projectsLoading && !projectsError && effectiveProjectIds.length === 0 ? t('notificationsPage.ruleProjectsRequired') : undefined}
               hint={t('notificationsPage.boundProjectsHint')}
               label={t('notificationsPage.boundProjects')}
               required
             >
-              <Controller
-                control={form.control}
-                name="projectIds"
-                render={({ field }) => (
-                  <ProjectSpaceMultiSelect
-                    projects={manageableProjects}
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
+              {fieldControl => !projectsLoading && projectsError && manageableProjects.length === 0
+                ? (
+                    <ErrorState
+                      retrying={projectsRetrying}
+                      title={t('errors.request.failed')}
+                      onRetry={onRetryProjects}
+                    />
+                  )
+                : (
+                    <Controller
+                      control={form.control}
+                      name="projectIds"
+                      render={({ field }) => (
+                        <ProjectSpaceMultiSelect
+                          {...fieldControl}
+                          error={projectsError}
+                          loading={projectsLoading}
+                          projects={manageableProjects}
+                          value={!channel && !projectIdsEdited && field.value.length === 0 && defaultProjectIds.length > 0 ? defaultProjectIds : field.value}
+                          onChange={(next) => {
+                            setProjectIdsEdited(true)
+                            field.onChange(next)
+                          }}
+                        />
+                      )}
+                    />
+                  )}
             </Field>
           )}
 
-          {values.mode === 'preset' && selectedPreset && (
+          {effectiveMode === 'preset' && presetsLoading && !selectedPreset && (
+            <div aria-label={t('common.loading')} className="grid gap-3 md:col-span-2" role="status">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          )}
+
+          {effectiveMode === 'preset' && !presetsLoading && presetsError && !selectedPreset && (
+            <div className="md:col-span-2">
+              <ErrorState
+                retrying={presetsRetrying}
+                title={t('errors.request.failed')}
+                onRetry={onRetryPresets}
+              />
+            </div>
+          )}
+
+          {effectiveMode === 'preset' && selectedPreset && (
             <>
               <Field className="md:col-span-2" label={t('notificationsPage.preset')} required>
                 {fieldControl => (
@@ -325,7 +431,7 @@ function NotificationChannelDialogBody({
             </>
           )}
 
-          {values.mode === 'webhook' && (
+          {effectiveMode === 'webhook' && (
             <>
               <Field label={t('notificationsPage.webhookMethod')}>
                 {fieldControl => (
@@ -379,7 +485,7 @@ function NotificationChannelDialogBody({
             </>
           )}
 
-          {values.mode === 'smtp' && (
+          {effectiveMode === 'smtp' && (
             <>
               <Field label={t('notificationsPage.smtpHost')} required>
                 <Input {...form.register('smtpHost')} placeholder="smtp.example.com" />

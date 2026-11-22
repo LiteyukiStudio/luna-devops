@@ -186,6 +186,55 @@ describe('project workspace overview', () => {
     renderPage('/projects/prj_1?tab=notifications&subtab=ai-automation')
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/projects/prj_1?tab=ai-diagnosis'))
   })
+
+  it('renders skeletons instead of zero/unknown placeholders while overview, applications, variable sets, configs, and members are pending', async () => {
+    mocks.getProjectOverview.mockReturnValue(new Promise(() => undefined))
+    mocks.listApplications.mockReturnValue(new Promise(() => undefined))
+    mocks.listBuildVariableSets.mockReturnValue(new Promise(() => undefined))
+    mocks.listProjectRuntimeConfigSets.mockReturnValue(new Promise(() => undefined))
+    mocks.listProjectMembers.mockReturnValue(new Promise(() => undefined))
+    mocks.listBuildRunsPage.mockResolvedValue({
+      items: [{
+        id: 'bldr_1',
+        projectId: 'prj_1',
+        applicationId: 'app_1',
+        deploymentTargetId: 'dplt_1',
+        imageRef: 'harbor.example.com/team/api:latest',
+        sourceBranch: 'main',
+        status: 'succeeded',
+        triggerType: 'manual',
+        createdAt: '2026-11-10T00:00:00Z',
+      }],
+      page: 1,
+      pageSize: 5,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 1,
+      totalPages: 1,
+    })
+
+    const { container } = renderPage()
+
+    expect(await screen.findByText('harbor.example.com/team/api:latest')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    expect(screen.queryByText(i18next.t('projectSpaces.unknownApplication'))).not.toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('projectSpaces.variableSetCount', { count: 0 }))).not.toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('projectSpaces.runtimeConfigSetCount', { count: 0 }))).not.toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('projectSpaces.memberRoleMeta', { members: 0, owners: 0 }))).not.toBeInTheDocument()
+  })
+
+  it('renders unavailable instead of zero counts when operations queries fail', async () => {
+    mocks.getProjectOverview.mockRejectedValueOnce(new Error('overview failed'))
+    mocks.listBuildVariableSets.mockRejectedValueOnce(new Error('vars failed'))
+    mocks.listProjectRuntimeConfigSets.mockRejectedValueOnce(new Error('configs failed'))
+    mocks.listProjectMembers.mockRejectedValueOnce(new Error('members failed'))
+
+    renderPage()
+
+    await waitFor(() => expect(screen.getAllByText(i18next.t('common.unavailable')).length).toBeGreaterThanOrEqual(4))
+    expect(screen.queryByText(i18next.t('projectSpaces.variableSetCount', { count: 0 }))).not.toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('projectSpaces.memberRoleMeta', { members: 0, owners: 0 }))).not.toBeInTheDocument()
+  })
 })
 
 function LocationProbe() {

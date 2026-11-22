@@ -272,7 +272,7 @@ export function ProjectsPage() {
           ? { description: t('projectSpaces.loadFailedDescription'), onRetry: () => void projects.refetch(), retrying: projects.isFetching, title: t('projectSpaces.loadFailedTitle') }
           : undefined}
         items={projectItems}
-        loading={projects.isLoading}
+        loading={projects.isPending}
         pagination={{
           page: projectPage,
           pageSize: projectPageSize,

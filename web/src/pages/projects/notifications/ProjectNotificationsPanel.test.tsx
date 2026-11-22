@@ -400,7 +400,9 @@ describe('project notifications panel', () => {
     const saveButton = within(dialog).getByRole('button', { name: i18next.t('common.save') })
     expect(saveButton).toBeDisabled()
 
-    await user.click(within(dialog).getByRole('button', { name: i18next.t('notificationsPage.filterApplications') }))
+    const filterAppsTrigger = within(dialog).queryByRole('button', { name: i18next.t('notificationsPage.filterApplications') })
+      ?? within(dialog).getByRole('button', { name: i18next.t('notificationsPage.filterApplicationsPlaceholder') })
+    await user.click(filterAppsTrigger)
     await user.click(await screen.findByRole('button', { name: i18next.t('common.clearSelection') }))
 
     await waitFor(() => expect(saveButton).toBeEnabled())
@@ -418,6 +420,39 @@ describe('project notifications panel', () => {
         },
       }),
     ))
+  })
+
+  it('renders loading skeletons and retryable ErrorState in the Bind Channel dialog instead of flashing noBindableChannels', async () => {
+    const user = userEvent.setup()
+    mocks.listScopedNotificationChannels.mockReturnValueOnce(new Promise(() => undefined))
+
+    const { unmount } = renderPanel({
+      currentUserActions: ['notification:read', 'notification:manage'],
+      initialEntry: '/projects/prj_1?tab=notifications&subtab=channels',
+    })
+
+    await user.click(await screen.findByRole('button', { name: i18next.t('notificationsPage.bindExistingChannel') }))
+    const pendingDialog = await screen.findByRole('dialog', { name: i18next.t('notificationsPage.bindChannelTitle') })
+    expect(pendingDialog.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    expect(within(pendingDialog).queryByText(i18next.t('notificationsPage.noBindableChannels'))).not.toBeInTheDocument()
+    unmount()
+
+    mocks.listScopedNotificationChannels
+      .mockRejectedValueOnce(new Error('scoped channels failed'))
+      .mockResolvedValueOnce(page([]))
+
+    renderPanel({
+      currentUserActions: ['notification:read', 'notification:manage'],
+      initialEntry: '/projects/prj_1?tab=notifications&subtab=channels',
+    })
+
+    await user.click(await screen.findByRole('button', { name: i18next.t('notificationsPage.bindExistingChannel') }))
+    const errorDialog = await screen.findByRole('dialog', { name: i18next.t('notificationsPage.bindChannelTitle') })
+    expect(await within(errorDialog).findByText(i18next.t('notificationsPage.loadFailedTitle'))).toBeInTheDocument()
+    expect(within(errorDialog).queryByText(i18next.t('notificationsPage.noBindableChannels'))).not.toBeInTheDocument()
+
+    await user.click(within(errorDialog).getByRole('button', { name: i18next.t('common.retry') }))
+    expect(await within(errorDialog).findByText(i18next.t('notificationsPage.noBindableChannels'))).toBeInTheDocument()
   })
 })
 

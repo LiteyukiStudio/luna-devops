@@ -407,4 +407,31 @@ describe('ai assistant composer keyboard submission', () => {
     expect(shell?.firstElementChild).toBe(contextHeader)
     expect(shell?.lastElementChild).toBe(innerCard)
   })
+
+  it('shows loading state instead of modelUnavailable error banner while models are loading', () => {
+    render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        modelAvailable={false}
+        models={[]}
+        modelsLoading
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    const picker = screen.getByRole('combobox', { name: i18next.t('aiAssistant.modelLabel') })
+    expect(picker).toHaveTextContent(i18next.t('common.loading'))
+    expect(picker).not.toHaveTextContent(i18next.t('aiAssistant.modelEmpty'))
+    expect(screen.queryByText(i18next.t('aiAssistant.modelUnavailable'))).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(i18next.t('aiAssistant.contextUsageUnavailable'))).not.toBeInTheDocument()
+  })
 })

@@ -786,6 +786,46 @@ describe('app template installation', () => {
     expect(refs[1]?.firstElementChild).toHaveTextContent('ghcr.io/usememos/memos')
     expect(refs[1]?.lastElementChild).toHaveTextContent(':stable')
   })
+
+  it('renders skeleton category chips instead of All categories 0 while templates are loading', () => {
+    mocks.listAppTemplates.mockReturnValue(new Promise(() => undefined))
+    renderPage()
+
+    const categoryGroup = screen.getByRole('group', { name: i18next.t('appTemplatesPage.categoryFilter') })
+    expect(within(categoryGroup).queryByRole('button')).not.toBeInTheDocument()
+    expect(categoryGroup.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+  })
+
+  it('renders skeleton in TemplateProjectVolumePicker while upstream project or cluster queries are pending', async () => {
+    const user = userEvent.setup()
+    mocks.listProjects.mockReturnValue(new Promise(() => undefined))
+    renderPage()
+
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
+
+    expect(installDialog.querySelector('[data-slot="template-volume-picker-skeleton"]')).toBeInTheDocument()
+    expect(within(installDialog).queryByText(i18next.t('projectVolumes.deploymentSelectorEmpty'))).not.toBeInTheDocument()
+  })
+
+  it('keeps volume search input editable and offers retry when listProjectVolumes fails', async () => {
+    const user = userEvent.setup()
+    mocks.listProjectVolumes
+      .mockRejectedValueOnce(new Error('volume list failed'))
+      .mockResolvedValueOnce(page([{ ...createdVolume, id: 'pvol_ready', availability: 'available', lifecycleState: 'ready' }]))
+    renderPage()
+
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
+
+    expect(await within(installDialog).findByText(i18next.t('projectVolumes.loadFailedDescription'))).toBeInTheDocument()
+    const searchInput = within(installDialog).getByLabelText(i18next.t('projectVolumes.deploymentSelectorPlaceholder'))
+    expect(searchInput).toBeEnabled()
+
+    await user.click(within(installDialog).getByRole('button', { name: i18next.t('common.retry') }))
+    await waitFor(() => expect(mocks.listProjectVolumes).toHaveBeenCalledTimes(2))
+    expect(within(installDialog).queryByText(i18next.t('projectVolumes.loadFailedDescription'))).not.toBeInTheDocument()
+  })
 })
 
 function escapeRegExp(value: string) {

@@ -292,4 +292,58 @@ describe('deployment bundle import dialog', () => {
     expect(screen.getByRole('combobox', { name: /Source config/ })).not.toHaveTextContent('Config 120')
     expect(screen.getByLabelText(/Search candidates for Source config|搜索 Source config 的候选资源/)).toHaveValue('')
   })
+
+  it('shows unavailable and retry instead of noOptions when candidate search fails with zero candidates', async () => {
+    previewDeploymentTargetBundleImport.mockResolvedValueOnce({
+      digest: 'f'.repeat(64),
+      references: [{
+        candidateCount: 0,
+        candidates: [],
+        code: 'deployment_bundle.reference_missing',
+        key: 'registry:target',
+        kind: 'artifactRegistry',
+        required: true,
+        source: { name: 'Source registry' },
+        status: 'missing',
+        truncated: false,
+        usage: 'targetImage',
+      }],
+      secretRequirements: [],
+      status: 'requires_mapping',
+      summary: { name: 'Imported service', sourceType: 'image', stage: 'dev' },
+      warnings: ['deployment_bundle.reference_missing'],
+    })
+    listDeploymentTargetBundleReferenceCandidates
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce({
+        items: [{ compatible: true, id: 'reg_recovered', matched: false, name: 'Recovered registry' }],
+        page: 1,
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        total: 1,
+        totalPages: 1,
+      })
+
+    const file = Object.assign(new File([JSON.stringify(bundle)], 'deployment.json', { type: 'application/json' }), {
+      text: vi.fn().mockResolvedValue(JSON.stringify(bundle)),
+    })
+    render(
+      <ApplicationDeploymentBundleImportDialog applicationId="app_destination" open projectId="prj_destination" onImported={vi.fn()} onOpenChange={vi.fn()} />,
+    )
+
+    fireEvent.change(screen.getByLabelText(/Select deploy config JSON|选择部署配置 JSON/), { target: { files: [file] } })
+    const mapping = await screen.findByRole('combobox', { name: /Source registry/ })
+
+    fireEvent.click(screen.getByRole('button', { name: /Search candidates|搜索候选资源/ }))
+    await waitFor(() => expect(listDeploymentTargetBundleReferenceCandidates).toHaveBeenCalledTimes(1))
+
+    expect(mapping).toBeDisabled()
+    expect(mapping).toHaveTextContent(/Unavailable|不可用/)
+    expect(screen.queryByText(/No options available|暂无可选项/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Retry$|^重试$/ }))
+    await waitFor(() => expect(listDeploymentTargetBundleReferenceCandidates).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(mapping).toBeEnabled())
+  })
 })

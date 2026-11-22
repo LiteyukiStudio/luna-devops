@@ -173,4 +173,47 @@ describe('cluster egress exceptions dialog', () => {
       grants: [{ projectId: 'prj_ops', deploymentTargetIds: [], includeBuilds: false }],
     })))
   })
+
+  it('renders retryable ErrorState without the pending approvals warning alert when share approvals fail to load', async () => {
+    mocks.listRuntimeClusterEgressExceptions.mockResolvedValue(page([{
+      id: 'nex_db',
+      runtimeClusterId: 'clu_dc',
+      name: 'Billing MySQL',
+      cidr: '192.168.31.10/32',
+      ports: '3306',
+      protocol: 'tcp',
+      reason: 'Billing',
+      grants: [{ projectId: 'prj_pay', projectName: 'Payments', deploymentTargetIds: [], includeBuilds: false, providedShares: 1 }],
+      createdBy: 'usr',
+      createdAt: '',
+      updatedAt: '',
+    }]))
+    mocks.listRuntimeClusterNetworkShareApprovals.mockRejectedValue(new Error('approvals unavailable'))
+
+    renderDialog()
+
+    expect(await screen.findByText(i18next.t('clustersPage.shareApprovals.loadFailed'))).toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('clustersPage.shareApprovals.title'))).not.toBeInTheDocument()
+  })
+
+  it('renders retryable ErrorState in GrantRow when projects fail to load and binds fieldControl id', async () => {
+    mocks.listRuntimeClusterEgressExceptions.mockResolvedValue(page([]))
+    mocks.listProjectsPage
+      .mockRejectedValueOnce(new Error('projects down'))
+      .mockResolvedValueOnce(page([{ id: 'prj_pay', name: 'Payments', identifier: 'payments' }]))
+    const user = userEvent.setup()
+    renderDialog()
+
+    await user.click(await screen.findByRole('button', { name: 'Add exception' }))
+    await user.click(screen.getByRole('button', { name: 'Grant a project space' }))
+
+    const projectSelect = screen.getByRole('button', { name: 'Project space' })
+    const targetSelect = screen.getByRole('button', { name: 'Deployment targets' })
+    expect(projectSelect).toHaveAttribute('id')
+    expect(targetSelect).toHaveAttribute('id')
+    expect(await screen.findByText(i18next.t('errors.request.failed'))).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    await waitFor(() => expect(mocks.listProjectsPage).toHaveBeenCalledTimes(2))
+  })
 })

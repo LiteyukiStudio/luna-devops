@@ -48,4 +48,47 @@ describe('credentialsPanel OAuth readiness for redacted providers', () => {
     expect(screen.getByRole('button', { name: i18next.t('codeRepositoriesView.oauthConnect', { provider: 'GitHub Enterprise' }) })).toBeInTheDocument()
     expect(screen.queryByText(i18next.t('codeRepositoriesView.oauthUnavailableTitle'))).not.toBeInTheDocument()
   })
+
+  it('renders skeletons for provider and project scope cells while lookup queries are loading', () => {
+    const { container } = render(
+      <CredentialsPanel
+        credentials={[{
+          id: 'ga_1',
+          userId: 'usr_1',
+          providerId: 'gp_pending',
+          scope: 'project',
+          ownerRef: '',
+          projectIds: ['prj_pending'],
+          username: 'octo',
+          externalUserId: '',
+          avatarUrl: '',
+          scopes: 'repo',
+          accessTokenSet: true,
+          refreshTokenSet: false,
+          status: 'ready',
+          createdAt: '2026-07-01T00:00:00Z',
+        }]}
+        loading={false}
+        page={1}
+        pageSize={10}
+        projectMap={{}}
+        projectsLoading
+        providers={[]}
+        providersLoading
+        refreshPending={false}
+        total={1}
+        totalPages={1}
+        onDelete={vi.fn()}
+        onEdit={vi.fn()}
+        onPageChange={vi.fn()}
+        onPageSizeChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('octo')).toBeInTheDocument()
+    expect(screen.queryByText('gp_pending')).not.toBeInTheDocument()
+    expect(screen.queryByText('prj_pending')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThanOrEqual(2)
+  })
 })

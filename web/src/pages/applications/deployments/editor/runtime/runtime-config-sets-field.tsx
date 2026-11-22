@@ -122,57 +122,60 @@ export function RuntimeConfigSetsField({ canManageSecrets, deploymentTargets, pr
           {t('runtimeConfigSets.createTitle')}
         </Button>
       </div>
-      {sets.isLoading && <Skeleton className="h-12 w-full rounded-control" />}
-      {sets.isError && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger-border bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
-          <span>{t('deploymentTargetEditor.runtimeConfigSetsLoadFailed')}</span>
-          <Button disabled={sets.isFetching} size="sm" type="button" variant="outline" onClick={() => void sets.refetch()}>
-            <RotateCw className="size-3.5" />
-            {t('common.retry')}
-          </Button>
-        </div>
-      )}
-      {sets.data && sets.data.length === 0 && <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyRuntimeConfigSets')}</p>}
-      {sets.data && sets.data.length > 0 && (
-        <ul className="grid gap-1 rounded-control border border-border p-1">
-          {sets.data.map((set) => {
-            const selectedRef = selectedById.get(set.id)
-            const checkboxId = `runtime-config-set-${set.id}`
-            return (
-              <li key={set.id} className="flex flex-wrap items-center justify-between gap-2 rounded-control px-3 py-2 hover:bg-surface-subtle">
-                <label className="flex min-w-0 flex-1 items-center gap-3" htmlFor={checkboxId}>
-                  <Checkbox checked={Boolean(selectedRef)} disabled={!set.enabled && !selectedRef} id={checkboxId} onCheckedChange={checked => toggleSet(set.id, checked === true)} />
-                  <span className="min-w-0 truncate font-mono text-sm font-medium" title={set.name}>{set.name}</span>
-                  {!set.enabled && <StatusBadge tone="neutral">{t('common.disabled')}</StatusBadge>}
-                </label>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {selectedRef && (
-                    <Select
-                      value={selectedRef.mode}
-                      onValueChange={value => changeMode(set.id, value === 'snapshot' ? 'snapshot' : 'live')}
-                    >
-                      <SelectTrigger
-                        aria-label={t('deploymentTargetEditor.runtimeConfigRefModeFor', { name: set.name })}
-                        className="w-auto shrink-0 text-xs"
-                        size="sm"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="live">{t('deploymentsPage.runtimeConfigRefModes.live')}</SelectItem>
-                        <SelectItem value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <Button aria-label={t('deploymentTargetEditor.editRuntimeConfigSet', { name: set.name })} size="icon" type="button" variant="ghost" onClick={() => openDialog(set)}>
-                    <Pencil className="size-4" />
-                  </Button>
-                </div>
-              </li>
+      {sets.isPending
+        ? <Skeleton className="h-12 w-full rounded-control" />
+        : sets.isError
+          ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger-border bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
+                <span>{t('deploymentTargetEditor.runtimeConfigSetsLoadFailed')}</span>
+                <Button disabled={sets.isFetching} size="sm" type="button" variant="outline" onClick={() => void sets.refetch()}>
+                  <RotateCw className="size-3.5" />
+                  {t('common.retry')}
+                </Button>
+              </div>
             )
-          })}
-        </ul>
-      )}
+          : sets.data.length === 0
+            ? <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyRuntimeConfigSets')}</p>
+            : (
+                <ul className="grid gap-1 rounded-control border border-border p-1">
+                  {sets.data.map((set) => {
+                    const selectedRef = selectedById.get(set.id)
+                    const checkboxId = `runtime-config-set-${set.id}`
+                    return (
+                      <li key={set.id} className="flex flex-wrap items-center justify-between gap-2 rounded-control px-3 py-2 hover:bg-surface-subtle">
+                        <label className="flex min-w-0 flex-1 items-center gap-3" htmlFor={checkboxId}>
+                          <Checkbox checked={Boolean(selectedRef)} disabled={!set.enabled && !selectedRef} id={checkboxId} onCheckedChange={checked => toggleSet(set.id, checked === true)} />
+                          <span className="min-w-0 truncate font-mono text-sm font-medium" title={set.name}>{set.name}</span>
+                          {!set.enabled && <StatusBadge tone="neutral">{t('common.disabled')}</StatusBadge>}
+                        </label>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {selectedRef && (
+                            <Select
+                              value={selectedRef.mode}
+                              onValueChange={value => changeMode(set.id, value === 'snapshot' ? 'snapshot' : 'live')}
+                            >
+                              <SelectTrigger
+                                aria-label={t('deploymentTargetEditor.runtimeConfigRefModeFor', { name: set.name })}
+                                className="w-auto shrink-0 text-xs"
+                                size="sm"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="live">{t('deploymentsPage.runtimeConfigRefModes.live')}</SelectItem>
+                                <SelectItem value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                          <Button aria-label={t('deploymentTargetEditor.editRuntimeConfigSet', { name: set.name })} size="icon" type="button" variant="ghost" onClick={() => openDialog(set)}>
+                            <Pencil className="size-4" />
+                          </Button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
       {restartSet && (
         <Alert variant="warning">
           <Rocket />

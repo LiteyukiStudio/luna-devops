@@ -10,6 +10,7 @@ import { useTerminalConnection } from '@/components/common/use-terminal-connecti
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
+import { Skeleton } from '@/components/ui/skeleton'
 import { RuntimePodSelect } from './runtime-pod-select'
 import { collectRuntimeContainerOptions, useReleaseRuntimePods } from './use-release-runtime-pods'
 
@@ -35,6 +36,8 @@ export function ApplicationWebConsolePanel({
   const [pod, setPod] = useState(initialPod)
   const [container, setContainer] = useState(initialContainer)
   const runtimePods = useReleaseRuntimePods(projectId, release)
+  const podsEnabled = Boolean(projectId && release.applicationId && release.deploymentTargetId)
+  const podsLoading = podsEnabled && runtimePods.isPending
   const containerOptions = useMemo(
     () => collectRuntimeContainerOptions(runtimePods.data?.status === 'ready' ? runtimePods.data.items : [], pod, false),
     [pod, runtimePods.data],
@@ -62,35 +65,46 @@ export function ApplicationWebConsolePanel({
         <TerminalConnectionStatus state={connection.state} />
         <RuntimePodSelect projectId={projectId} release={release} value={pod} onValueChange={setPod} />
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <label htmlFor={containerInputId}>{t('deploymentsPage.container')}</label>
-          {containerOptions.length > 0
+          {podsLoading
             ? (
-                <Select
-                  value={toSelectValue(container)}
-                  onValueChange={next => setContainer(fromSelectValue(next))}
-                >
-                  <SelectTrigger className="h-8 w-40 font-mono text-xs" id={containerInputId} size="sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.webConsoleContainerPlaceholder')}</SelectItem>
-                    {containerOptions.map(option => (
-                      <SelectItem key={option.name} value={option.name}>{option.name}</SelectItem>
-                    ))}
-                    {container && !containerOptions.some(option => option.name === container) && (
-                      <SelectItem value={container}>{container}</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                <>
+                  <span>{t('deploymentsPage.container')}</span>
+                  <Skeleton className="h-8 w-40 rounded-control" />
+                </>
               )
             : (
-                <Input
-                  className="h-8 w-36 font-mono text-xs"
-                  id={containerInputId}
-                  placeholder={t('deploymentsPage.webConsoleContainerPlaceholder')}
-                  value={container}
-                  onChange={event => setContainer(event.target.value)}
-                />
+                <>
+                  <label htmlFor={containerInputId}>{t('deploymentsPage.container')}</label>
+                  {containerOptions.length > 0
+                    ? (
+                        <Select
+                          value={toSelectValue(container)}
+                          onValueChange={next => setContainer(fromSelectValue(next))}
+                        >
+                          <SelectTrigger className="h-8 w-40 font-mono text-xs" id={containerInputId} size="sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={EMPTY_SELECT_VALUE}>{t('deploymentsPage.webConsoleContainerPlaceholder')}</SelectItem>
+                            {containerOptions.map(option => (
+                              <SelectItem key={option.name} value={option.name}>{option.name}</SelectItem>
+                            ))}
+                            {container && !containerOptions.some(option => option.name === container) && (
+                              <SelectItem value={container}>{container}</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      )
+                    : (
+                        <Input
+                          className="h-8 w-36 font-mono text-xs"
+                          id={containerInputId}
+                          placeholder={t('deploymentsPage.webConsoleContainerPlaceholder')}
+                          value={container}
+                          onChange={event => setContainer(event.target.value)}
+                        />
+                      )}
+                </>
               )}
         </div>
       </ViewerToolbar>

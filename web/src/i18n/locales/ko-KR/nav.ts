@@ -30,6 +30,7 @@ const nav = {
     placeholder: '앱, 도메인, 템플릿, 저장소, ID, 페이지 검색 (app: / host: / template: 지원)…',
     empty: '일치하는 결과가 없습니다',
     contextEmptyHint: '{{context}}에서 검색합니다. Backspace 키를 누르면 전역 검색으로 전환됩니다',
+    scopeEmptyHint: '키워드를 입력하여 "{{scope}}"에서 검색',
     clearContextChip: '{{context}} 필터를 해제하고 전역 검색으로 돌아가기',
     searching: '플랫폼 리소스를 검색하는 중…',
     searchFailed: '플랫폼 리소스 검색에 실패했습니다. 다시 시도하세요.',

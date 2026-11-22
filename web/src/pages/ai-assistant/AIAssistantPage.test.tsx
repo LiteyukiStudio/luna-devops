@@ -196,6 +196,23 @@ describe('ai assistant route page', () => {
     expect(await screen.findByTestId('dashboard-route')).toBeInTheDocument()
   })
 
+  it('renders a retryable ErrorState instead of unavailable copy when capabilities fail to load', async () => {
+    const user = userEvent.setup()
+    const onRetryCapabilities = vi.fn()
+    renderAssistantPage({
+      capabilities: null,
+      capabilitiesError: new Error('Capabilities gateway timeout'),
+      initialEntries: ['/ai-assistant'],
+      onRetryCapabilities,
+    })
+
+    expect(screen.getByText('Capabilities gateway timeout')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: i18next.t('aiAssistant.page.unavailableTitle') })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    expect(onRetryCapabilities).toHaveBeenCalledOnce()
+  })
+
   it('does not move focus into the composer when the route page loads', async () => {
     const focusSentinel = document.createElement('button')
     focusSentinel.dataset.focusSentinel = 'true'
@@ -237,20 +254,24 @@ describe('ai assistant route page', () => {
 })
 
 interface RenderAssistantPageOptions {
-  capabilities?: AICapabilities
+  capabilities?: AICapabilities | null
+  capabilitiesError?: Error | null
   initialEntries?: ComponentProps<typeof MemoryRouter>['initialEntries']
   initialIndex?: number
   onPageRender?: (pathname: string) => void
+  onRetryCapabilities?: () => void
 }
 
 function renderAssistantPage({
   capabilities: enabledCapabilities = capabilities,
+  capabilitiesError = null,
   initialEntries = [{
     pathname: '/ai-assistant',
     state: createAIAssistantRouteState({ pathname: '/projects/project-1/apps/app-1', search: '?tab=runtime', hash: '#recent' }),
   }],
   initialIndex,
   onPageRender,
+  onRetryCapabilities,
 }: RenderAssistantPageOptions = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -263,7 +284,11 @@ function renderAssistantPage({
     <QueryClientProvider client={queryClient}>
       <SessionContext value={sessionValue}>
         <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
-          <AIAssistantRuntimeProvider capabilities={enabledCapabilities}>
+          <AIAssistantRuntimeProvider
+            capabilities={enabledCapabilities ?? undefined}
+            capabilitiesError={capabilitiesError}
+            onRetryCapabilities={onRetryCapabilities}
+          >
             <Routes>
               <Route path="/ai-assistant" element={<ObservedAIAssistantPage onRender={onPageRender} />} />
               <Route path="/dashboard" element={<DashboardTestRoute />} />

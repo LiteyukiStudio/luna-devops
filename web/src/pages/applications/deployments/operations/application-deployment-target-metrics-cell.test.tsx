@@ -198,4 +198,42 @@ describe('deployment target metrics cell, dual-ring overview, and pod mini-rings
     expect(container.querySelector('.text-danger')).toBeInTheDocument()
     expect(container.querySelector('.text-warning')).toBeInTheDocument()
   })
+
+  it('returns disabled when targetId is empty, transitions to unavailable on malformed SSE JSON, and clears stale metrics when toggled off and on', () => {
+    const { rerender } = render(
+      <DeploymentTargetMetricsCell
+        applicationId="app_1"
+        enabled
+        projectId="prj_1"
+        targetId=""
+      />,
+    )
+    expect(screen.queryByText('Connecting metrics')).not.toBeInTheDocument()
+    expect(FakeEventSource.instances).toHaveLength(0)
+
+    const { rerender: rerenderHarness } = render(<StreamedMetricsHarness enabled />)
+    expect(screen.getByText('Connecting metrics')).toBeInTheDocument()
+
+    // Malformed SSE payload must degrade to unavailable rather than staying in infinite connecting state
+    act(() => {
+      for (const listener of FakeEventSource.instances[0].listeners.metrics ?? [])
+        listener({ data: '{invalid-json' } as MessageEvent)
+    })
+    expect(screen.getByText('Metrics unavailable')).toBeInTheDocument()
+
+    // Valid SSE payload populates metrics
+    act(() => {
+      FakeEventSource.instances[0].emit('metrics', sampleMetrics)
+    })
+    expect(screen.getByText('9.5Mi / 8Gi')).toBeInTheDocument()
+
+    // Toggling enabled true -> false -> true must not replay stale metrics before the new stream delivers data
+    rerender(<div />)
+    rerenderHarness(<StreamedMetricsHarness enabled={false} />)
+    expect(screen.queryByText('9.5Mi / 8Gi')).not.toBeInTheDocument()
+
+    rerenderHarness(<StreamedMetricsHarness enabled />)
+    expect(screen.getByText('Connecting metrics')).toBeInTheDocument()
+    expect(screen.queryByText('9.5Mi / 8Gi')).not.toBeInTheDocument()
+  })
 })

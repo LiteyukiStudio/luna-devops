@@ -45,6 +45,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { normalizeProjectWorkspaceSection, projectWorkspaceSectionPath, projectWorkspaceSections } from '@/pages/projects/overview/project-workspace-sections'
 
@@ -53,6 +54,7 @@ const AIAssistantPage = lazy(() => import('@/pages/ai-assistant/AIAssistantPage'
 
 interface Breadcrumb {
   label: string
+  loading?: boolean
   to?: string
 }
 
@@ -190,6 +192,8 @@ export function AppLayout() {
     enabled: Boolean(user && appRouteMatch),
   })
   const project = currentProject.data ?? (projectRouteMatch ? projects.data?.find(item => item.id === projectRouteMatch[1]) : undefined)
+  const projectNameLoading = Boolean(projectRouteMatch && !project && (currentProject.isPending || projects.isPending))
+  const applicationNameLoading = Boolean(appRouteMatch && !currentApplication.data && currentApplication.isPending)
   const activeProjectSection: ProjectWorkspaceSection = appRouteMatch
     ? 'apps'
     : normalizeProjectWorkspaceSection(new URLSearchParams(location.search).get('tab'))
@@ -199,15 +203,23 @@ export function AppLayout() {
     const application = appRouteMatch ? currentApplication.data : undefined
     let documentTitle = rule?.titleKey ? t(rule.titleKey) : configs['site.title'] || t('appName')
     let heading = documentTitle
+    let headingLoading = false
     const breadcrumbs: Breadcrumb[] = []
     if (projectRouteMatch) {
       breadcrumbs.push({ label: t('projectSpaces.title'), to: '/projects' })
       if (project)
         breadcrumbs.push({ label: project.name, to: `/projects/${project.id}` })
+      else if (projectNameLoading)
+        breadcrumbs.push({ label: t('common.loading'), loading: true, to: `/projects/${projectRouteMatch[1]}` })
     }
-    if (projectWorkspaceMatch && project) {
-      documentTitle = t('projectSpaces.detailTopbarTitle', { name: project.name })
-      heading = project.name
+    if (projectWorkspaceMatch) {
+      if (project) {
+        documentTitle = t('projectSpaces.detailTopbarTitle', { name: project.name })
+        heading = project.name
+      }
+      else if (projectNameLoading) {
+        headingLoading = true
+      }
     }
     if (application) {
       const projectName = project?.name ?? t('projectSpaces.title')
@@ -226,10 +238,21 @@ export function AppLayout() {
         heading = application.name
       }
     }
+    else if (appRouteMatch && applicationNameLoading) {
+      const editorMode = appRouteMatch[3]?.endsWith('/new') ? 'create' : appRouteMatch[3] ? 'edit' : null
+      breadcrumbs.push({ label: t('common.loading'), loading: true, to: `/projects/${appRouteMatch[1]}/apps/${appRouteMatch[2]}` })
+      if (editorMode) {
+        heading = editorMode === 'create' ? t('nav.deploymentTargetCreate') : t('nav.deploymentTargetEdit')
+        breadcrumbs.push({ label: heading })
+      }
+      else {
+        headingLoading = true
+      }
+    }
     if (breadcrumbs.length === 0)
       breadcrumbs.push({ label: heading })
-    return { breadcrumbs, documentTitle, heading }
-  }, [appRouteMatch, configs, currentApplication.data, location.pathname, project, projectRouteMatch, t])
+    return { breadcrumbs, documentTitle, heading, headingLoading }
+  }, [appRouteMatch, applicationNameLoading, configs, currentApplication.data, location.pathname, project, projectNameLoading, projectRouteMatch, t])
   useDocumentTitle(pageMeta.documentTitle)
   const workspaceChromeTargets = useMemo(() => ({
     description: descriptionTarget,
@@ -295,6 +318,8 @@ export function AppLayout() {
       <ProjectSwitcher
         currentProjectId={projectId}
         currentProjectName={project?.name}
+        loading={projects.isPending}
+        nameLoading={projectNameLoading}
         projects={projects.data ?? []}
         onNavigate={onNavigate}
       />
@@ -372,7 +397,12 @@ export function AppLayout() {
   }
 
   return (
-    <AIAssistantRuntimeProvider capabilities={enabledAICapabilities}>
+    <AIAssistantRuntimeProvider
+      capabilities={enabledAICapabilities}
+      capabilitiesError={aiCapabilities.isError ? aiCapabilities.error : null}
+      capabilitiesRetrying={aiCapabilities.isFetching}
+      onRetryCapabilities={() => void aiCapabilities.refetch()}
+    >
       {assistantRoute
         ? (
             <div className="h-dvh min-h-0 overflow-hidden overscroll-none bg-surface text-foreground">
@@ -429,7 +459,9 @@ export function AppLayout() {
                     <Breadcrumbs items={pageMeta.breadcrumbs} label={t('nav.breadcrumb')} />
                     <div ref={setHeadingTarget} className="min-w-0 flex-1" data-slot="workspace-page-heading">
                       {!hasCustomHeading && (
-                        <h1 className="truncate text-base font-medium text-foreground">{pageMeta.heading}</h1>
+                        pageMeta.headingLoading
+                          ? <Skeleton aria-label={t('common.loading')} className="h-5 w-40" role="status" />
+                          : <h1 className="truncate text-base font-medium text-foreground">{pageMeta.heading}</h1>
                       )}
                     </div>
                     <CommandPalette
@@ -560,9 +592,11 @@ function ParentBackLink({ items }: { items: Breadcrumb[] }) {
   if (!parent?.to)
     return null
 
+  const label = parent.loading ? t('common.back') : t('nav.backToParent', { name: parent.label })
+
   return (
     <Button asChild className="size-8 shrink-0 hover:bg-primary-subtle-hover md:hidden" size="icon" variant="ghost">
-      <Link aria-label={t('nav.backToParent', { name: parent.label })} title={t('nav.backToParent', { name: parent.label })} to={parent.to}>
+      <Link aria-label={label} title={label} to={parent.to}>
         <ArrowLeft aria-hidden="true" className="size-4" />
       </Link>
     </Button>
@@ -580,7 +614,9 @@ function Breadcrumbs({ items, label }: { items: Breadcrumb[], label: string }) {
       <ol className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
         {ancestors.map(item => (
           <li key={`${item.label}-${item.to}`} className="flex min-w-0 items-center gap-1.5">
-            <Link className="min-w-0 max-w-48 truncate rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" title={item.label} to={item.to ?? '/'}>{item.label}</Link>
+            {item.loading
+              ? <Skeleton aria-label={item.label} className="h-4 w-24" role="status" />
+              : <Link className="min-w-0 max-w-48 truncate rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" title={item.label} to={item.to ?? '/'}>{item.label}</Link>}
             <span aria-hidden="true" className="text-muted-foreground/60">/</span>
           </li>
         ))}
@@ -589,14 +625,17 @@ function Breadcrumbs({ items, label }: { items: Breadcrumb[], label: string }) {
   )
 }
 
-function ProjectSwitcher({ currentProjectId, currentProjectName, onNavigate, projects }: {
+function ProjectSwitcher({ currentProjectId, currentProjectName, loading = false, nameLoading = false, onNavigate, projects }: {
   currentProjectId: string
   currentProjectName?: string
+  loading?: boolean
+  nameLoading?: boolean
   onNavigate?: () => void
   projects: { id: string, name: string }[]
 }) {
   const { t } = useTranslation()
   const name = currentProjectName ?? projects.find(item => item.id === currentProjectId)?.name ?? ''
+  const showSkeleton = nameLoading && !name
 
   return (
     <DropdownMenu>
@@ -607,15 +646,31 @@ function ProjectSwitcher({ currentProjectId, currentProjectName, onNavigate, pro
           title={t('nav.switchProject')}
           type="button"
         >
-          <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-control bg-muted text-xs font-semibold text-foreground">
-            {name.slice(0, 1).toUpperCase()}
-          </span>
-          <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+          {showSkeleton
+            ? (
+                <>
+                  <Skeleton aria-hidden="true" className="size-6 shrink-0 rounded-control" />
+                  <Skeleton aria-label={t('common.loading')} className="h-4 flex-1" role="status" />
+                </>
+              )
+            : (
+                <>
+                  <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-control bg-muted text-xs font-semibold text-foreground">
+                    {name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+                </>
+              )}
           <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-80 w-(--radix-dropdown-menu-trigger-width) min-w-56 overflow-y-auto">
         <DropdownMenuLabel>{t('projectSpaces.title')}</DropdownMenuLabel>
+        {loading && projects.length === 0 && (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground" role="status">
+            {t('common.loading')}
+          </div>
+        )}
         {projects.map(item => (
           <DropdownMenuItem key={item.id} asChild>
             <Link to={`/projects/${item.id}`} onClick={onNavigate}>

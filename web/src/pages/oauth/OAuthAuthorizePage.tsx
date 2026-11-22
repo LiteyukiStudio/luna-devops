@@ -11,6 +11,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { Surface } from '@/components/common/surface'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { OAuthConsentShell } from './oauth-consent'
 
 export function OAuthAuthorizePage() {
@@ -58,13 +59,38 @@ export function OAuthAuthorizePage() {
     }
   }, [location.pathname, location.search, navigate, session.initialized, session.user])
 
-  if (!session.initialized || !session.user || request.isLoading)
-    return <div className="min-h-dvh bg-primary-subtle" />
+  if (!session.initialized || !session.user || request.isPending) {
+    return (
+      <OAuthConsentShell title={t('oauthApps.authorizeTitle')}>
+        <div aria-label={t('common.loading')} className="grid gap-4" role="status">
+          <div className="flex items-start gap-3">
+            <Skeleton className="size-12 shrink-0 rounded-control" />
+            <div className="grid flex-1 gap-2">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-64 max-w-full" />
+            </div>
+          </div>
+          <Skeleton className="h-24 w-full rounded-container" />
+          <div className="flex justify-end gap-2">
+            <Skeleton className="h-9 w-24 rounded-control" />
+            <Skeleton className="h-9 w-28 rounded-control" />
+          </div>
+        </div>
+      </OAuthConsentShell>
+    )
+  }
 
   return (
     <OAuthConsentShell title={t('oauthApps.authorizeTitle')}>
       {request.isError
-        ? <ErrorState title={t('oauthApps.authorizationInvalid')} description={request.error.message} />
+        ? (
+            <ErrorState
+              description={request.error.message}
+              retrying={request.isFetching}
+              title={t('oauthApps.authorizationInvalid')}
+              onRetry={() => void request.refetch()}
+            />
+          )
         : request.data && (
           <>
             <div className="flex items-start gap-3">

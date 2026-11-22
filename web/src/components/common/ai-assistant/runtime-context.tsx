@@ -22,6 +22,8 @@ export type AIAssistantComposerProps = ComponentProps<typeof AIAssistantComposer
 
 export interface AIAssistantRuntimeValue {
   capabilities?: AICapabilities
+  capabilitiesError?: Error | null
+  capabilitiesRetrying?: boolean
   canCreateConversation: boolean
   canDebugInternalTools: boolean
   closeAssistant: () => void
@@ -33,6 +35,7 @@ export interface AIAssistantRuntimeValue {
   creatingConversation: boolean
   enabled: boolean
   executeAction: (action: AIUIAction) => Promise<boolean>
+  onRetryCapabilities?: () => void
   open: boolean
   openAssistant: () => void
   readLastDispatchedActionRun?: () => { sequence: number, runId: string, turnId: string } | null

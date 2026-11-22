@@ -8,8 +8,10 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
+import { ErrorState } from '@/components/common/error-state'
 import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { SettingsSkeleton } from '@/components/common/loading-states'
 import { Section } from '@/components/common/section'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -29,7 +31,11 @@ type PasswordForm = z.infer<typeof schema>
 export function AccountPasswordPanel() {
   const { t } = useTranslation()
   const { user } = useSession()
-  const registration = useQuery({ queryKey: ['auth-registration-status'], queryFn: api.getAuthRegistrationStatus })
+  const registration = useQuery({
+    queryKey: ['auth-registration-status'],
+    queryFn: api.getAuthRegistrationStatus,
+    enabled: !user?.passwordSet,
+  })
   const form = useForm<PasswordForm>({
     resolver: zodResolver(schema),
     mode: 'onChange',
@@ -43,6 +49,19 @@ export function AccountPasswordPanel() {
     },
     onError: error => toast.error(error.message),
   })
+
+  if (!user?.passwordSet && registration.isPending)
+    return <SettingsSkeleton />
+  if (!user?.passwordSet && registration.isError) {
+    return (
+      <ErrorState
+        retrying={registration.isFetching}
+        title={t('errors.request.failed')}
+        onRetry={() => void registration.refetch()}
+      />
+    )
+  }
+
   const canSetPassword = Boolean(user?.passwordSet || registration.data?.externalIdentityPasswordEnabled)
 
   return (

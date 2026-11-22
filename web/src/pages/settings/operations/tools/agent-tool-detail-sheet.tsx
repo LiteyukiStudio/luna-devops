@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { toolDisplayName } from '@/components/common/ai-assistant/tool-display-name'
 import { DataList } from '@/components/common/data-list'
-import { ErrorState } from '@/components/common/error-state'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { AgentTurnDetailSheet } from '@/pages/settings/operations/turns/agent-turn-detail-sheet'
@@ -74,35 +73,39 @@ export function AgentToolDetailSheet({ range, summary, onOpenChange }: {
             {summary && (
               <div className="grid gap-6">
                 <MetricGroup className="grid-cols-2 @lg/metric-group:grid-cols-5 @4xl/metric-group:grid-cols-5">
-                  <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} value={`${rate.toFixed(1)}%`} tone={successRateTone(rate)} />
+                  <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} tone={summary.totalCalls > 0 ? successRateTone(rate) : 'neutral'} value={`${rate.toFixed(1)}%`} />
                   <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.totalCalls')} value={formatNumber(summary.totalCalls)} />
-                  <MetricItem icon={<CheckCircle2 className="size-4" />} label={t('operationsDashboardPage.succeededCalls')} value={formatNumber(summary.succeededCalls)} tone="success" />
-                  <MetricItem icon={<CircleX className="size-4" />} label={t('operationsDashboardPage.failedCalls')} value={formatNumber(summary.failedCalls)} tone={summary.failedCalls > 0 ? 'danger' : 'success'} />
-                  <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.otherCalls')} value={formatNumber(summary.otherCalls)} tone={summary.otherCalls > 0 ? 'warning' : 'neutral'} />
+                  <MetricItem icon={<CheckCircle2 className="size-4" />} label={t('operationsDashboardPage.succeededCalls')} tone={summary.succeededCalls > 0 ? 'success' : 'neutral'} value={formatNumber(summary.succeededCalls)} />
+                  <MetricItem icon={<CircleX className="size-4" />} label={t('operationsDashboardPage.failedCalls')} tone={summary.failedCalls > 0 ? 'danger' : summary.totalCalls > 0 ? 'success' : 'neutral'} value={formatNumber(summary.failedCalls)} />
+                  <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.otherCalls')} tone={summary.otherCalls > 0 ? 'warning' : 'neutral'} value={formatNumber(summary.otherCalls)} />
                 </MetricGroup>
-                {calls.isError
-                  ? <ErrorState title={t('operationsDashboardPage.toolDetail.loadFailed')} description={t('operationsDashboardPage.toolDetail.loadFailedDescription')} />
-                  : (
-                      <DataList
-                        columns={columns}
-                        emptyDescription={t('operationsDashboardPage.toolDetail.emptyDescription')}
-                        emptyMode="actionable"
-                        emptyTitle={t('operationsDashboardPage.toolDetail.emptyTitle')}
-                        items={calls.data?.items ?? []}
-                        loading={calls.isLoading}
-                        pagination={{
-                          page,
-                          pageSize,
-                          total: calls.data?.total ?? 0,
-                          totalPages: calls.data?.totalPages ?? 0,
-                          pageInfoLabel: t('pagination.pageInfo', { page: calls.data?.page ?? page, totalPages: calls.data?.totalPages ?? 0, total: calls.data?.total ?? 0 }),
-                          onPageChange: setPage,
-                          onPageSizeChange: changePageSize,
-                          pageSizeOptions: [10, 20, 50],
-                        }}
-                        rowKey={call => call.id}
-                      />
-                    )}
+                <DataList
+                  columns={columns}
+                  emptyDescription={t('operationsDashboardPage.toolDetail.emptyDescription')}
+                  emptyMode="actionable"
+                  emptyTitle={t('operationsDashboardPage.toolDetail.emptyTitle')}
+                  error={calls.isError
+                    ? {
+                        description: t('operationsDashboardPage.toolDetail.loadFailedDescription'),
+                        onRetry: () => void calls.refetch(),
+                        retrying: calls.isFetching,
+                        title: t('operationsDashboardPage.toolDetail.loadFailed'),
+                      }
+                    : undefined}
+                  items={calls.data?.items ?? []}
+                  loading={Boolean(summary) && calls.isPending}
+                  pagination={{
+                    page,
+                    pageSize,
+                    total: calls.data?.total ?? 0,
+                    totalPages: calls.data?.totalPages ?? 0,
+                    pageInfoLabel: t('pagination.pageInfo', { page: calls.data?.page ?? page, totalPages: calls.data?.totalPages ?? 0, total: calls.data?.total ?? 0 }),
+                    onPageChange: setPage,
+                    onPageSizeChange: changePageSize,
+                    pageSizeOptions: [10, 20, 50],
+                  }}
+                  rowKey={call => call.id}
+                />
               </div>
             )}
           </div>

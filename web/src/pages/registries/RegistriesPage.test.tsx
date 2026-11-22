@@ -1,6 +1,6 @@
 import type { ArtifactRegistry, RegistryCredential } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -84,6 +84,41 @@ describe('registry credentials', () => {
     expect(screen.getByText('Credential One')).toBeInTheDocument()
     expect(screen.getByText('Credential Two')).toBeInTheDocument()
     expect(mocks.listRegistryCredentialsPage).not.toHaveBeenCalled()
+  })
+
+  it('renders skeletons for registry and project scope names while lookup queries are pending', async () => {
+    mocks.listRegistries.mockReturnValue(new Promise(() => undefined))
+    mocks.listRegistriesPage.mockReturnValue(new Promise(() => undefined))
+    mocks.listProjects.mockReturnValue(new Promise(() => undefined))
+    mocks.listAllRegistryCredentialsPage.mockResolvedValue(page([
+      { ...credentials[0], scope: 'project', projectIds: ['prj_pending'] },
+    ]))
+
+    const { container } = renderPage()
+    expect(await screen.findByText('Credential One')).toBeInTheDocument()
+    expect(screen.queryByText('registry-one')).not.toBeInTheDocument()
+    expect(screen.queryByText('prj_pending')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('shows unavailable with retry instead of noOptions in CredentialDialog when registryOptions fails', async () => {
+    const user = userEvent.setup()
+    mocks.listRegistries
+      .mockRejectedValueOnce(new Error('registries failed'))
+      .mockResolvedValueOnce(registries)
+    renderPage()
+
+    await screen.findByText('Credential One')
+    await user.click(screen.getByRole('button', { name: i18next.t('registriesPage.createCredentialTitle') }))
+    const dialog = await screen.findByRole('dialog', { name: i18next.t('registriesPage.createCredentialTitle') })
+
+    const registrySelect = within(dialog).getByRole('combobox', { name: new RegExp(i18next.t('registries')) })
+    expect(registrySelect).toBeDisabled()
+    expect(registrySelect).toHaveTextContent(i18next.t('common.unavailable'))
+    expect(within(dialog).queryByText(i18next.t('common.noOptions'))).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: i18next.t('common.retry') }))
+    expect(mocks.listRegistries).toHaveBeenCalledTimes(2)
   })
 })
 

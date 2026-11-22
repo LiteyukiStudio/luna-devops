@@ -11,7 +11,9 @@ interface ProjectSpaceControlProps {
   'aria-invalid'?: boolean | 'true' | 'false'
   'className'?: string
   'disabled'?: boolean
+  'error'?: boolean
   'id'?: string
+  'loading'?: boolean
   'projects': ProjectOption[]
   'size'?: SearchSelectSize
 }
@@ -21,7 +23,9 @@ export function ProjectSpaceSelect({
   'aria-invalid': ariaInvalid,
   className,
   disabled,
+  error,
   id,
+  loading,
   projects,
   size,
   value,
@@ -39,7 +43,9 @@ export function ProjectSpaceSelect({
       className={className}
       disabled={disabled}
       emptyLabel={t('projectSpaces.emptyTitle')}
+      error={error}
       id={id}
+      loading={loading}
       maxVisible={30}
       options={options}
       placeholder={t('projectSpaces.selectProject')}
@@ -56,6 +62,7 @@ export function ProjectSpaceMultiSelect({
   'aria-invalid': ariaInvalid,
   className,
   disabled,
+  error,
   id,
   loading,
   projects,
@@ -64,7 +71,6 @@ export function ProjectSpaceMultiSelect({
   value,
   onChange,
 }: ProjectSpaceControlProps & {
-  loading?: boolean
   pruneUnknownValues?: boolean
   value: string[]
   onChange: (value: string[]) => void
@@ -78,6 +84,7 @@ export function ProjectSpaceMultiSelect({
       className={className}
       disabled={disabled}
       emptyLabel={t('projectSpaces.emptyTitle')}
+      error={error}
       id={id}
       loading={loading}
       options={options}

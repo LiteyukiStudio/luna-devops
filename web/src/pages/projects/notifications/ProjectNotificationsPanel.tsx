@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
@@ -22,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin, ProjectAction, projectActionAllowed } from '@/lib/roles'
@@ -101,15 +103,23 @@ export function ProjectNotificationsPanel({
     }, { replace: true })
   }
 
+  const presetsEnabled = Boolean(projectId && canRead)
+  const projectsEnabled = Boolean(projectId && canManage)
+  const rulesEnabled = Boolean(projectId && canRead)
+  const channelsEnabled = Boolean(projectId && canRead)
+  const channelOptionsEnabled = Boolean(projectId && canRead)
+  const bindableChannelsEnabled = Boolean(projectId && canManage && bindDialogOpen)
+  const applicationsEnabled = Boolean(projectId && canManage && Boolean(ruleDialog))
+
   const presets = useQuery({
     queryKey: ['scoped-notification-presets'],
     queryFn: api.listScopedNotificationPresets,
-    enabled: Boolean(projectId && canRead),
+    enabled: presetsEnabled,
   })
   const projects = useQuery({
     queryKey: ['projects', 'options', isAdmin ? 'all' : 'member', 'project-notifications'],
     queryFn: () => api.listProjects(isAdmin ? 'all' : undefined),
-    enabled: Boolean(projectId && canManage),
+    enabled: projectsEnabled,
   })
   const rules = useQuery({
     ...liveObservationQueryPolicy,
@@ -120,7 +130,7 @@ export function ProjectNotificationsPanel({
       sortBy: 'createdAt',
       sortOrder: 'desc',
     }),
-    enabled: Boolean(projectId && canRead),
+    enabled: rulesEnabled,
   })
   const channels = useQuery({
     ...liveObservationQueryPolicy,
@@ -131,7 +141,7 @@ export function ProjectNotificationsPanel({
       sortBy: 'createdAt',
       sortOrder: 'desc',
     }),
-    enabled: Boolean(projectId && canRead),
+    enabled: channelsEnabled,
   })
   const channelOptions = useQuery({
     ...liveObservationQueryPolicy,
@@ -142,7 +152,7 @@ export function ProjectNotificationsPanel({
       sortBy: 'name',
       sortOrder: 'asc',
     }),
-    enabled: Boolean(projectId && canRead),
+    enabled: channelOptionsEnabled,
   })
   const bindableChannelsQuery = useQuery({
     ...liveObservationQueryPolicy,
@@ -154,21 +164,23 @@ export function ProjectNotificationsPanel({
       sortBy: 'name',
       sortOrder: 'asc',
     }),
-    enabled: Boolean(projectId && canManage && bindDialogOpen),
+    enabled: bindableChannelsEnabled,
   })
   const applications = useQuery({
     queryKey: ['applications', projectId],
     queryFn: () => api.listApplications(projectId),
-    enabled: Boolean(projectId && canManage && Boolean(ruleDialog)),
+    enabled: applicationsEnabled,
   })
+  const deploymentTargetsEnabled = Boolean(applicationsEnabled && (applications.data?.length ?? 0) > 0)
   const deploymentTargets = useQuery({
     queryKey: ['project-deployment-targets', projectId, (applications.data ?? []).map(app => app.id).join(',')],
     queryFn: async () => {
       const lists = await Promise.all((applications.data ?? []).map(app => api.listDeploymentTargets(projectId, app.id)))
       return lists.flat()
     },
-    enabled: Boolean(projectId && canManage && Boolean(ruleDialog) && (applications.data?.length ?? 0) > 0),
+    enabled: deploymentTargetsEnabled,
   })
+  const deliveriesEnabled = Boolean(projectId && canRead && activeTab === 'deliveries')
   const deliveries = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['project-notification-deliveries', projectId, deliveryPage, deliveryStatus, deliveryEventType, deliveryChannelId, eventIdFilter],
@@ -182,8 +194,18 @@ export function ProjectNotificationsPanel({
       sortBy: 'createdAt',
       sortOrder: 'desc',
     }),
-    enabled: Boolean(projectId && canRead && activeTab === 'deliveries'),
+    enabled: deliveriesEnabled,
   })
+
+  const presetsLoading = presetsEnabled && presets.isPending
+  const projectsLoading = projectsEnabled && projects.isPending
+  const rulesLoading = rulesEnabled && rules.isPending
+  const channelsLoading = channelsEnabled && channels.isPending
+  const channelOptionsLoading = channelOptionsEnabled && channelOptions.isPending
+  const bindableChannelsLoading = bindableChannelsEnabled && bindableChannelsQuery.isPending
+  const applicationsLoading = applicationsEnabled && applications.isPending
+  const deploymentTargetsLoading = applicationsLoading || (deploymentTargetsEnabled && deploymentTargets.isPending)
+  const deliveriesLoading = deliveriesEnabled && deliveries.isPending
 
   const bindableChannels = useMemo(
     () => (bindableChannelsQuery.data?.items ?? []).filter(
@@ -390,13 +412,16 @@ export function ProjectNotificationsPanel({
         header: t('notificationsPage.name'),
         width: 'primary',
         render: (item) => {
+          const presetLoading = Boolean(item.presetId) && !presetNameById.has(item.presetId!) && presetsLoading
           const sub = item.presetId
             ? (presetNameById.get(item.presetId) ?? item.presetId)
             : (item.adapterKind === 'smtp' ? t('notificationsPage.adapters.smtp') : t('notificationsPage.adapters.webhook'))
           return (
             <div className="min-w-0">
               <p className="truncate font-medium text-foreground">{item.name}</p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">{sub}</p>
+              {presetLoading
+                ? <Skeleton className="mt-1 h-3.5 w-24" />
+                : <p className="mt-0.5 truncate text-xs text-muted-foreground">{sub}</p>}
             </div>
           )
         },
@@ -521,7 +546,7 @@ export function ProjectNotificationsPanel({
       })
     }
     return cols
-  }, [canManage, isAdmin, presetNameById, t])
+  }, [canManage, isAdmin, presetNameById, presetsLoading, t])
 
   if (!canRead) {
     return (
@@ -602,7 +627,7 @@ export function ProjectNotificationsPanel({
         <TabsContent value="rules">
           <DataList
             columns={ruleColumns}
-            emptyActions={canManage && !channelOptions.isLoading && !hasAvailableChannels
+            emptyActions={canManage && !channelOptionsLoading && !channelOptions.isError && !hasAvailableChannels
               ? (
                   <Button size="sm" type="button" variant="outline" onClick={() => changeTab('channels')}>
                     {t('notificationsPage.setupChannelFirst')}
@@ -621,7 +646,7 @@ export function ProjectNotificationsPanel({
                 }
               : undefined}
             items={rules.data?.items ?? []}
-            loading={rules.isLoading}
+            loading={rulesLoading}
             pagination={pageFor(rules.data, rulePage, setRulePage, t)}
             rowKey={item => item.id}
           />
@@ -642,7 +667,7 @@ export function ProjectNotificationsPanel({
                 }
               : undefined}
             items={channels.data?.items ?? []}
-            loading={channels.isLoading}
+            loading={channelsLoading}
             pagination={pageFor(channels.data, channelPage, setChannelPage, t)}
             rowKey={item => item.id}
           />
@@ -657,7 +682,7 @@ export function ProjectNotificationsPanel({
             error={deliveries.isError}
             eventIdFilter={eventIdFilter}
             eventTypeFilter={deliveryEventType}
-            loading={deliveries.isLoading}
+            loading={deliveriesLoading}
             page={deliveryPage}
             retrying={retryDelivery.isPending}
             retryingLoad={deliveries.isFetching}
@@ -682,23 +707,41 @@ export function ProjectNotificationsPanel({
         manageableProjects={projects.data ?? []}
         open={Boolean(channelDialog)}
         presets={presets.data ?? []}
+        presetsError={presetsEnabled && presets.isError}
+        presetsLoading={presetsLoading}
+        presetsRetrying={presets.isFetching}
+        projectsError={projectsEnabled && projects.isError}
+        projectsLoading={projectsLoading}
+        projectsRetrying={projects.isFetching}
         saving={saveChannel.isPending}
         onClose={() => setChannelDialog(null)}
+        onRetryPresets={() => void presets.refetch()}
+        onRetryProjects={() => void projects.refetch()}
         onSave={(payload, channelId) => saveChannel.mutate({ channelId, payload })}
       />
 
       <NotificationRuleDialog
         applications={applications.data}
-        applicationsLoading={applications.isLoading}
+        applicationsError={applicationsEnabled && applications.isError}
+        applicationsLoading={applicationsLoading}
+        applicationsRetrying={applications.isFetching}
         channels={channelOptions.data?.items ?? []}
+        channelsError={channelOptionsEnabled && channelOptions.isError}
+        channelsLoading={channelOptionsLoading}
+        channelsRetrying={channelOptions.isFetching}
         contextMode="project"
         deploymentTargets={applications.data?.length === 0 ? [] : deploymentTargets.data}
-        deploymentTargetsLoading={applications.isLoading || ((applications.data?.length ?? 0) > 0 && deploymentTargets.isLoading)}
+        deploymentTargetsError={deploymentTargetsEnabled && deploymentTargets.isError}
+        deploymentTargetsLoading={deploymentTargetsLoading}
+        deploymentTargetsRetrying={deploymentTargets.isFetching}
         fixedProjectId={projectId}
         open={Boolean(ruleDialog)}
         rule={ruleDialog?.rule}
         saving={saveRule.isPending}
         onClose={() => setRuleDialog(null)}
+        onRetryApplications={() => void applications.refetch()}
+        onRetryChannels={() => void channelOptions.refetch()}
+        onRetryDeploymentTargets={() => void deploymentTargets.refetch()}
         onSave={(payload, ruleId) => saveRule.mutate({ payload, ruleId })}
       />
 
@@ -708,39 +751,55 @@ export function ProjectNotificationsPanel({
             <DialogTitle>{t('notificationsPage.bindChannelTitle')}</DialogTitle>
             <DialogDescription>{t('notificationsPage.bindChannelDescription')}</DialogDescription>
           </DialogHeader>
-          {bindableChannels.length === 0
+          {bindableChannelsLoading
             ? (
-                <p className="py-2 text-sm text-muted-foreground">
-                  {t('notificationsPage.noBindableChannels')}
-                </p>
+                <div className="grid gap-2 py-2">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-9 w-full" />
+                </div>
               )
-            : (
-                <Field label={t('notificationsPage.selectChannelToBind')} required>
-                  {fieldControl => (
-                    <Select
-                      value={selectedBindChannelId || bindableChannels[0]?.id || undefined}
-                      onValueChange={setSelectedBindChannelId}
-                    >
-                      <SelectTrigger {...fieldControl} className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {bindableChannels.map(channel => (
-                          <SelectItem key={channel.id} value={channel.id}>
-                            {`${channel.name} (${channel.adapterKind === 'smtp' ? t('notificationsPage.adapters.smtp') : t('notificationsPage.adapters.webhook')})`}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+            : bindableChannelsEnabled && bindableChannelsQuery.isError
+              ? (
+                  <ErrorState
+                    description={t('notificationsPage.loadFailedDescription')}
+                    retrying={bindableChannelsQuery.isFetching}
+                    title={t('notificationsPage.loadFailedTitle')}
+                    onRetry={() => void bindableChannelsQuery.refetch()}
+                  />
+                )
+              : bindableChannels.length === 0
+                ? (
+                    <p className="py-2 text-sm text-muted-foreground">
+                      {t('notificationsPage.noBindableChannels')}
+                    </p>
+                  )
+                : (
+                    <Field label={t('notificationsPage.selectChannelToBind')} required>
+                      {fieldControl => (
+                        <Select
+                          value={selectedBindChannelId || bindableChannels[0]?.id || ''}
+                          onValueChange={setSelectedBindChannelId}
+                        >
+                          <SelectTrigger {...fieldControl} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {bindableChannels.map(channel => (
+                              <SelectItem key={channel.id} value={channel.id}>
+                                {`${channel.name} (${channel.adapterKind === 'smtp' ? t('notificationsPage.adapters.smtp') : t('notificationsPage.adapters.webhook')})`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </Field>
                   )}
-                </Field>
-              )}
           <DialogFooter>
             <Button disabled={bindChannel.isPending} type="button" variant="outline" onClick={() => setBindDialogOpen(false)}>
               {t('common.cancel')}
             </Button>
             <Button
-              disabled={bindChannel.isPending || bindableChannels.length === 0}
+              disabled={bindChannel.isPending || bindableChannelsLoading || (bindableChannelsEnabled && bindableChannelsQuery.isError) || bindableChannels.length === 0}
               type="button"
               onClick={() => {
                 const targetId = selectedBindChannelId || bindableChannels[0]?.id

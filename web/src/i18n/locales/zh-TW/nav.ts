@@ -30,6 +30,7 @@ const nav = {
     placeholder: '搜尋應用、網域、範本、倉庫、ID 或頁面（支援 app: / host: / template:）…',
     empty: '沒有符合的結果',
     contextEmptyHint: '在「{{context}}」中檢索，按退格鍵可切回全域搜尋',
+    scopeEmptyHint: '輸入關鍵詞在「{{scope}}」中檢索',
     clearContextChip: '移除{{context}}篩選並切回全域搜尋',
     searching: '正在檢索平台資源…',
     searchFailed: '平臺資源檢索失敗，請重試',

@@ -19,6 +19,7 @@ import { VerificationCodeInput } from '@/components/common/verification-code-inp
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const schema = z.object({
   email: z.string().email({ error: () => i18next.t('common.validEmailRequired') }),
@@ -76,10 +77,42 @@ export function RegisterPage() {
     onError: error => toast.error(error.message),
   })
 
-  if (status.isLoading)
-    return <div className="min-h-dvh bg-primary-subtle" />
-  if (status.isError)
-    return <div className="grid min-h-dvh min-w-0 place-items-center bg-primary-subtle p-4"><ErrorState title={t('loginPage.registration.statusFailedTitle')} description={t('loginPage.registration.statusFailedDescription')} /></div>
+  if (!session.initialized || status.isPending) {
+    return (
+      <div className="grid min-h-dvh min-w-0 place-items-center bg-primary-subtle px-4 py-8 text-foreground">
+        <Card aria-label={t('common.loading')} className="grid w-full max-w-lg gap-5 p-6 sm:p-8" role="status">
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-11 shrink-0 rounded-feature" />
+            <div className="grid flex-1 gap-2">
+              <Skeleton className="h-5 w-44" />
+              <Skeleton className="h-4 w-56 max-w-full" />
+            </div>
+          </div>
+          <div className="grid gap-3">
+            <Skeleton className="h-9 w-full rounded-control" />
+            <Skeleton className="h-9 w-full rounded-control" />
+            <Skeleton className="h-9 w-full rounded-control" />
+            <Skeleton className="h-9 w-full rounded-control" />
+            <Skeleton className="h-9 w-full rounded-control" />
+          </div>
+        </Card>
+      </div>
+    )
+  }
+  if (status.isError) {
+    return (
+      <div className="grid min-h-dvh min-w-0 place-items-center bg-primary-subtle p-4">
+        <div className="w-full max-w-lg">
+          <ErrorState
+            description={t('loginPage.registration.statusFailedDescription')}
+            retrying={status.isFetching}
+            title={t('loginPage.registration.statusFailedTitle')}
+            onRetry={() => void status.refetch()}
+          />
+        </div>
+      </div>
+    )
+  }
   if (!status.data?.emailRegistrationEnabled)
     return <Navigate to="/login" replace />
 

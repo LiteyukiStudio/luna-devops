@@ -771,4 +771,62 @@ describe('deployment target editor', { timeout: 15_000 }, () => {
     expect(api.createDeploymentTarget).not.toHaveBeenCalled()
     expect(api.updateDeploymentTarget).not.toHaveBeenCalled()
   })
+
+  it('only renders noDockerfileTitle when a binding is selected and buildOptions succeeds with zero Dockerfiles', async () => {
+    let resolveOptions!: (value: Awaited<ReturnType<typeof api.getGitRepositoryBuildOptions>>) => void
+    vi.mocked(api.getGitRepositoryBuildOptions).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveOptions = resolve
+    }))
+
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TooltipProvider>
+          <RouterProvider router={createMemoryRouter([
+            {
+              path: '/projects/:projectId/apps/:applicationId/deployments/new',
+              element: (
+                <DeploymentTargetEditor
+                  applicationId="app_1"
+                  buildEnvironmentAvailable
+                  canManageRuntimeSecrets
+                  deploymentTargets={[]}
+                  initialValues={{ ...emptyDeploymentTargetFormValues(), repositoryBindingId: 'rb_1', targetImageRef: 'team/demo:latest', targetRegistryId: 'reg_1' }}
+                  projectId="prj_1"
+                  registries={[{ credentialSet: true, endpoint: 'https://registry.example.com', id: 'reg_1', isDefault: true, name: 'Registry', namespace: 'team', provider: 'harbor' } as never]}
+                  releases={[]}
+                  repositoryBindings={[repositoryBinding as never]}
+                  runtimeClusters={[]}
+                  target={null}
+                />
+              ),
+            },
+          ], { initialEntries: ['/projects/prj_1/apps/app_1/deployments/new'] })}
+          />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.queryByText(i18next.t('buildTemplates.noDockerfileTitle'))).not.toBeInTheDocument()
+
+    act(() => {
+      resolveOptions({
+        detectedFiles: [],
+        directories: ['.'],
+        dockerfiles: [],
+        durationMs: 10,
+        exposedPorts: {},
+        recommendedTemplateIds: [],
+        strategy: 'api',
+        truncated: false,
+      })
+    })
+    expect(await screen.findByText(i18next.t('buildTemplates.noDockerfileTitle'))).toBeInTheDocument()
+    unmount()
+
+    // Error case: shows buildOptionsLoadFailed instead of noDockerfileTitle
+    vi.mocked(api.getGitRepositoryBuildOptions).mockRejectedValueOnce(new Error('git api failed'))
+    renderEditor()
+    expect(await screen.findByText(i18next.t('deploymentsPage.buildOptionsLoadFailed'))).toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('buildTemplates.noDockerfileTitle'))).not.toBeInTheDocument()
+  })
 })

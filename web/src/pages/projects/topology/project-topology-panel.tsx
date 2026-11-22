@@ -37,11 +37,23 @@ interface RelationDialogState {
 
 interface ProjectTopologyPanelProps {
   applications: Application[]
+  applicationsError?: boolean
+  applicationsLoading?: boolean
+  applicationsRetrying?: boolean
   canManage: boolean
   projectId: string
+  onRetryApplications?: () => void
 }
 
-export function ProjectTopologyPanel({ applications, canManage, projectId }: ProjectTopologyPanelProps) {
+export function ProjectTopologyPanel({
+  applications,
+  applicationsError = false,
+  applicationsLoading = false,
+  applicationsRetrying = false,
+  canManage,
+  projectId,
+  onRetryApplications,
+}: ProjectTopologyPanelProps) {
   const { t } = useTranslation()
   const [stage, setStage] = useState('')
   const [origin, setOrigin] = useState<'all' | ProjectTopologyOrigin>('all')
@@ -79,6 +91,27 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
   const selectedEdge = topology.data?.edges.find(edge => edge.id === selectedEdgeId)
   const selectedBinding = serviceBindings.data?.items.find(binding => binding.id === selectedEdgeId)
   const selectedManualEdge = manualEdges.data?.items.find(edge => edge.id === selectedEdgeId)
+  const relationLoading = selectedEdge?.origin === 'service_binding'
+    ? serviceBindings.isPending
+    : selectedEdge?.origin === 'manual'
+      ? manualEdges.isPending
+      : false
+  const relationError = selectedEdge?.origin === 'service_binding'
+    ? serviceBindings.isError
+    : selectedEdge?.origin === 'manual'
+      ? manualEdges.isError
+      : false
+  const relationRetrying = selectedEdge?.origin === 'service_binding'
+    ? serviceBindings.isFetching
+    : selectedEdge?.origin === 'manual'
+      ? manualEdges.isFetching
+      : false
+  const retryRelation = () => {
+    if (selectedEdge?.origin === 'service_binding')
+      void serviceBindings.refetch()
+    else if (selectedEdge?.origin === 'manual')
+      void manualEdges.refetch()
+  }
   const managementListTruncated = (serviceBindings.data?.total ?? 0) > (serviceBindings.data?.items.length ?? 0)
     || (manualEdges.data?.total ?? 0) > (manualEdges.data?.items.length ?? 0)
 
@@ -113,7 +146,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
     setSelectedEdgeId('')
   }
 
-  if (topology.isLoading)
+  if (topology.isPending)
     return <ToolViewportSkeleton />
 
   if (topology.isError) {
@@ -134,7 +167,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
           <EmptyState
             actions={canManage
               ? (
-                  <Button onClick={() => setDialog({ mode: 'service_binding' })}>
+                  <Button type="button" onClick={() => setDialog({ mode: 'service_binding' })}>
                     <Plus className="size-4" />
                     {t('projectTopology.addRelation')}
                   </Button>
@@ -149,11 +182,15 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
           <ProjectTopologyRelationDialog
             key={`${dialog.mode}-${dialog.serviceBinding?.id ?? dialog.manualEdge?.id ?? 'new'}`}
             applications={applications}
+            applicationsError={applicationsError}
+            applicationsLoading={applicationsLoading}
+            applicationsRetrying={applicationsRetrying}
             editingManualEdge={dialog.manualEdge}
             editingServiceBinding={dialog.serviceBinding}
             initialMode={dialog.mode}
             projectId={projectId}
             onOpenChange={closeDialog}
+            onRetryApplications={onRetryApplications}
             onSaved={handleSaved}
           />
         )}
@@ -216,6 +253,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
             {canManage && (
               <Button
                 size="sm"
+                type="button"
                 onClick={() => {
                   returnToEdgeIdRef.current = ''
                   setDialog({ mode: 'service_binding' })
@@ -278,19 +316,27 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
         manualEdge={selectedManualEdge}
         nodes={topology.data.nodes}
         projectId={projectId}
+        relationError={relationError}
+        relationLoading={relationLoading}
+        relationRetrying={relationRetrying}
         serviceBinding={selectedBinding}
         onEdit={openEdit}
         onOpenChange={open => !open && setSelectedEdgeId('')}
+        onRetryRelation={retryRelation}
       />
       {dialog && (
         <ProjectTopologyRelationDialog
           key={`${dialog.mode}-${dialog.serviceBinding?.id ?? dialog.manualEdge?.id ?? 'new'}`}
           applications={applications}
+          applicationsError={applicationsError}
+          applicationsLoading={applicationsLoading}
+          applicationsRetrying={applicationsRetrying}
           editingManualEdge={dialog.manualEdge}
           editingServiceBinding={dialog.serviceBinding}
           initialMode={dialog.mode}
           projectId={projectId}
           onOpenChange={closeDialog}
+          onRetryApplications={onRetryApplications}
           onSaved={handleSaved}
         />
       )}

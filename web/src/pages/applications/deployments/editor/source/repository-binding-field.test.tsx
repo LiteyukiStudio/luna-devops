@@ -81,13 +81,43 @@ describe('repository binding field', () => {
     await user.click(within(dialog).getByRole('combobox', { name: /Git credential/ }))
     await user.click(await screen.findByRole('option', { name: /octo/ }))
     await user.type(within(dialog).getByRole('textbox', { name: /^Owner/ }), 'liteyuki')
-    await user.type(within(dialog).getByRole('textbox', { name: /^Repo/ }), 'web')
+    await user.type(within(dialog).getByRole('textbox', { name: /^Repo\s*\*?$/ }), 'web')
     await user.click(within(dialog).getByRole('button', { name: 'Bind code repository' }))
 
     expect(mocks.createRepositoryBinding).toHaveBeenCalledWith('prj_1', expect.objectContaining({ applicationId: 'app_1', gitAccountId: 'ga_1', owner: 'liteyuki', repo: 'web' }))
     expect(onRepositoryChange).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'rb_new' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     await waitFor(() => expect(select).toHaveTextContent('liteyuki/web'))
+  })
+
+  it('allows binding a public repository in anonymous mode even when git accounts list is empty and forwards account errors', async () => {
+    const user = userEvent.setup()
+    mocks.listGitAccounts
+      .mockRejectedValueOnce(new Error('accounts unavailable'))
+      .mockResolvedValueOnce([])
+    renderField(vi.fn())
+
+    await user.click(await screen.findByRole('button', { name: 'Bind code repository' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Bind code repository' })
+
+    const retryButton = await within(dialog).findByRole('button', { name: i18next.t('common.retry') })
+    await user.click(retryButton)
+    await waitFor(() => expect(mocks.listGitAccounts).toHaveBeenCalledTimes(2))
+
+    await user.click(within(dialog).getByRole('radio', { name: i18next.t('repositories.accessModePublic') }))
+    await user.type(within(dialog).getByRole('textbox', { name: /^Owner/ }), 'liteyuki')
+    await user.type(within(dialog).getByRole('textbox', { name: /^Repo\s*\*?$/ }), 'public-web')
+
+    const submitButton = within(dialog).getByRole('button', { name: 'Bind code repository' })
+    await waitFor(() => expect(submitButton).toBeEnabled())
+    await user.click(submitButton)
+
+    expect(mocks.createRepositoryBinding).toHaveBeenCalledWith('prj_1', expect.objectContaining({
+      applicationId: 'app_1',
+      gitAccountId: 'anonymous',
+      owner: 'liteyuki',
+      repo: 'public-web',
+    }))
   })
 })
 

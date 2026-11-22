@@ -14,6 +14,7 @@ import {
   withAIAssistantRouteView,
 } from '@/components/common/ai-assistant/route-state'
 import { useAIAssistantRuntime } from '@/components/common/ai-assistant/runtime-context'
+import { ErrorState } from '@/components/common/error-state'
 import { Button } from '@/components/ui/button'
 
 /** 宽屏全页把会话列表作为常驻侧栏；窄屏沿用路由视图驱动的抽屉，浏览器返回即可关闭。 */
@@ -92,12 +93,25 @@ export function AIAssistantPage() {
           <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center border-b border-border pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)]">
             <Button className="min-h-11 pointer-fine:min-h-9" variant="ghost" onClick={leaveAssistant}>{t('aiAssistant.page.backToWorkspace')}</Button>
           </header>
-          <div className="grid min-h-0 flex-1 place-items-center pb-[env(safe-area-inset-bottom)] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] text-center">
-            <div className="grid max-w-sm justify-items-center gap-3">
-              <span className="grid size-12 place-items-center rounded-full border border-border bg-surface-subtle text-muted-foreground"><Sparkles className="size-5" /></span>
-              <h1 className="text-lg font-semibold">{t('aiAssistant.page.unavailableTitle')}</h1>
-              <p className="text-sm leading-6 text-muted-foreground">{t('aiAssistant.page.unavailableDescription')}</p>
-            </div>
+          <div className="grid min-h-0 flex-1 place-items-center pb-[env(safe-area-inset-bottom)] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))]">
+            {runtime.capabilitiesError
+              ? (
+                  <div className="w-full max-w-md">
+                    <ErrorState
+                      description={runtime.capabilitiesError.message}
+                      retrying={runtime.capabilitiesRetrying}
+                      title={t('errors.request.failed')}
+                      onRetry={runtime.onRetryCapabilities}
+                    />
+                  </div>
+                )
+              : (
+                  <div className="grid max-w-sm justify-items-center gap-3 text-center">
+                    <span className="grid size-12 place-items-center rounded-full border border-border bg-surface-subtle text-muted-foreground"><Sparkles className="size-5" /></span>
+                    <h1 className="text-lg font-semibold">{t('aiAssistant.page.unavailableTitle')}</h1>
+                    <p className="text-sm leading-6 text-muted-foreground">{t('aiAssistant.page.unavailableDescription')}</p>
+                  </div>
+                )}
           </div>
         </section>
       </AIMobileViewport>

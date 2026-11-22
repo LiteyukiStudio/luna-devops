@@ -16,6 +16,7 @@ import { StatusValueBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Skeleton } from '@/components/ui/skeleton'
 import { shortImageRef } from '@/lib/image-ref'
 import { deploymentTargetCanRelease } from '@/pages/applications/application-config-utils'
 import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
@@ -25,13 +26,19 @@ import { deploymentTargetDeleteFailureMessage } from './deployment-target-delete
 import { DeploymentTargetDetailSheet } from './deployment-target-detail-sheet'
 
 export interface DeploymentTargetRow {
+  clusterError?: boolean
+  clusterLoading?: boolean
   /** 后端统一判定：是否已有成功发布（停用配置仍按其观察状态展示）。 */
   deployed: boolean
   internalEndpoint?: InternalServiceEndpointValue
+  internalEndpointError?: boolean
+  internalEndpointLoading?: boolean
   release?: Release
   /** 回滚将回到的上一次成功发布；没有时不可回滚。 */
   rollbackTo?: Release
   routes: GatewayRoute[]
+  routesError?: boolean
+  routesLoading?: boolean
   runtimeStatus: DeploymentRuntimeStatus
   target: DeploymentTarget
   webConsoleEnabled: boolean
@@ -164,7 +171,7 @@ export function ApplicationDeploymentTargetsList({
             { key: 'name', header: t('common.name'), width: 'primary', maxWidth: 176, minWidth: 144, render: item => <DeploymentTargetSummary item={item} onViewDetails={() => setDetailTargetId(item.target.id)} /> },
             { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', maxWidth: 152, render: item => <DeploymentRuntimeStatusIndicator availableReplicas={item.target.availableReplicas} deployed={item.deployed} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
             { key: 'accessUrl', header: t('deploymentsPage.accessAddress'), width: 'normal', maxWidth: 176, minWidth: 128, render: item => <DeploymentAccessAddress item={item} /> },
-            { key: 'domain', className: 'hidden @[96rem]/deployment-targets:table-cell', header: t('deploymentsPage.internalAddress'), width: 'secondary', maxWidth: 176, render: item => <DeploymentServiceDomain endpoint={item.internalEndpoint} /> },
+            { key: 'domain', className: 'hidden @[96rem]/deployment-targets:table-cell', header: t('deploymentsPage.internalAddress'), width: 'secondary', maxWidth: 176, render: item => <DeploymentServiceDomain item={item} /> },
             { key: 'image', header: t('deploymentsPage.currentVersion'), width: 'normal', maxWidth: 240, minWidth: 144, render: item => <DeploymentVersionSummary release={item.release} onViewLogs={onViewLogs} /> },
             { key: 'runtimeSize', className: 'hidden @[96rem]/deployment-targets:table-cell', header: t('deploymentsPage.runtimeEnvironment'), width: 'compact', render: item => <DeploymentRuntimeSpec target={item.target} /> },
             {
@@ -350,6 +357,11 @@ function DeploymentTargetSummary({ item, onViewDetails }: { item: DeploymentTarg
 }
 
 function DeploymentAccessAddress({ item }: { item: DeploymentTargetRow }) {
+  const { t } = useTranslation()
+  if (item.routesLoading)
+    return <Skeleton className="h-4 w-28" />
+  if (item.routesError)
+    return <span className="text-sm text-muted-foreground">{t('common.unavailable')}</span>
   const primary = primaryGatewayRoute(item.routes)
   if (!primary)
     return <span className="text-sm text-muted-foreground">-</span>
@@ -362,14 +374,19 @@ function DeploymentAccessAddress({ item }: { item: DeploymentTargetRow }) {
   )
 }
 
-function DeploymentServiceDomain({ endpoint }: { endpoint?: InternalServiceEndpointValue }) {
-  if (!endpoint)
+function DeploymentServiceDomain({ item }: { item: DeploymentTargetRow }) {
+  const { t } = useTranslation()
+  if (item.internalEndpointLoading)
+    return <Skeleton className="h-4 w-28" />
+  if (item.internalEndpointError)
+    return <span className="text-sm text-muted-foreground">{t('common.unavailable')}</span>
+  if (!item.internalEndpoint)
     return <span className="text-sm text-muted-foreground">-</span>
 
   return (
     <CopyableHoverText
       className="max-w-full font-mono text-xs"
-      value={endpoint.serviceName}
+      value={item.internalEndpoint.serviceName}
     />
   )
 }
@@ -461,7 +478,7 @@ function MobileDeploymentTargetCard({
           <DeploymentVersionSummary release={item.release} onViewLogs={actions.onViewLogs} />
         </LabeledValue>
         <LabeledValue label={t('deploymentsPage.internalAddress')}>
-          <DeploymentServiceDomain endpoint={item.internalEndpoint} />
+          <DeploymentServiceDomain item={item} />
         </LabeledValue>
         <LabeledValue label={t('deploymentsPage.runtimeEnvironment')}>
           <DeploymentRuntimeSpec target={item.target} />

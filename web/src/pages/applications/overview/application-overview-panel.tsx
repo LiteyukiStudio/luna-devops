@@ -14,12 +14,28 @@ import { primaryGatewayRoute } from '@/pages/applications/gateway/gateway-route-
 import { firstReleaseReadyTarget, formatReleaseTime } from '../application-config-utils'
 import { latestByDate } from './application-facts'
 
-export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindRepository, onCreateDeploymentTarget, onCreateGatewayRoute, onCreateRelease, onTriggerBuild, releases, repositoryBindings, routes, runtimeSummary }: {
+export function ApplicationOverviewPanel({
+  buildRuns,
+  deploymentTargets,
+  onBindRepository,
+  onCreateDeploymentTarget,
+  onCreateGatewayRoute,
+  onCreateRelease,
+  onTriggerBuild,
+  releases,
+  repositoryBindings,
+  routes,
+  runtimeError = false,
+  runtimeLoading = false,
+  runtimeSummary,
+}: {
   buildRuns: BuildRun[]
   deploymentTargets: DeploymentTarget[]
   releases: Release[]
   repositoryBindings: RepositoryBinding[]
   routes: GatewayRoute[]
+  runtimeError?: boolean
+  runtimeLoading?: boolean
   /** 后端统一的应用运行结论；加载中或不可用时为空。 */
   runtimeSummary?: ApplicationDeploymentSummary
   onBindRepository: () => void
@@ -47,19 +63,21 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
       time: formatReleaseTime(latestRelease, t),
     },
   ].filter(Boolean) as Array<{ id: string, label: string, meta: string, status: string, time: string }>
-  const deployGuide = buildDeployGuide({
-    buildRuns,
-    deploymentTargets,
-    repositoryBindings,
-    routes,
-    runtimeSummary,
-    t,
-    onBindRepository,
-    onCreateDeploymentTarget,
-    onCreateGatewayRoute,
-    onCreateRelease,
-    onTriggerBuild,
-  })
+  const deployGuide = runtimeLoading || runtimeError
+    ? null
+    : buildDeployGuide({
+        buildRuns,
+        deploymentTargets,
+        repositoryBindings,
+        routes,
+        runtimeSummary,
+        t,
+        onBindRepository,
+        onCreateDeploymentTarget,
+        onCreateGatewayRoute,
+        onCreateRelease,
+        onTriggerBuild,
+      })
 
   return (
     <div className="grid grid-cols-1 gap-section">

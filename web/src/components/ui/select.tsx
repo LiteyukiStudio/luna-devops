@@ -9,7 +9,10 @@ import { cn } from '@/lib/utils'
 function Select({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  const normalizedProps = 'value' in props && props.defaultValue === undefined
+    ? { ...props, value: props.value ?? '' }
+    : props
+  return <SelectPrimitive.Root data-slot="select" {...normalizedProps} />
 }
 
 function SelectGroup({

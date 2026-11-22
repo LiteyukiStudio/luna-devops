@@ -215,7 +215,7 @@ export function InboxPage() {
               }
             : undefined}
           items={messages.data?.items ?? []}
-          loading={messages.isLoading}
+          loading={messages.isPending}
           pagination={messages.data && messages.data.total > 0
             ? {
                 page,
@@ -238,7 +238,7 @@ export function InboxPage() {
           key={`${selectedMessageId}:${selectedMessage.data?.actionRequest?.id ?? ''}:${selectedMessage.data?.actionRequest?.rowVersion ?? 0}`}
           message={selectedMessage.data}
           open={Boolean(selectedMessageId)}
-          pending={selectedMessage.isLoading}
+          pending={Boolean(selectedMessageId) && selectedMessage.isPending}
           retrying={selectedMessage.isFetching}
           onArchive={messageId => archive.mutate(messageId)}
           onClose={closeDetails}
@@ -356,7 +356,7 @@ function InboxDetail({
               )
             : pending && !message
               ? (
-                  <div className="grid gap-3 p-6">
+                  <div aria-label={t('common.loading')} className="grid gap-3 p-6" role="status">
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-4/5" />
                     <Skeleton className="h-6 w-24" />

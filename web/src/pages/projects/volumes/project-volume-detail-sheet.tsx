@@ -3,7 +3,7 @@ import type { ProjectVolumeCapabilities } from '@/lib/project-volume-capabilitie
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, FileJson, Pencil, RefreshCcw, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -13,7 +13,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DescriptionListItem } from '@/components/common/description-list-item'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
-import { useProjectVolumeStorageClasses } from '@/components/common/project-volumes/volume-resource-queries'
+import { useProjectRuntimeClusters, useProjectVolumeStorageClasses } from '@/components/common/project-volumes/volume-resource-queries'
 import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { canCancelVolumeTransfer, canRetryProjectVolume, canRetryVolumeTransfer } from '@/lib/project-volume-capabilities'
 import { volumeSnapshotNotice, volumeSnapshotSupport } from './volume-export-consistency'
@@ -64,6 +65,7 @@ export function ProjectVolumeDetailSheet({ capabilities, clusterId, onOpenChange
     enabled: Boolean(projectId && volumeId),
     refetchInterval: query => query.state.data?.recentTransfers.some(item => ['created', 'preparing', 'ready', 'streaming'].includes(item.state)) ? 3000 : false,
   })
+  const clusters = useProjectRuntimeClusters(projectId, Boolean(volumeId))
 
   const retryVolume = useMutation({
     mutationFn: (volume: ProjectVolume) => api.retryProjectVolumeOperation(projectId, volume.id, volume.revision),
@@ -93,6 +95,10 @@ export function ProjectVolumeDetailSheet({ capabilities, clusterId, onOpenChange
   })
 
   const volume = detail.data
+  const clusterName = useMemo(
+    () => (clusters.data?.pages.flatMap(page => page.items) ?? []).find(item => item.id === volume?.clusterId)?.name,
+    [clusters.data?.pages, volume?.clusterId],
+  )
   const deletionBlocked = Boolean(deletePreview?.hasActiveBindings || deletePreview?.hasRunningTransfers)
   const retryAllowed = Boolean(volume && canRetryProjectVolume(capabilities, volume))
   return (
@@ -104,94 +110,103 @@ export function ProjectVolumeDetailSheet({ capabilities, clusterId, onOpenChange
             <SheetDescription>{t('projectVolumes.detailsDescription')}</SheetDescription>
           </SheetHeader>
           <div key={volumeId ?? 'none'} className="grid gap-4 p-6">
-            {detail.isError && <ErrorState description={detail.error.message} title={t('projectVolumes.loadFailedTitle')} />}
-            {detail.isLoading && <div className="h-40 animate-pulse rounded-container bg-muted" />}
-            {volume && (
-              <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusValueBadge labelKeyPrefix="projectVolumes.lifecycleStates" value={volume.lifecycleState} />
-                  <StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={volume.availability} />
-                  {capabilities.canWrite && (
-                    <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
-                      <Pencil className="size-4" />
-                      {t('projectVolumes.edit')}
-                    </Button>
-                  )}
-                  {capabilities.canExport && <Button size="sm" variant="outline" onClick={() => setExportOpen(true)}>{t('projectVolumes.export')}</Button>}
-                  {volume.lifecycleState === 'error' && retryAllowed && (
-                    <Button disabled={retryVolume.isPending} size="sm" variant="outline" onClick={() => retryVolume.mutate(volume)}>
-                      <RefreshCcw className="size-4" />
-                      {t('projectVolumes.retry')}
-                    </Button>
-                  )}
-                  {capabilities.canDelete && (
-                    <Button disabled={previewDeletion.isPending} size="sm" variant="destructive" onClick={() => previewDeletion.mutate(volume.id)}>
-                      <Trash2 className="size-4" />
-                      {t('projectVolumes.delete')}
-                    </Button>
-                  )}
-                </div>
-
-                <Section title={t('projectVolumes.desiredState')} variant="bordered">
-                  <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 [&_[data-slot=description-list-value]]:break-words [&_[data-slot=description-list-value]]:font-medium">
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.claim')} value={`${volume.namespace}/${volume.claimName}`} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.capacity')} value={volume.capacity} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.storageClass')} value={volume.storageClassName} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.accessMode')} value={volume.accessMode} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.volumeMode')} value={volume.volumeMode} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.cluster')} value={volume.clusterId} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.source')} value={t(`projectVolumes.sourceKinds.${volume.sourceKind}`)} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.ownership')} value={t(`projectVolumes.ownershipModes.${volume.ownershipMode}`)} />
-                  </dl>
-                </Section>
-
-                <Section title={t('projectVolumes.liveState')} variant="bordered">
-                  <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 [&_[data-slot=description-list-value]]:break-words [&_[data-slot=description-list-value]]:font-medium">
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.observation')} value={<StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={volume.observation.status} />} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.capacity')} value={volume.observation.capacity} />
-                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.storageClass')} value={volume.observation.storageClassName} />
-                    <DescriptionListItem
-                      emptyFallback="—"
-                      label={t('projectVolumes.observationResult')}
-                      value={volume.observation.observationCode
-                        ? t(`errors.${volume.observation.observationCode}`, { defaultValue: t('errors.request.failed') })
-                        : t('common.ready')}
+            {detail.isPending
+              ? <Skeleton className="h-40 w-full rounded-container" />
+              : detail.isError
+                ? (
+                    <ErrorState
+                      description={detail.error.message}
+                      retrying={detail.isFetching}
+                      title={t('projectVolumes.loadFailedTitle')}
+                      onRetry={() => void detail.refetch()}
                     />
-                  </dl>
-                </Section>
+                  )
+                : volume && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusValueBadge labelKeyPrefix="projectVolumes.lifecycleStates" value={volume.lifecycleState} />
+                      <StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={volume.availability} />
+                      {capabilities.canWrite && (
+                        <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                          <Pencil className="size-4" />
+                          {t('projectVolumes.edit')}
+                        </Button>
+                      )}
+                      {capabilities.canExport && <Button size="sm" variant="outline" onClick={() => setExportOpen(true)}>{t('projectVolumes.export')}</Button>}
+                      {volume.lifecycleState === 'error' && retryAllowed && (
+                        <Button disabled={retryVolume.isPending} size="sm" variant="outline" onClick={() => retryVolume.mutate(volume)}>
+                          <RefreshCcw className="size-4" />
+                          {t('projectVolumes.retry')}
+                        </Button>
+                      )}
+                      {capabilities.canDelete && (
+                        <Button disabled={previewDeletion.isPending} size="sm" variant="destructive" onClick={() => previewDeletion.mutate(volume.id)}>
+                          <Trash2 className="size-4" />
+                          {t('projectVolumes.delete')}
+                        </Button>
+                      )}
+                    </div>
 
-                <Section title={t('projectVolumes.bindings')} variant="bordered">
-                  {volume.bindings.length === 0
-                    ? <p className="text-sm text-muted-foreground">{t('projectVolumes.noBindings')}</p>
-                    : (
-                        <div className="divide-y divide-border">
-                          {volume.bindings.map(binding => (
-                            <div key={binding.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">{binding.logicalName}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">{t('projectVolumes.bindingTarget', { applicationId: binding.applicationId, targetId: binding.deploymentTargetId })}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">{t('projectVolumes.bindingPath', { path: binding.mountPath || binding.devicePath || '—' })}</p>
-                              </div>
-                              <StatusValueBadge labelKeyPrefix="projectVolumes.bindingStates" value={binding.activationState} />
+                    <Section title={t('projectVolumes.desiredState')} variant="bordered">
+                      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 [&_[data-slot=description-list-value]]:break-words [&_[data-slot=description-list-value]]:font-medium">
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.claim')} value={`${volume.namespace}/${volume.claimName}`} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.capacity')} value={volume.capacity} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.storageClass')} value={volume.storageClassName} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.accessMode')} value={volume.accessMode} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.volumeMode')} value={volume.volumeMode} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.cluster')} value={clusterName ?? (clusters.isPending ? <Skeleton className="h-4 w-24" /> : volume.clusterId)} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.source')} value={t(`projectVolumes.sourceKinds.${volume.sourceKind}`)} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.ownership')} value={t(`projectVolumes.ownershipModes.${volume.ownershipMode}`)} />
+                      </dl>
+                    </Section>
+
+                    <Section title={t('projectVolumes.liveState')} variant="bordered">
+                      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 [&_[data-slot=description-list-value]]:break-words [&_[data-slot=description-list-value]]:font-medium">
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.observation')} value={<StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={volume.observation.status} />} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.capacity')} value={volume.observation.capacity} />
+                        <DescriptionListItem emptyFallback="—" label={t('projectVolumes.storageClass')} value={volume.observation.storageClassName} />
+                        <DescriptionListItem
+                          emptyFallback="—"
+                          label={t('projectVolumes.observationResult')}
+                          value={volume.observation.observationCode
+                            ? t(`errors.${volume.observation.observationCode}`, { defaultValue: t('errors.request.failed') })
+                            : t('common.ready')}
+                        />
+                      </dl>
+                    </Section>
+
+                    <Section title={t('projectVolumes.bindings')} variant="bordered">
+                      {volume.bindings.length === 0
+                        ? <p className="text-sm text-muted-foreground">{t('projectVolumes.noBindings')}</p>
+                        : (
+                            <div className="divide-y divide-border">
+                              {volume.bindings.map(binding => (
+                                <div key={binding.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium">{binding.logicalName}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground">{t('projectVolumes.bindingTarget', { applicationId: binding.applicationId, targetId: binding.deploymentTargetId })}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground">{t('projectVolumes.bindingPath', { path: binding.mountPath || binding.devicePath || '—' })}</p>
+                                  </div>
+                                  <StatusValueBadge labelKeyPrefix="projectVolumes.bindingStates" value={binding.activationState} />
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      )}
-                </Section>
+                          )}
+                    </Section>
 
-                <Section title={t('projectVolumes.transfers')} variant="bordered">
-                  {volume.recentTransfers.length === 0
-                    ? <p className="text-sm text-muted-foreground">{t('projectVolumes.noTransfers')}</p>
-                    : (
-                        <div className="grid gap-3">
-                          {volume.recentTransfers.map(transfer => (
-                            <TransferRow key={transfer.id} capabilities={capabilities} projectId={projectId} transfer={transfer} volumeName={volume.displayName} />
-                          ))}
-                        </div>
-                      )}
-                </Section>
-              </>
-            )}
+                    <Section title={t('projectVolumes.transfers')} variant="bordered">
+                      {volume.recentTransfers.length === 0
+                        ? <p className="text-sm text-muted-foreground">{t('projectVolumes.noTransfers')}</p>
+                        : (
+                            <div className="grid gap-3">
+                              {volume.recentTransfers.map(transfer => (
+                                <TransferRow key={transfer.id} capabilities={capabilities} projectId={projectId} transfer={transfer} volumeName={volume.displayName} />
+                              ))}
+                            </div>
+                          )}
+                    </Section>
+                  </>
+                )}
           </div>
         </SheetContent>
       </Sheet>

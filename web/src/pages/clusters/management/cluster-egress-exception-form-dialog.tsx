@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { api, ApiError } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField } from '@/components/common/form-field'
 import { SearchMultiSelect, SearchSelect } from '@/components/common/search-select'
 import { Button } from '@/components/ui/button'
@@ -179,60 +180,82 @@ function GrantRow({ index, onRemove }: { index: number, onRemove: () => void }) 
   })))
   const projectError = formState.errors.grants?.[index]?.projectId?.message
   return (
-    <div className="grid gap-3 rounded-control border border-border p-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-      <FormField error={projectError} label={t('clustersPage.egressExceptions.project')}>
-        <Controller
-          control={control}
-          name={`grants.${index}.projectId`}
-          render={({ field }) => (
-            <SearchSelect
-              ariaLabel={t('clustersPage.egressExceptions.project')}
-              limited={(projects.data?.total ?? 0) > (projects.data?.items.length ?? 0)}
-              loading={projects.isFetching}
-              options={projectOptions}
-              search={search}
-              value={field.value}
-              onSearchChange={setSearch}
-              onValueChange={(value) => {
-                if (value === field.value)
-                  return
-                field.onChange(value)
-                setValue(`grants.${index}.projectName`, projectOptions.find(option => option.value === value)?.label ?? value)
-                // 部署配置属于原项目空间，切换后必须清空。
-                setValue(`grants.${index}.deploymentTargetIds`, [])
-              }}
+    <div className="grid gap-3 rounded-control border border-border p-3">
+      <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+        <FormField error={projectError} label={t('clustersPage.egressExceptions.project')}>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name={`grants.${index}.projectId`}
+              render={({ field }) => (
+                <SearchSelect
+                  {...fieldControl}
+                  ariaLabel={t('clustersPage.egressExceptions.project')}
+                  error={projects.isError}
+                  limited={(projects.data?.total ?? 0) > (projects.data?.items.length ?? 0)}
+                  loading={projects.isPending || projects.isFetching}
+                  options={projectOptions}
+                  search={search}
+                  value={field.value}
+                  onSearchChange={setSearch}
+                  onValueChange={(value) => {
+                    if (value === field.value)
+                      return
+                    field.onChange(value)
+                    setValue(`grants.${index}.projectName`, projectOptions.find(option => option.value === value)?.label ?? value)
+                    // 部署配置属于原项目空间，切换后必须清空。
+                    setValue(`grants.${index}.deploymentTargetIds`, [])
+                  }}
+                />
+              )}
             />
           )}
-        />
-      </FormField>
-      <FormField hint={t('clustersPage.egressExceptions.targetsHint')} label={t('clustersPage.egressExceptions.targets')}>
-        <Controller
-          control={control}
-          name={`grants.${index}.deploymentTargetIds`}
-          render={({ field }) => (
-            <SearchMultiSelect
-              ariaLabel={t('clustersPage.egressExceptions.targets')}
-              disabled={!projectId}
-              loading={topology.isFetching}
-              options={targetOptions}
-              placeholder={t('clustersPage.egressExceptions.wholeProject')}
-              pruneUnknownValues
-              value={field.value}
-              onValueChange={field.onChange}
+        </FormField>
+        <FormField hint={t('clustersPage.egressExceptions.targetsHint')} label={t('clustersPage.egressExceptions.targets')}>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name={`grants.${index}.deploymentTargetIds`}
+              render={({ field }) => (
+                <SearchMultiSelect
+                  {...fieldControl}
+                  ariaLabel={t('clustersPage.egressExceptions.targets')}
+                  disabled={!projectId || topology.isError}
+                  error={Boolean(projectId) && topology.isError}
+                  loading={Boolean(projectId) && topology.isPending}
+                  options={targetOptions}
+                  placeholder={t('clustersPage.egressExceptions.wholeProject')}
+                  pruneUnknownValues={Boolean(projectId) && !topology.isPending && !topology.isError}
+                  value={field.value}
+                  onValueChange={field.onChange}
+                />
+              )}
             />
           )}
-        />
-      </FormField>
-      <div className="flex items-center gap-2">
-        <Controller
-          control={control}
-          name={`grants.${index}.includeBuilds`}
-          render={({ field }) => <ControlledCheckboxField field={field}>{t('clustersPage.egressExceptions.includeBuilds')}</ControlledCheckboxField>}
-        />
-        <Button aria-label={t('clustersPage.egressExceptions.removeGrant')} size="icon" type="button" variant="ghost" onClick={onRemove}>
-          <X className="size-4" />
-        </Button>
+        </FormField>
+        <div className="flex items-center gap-2">
+          <Controller
+            control={control}
+            name={`grants.${index}.includeBuilds`}
+            render={({ field }) => <ControlledCheckboxField field={field}>{t('clustersPage.egressExceptions.includeBuilds')}</ControlledCheckboxField>}
+          />
+          <Button aria-label={t('clustersPage.egressExceptions.removeGrant')} size="icon" type="button" variant="ghost" onClick={onRemove}>
+            <X className="size-4" />
+          </Button>
+        </div>
       </div>
+      {(projects.isError || (Boolean(projectId) && topology.isError)) && (
+        <ErrorState
+          retrying={projects.isFetching || topology.isFetching}
+          title={t('errors.request.failed')}
+          onRetry={() => {
+            if (projects.isError)
+              void projects.refetch()
+            if (Boolean(projectId) && topology.isError)
+              void topology.refetch()
+          }}
+        />
+      )}
     </div>
   )
 }

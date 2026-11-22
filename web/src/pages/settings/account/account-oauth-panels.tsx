@@ -226,32 +226,41 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
         </Button>
       </Surface>
       {createdSecret && <OneTimeSecret label={t('oauthApps.secretOneTime')} value={createdSecret} />}
-      {applications.isError
-        ? <ErrorState title={t('oauthApps.loadFailed')} description={applications.error.message} />
-        : (
-            <DataList
-              columns={columns}
-              emptyTitle={t('oauthApps.emptyApplications')}
-              items={applications.data?.items ?? []}
-              pagination={paginationProps(applications.data, page, pageSize, setPage, setPageSize, t)}
-              rowKey={application => application.id}
-              search={{
-                value: search,
-                placeholder: t('oauthApps.searchApplications'),
-                onChange: (value) => {
-                  setSearch(value)
-                  setPage(1)
-                },
-              }}
-            />
-          )}
+      <DataList
+        columns={columns}
+        emptyTitle={t('oauthApps.emptyApplications')}
+        error={applications.isError
+          ? {
+              description: applications.error.message,
+              onRetry: () => void applications.refetch(),
+              retrying: applications.isFetching,
+              title: t('oauthApps.loadFailed'),
+            }
+          : undefined}
+        items={applications.data?.items ?? []}
+        loading={applications.isPending}
+        pagination={paginationProps(applications.data, page, pageSize, setPage, setPageSize, t)}
+        rowKey={application => application.id}
+        search={{
+          value: search,
+          placeholder: t('oauthApps.searchApplications'),
+          onChange: (value) => {
+            setSearch(value)
+            setPage(1)
+          },
+        }}
+      />
       <OAuthApplicationDialog
         application={editingApplication}
         form={form}
         open={createDialogOpen || Boolean(editingApplication)}
         pending={save.isPending}
         scopeItems={scopes.data?.items ?? []}
+        scopesError={scopes.isError}
+        scopesLoading={scopes.isPending}
+        scopesRetrying={scopes.isFetching}
         onClose={closeDialog}
+        onRetryScopes={() => void scopes.refetch()}
         onSubmit={values => save.mutate(values)}
       />
       <ConfirmDialog
@@ -334,26 +343,37 @@ export function OAuthGrantsPanel() {
       ),
     },
   ]
-  return grants.isError
-    ? <ErrorState title={t('oauthApps.loadFailed')} description={grants.error.message} />
-    : (
-        <DataList
-          columns={columns}
-          emptyTitle={t('oauthApps.emptyGrants')}
-          items={grants.data?.items ?? []}
-          pagination={paginationProps(grants.data, page, pageSize, setPage, setPageSize, t)}
-          rowKey={grant => grant.id}
-        />
-      )
+  return (
+    <DataList
+      columns={columns}
+      emptyTitle={t('oauthApps.emptyGrants')}
+      error={grants.isError
+        ? {
+            description: grants.error.message,
+            onRetry: () => void grants.refetch(),
+            retrying: grants.isFetching,
+            title: t('oauthApps.loadFailed'),
+          }
+        : undefined}
+      items={grants.data?.items ?? []}
+      loading={grants.isPending}
+      pagination={paginationProps(grants.data, page, pageSize, setPage, setPageSize, t)}
+      rowKey={grant => grant.id}
+    />
+  )
 }
 
-function OAuthApplicationDialog({ application, form, open, pending, scopeItems, onClose, onSubmit }: {
+function OAuthApplicationDialog({ application, form, open, pending, scopeItems, scopesError = false, scopesLoading = false, scopesRetrying = false, onClose, onRetryScopes, onSubmit }: {
   application?: OAuthApplication
   form: UseFormReturn<OAuthApplicationForm>
   open: boolean
   pending: boolean
   scopeItems: AccessTokenScopeDefinition[]
+  scopesError?: boolean
+  scopesLoading?: boolean
+  scopesRetrying?: boolean
   onClose: () => void
+  onRetryScopes?: () => void
   onSubmit: (values: OAuthApplicationForm) => void
 }) {
   const { t } = useTranslation()
@@ -372,11 +392,22 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
             <Textarea {...form.register('redirectUrisText')} className="font-mono" rows={3} placeholder="https://example.com/oauth/callback" />
           </Field>
           <Field error={form.formState.errors.scopes?.message} hint={t('oauthApps.scopesHint')} label={t('oauthApps.scopes')} required>
-            <AccessTokenScopeSelector
-              items={scopeItems}
-              value={selectedScopes}
-              onChange={value => form.setValue('scopes', value, { shouldDirty: true, shouldValidate: true })}
-            />
+            {scopesError
+              ? (
+                  <ErrorState
+                    retrying={scopesRetrying}
+                    title={t('oauthApps.loadFailed')}
+                    onRetry={onRetryScopes}
+                  />
+                )
+              : (
+                  <AccessTokenScopeSelector
+                    items={scopeItems}
+                    loading={scopesLoading}
+                    value={selectedScopes}
+                    onChange={value => form.setValue('scopes', value, { shouldDirty: true, shouldValidate: true })}
+                  />
+                )}
           </Field>
           <Field label={t('oauthApps.tokenLifetime')} required>
             {fieldControl => (
@@ -416,7 +447,7 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
           </ProgressiveSection>
           <DialogFooter>
             <Button disabled={pending} type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-            <Button disabled={pending || !form.formState.isValid} type="submit">
+            <Button disabled={pending || scopesLoading || scopesError || !form.formState.isValid} type="submit">
               <KeyRound size={16} />
               {t(application ? 'common.save' : 'oauthApps.createApplication')}
             </Button>

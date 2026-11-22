@@ -22,16 +22,25 @@ export function RuntimePodSelect({
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const pods = useReleaseRuntimePods(projectId, release, search)
+  const podsEnabled = Boolean(projectId && release.applicationId && release.deploymentTargetId)
+  const podsLoading = podsEnabled && pods.isPending
   const page = pods.data
   const observed = page?.status === 'ready'
   const items = observed ? page.items : []
-  const options: SearchSelectOption[] = [
-    { value: '', label: t('deploymentsPage.runtimePodAuto'), description: t('deploymentsPage.runtimePodAutoDescription') },
+  const baseOptions: SearchSelectOption[] = [
+    {
+      value: '',
+      label: podsLoading && !value ? t('common.loading') : t('deploymentsPage.runtimePodAuto'),
+      description: t('deploymentsPage.runtimePodAutoDescription'),
+    },
     ...items.map(pod => ({ value: pod.name, label: pod.name, description: runtimePodDescription(pod, release.id, t) })),
   ]
+  const options = value && !baseOptions.some(option => option.value === value)
+    ? [...baseOptions, { value, label: value }]
+    : baseOptions
   // 搜索时列表只是子集，不能据此判断所选副本已消失。
   const selectedMissing = Boolean(value && observed && !search.trim() && !items.some(pod => pod.name === value))
-  const unavailable = pods.isError || page?.status === 'unavailable'
+  const unavailable = podsEnabled && !pods.isPending && (pods.isError || page?.status === 'unavailable')
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -39,9 +48,11 @@ export function RuntimePodSelect({
       <SearchSelect
         ariaLabel={t('deploymentsPage.runtimePod')}
         className="w-64 font-mono"
+        error={unavailable}
         limited={Boolean(page && page.total > page.items.length)}
-        loading={pods.isLoading}
-        options={selectedMissing ? [...options, { value, label: value }] : options}
+        loading={podsLoading}
+        options={options}
+        placeholder={podsLoading ? t('common.loading') : t('deploymentsPage.runtimePodAuto')}
         search={search}
         searchPlaceholder={t('deploymentsPage.runtimePodSearchPlaceholder')}
         size="sm"

@@ -14,11 +14,13 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { ErrorState } from '@/components/common/error-state'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { projectTopologyKeys } from './project-topology-query'
 import { serviceBindingEnvSummary } from './project-topology-utils'
 
@@ -28,9 +30,13 @@ interface ProjectTopologyDetailSheetProps {
   manualEdge?: ProjectTopologyManualEdge
   nodes: ProjectTopologyNode[]
   projectId: string
+  relationError?: boolean
+  relationLoading?: boolean
+  relationRetrying?: boolean
   serviceBinding?: ServiceBinding
   onEdit: () => void
   onOpenChange: (open: boolean) => void
+  onRetryRelation?: () => void
 }
 
 export function ProjectTopologyDetailSheet({
@@ -39,9 +45,13 @@ export function ProjectTopologyDetailSheet({
   manualEdge,
   nodes,
   projectId,
+  relationError = false,
+  relationLoading = false,
+  relationRetrying = false,
   serviceBinding,
   onEdit,
   onOpenChange,
+  onRetryRelation,
 }: ProjectTopologyDetailSheetProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -113,6 +123,23 @@ export function ProjectTopologyDetailSheet({
                 <Separator />
                 <Detail label={t('projectTopology.form.sourceTarget')}>{targetSummary(sourceTarget)}</Detail>
                 <Detail label={t('projectTopology.form.targetTarget')}>{targetSummary(targetTarget)}</Detail>
+                {relationLoading && !persistedRelation
+                  ? (
+                      <div className="grid gap-3">
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                      </div>
+                    )
+                  : relationError && !persistedRelation
+                    ? (
+                        <ErrorState
+                          description={t('projectTopology.loadFailedDescription')}
+                          retrying={relationRetrying}
+                          title={t('projectTopology.loadFailed')}
+                          onRetry={onRetryRelation}
+                        />
+                      )
+                    : null}
                 {serviceBinding && (
                   <>
                     <Detail label={t('projectTopology.form.targetPort')}>{`${serviceBinding.targetPortName} · ${serviceBinding.targetPort}`}</Detail>

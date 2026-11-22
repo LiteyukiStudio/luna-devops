@@ -5,6 +5,7 @@ import { Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -17,12 +18,16 @@ export function GatewayRouteFormFields({
   applications = [],
   control,
   deploymentTargets,
+  domainSuffixError = false,
+  domainSuffixLoading = false,
   domainSuffixOptions = [],
+  domainSuffixRetrying = false,
   enabledField,
   errors,
   hostField,
   hostPlaceholder,
   onDeploymentTargetChange,
+  onRetryDomainSuffix,
   pathField,
   servicePortOptions = [],
   showApplication = false,
@@ -30,12 +35,16 @@ export function GatewayRouteFormFields({
   applications?: Array<{ id: string, name: string }>
   control: Control<GatewayRouteFormValues>
   deploymentTargets: Array<{ id: string, label: string }>
+  domainSuffixError?: boolean
+  domainSuffixLoading?: boolean
   domainSuffixOptions?: Array<{ label: string, value: string }>
+  domainSuffixRetrying?: boolean
   enabledField: ComponentProps<typeof ControlledCheckboxField>['field']
   errors?: FieldErrors<Partial<GatewayRoute>>
   hostField: UseFormRegisterReturn<'host'>
   hostPlaceholder?: string
   onDeploymentTargetChange?: (deploymentTargetId: string) => void
+  onRetryDomainSuffix?: () => void
   pathField: UseFormRegisterReturn<'path'>
   servicePortOptions?: Array<{ label: string, value: number }>
   showApplication?: boolean
@@ -82,12 +91,14 @@ export function GatewayRouteFormFields({
                 }}
               >
                 <SelectTrigger {...fieldControl} className="w-full">
-                  <SelectValue placeholder={t('common.select')} />
+                  <SelectValue placeholder={deploymentTargets.length === 0 ? t('common.noOptions') : t('common.select')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {deploymentTargets.map(target => (
-                    <SelectItem key={target.id} value={target.id}>{target.label}</SelectItem>
-                  ))}
+                  {deploymentTargets.length === 0
+                    ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                    : deploymentTargets.map(target => (
+                        <SelectItem key={target.id} value={target.id}>{target.label}</SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
             )}
@@ -99,23 +110,61 @@ export function GatewayRouteFormFields({
       </Field>
       <Field error={errors?.domainSuffix?.message} hint={t('gatewayRoutesPage.domainSuffixHint')} label={t('gatewayRoutesPage.domainSuffix')} required>
         {fieldControl => (
-          <Controller
-            control={control}
-            name="domainSuffix"
-            rules={{ required: t('common.required') }}
-            render={({ field }) => (
-              <Select value={field.value || undefined} onValueChange={field.onChange}>
-                <SelectTrigger {...fieldControl} className="w-full">
-                  <SelectValue placeholder={t('common.select')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {domainSuffixOptions.map(option => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="grid gap-1.5">
+            <Controller
+              control={control}
+              name="domainSuffix"
+              rules={{ required: t('common.required') }}
+              render={({ field }) => {
+                const selectOptions = !domainSuffixLoading && !domainSuffixError && field.value && !domainSuffixOptions.some(option => option.value === field.value)
+                  ? [{ label: field.value, value: field.value }, ...domainSuffixOptions]
+                  : domainSuffixOptions
+                return (
+                  <Select
+                    disabled={domainSuffixLoading || (domainSuffixError && selectOptions.length === 0)}
+                    value={!domainSuffixLoading && selectOptions.some(option => option.value === field.value) ? field.value : ''}
+                    onValueChange={(next) => {
+                      if (next)
+                        field.onChange(next)
+                    }}
+                  >
+                    <SelectTrigger {...fieldControl} className="w-full">
+                      <SelectValue
+                        placeholder={
+                          domainSuffixLoading
+                            ? t('common.loading')
+                            : domainSuffixError
+                              ? t('common.unavailable')
+                              : selectOptions.length === 0
+                                ? t('common.noOptions')
+                                : t('common.select')
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {domainSuffixLoading
+                        ? <SelectItem disabled value="__loading__">{t('common.loading')}</SelectItem>
+                        : selectOptions.length === 0
+                          ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                          : selectOptions.map(option => (
+                              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                            ))}
+                    </SelectContent>
+                  </Select>
+                )
+              }}
+            />
+            {domainSuffixError && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-danger" role="alert">
+                <span>{t('common.unavailable')}</span>
+                {onRetryDomainSuffix && (
+                  <Button disabled={domainSuffixRetrying} size="sm" type="button" variant="outline" onClick={onRetryDomainSuffix}>
+                    {t('common.retry')}
+                  </Button>
+                )}
+              </div>
             )}
-          />
+          </div>
         )}
       </Field>
       <Field error={errors?.path?.message} label={t('gatewayRoutesPage.path')}>

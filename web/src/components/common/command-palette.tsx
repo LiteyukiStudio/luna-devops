@@ -468,6 +468,11 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
   )
 
   const isSearchingServer = serverSearchEnabled && (serverSearch.isFetching || effectiveServerQuery !== trimmedQuery)
+  const isLoadingLocal = (allowLocalProjects && projects.isPending)
+    || (Boolean(currentProjectId) && allowLocalApplications && applications.isPending)
+    || (templateFocused && appTemplates.isPending)
+  const isSearching = isSearchingServer || isLoadingLocal
+  const isServerOnlyScope = scope === 'gateway_route' || scope === 'deployment_target' || (scope === 'application' && !currentProjectId)
   const activeContextLabel = routeContext ? t(`nav.commandPalette.contextChips.${routeContext}`) : ''
 
   function renderServerResultItem(item: SearchResultItem) {
@@ -585,7 +590,7 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
             })}
           </div>
           <div className="flex items-center gap-1.5">
-            {isSearchingServer && (
+            {isSearching && (
               <Loader2 aria-label={t('nav.commandPalette.searching')} className="size-3.5 animate-spin text-muted-foreground" />
             )}
             {canViewAllSpaces && (
@@ -630,11 +635,13 @@ export function CommandPalette({ projectSections = [] }: { projectSections?: Pro
           )}
           {!(serverSearchEnabled && serverSearch.isError) && (
             <CommandEmpty>
-              {isSearchingServer || (templateFocused && appTemplates.isLoading)
+              {isSearching
                 ? t('nav.commandPalette.searching')
                 : (hasServerOnlyRouteContext && trimmedQuery === '')
                     ? t('nav.commandPalette.contextEmptyHint', { context: activeContextLabel })
-                    : t('nav.commandPalette.empty')}
+                    : (isServerOnlyScope && trimmedQuery === '')
+                        ? t('nav.commandPalette.scopeEmptyHint', { scope: t(`nav.commandPalette.scopes.${scope}`) })
+                        : t('nav.commandPalette.empty')}
             </CommandEmpty>
           )}
 

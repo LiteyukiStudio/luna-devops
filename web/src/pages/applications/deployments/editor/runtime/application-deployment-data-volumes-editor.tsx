@@ -277,7 +277,7 @@ function ProjectVolumePathInput({
     queryFn: () => api.getProjectVolume(projectId, currentVolumeId),
     enabled: Boolean(projectId && currentVolumeId),
   })
-  if (currentVolumeId && current.isLoading)
+  if (currentVolumeId && current.isPending)
     return <Skeleton className="h-9 w-full rounded-control" />
 
   const blockMode = current.data?.volumeMode === 'Block' || Boolean(devicePath)
@@ -328,6 +328,8 @@ function ProjectVolumePicker({
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const effectiveClusterId = clusterId || platformDefaultRuntimeCluster(runtimeClusters)?.id || ''
+  const volumesEnabled = Boolean(projectId && effectiveClusterId)
+  const currentEnabled = Boolean(projectId && currentVolumeId)
   const volumes = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['deployment-project-volumes', projectId, effectiveClusterId, currentVolumeId, page, search],
@@ -340,19 +342,21 @@ function ProjectVolumePicker({
       sortBy: 'displayName',
       sortOrder: 'asc',
     }),
-    enabled: Boolean(projectId && effectiveClusterId),
+    enabled: volumesEnabled,
   })
   const current = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['deployment-project-volume-current', projectId, effectiveClusterId, currentVolumeId],
     queryFn: () => api.getProjectVolume(projectId, currentVolumeId),
-    enabled: Boolean(projectId && currentVolumeId),
+    enabled: currentEnabled,
   })
   const options = [...(volumes.data?.items ?? [])]
   if (current.data?.clusterId === effectiveClusterId && !options.some(item => item.id === current.data?.id))
     options.unshift(current.data)
   const selected = options.find(item => item.id === currentVolumeId)
-  const selectDisabled = !effectiveClusterId || volumes.isLoading || volumes.isError
+  const pickerLoading = (volumesEnabled && volumes.isPending) || (currentEnabled && current.isPending)
+  const pickerError = (volumesEnabled && volumes.isError) || (currentEnabled && current.isError)
+  const selectDisabled = !effectiveClusterId || pickerLoading || pickerError
 
   return (
     <div className="grid min-w-0 gap-2">
@@ -360,7 +364,7 @@ function ProjectVolumePicker({
         aria-describedby={ariaInvalid && selectDisabled ? ariaDescribedBy : undefined}
         aria-invalid={(ariaInvalid && selectDisabled && Boolean(effectiveClusterId)) ? true : undefined}
         aria-label={t('deploymentTargetEditor.projectVolumeSearchLabel')}
-        disabled={!effectiveClusterId}
+        disabled={!effectiveClusterId || pickerError}
         placeholder={t('projectVolumes.deploymentSelectorPlaceholder')}
         value={search}
         onChange={(event) => {
@@ -368,13 +372,17 @@ function ProjectVolumePicker({
           setPage(1)
         }}
       />
-      {Boolean(effectiveClusterId) && volumes.isLoading
+      {pickerLoading
         ? <Skeleton className="h-9 w-full rounded-control" />
         : (
             <Select
               disabled={selectDisabled}
-              value={currentVolumeId || undefined}
-              onValueChange={next => onChange(options.find(item => item.id === next))}
+              value={!pickerLoading && !pickerError && Boolean(selected) ? currentVolumeId : ''}
+              onValueChange={(next) => {
+                if (!next)
+                  return
+                onChange(options.find(item => item.id === next))
+              }}
             >
               <SelectTrigger
                 aria-describedby={ariaDescribedBy}
@@ -382,26 +390,49 @@ function ProjectVolumePicker({
                 aria-label={t('projectVolumes.deploymentSelectorLabel')}
                 className="w-full"
               >
-                <SelectValue placeholder={t('projectVolumes.deploymentSelectorPlaceholder')} />
+                <SelectValue
+                  placeholder={
+                    pickerError
+                      ? t('common.unavailable')
+                      : !effectiveClusterId
+                          ? t('common.noOptions')
+                          : t('projectVolumes.deploymentSelectorPlaceholder')
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                {options.map(item => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.displayName}
-                    {' '}
-                    ·
-                    {item.capacity}
-                    {item.id === currentVolumeId && item.availability !== 'available' ? ` · ${t('projectVolumes.deploymentSelectorCurrent')}` : ''}
-                  </SelectItem>
-                ))}
+                {options.length === 0
+                  ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                  : options.map(item => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.displayName}
+                        {' '}
+                        ·
+                        {item.capacity}
+                        {item.id === currentVolumeId && item.availability !== 'available' ? ` · ${t('projectVolumes.deploymentSelectorCurrent')}` : ''}
+                      </SelectItem>
+                    ))}
               </SelectContent>
             </Select>
           )}
-      {!volumes.isLoading && !volumes.isError && options.length === 0 && <p className="text-xs text-muted-foreground">{t('projectVolumes.deploymentSelectorEmpty')}</p>}
-      {volumes.isError && (
+      {Boolean(effectiveClusterId) && !pickerLoading && !pickerError && options.length === 0 && (
+        <p className="text-xs text-muted-foreground">{t('projectVolumes.deploymentSelectorEmpty')}</p>
+      )}
+      {!pickerLoading && pickerError && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-danger" role="alert">
           <span>{t('projectVolumes.loadFailedDescription')}</span>
-          <Button disabled={volumes.isFetching} size="sm" type="button" variant="outline" onClick={() => void volumes.refetch()}>
+          <Button
+            disabled={volumes.isFetching || current.isFetching}
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (volumes.isError)
+                void volumes.refetch()
+              if (current.isError)
+                void current.refetch()
+            }}
+          >
             <RotateCw className="size-3.5" />
             {t('common.retry')}
           </Button>

@@ -55,7 +55,6 @@ export function RegistriesPage() {
   })
   const registryItems = registries.data?.items ?? []
   const registryOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', 'options', effectiveVisibility], queryFn: () => api.listRegistries(undefined, effectiveVisibility) })
-  const registryOptionItems = useMemo(() => registryOptions.data ?? [], [registryOptions.data])
   const images = useQuery({
     queryKey: ['container-images', imagePage, imagePageSize, effectiveVisibility],
     queryFn: () => api.listContainerImages({ page: imagePage, pageSize: imagePageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
@@ -237,12 +236,17 @@ export function RegistriesPage() {
     setCredentialDialogOpen(true)
   }
 
-  const selectedRegistry = registryOptionItems.find(registry => registry.id === credentialRegistryFilterId)
+  const registryLookupItems = registryOptions.data ?? registryItems
+  const registriesLookupLoading = registryOptions.isPending && registries.isPending
+  const selectedRegistry = registryLookupItems.find(registry => registry.id === credentialRegistryFilterId)
   const credentialPageData = credentialRegistryFilterId
     ? credentials.data
       ? {
           ...credentials.data,
-          items: credentials.data.items.map(credential => ({ ...credential, registryName: selectedRegistry?.name ?? '' })),
+          items: credentials.data.items.map(credential => ({
+            ...credential,
+            registryName: selectedRegistry?.name ?? (registryOptions.isPending ? '' : credential.registryId),
+          })),
         }
       : undefined
     : allCredentials.data
@@ -250,7 +254,8 @@ export function RegistriesPage() {
           ...allCredentials.data,
           items: allCredentials.data.items.map(credential => ({
             ...credential,
-            registryName: registryOptionItems.find(registry => registry.id === credential.registryId)?.name ?? credential.registryId,
+            registryName: registryLookupItems.find(registry => registry.id === credential.registryId)?.name
+              ?? (registryOptions.isPending ? '' : credential.registryId),
           })),
         }
       : undefined
@@ -341,9 +346,10 @@ export function RegistriesPage() {
                 }
               : undefined}
             items={registryItems}
-            loading={registries.isLoading}
+            loading={registries.isPending}
             toolbar={visibilitySelect}
             projectMap={projectMap}
+            projectsLoading={projects.isPending}
             pagination={{
               data: registries.data,
               page: registryPage,
@@ -377,8 +383,10 @@ export function RegistriesPage() {
                 }
               : undefined}
             items={visibleCredentials}
-            loading={credentialRegistryFilterId ? credentials.isLoading : allCredentials.isLoading}
+            loading={credentialRegistryFilterId ? credentials.isPending : allCredentials.isPending}
             projectMap={projectMap}
+            projectsLoading={projects.isPending}
+            registriesLoading={registryOptions.isPending}
             toolbar={(
               <>
                 {visibilitySelect}
@@ -397,9 +405,11 @@ export function RegistriesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={EMPTY_SELECT_VALUE}>{t('registriesPage.allRegistries')}</SelectItem>
-                    {(registryOptions.data ?? registryItems).map(registry => (
-                      <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
-                    ))}
+                    {registriesLookupLoading
+                      ? <SelectItem disabled value="__loading__">{t('common.loading')}</SelectItem>
+                      : registryLookupItems.map(registry => (
+                          <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
+                        ))}
                   </SelectContent>
                 </Select>
               </>
@@ -429,9 +439,10 @@ export function RegistriesPage() {
                 }
               : undefined}
             images={images.data?.items ?? []}
-            loading={images.isLoading}
+            loading={images.isPending}
             toolbar={visibilitySelect}
-            registries={registryOptions.data ?? registryItems}
+            registries={registryLookupItems}
+            registriesLoading={registryOptions.isPending}
             pagination={{
               data: images.data,
               page: imagePage,
@@ -455,6 +466,10 @@ export function RegistriesPage() {
         form={registryForm}
         pending={saveRegistry.isPending}
         projects={projects.data ?? []}
+        projectsError={projects.isError}
+        projectsLoading={projects.isPending}
+        projectsRetrying={projects.isFetching}
+        onRetryProjects={() => void projects.refetch()}
         onSubmit={values => saveRegistry.mutate(values)}
         onOpenChange={(open) => {
           setRegistryDialogOpen(open)
@@ -469,14 +484,22 @@ export function RegistriesPage() {
         editingCredential={editingCredential}
         form={credentialForm}
         pending={saveCredential.isPending}
-        registries={registryOptions.data ?? registryItems}
+        registries={registryOptions.data ?? (registryOptions.isError ? [] : registryItems)}
+        registriesError={registryOptions.isError}
+        registriesLoading={registryOptions.isPending}
+        registriesRetrying={registryOptions.isFetching}
         projects={projects.data ?? []}
+        projectsError={projects.isError}
+        projectsLoading={projects.isPending}
+        projectsRetrying={projects.isFetching}
         defaultRegistryId={credentialRegistryFilterId}
         onOpenChange={(open) => {
           setCredentialDialogOpen(open)
           if (!open)
             setEditingCredential(null)
         }}
+        onRetryProjects={() => void projects.refetch()}
+        onRetryRegistries={() => void registryOptions.refetch()}
         onSubmit={values => saveCredential.mutate(values)}
       />
 
@@ -484,7 +507,11 @@ export function RegistriesPage() {
         open={imageDialogOpen}
         form={imageForm}
         pending={createImage.isPending}
-        registries={registryOptions.data ?? registryItems}
+        registries={registryOptions.data ?? (registryOptions.isError ? [] : registryItems)}
+        registriesError={registryOptions.isError}
+        registriesLoading={registryOptions.isPending}
+        registriesRetrying={registryOptions.isFetching}
+        onRetryRegistries={() => void registryOptions.refetch()}
         repositoryResults={{
           items: imageRepositoryResults.data?.items ?? [],
           isFetching: imageRepositoryResults.isFetching,

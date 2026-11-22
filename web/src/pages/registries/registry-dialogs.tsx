@@ -24,12 +24,29 @@ interface RegistryDialogProps {
   editingRegistry: ArtifactRegistry | null
   form: UseFormReturn<RegistryForm>
   projects: Project[]
+  projectsError?: boolean
+  projectsLoading?: boolean
+  projectsRetrying?: boolean
   pending: boolean
   onOpenChange: (open: boolean) => void
+  onRetryProjects?: () => void
   onSubmit: (values: RegistryForm) => void
 }
 
-export function RegistryDialog({ canManageGlobal = false, open, editingRegistry, form, projects, pending, onOpenChange, onSubmit }: RegistryDialogProps) {
+export function RegistryDialog({
+  canManageGlobal = false,
+  open,
+  editingRegistry,
+  form,
+  projects,
+  projectsError = false,
+  projectsLoading = false,
+  projectsRetrying = false,
+  pending,
+  onOpenChange,
+  onRetryProjects,
+  onSubmit,
+}: RegistryDialogProps) {
   const { t } = useTranslation()
 
   return (
@@ -108,11 +125,26 @@ export function RegistryDialog({ canManageGlobal = false, open, editingRegistry,
             </Field>
             {form.watch('scope') === 'project' && (
               <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')}>
-                <ProjectSpaceMultiSelect
-                  projects={projects}
-                  value={form.watch('projectIds')}
-                  onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
-                />
+                {fieldControl => (
+                  <div className="grid gap-1.5">
+                    <ProjectSpaceMultiSelect
+                      {...fieldControl}
+                      error={projectsError}
+                      loading={projectsLoading}
+                      projects={projects}
+                      value={form.watch('projectIds')}
+                      onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                    {projectsError && onRetryProjects && (
+                      <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                        <span>{t('common.unavailable')}</span>
+                        <Button disabled={projectsRetrying} size="sm" type="button" variant="outline" onClick={onRetryProjects}>
+                          {t('common.retry')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Field>
             )}
             <ProgressiveSection
@@ -154,14 +186,41 @@ interface CredentialDialogProps {
   editingCredential: RegistryCredential | null
   form: UseFormReturn<CredentialForm>
   registries: ArtifactRegistry[]
+  registriesError?: boolean
+  registriesLoading?: boolean
+  registriesRetrying?: boolean
   projects: Project[]
+  projectsError?: boolean
+  projectsLoading?: boolean
+  projectsRetrying?: boolean
   defaultRegistryId: string
   pending: boolean
   onOpenChange: (open: boolean) => void
+  onRetryProjects?: () => void
+  onRetryRegistries?: () => void
   onSubmit: (values: CredentialForm) => void
 }
 
-export function CredentialDialog({ canManageGlobal = false, editingCredential, open, form, registries, projects, defaultRegistryId, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
+export function CredentialDialog({
+  canManageGlobal = false,
+  editingCredential,
+  open,
+  form,
+  registries,
+  registriesError = false,
+  registriesLoading = false,
+  registriesRetrying = false,
+  projects,
+  projectsError = false,
+  projectsLoading = false,
+  projectsRetrying = false,
+  defaultRegistryId,
+  pending,
+  onOpenChange,
+  onRetryProjects,
+  onRetryRegistries,
+  onSubmit,
+}: CredentialDialogProps) {
   const { t } = useTranslation()
   const credentialRegistry = registries.find(registry => registry.id === form.watch('registryId'))
   const allowedProjects = credentialRegistry?.scope === 'project'
@@ -192,32 +251,58 @@ export function CredentialDialog({ canManageGlobal = false, editingCredential, o
           <DialogBody className="grid gap-3">
             <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.credentialRegistryHint')} label={t('registries')} required>
               {fieldControl => (
-                <Controller
-                  control={form.control}
-                  name="registryId"
-                  render={({ field }) => (
-                    <Select
-                      disabled={Boolean(editingCredential)}
-                      value={field.value || undefined}
-                      onValueChange={(next) => {
-                        if (!next || next === field.value)
-                          return
-                        field.onChange(next)
-                        form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
-                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                      }}
-                    >
-                      <SelectTrigger {...fieldControl} className="w-full">
-                        <SelectValue placeholder={t('registriesPage.selectRegistry')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {registries.map(registry => (
-                          <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="grid gap-1.5">
+                  <Controller
+                    control={form.control}
+                    name="registryId"
+                    render={({ field }) => (
+                      <Select
+                        disabled={Boolean(editingCredential) || registriesLoading || registriesError}
+                        value={!registriesLoading && !registriesError && registries.some(registry => registry.id === field.value) ? field.value : ''}
+                        onValueChange={(next) => {
+                          if (!next || next === field.value)
+                            return
+                          field.onChange(next)
+                          form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
+                          form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue
+                            placeholder={
+                              registriesLoading
+                                ? t('common.loading')
+                                : registriesError
+                                  ? t('common.unavailable')
+                                  : registries.length === 0
+                                    ? t('common.noOptions')
+                                    : t('registriesPage.selectRegistry')
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {registriesLoading
+                            ? <SelectItem disabled value="__loading__">{t('common.loading')}</SelectItem>
+                            : registriesError
+                              ? <SelectItem disabled value="__error__">{t('common.unavailable')}</SelectItem>
+                              : registries.length === 0
+                                ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                                : registries.map(registry => (
+                                    <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
+                                  ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {registriesError && onRetryRegistries && (
+                    <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                      <span>{t('common.unavailable')}</span>
+                      <Button disabled={registriesRetrying} size="sm" type="button" variant="outline" onClick={onRetryRegistries}>
+                        {t('common.retry')}
+                      </Button>
+                    </div>
                   )}
-                />
+                </div>
               )}
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -304,11 +389,26 @@ export function CredentialDialog({ canManageGlobal = false, editingCredential, o
               </Field>
               {credentialScope === 'project' && (
                 <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')} required>
-                  <ProjectSpaceMultiSelect
-                    projects={allowedProjects}
-                    value={form.watch('projectIds')}
-                    onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
-                  />
+                  {fieldControl => (
+                    <div className="grid gap-1.5">
+                      <ProjectSpaceMultiSelect
+                        {...fieldControl}
+                        error={projectsError}
+                        loading={projectsLoading}
+                        projects={allowedProjects}
+                        value={form.watch('projectIds')}
+                        onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                      />
+                      {projectsError && onRetryProjects && (
+                        <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                          <span>{t('common.unavailable')}</span>
+                          <Button disabled={projectsRetrying} size="sm" type="button" variant="outline" onClick={onRetryProjects}>
+                            {t('common.retry')}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </Field>
               )}
             </ProgressiveSection>
@@ -345,6 +445,9 @@ interface ImageDialogProps {
   open: boolean
   form: UseFormReturn<ImageForm>
   registries: ArtifactRegistry[]
+  registriesError?: boolean
+  registriesLoading?: boolean
+  registriesRetrying?: boolean
   repositorySearch: string
   repositoryResultsOpen: boolean
   repositoryResults: {
@@ -360,6 +463,7 @@ interface ImageDialogProps {
   }
   pending: boolean
   onOpenChange: (open: boolean) => void
+  onRetryRegistries?: () => void
   onRepositorySearchChange: (value: string) => void
   onRepositoryResultsOpenChange: (open: boolean) => void
   onSelectRepository: (repository: RegistryRepositoryItem) => void
@@ -370,12 +474,16 @@ export function ImageDialog({
   open,
   form,
   registries,
+  registriesError = false,
+  registriesLoading = false,
+  registriesRetrying = false,
   repositorySearch,
   repositoryResultsOpen,
   repositoryResults,
   tagResults,
   pending,
   onOpenChange,
+  onRetryRegistries,
   onRepositorySearchChange,
   onRepositoryResultsOpenChange,
   onSelectRepository,
@@ -409,98 +517,127 @@ export function ImageDialog({
           <DialogBody className="grid gap-3">
             <Field error={form.formState.errors.registryId?.message} hint={t('registriesPage.imageRegistryHint')} label={t('registries')} required>
               {fieldControl => (
-                <Controller
-                  control={form.control}
-                  name="registryId"
-                  render={({ field }) => (
-                    <Select
-                      value={field.value || undefined}
-                      onValueChange={(next) => {
-                        if (!next || next === field.value)
-                          return
-                        field.onChange(next)
-                        form.setValue('repository', '', { shouldDirty: true, shouldValidate: true })
-                        form.setValue('tag', '', { shouldDirty: true, shouldValidate: true })
-                        onRepositorySearchChange('')
-                        onRepositoryResultsOpenChange(false)
-                        setActiveIndex(-1)
-                      }}
-                    >
-                      <SelectTrigger {...fieldControl} className="w-full">
-                        <SelectValue placeholder={t('registriesPage.selectRegistry')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {registries.map(registry => (
-                          <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="grid gap-1.5">
+                  <Controller
+                    control={form.control}
+                    name="registryId"
+                    render={({ field }) => (
+                      <Select
+                        disabled={registriesLoading || registriesError}
+                        value={!registriesLoading && !registriesError && registries.some(registry => registry.id === field.value) ? field.value : ''}
+                        onValueChange={(next) => {
+                          if (!next || next === field.value)
+                            return
+                          field.onChange(next)
+                          form.setValue('repository', '', { shouldDirty: true, shouldValidate: true })
+                          form.setValue('tag', '', { shouldDirty: true, shouldValidate: true })
+                          onRepositorySearchChange('')
+                          onRepositoryResultsOpenChange(false)
+                          setActiveIndex(-1)
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue
+                            placeholder={
+                              registriesLoading
+                                ? t('common.loading')
+                                : registriesError
+                                  ? t('common.unavailable')
+                                  : registries.length === 0
+                                    ? t('common.noOptions')
+                                    : t('registriesPage.selectRegistry')
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {registriesLoading
+                            ? <SelectItem disabled value="__loading__">{t('common.loading')}</SelectItem>
+                            : registriesError
+                              ? <SelectItem disabled value="__error__">{t('common.unavailable')}</SelectItem>
+                              : registries.length === 0
+                                ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                                : registries.map(registry => (
+                                    <SelectItem key={registry.id} value={registry.id}>{registry.name}</SelectItem>
+                                  ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {registriesError && onRetryRegistries && (
+                    <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                      <span>{t('common.unavailable')}</span>
+                      <Button disabled={registriesRetrying} size="sm" type="button" variant="outline" onClick={onRetryRegistries}>
+                        {t('common.retry')}
+                      </Button>
+                    </div>
                   )}
-                />
+                </div>
               )}
             </Field>
             <Field error={form.formState.errors.repository?.message} hint={t('registriesPage.repositoryHint')} label={t('registriesPage.repository')} required>
-              <div className="flex gap-2">
-                <Input
-                  {...form.register('repository', {
-                    onChange: (event) => {
-                      const nextValue = event.target.value
-                      onRepositorySearchChange(nextValue)
-                      onRepositoryResultsOpenChange(nextValue.trim().length >= 2)
-                      setActiveIndex(-1)
-                    },
-                  })}
-                  aria-activedescendant={activeOptionId}
-                  aria-autocomplete="list"
-                  aria-controls={showRepositoryResults ? listboxId : undefined}
-                  aria-expanded={showRepositoryResults}
-                  aria-invalid={Boolean(form.formState.errors.repository)}
-                  placeholder={t('registriesPage.repositoryPlaceholder')}
-                  role="combobox"
-                  onFocus={() => onRepositoryResultsOpenChange(Boolean(registryId && repositorySearch.trim().length >= 2))}
-                  onKeyDown={(event) => {
-                    if (!showRepositoryResults)
-                      return
-                    if (event.key === 'Escape') {
-                      event.preventDefault()
-                      onRepositoryResultsOpenChange(false)
-                      setActiveIndex(-1)
-                      return
-                    }
-                    const total = repositoryResults.items.length
-                    if (total === 0)
-                      return
-                    if (event.key === 'ArrowDown') {
-                      event.preventDefault()
-                      setActiveIndex(current => (current + 1) % total)
-                    }
-                    else if (event.key === 'ArrowUp') {
-                      event.preventDefault()
-                      setActiveIndex(current => (current <= 0 ? total - 1 : current - 1))
-                    }
-                    else if (event.key === 'Enter' && safeActiveIndex >= 0) {
-                      event.preventDefault()
-                      const chosen = repositoryResults.items[safeActiveIndex]
-                      if (chosen) {
-                        onSelectRepository(chosen)
+              {fieldControl => (
+                <div className="flex gap-2">
+                  <Input
+                    {...form.register('repository', {
+                      onChange: (event) => {
+                        const nextValue = event.target.value
+                        onRepositorySearchChange(nextValue)
+                        onRepositoryResultsOpenChange(nextValue.trim().length >= 2)
                         setActiveIndex(-1)
+                      },
+                    })}
+                    {...fieldControl}
+                    aria-activedescendant={activeOptionId}
+                    aria-autocomplete="list"
+                    aria-controls={showRepositoryResults ? listboxId : undefined}
+                    aria-expanded={showRepositoryResults}
+                    placeholder={t('registriesPage.repositoryPlaceholder')}
+                    role="combobox"
+                    onFocus={() => onRepositoryResultsOpenChange(Boolean(registryId && repositorySearch.trim().length >= 2))}
+                    onKeyDown={(event) => {
+                      if (!showRepositoryResults)
+                        return
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        onRepositoryResultsOpenChange(false)
+                        setActiveIndex(-1)
+                        return
                       }
-                    }
-                  }}
-                />
-                <Button
-                  disabled={!registryId || repositorySearch.trim().length < 2 || repositoryResults.isFetching}
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    onRepositoryResultsOpenChange(true)
-                    repositoryResults.refetch()
-                  }}
-                >
-                  <Search size={16} />
-                  {t('registriesPage.searchImages')}
-                </Button>
-              </div>
+                      const total = repositoryResults.items.length
+                      if (total === 0)
+                        return
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        setActiveIndex(current => (current + 1) % total)
+                      }
+                      else if (event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        setActiveIndex(current => (current <= 0 ? total - 1 : current - 1))
+                      }
+                      else if (event.key === 'Enter' && safeActiveIndex >= 0) {
+                        event.preventDefault()
+                        const chosen = repositoryResults.items[safeActiveIndex]
+                        if (chosen) {
+                          onSelectRepository(chosen)
+                          setActiveIndex(-1)
+                        }
+                      }
+                    }}
+                  />
+                  <Button
+                    disabled={!registryId || repositorySearch.trim().length < 2 || repositoryResults.isFetching}
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      onRepositoryResultsOpenChange(true)
+                      repositoryResults.refetch()
+                    }}
+                  >
+                    <Search size={16} />
+                    {t('registriesPage.searchImages')}
+                  </Button>
+                </div>
+              )}
             </Field>
             {showRepositoryResults && (
               <div
@@ -509,41 +646,49 @@ export function ImageDialog({
                 id={listboxId}
                 role="listbox"
               >
-                {repositoryResults.isFetching && (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">{t('registriesPage.searchingImages')}</p>
-                )}
-                {repositoryResults.items.map((repository, index) => (
-                  <div
-                    key={repository.name}
-                    aria-selected={safeActiveIndex === index}
-                    className={cn(
-                      'cursor-pointer rounded-control px-3 py-2 text-left transition-colors hover:bg-muted',
-                      safeActiveIndex === index && 'bg-accent text-accent-foreground',
-                    )}
-                    id={`${listboxId}-opt-${index}`}
-                    role="option"
-                    tabIndex={-1}
-                    onClick={() => {
-                      onSelectRepository(repository)
-                      setActiveIndex(-1)
-                    }}
-                    onMouseDown={event => event.preventDefault()}
-                  >
-                    <span className="block text-sm font-medium">{repository.name}</span>
-                    {repository.description && <span className="block truncate text-xs text-muted-foreground">{repository.description}</span>}
-                  </div>
-                ))}
-                {repositoryResults.isSuccess && repositoryResults.items.length === 0 && (
-                  <EmptyState description={t('registriesPage.noRepositoryResultsDescription')} title={t('registriesPage.noRepositoryResultsTitle')} variant="plain" />
-                )}
-                {repositoryResults.isError && (
-                  <ErrorState
-                    description={t('registriesPage.repositorySearchFailedDescription')}
-                    retrying={repositoryResults.isFetching}
-                    title={t('registriesPage.repositorySearchFailedTitle')}
-                    onRetry={() => repositoryResults.refetch()}
-                  />
-                )}
+                {repositoryResults.isFetching && repositoryResults.items.length === 0
+                  ? <p className="px-3 py-2 text-sm text-muted-foreground">{t('registriesPage.searchingImages')}</p>
+                  : repositoryResults.isError
+                    ? (
+                        <ErrorState
+                          description={t('registriesPage.repositorySearchFailedDescription')}
+                          retrying={repositoryResults.isFetching}
+                          title={t('registriesPage.repositorySearchFailedTitle')}
+                          onRetry={() => repositoryResults.refetch()}
+                        />
+                      )
+                    : repositoryResults.isSuccess && repositoryResults.items.length === 0
+                      ? (
+                          <EmptyState description={t('registriesPage.noRepositoryResultsDescription')} title={t('registriesPage.noRepositoryResultsTitle')} variant="plain" />
+                        )
+                      : (
+                          <>
+                            {repositoryResults.isFetching && (
+                              <p className="px-3 py-2 text-sm text-muted-foreground">{t('registriesPage.searchingImages')}</p>
+                            )}
+                            {repositoryResults.items.map((repository, index) => (
+                              <div
+                                key={repository.name}
+                                aria-selected={safeActiveIndex === index}
+                                className={cn(
+                                  'cursor-pointer rounded-control px-3 py-2 text-left transition-colors hover:bg-muted',
+                                  safeActiveIndex === index && 'bg-accent text-accent-foreground',
+                                )}
+                                id={`${listboxId}-opt-${index}`}
+                                role="option"
+                                tabIndex={-1}
+                                onClick={() => {
+                                  onSelectRepository(repository)
+                                  setActiveIndex(-1)
+                                }}
+                                onMouseDown={event => event.preventDefault()}
+                              >
+                                <span className="block text-sm font-medium">{repository.name}</span>
+                                {repository.description && <span className="block truncate text-xs text-muted-foreground">{repository.description}</span>}
+                              </div>
+                            ))}
+                          </>
+                        )}
               </div>
             )}
             <div className="grid gap-3 sm:grid-cols-2">

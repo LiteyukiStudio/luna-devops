@@ -7,12 +7,13 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { mcpDocumentationUrl } from '@/lib/documentation-url'
 import { AccessTokensPanel } from './access-tokens-panel'
-import { OAuthApplicationsPanel } from './account-oauth-panels'
+import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
 
 const apiMocks = vi.hoisted(() => ({
   createAccessToken: vi.fn(),
   listAccessTokenScopes: vi.fn(),
   listAccessTokens: vi.fn(),
+  listMyOAuthGrants: vi.fn(),
   listOAuthApplications: vi.fn(),
 }))
 
@@ -25,6 +26,7 @@ vi.mock('@/api', async () => {
       createAccessToken: apiMocks.createAccessToken,
       listAccessTokenScopes: apiMocks.listAccessTokenScopes,
       listAccessTokens: apiMocks.listAccessTokens,
+      listMyOAuthGrants: apiMocks.listMyOAuthGrants,
       listOAuthApplications: apiMocks.listOAuthApplications,
     },
   }
@@ -149,5 +151,29 @@ describe('account PAT and OAuth in-place MCP linkage', () => {
     const docsLink = screen.getByRole('link', { name: i18next.t('oauthApps.mcpDocsLink') })
     expect(docsLink).toHaveAttribute('href', mcpDocumentationUrl('zh-CN'))
     expect(docsLink).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('renders skeletons instead of empty copy while access tokens and OAuth lists are pending', () => {
+    apiMocks.listAccessTokens.mockReturnValue(new Promise(() => {}))
+    apiMocks.listOAuthApplications.mockReturnValue(new Promise(() => {}))
+    apiMocks.listMyOAuthGrants.mockReturnValue(new Promise(() => {}))
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    })
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AccessTokensPanel createDialogOpen={false} onCreateDialogOpenChange={vi.fn()} />
+          <OAuthApplicationsPanel createDialogOpen={false} onCreateDialogOpenChange={vi.fn()} />
+          <OAuthGrantsPanel />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    expect(screen.queryByText(i18next.t('accessTokens.empty'))).not.toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('oauthApps.emptyApplications'))).not.toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('oauthApps.emptyGrants'))).not.toBeInTheDocument()
   })
 })

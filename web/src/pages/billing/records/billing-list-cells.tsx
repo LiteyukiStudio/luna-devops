@@ -1,5 +1,6 @@
 import type { BillingDeploymentSpend, Project } from '@/api'
 import type { useBillingDisplay } from '@/lib/billing-display'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 export type BillingDisplay = ReturnType<typeof useBillingDisplay>
@@ -12,18 +13,31 @@ export interface BillingListPage<T> {
   totalPages: number
 }
 
+export interface BillingListError {
+  description?: string
+  onRetry?: () => void
+  retrying?: boolean
+  title: string
+}
+
 export function ProjectCell({
   fallbackName,
   fallbackIdentifier,
+  loading = false,
   project,
   unknownLabel,
 }: {
   fallbackName?: string
   fallbackIdentifier?: string
+  loading?: boolean
   project?: Project
   unknownLabel: string
 }) {
-  const name = project?.name || fallbackName || unknownLabel
+  const resolvedName = project?.name || fallbackName
+  if (!resolvedName && loading) {
+    return <Skeleton className="h-4 w-24" />
+  }
+  const name = resolvedName || unknownLabel
   const identifier = project?.identifier || fallbackIdentifier || '-'
   return (
     <span className="block min-w-0">

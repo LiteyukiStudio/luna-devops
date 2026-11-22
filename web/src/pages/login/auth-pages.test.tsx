@@ -129,4 +129,34 @@ describe('authentication form payloads', () => {
     expect(form?.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
     expect(form?.querySelector('input[autocomplete="one-time-code"]')).toHaveAttribute('name', 'verification-code')
   })
+
+  it('renders an explicit loading card skeleton on RegisterPage while status is pending and retries on error', async () => {
+    mocks.getAuthRegistrationStatus.mockReturnValueOnce(new Promise(() => {}))
+    const { unmount } = renderPage(<RegisterPage />)
+
+    expect(screen.getByRole('status', { name: i18next.t('common.loading') })).toBeInTheDocument()
+    unmount()
+
+    mocks.getAuthRegistrationStatus
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce({ emailRegistrationEnabled: true })
+    const user = userEvent.setup()
+    renderPage(<RegisterPage />)
+
+    expect(await screen.findByText(i18next.t('loginPage.registration.statusFailedTitle'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    expect(await screen.findByRole('heading', { name: i18next.t('loginPage.registration.title') })).toBeInTheDocument()
+  })
+
+  it('renders provider skeleton while pending and retryable error on LoginPage when providers fail', async () => {
+    mocks.listAuthProviders
+      .mockRejectedValueOnce(new Error('oidc discovery down'))
+      .mockResolvedValueOnce([{ id: 'oidc_1', name: 'Liteyuki SSO' }])
+    const user = userEvent.setup()
+    renderPage(<LoginPage />)
+
+    expect(await screen.findByText(i18next.t('errors.request.failed'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    expect(await screen.findByRole('button', { name: i18next.t('loginPage.useProviderLogin', { provider: 'Liteyuki SSO' }) })).toBeInTheDocument()
+  })
 })

@@ -8,25 +8,35 @@ import { UserAvatar } from '@/components/common/user-avatar'
 const ALL_USERS_VALUE = '__all_users__'
 
 interface UserSelectProps {
-  allLabel?: string
-  ariaLabel?: string
-  className?: string
-  disabled?: boolean
-  emptyLabel?: string
-  includeAll?: boolean
-  placeholder: string
-  users: User[]
-  value: string
-  onChange: (value: string) => void
+  'aria-describedby'?: string
+  'aria-invalid'?: boolean | 'true' | 'false'
+  'allLabel'?: string
+  'ariaLabel'?: string
+  'className'?: string
+  'disabled'?: boolean
+  'emptyLabel'?: string
+  'error'?: boolean
+  'id'?: string
+  'includeAll'?: boolean
+  'loading'?: boolean
+  'placeholder': string
+  'users': User[]
+  'value': string
+  'onChange': (value: string) => void
 }
 
 export function UserSelect({
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   allLabel,
   ariaLabel,
   className,
   disabled,
   emptyLabel,
+  error,
+  id,
   includeAll = false,
+  loading,
   placeholder,
   users,
   value,
@@ -53,10 +63,15 @@ export function UserSelect({
 
   return (
     <SearchSelect
-      ariaLabel={ariaLabel ?? placeholder}
+      aria-describedby={ariaDescribedBy}
+      aria-invalid={ariaInvalid}
+      ariaLabel={ariaLabel ?? (id ? undefined : placeholder)}
       className={className}
       disabled={disabled}
       emptyLabel={emptyLabel}
+      error={error}
+      id={id}
+      loading={loading}
       options={options}
       placeholder={placeholder}
       searchPlaceholder={t('common.search')}

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
+import { ErrorState } from '@/components/common/error-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 
@@ -34,7 +35,16 @@ export function ClusterNetworkShareApprovals({ cluster }: { cluster: RuntimeClus
     },
     onError: error => toast.error(error.message),
   })
-  if (!approvals.isError && (approvals.data?.total ?? 0) === 0)
+  if (approvals.isError) {
+    return (
+      <ErrorState
+        retrying={approvals.isFetching}
+        title={t('clustersPage.shareApprovals.loadFailed')}
+        onRetry={() => void approvals.refetch()}
+      />
+    )
+  }
+  if ((approvals.data?.total ?? 0) === 0)
     return null
   return (
     <div className="grid gap-3">
@@ -57,9 +67,8 @@ export function ClusterNetworkShareApprovals({ cluster }: { cluster: RuntimeClus
           },
         ]}
         emptyTitle={t('clustersPage.shareApprovals.emptyTitle')}
-        error={approvals.isError ? { title: t('clustersPage.shareApprovals.loadFailed'), onRetry: () => void approvals.refetch(), retrying: approvals.isFetching } : undefined}
         items={approvals.data?.items ?? []}
-        loading={approvals.isLoading}
+        loading={approvals.isPending}
         pagination={{
           page: approvals.data?.page ?? page,
           pageSize: approvals.data?.pageSize ?? pageSize,

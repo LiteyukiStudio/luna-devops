@@ -30,6 +30,7 @@ const nav = {
     placeholder: 'アプリ、ドメイン、テンプレート、リポジトリ、ID、ページを検索（app: / host: / template: 対応）…',
     empty: '一致する結果はありません',
     contextEmptyHint: '「{{context}}」内を検索します。Backspace キーで全体検索に戻ります',
+    scopeEmptyHint: 'キーワードを入力して「{{scope}}」を検索',
     clearContextChip: '{{context}}フィルターを解除して全体検索に戻る',
     searching: 'プラットフォームリソースを検索中…',
     searchFailed: 'プラットフォームリソースの検索に失敗しました。再試行してください。',

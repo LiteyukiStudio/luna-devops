@@ -8,7 +8,7 @@ import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
@@ -17,6 +17,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { FloatingFormSaveBar } from '@/components/common/floating-form-save-bar'
 import { FormField as Field } from '@/components/common/form-field'
 import { HelpTip } from '@/components/common/help-tip'
+import { SettingsSkeleton } from '@/components/common/loading-states'
 import { PageShell } from '@/components/common/page-shell'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
@@ -25,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
@@ -244,19 +246,23 @@ export function AuthProvidersPage() {
         onValueChange={setActiveTab}
       >
         <TabsContent value="providers">
-          {providers.isError
-            ? <ErrorState title={t('authProvidersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />
-            : (
-                <DataList
-                  columns={providerColumns}
-                  emptyDescription={t('authProvidersPage.description')}
-                  emptyIcon={<KeyRound className="size-5" />}
-                  emptyTitle={t('authProvidersPage.emptyTitle')}
-                  items={providers.data ?? []}
-                  loading={providers.isLoading}
-                  rowKey={provider => provider.id}
-                />
-              )}
+          <DataList
+            columns={providerColumns}
+            emptyDescription={t('authProvidersPage.description')}
+            emptyIcon={<KeyRound className="size-5" />}
+            emptyTitle={t('authProvidersPage.emptyTitle')}
+            error={providers.isError
+              ? {
+                  description: adminLoadErrorDescription(providers.error, t),
+                  onRetry: () => void providers.refetch(),
+                  retrying: providers.isFetching,
+                  title: t('authProvidersPage.loadFailedTitle'),
+                }
+              : undefined}
+            items={providers.data ?? []}
+            loading={providers.isPending}
+            rowKey={provider => provider.id}
+          />
         </TabsContent>
 
         <Dialog
@@ -280,18 +286,32 @@ export function AuthProvidersPage() {
                   {t('authProvidersPage.callbackUrl')}
                   <HelpTip label={t('authProvidersPage.callbackUrl')}>{t('authProvidersPage.callbackUrlHint')}</HelpTip>
                 </p>
-                {oidcCallbackConfig.data?.configured
+                {oidcCallbackConfig.isPending
                   ? (
-                      <div className="flex min-w-0 items-center gap-2">
-                        <code className="min-w-0 flex-1 truncate rounded-control border border-border bg-surface-raised px-2 py-1.5 font-mono text-xs text-muted-foreground">
-                          {oidcCallbackConfig.data.callbackUrl}
-                        </code>
-                        <Button aria-label={t('authProvidersPage.copyCallbackUrl')} size="icon" type="button" variant="outline" onClick={copyOIDCCallbackURL}>
-                          <Copy size={14} />
-                        </Button>
+                      <div aria-label={t('common.loading')} role="status">
+                        <Skeleton className="h-8 w-full rounded-control" />
                       </div>
                     )
-                  : <p className="text-sm text-danger">{t('authProvidersPage.callbackUrlMissing')}</p>}
+                  : oidcCallbackConfig.isError
+                    ? (
+                        <ErrorState
+                          retrying={oidcCallbackConfig.isFetching}
+                          title={t('errors.request.failed')}
+                          onRetry={() => void oidcCallbackConfig.refetch()}
+                        />
+                      )
+                    : oidcCallbackConfig.data.configured
+                      ? (
+                          <div className="flex min-w-0 items-center gap-2">
+                            <code className="min-w-0 flex-1 truncate rounded-control border border-border bg-surface-raised px-2 py-1.5 font-mono text-xs text-muted-foreground">
+                              {oidcCallbackConfig.data.callbackUrl}
+                            </code>
+                            <Button aria-label={t('authProvidersPage.copyCallbackUrl')} size="icon" type="button" variant="outline" onClick={copyOIDCCallbackURL}>
+                              <Copy size={14} />
+                            </Button>
+                          </div>
+                        )
+                      : <p className="text-sm text-danger">{t('authProvidersPage.callbackUrlMissing')}</p>}
               </Surface>
               <Field error={providerForm.formState.errors.name?.message} hint={t('authProvidersPage.nameHint')} label={t('authProvidersPage.name')} required>
                 <Input {...providerForm.register('name')} aria-invalid={Boolean(providerForm.formState.errors.name)} placeholder={t('authProvidersPage.namePlaceholder')} />
@@ -362,85 +382,94 @@ export function AuthProvidersPage() {
         </Dialog>
 
         <TabsContent value="policy">
-          {policy.isError
-            ? <ErrorState title={t('authProvidersPage.policyLoadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />
-            : (
-                <form className="grid max-w-3xl gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
-                  <Surface className="grid gap-5 p-6" variant="bordered">
-                    <div className="grid gap-3 @xl/workspace:grid-cols-2">
-                      <Controller
-                        control={policyForm.control}
-                        name="allowLocalLogin"
-                        render={({ field }) => (
-                          <ControlledCheckboxField field={field}>
-                            {t('authProvidersPage.allowLocalLogin')}
-                          </ControlledCheckboxField>
-                        )}
-                      />
-                      <Controller
-                        control={policyForm.control}
-                        name="allowOidcLogin"
-                        render={({ field }) => (
-                          <ControlledCheckboxField field={field}>
-                            {t('authProvidersPage.allowOidcLogin')}
-                          </ControlledCheckboxField>
-                        )}
-                      />
-                      <Controller
-                        control={policyForm.control}
-                        name="requireVerifiedOidcEmail"
-                        render={({ field }) => (
-                          <ControlledCheckboxField
-                            className="@xl/workspace:col-span-2"
-                            description={t('authProvidersPage.requireVerifiedOidcEmailHint')}
-                            field={field}
-                          >
-                            {t('authProvidersPage.requireVerifiedOidcEmail')}
-                          </ControlledCheckboxField>
-                        )}
-                      />
-                    </div>
-                    <div className="grid gap-4 @xl/workspace:grid-cols-2">
-                      <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
-                        <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} rows={2} />
-                      </Field>
-                      <Field error={policyForm.formState.errors.allowedOidcGroups?.message} hint={t('authProvidersPage.allowedOidcGroupsHint')} label={t('authProvidersPage.allowedOidcGroups')}>
-                        <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder={t('authProvidersPage.allowedOidcGroupsPlaceholder')} rows={2} />
-                      </Field>
-                    </div>
-                    <Field error={policyForm.formState.errors.invitedEmails?.message} hint={t('authProvidersPage.invitedEmailsHint')} label={t('authProvidersPage.invitedEmails')}>
-                      <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} rows={2} />
-                    </Field>
-                    <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
-                      {fieldControl => (
+          {policy.isPending
+            ? <SettingsSkeleton />
+            : policy.isError
+              ? (
+                  <ErrorState
+                    description={adminLoadErrorDescription(policy.error, t)}
+                    retrying={policy.isFetching}
+                    title={t('authProvidersPage.policyLoadFailedTitle')}
+                    onRetry={() => void policy.refetch()}
+                  />
+                )
+              : (
+                  <form className="grid max-w-3xl gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
+                    <Surface className="grid gap-5 p-6" variant="bordered">
+                      <div className="grid gap-3 @xl/workspace:grid-cols-2">
                         <Controller
                           control={policyForm.control}
-                          name="defaultRole"
+                          name="allowLocalLogin"
                           render={({ field }) => (
-                            <Select name={field.name} value={field.value} onValueChange={field.onChange}>
-                              <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={PlatformRole.User}>{t('usersPage.normalUser')}</SelectItem>
-                                <SelectItem value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <ControlledCheckboxField field={field}>
+                              {t('authProvidersPage.allowLocalLogin')}
+                            </ControlledCheckboxField>
                           )}
                         />
-                      )}
-                    </Field>
-                  </Surface>
-                  <FloatingFormSaveBar
-                    open={policyForm.formState.isDirty}
-                    pending={savePolicy.isPending}
-                    saveDisabled={!policyForm.formState.isValid}
-                    saveLabel={t('authProvidersPage.savePolicy')}
-                    tone={policyForm.formState.isValid ? 'primary' : 'danger'}
-                    onDiscard={() => policyForm.reset(policy.data ? policyToFormValues(policy.data) : policyDefaults)}
-                  />
-                </form>
-              )}
+                        <Controller
+                          control={policyForm.control}
+                          name="allowOidcLogin"
+                          render={({ field }) => (
+                            <ControlledCheckboxField field={field}>
+                              {t('authProvidersPage.allowOidcLogin')}
+                            </ControlledCheckboxField>
+                          )}
+                        />
+                        <Controller
+                          control={policyForm.control}
+                          name="requireVerifiedOidcEmail"
+                          render={({ field }) => (
+                            <ControlledCheckboxField
+                              className="@xl/workspace:col-span-2"
+                              description={t('authProvidersPage.requireVerifiedOidcEmailHint')}
+                              field={field}
+                            >
+                              {t('authProvidersPage.requireVerifiedOidcEmail')}
+                            </ControlledCheckboxField>
+                          )}
+                        />
+                      </div>
+                      <div className="grid gap-4 @xl/workspace:grid-cols-2">
+                        <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
+                          <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} rows={2} />
+                        </Field>
+                        <Field error={policyForm.formState.errors.allowedOidcGroups?.message} hint={t('authProvidersPage.allowedOidcGroupsHint')} label={t('authProvidersPage.allowedOidcGroups')}>
+                          <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder={t('authProvidersPage.allowedOidcGroupsPlaceholder')} rows={2} />
+                        </Field>
+                      </div>
+                      <Field error={policyForm.formState.errors.invitedEmails?.message} hint={t('authProvidersPage.invitedEmailsHint')} label={t('authProvidersPage.invitedEmails')}>
+                        <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} rows={2} />
+                      </Field>
+                      <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
+                        {fieldControl => (
+                          <Controller
+                            control={policyForm.control}
+                            name="defaultRole"
+                            render={({ field }) => (
+                              <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+                                <SelectTrigger {...fieldControl} ref={field.ref} className="w-full" onBlur={field.onBlur}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={PlatformRole.User}>{t('usersPage.normalUser')}</SelectItem>
+                                  <SelectItem value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
+                        )}
+                      </Field>
+                    </Surface>
+                    <FloatingFormSaveBar
+                      open={policyForm.formState.isDirty}
+                      pending={savePolicy.isPending}
+                      saveDisabled={!policyForm.formState.isValid}
+                      saveLabel={t('authProvidersPage.savePolicy')}
+                      tone={policyForm.formState.isValid ? 'primary' : 'danger'}
+                      onDiscard={() => policyForm.reset(policy.data ? policyToFormValues(policy.data) : policyDefaults)}
+                    />
+                  </form>
+                )}
         </TabsContent>
       </ContentTabs>
     </PageShell>
@@ -461,4 +490,10 @@ function policyToFormValues(policy: AuthAdmissionPolicy): PolicyForm {
 
 function splitText(value: string) {
   return value.split(/[\n,]/).map(item => item.trim()).filter(Boolean)
+}
+
+function adminLoadErrorDescription(error: unknown, t: (key: string) => string) {
+  if (error instanceof ApiError && error.status === 403)
+    return t('common.platformAdminPermissionRequired')
+  return error instanceof Error ? error.message : undefined
 }

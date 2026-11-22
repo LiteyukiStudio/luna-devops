@@ -7,7 +7,6 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { DataList } from '@/components/common/data-list'
-import { ErrorState } from '@/components/common/error-state'
 import { HelpTip } from '@/components/common/help-tip'
 import { StatusBadge } from '@/components/common/status-badge'
 
@@ -81,23 +80,22 @@ export function BillingPriceList({ billingDisplay }: { billingDisplay: PriceDisp
     },
   ], [billingDisplay, t])
 
-  if (rateRules.isError) {
-    return (
-      <ErrorState
-        description={t('billingPage.priceTableLoadFailedDescription')}
-        title={t('billingPage.priceTableLoadFailedTitle')}
-      />
-    )
-  }
-
   return (
     <DataList
       columns={columns}
       emptyDescription={t('billingPage.emptyPriceTableDescription')}
       emptyIcon={<ReceiptText className="size-5" />}
       emptyTitle={t('billingPage.emptyPriceTableTitle')}
+      error={rateRules.isError
+        ? {
+            description: t('billingPage.priceTableLoadFailedDescription'),
+            onRetry: () => void rateRules.refetch(),
+            retrying: rateRules.isFetching,
+            title: t('billingPage.priceTableLoadFailedTitle'),
+          }
+        : undefined}
       items={resourceRateRules}
-      loading={rateRules.isLoading}
+      loading={rateRules.isPending}
       rowKey={rule => rule.meter}
     />
   )

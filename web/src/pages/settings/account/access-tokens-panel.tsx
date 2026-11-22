@@ -12,6 +12,7 @@ import { api } from '@/api'
 import { AccessTokenScopeBadges, AccessTokenScopeSelector } from '@/components/common/access-token-scope-selector'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
@@ -191,7 +192,15 @@ export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange, 
       <DataList
         columns={columns}
         emptyTitle={t('accessTokens.empty')}
+        error={tokens.isError
+          ? {
+              onRetry: () => void tokens.refetch(),
+              retrying: tokens.isFetching,
+              title: t('errors.request.failed'),
+            }
+          : undefined}
         items={tokenItems}
+        loading={tokens.isPending}
         pagination={{
           page: tokens.data?.page ?? page,
           pageSize: tokens.data?.pageSize ?? pageSize,
@@ -237,12 +246,22 @@ export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange, 
               <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('accessTokens.namePlaceholder')} />
             </Field>
             <Field error={form.formState.errors.scopes?.message} hint={t('accessTokens.scopeHint')} label={t('accessTokens.scope')} required>
-              <AccessTokenScopeSelector
-                items={scopeCatalog.data?.items ?? []}
-                loading={scopeCatalog.isLoading}
-                value={selectedScopes}
-                onChange={value => form.setValue('scopes', value, { shouldDirty: true, shouldValidate: true })}
-              />
+              {scopeCatalog.isError
+                ? (
+                    <ErrorState
+                      retrying={scopeCatalog.isFetching}
+                      title={t('errors.request.failed')}
+                      onRetry={() => void scopeCatalog.refetch()}
+                    />
+                  )
+                : (
+                    <AccessTokenScopeSelector
+                      items={scopeCatalog.data?.items ?? []}
+                      loading={scopeCatalog.isPending}
+                      value={selectedScopes}
+                      onChange={value => form.setValue('scopes', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                  )}
             </Field>
             <Field error={form.formState.errors.expiresInDays?.message} hint={t('accessTokens.expiresInDaysHint')} label={t('accessTokens.expiresInDays')} required>
               {fieldControl => (
@@ -274,7 +293,7 @@ export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange, 
               <DialogClose asChild>
                 <Button disabled={createToken.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
               </DialogClose>
-              <Button disabled={createToken.isPending || !form.formState.isValid} type="submit">
+              <Button disabled={createToken.isPending || scopeCatalog.isPending || scopeCatalog.isError || !form.formState.isValid} type="submit">
                 <Plus size={16} />
                 {t('accessTokens.create')}
               </Button>

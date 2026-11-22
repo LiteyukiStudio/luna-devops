@@ -49,7 +49,20 @@ interface ConsoleTarget {
   release: Release
 }
 
-export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deploymentTargets, listState, projectId, projectWebConsoleEnabled, ref, releases, routes, runtimeSummary }: {
+export function ApplicationDeploymentsPanel({
+  applicationId,
+  buildRuns,
+  deploymentTargets,
+  listState,
+  projectId,
+  projectWebConsoleEnabled,
+  ref,
+  releases,
+  routes,
+  routesError = false,
+  routesLoading = false,
+  runtimeSummary,
+}: {
   applicationId: string
   buildRuns: BuildRun[]
   deploymentTargets: DeploymentTarget[]
@@ -59,6 +72,8 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
   ref?: React.Ref<DeploymentsPanelHandle>
   releases: Release[]
   routes: GatewayRoute[]
+  routesError?: boolean
+  routesLoading?: boolean
   /** 后端统一的应用运行结论；提供每个部署配置是否已有成功发布。 */
   runtimeSummary?: ApplicationDeploymentSummary
 }) {
@@ -138,21 +153,33 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
   const workloadResourcesByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => [clusterId, workloadResourceQueries[index]?.data ?? []] as const)), [workloadClusterIds, workloadResourceQueries])
   const workloadLoadingByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => {
     const query = workloadResourceQueries[index]
-    return [clusterId, Boolean(query?.isLoading && !query.data)] as const
+    return [clusterId, Boolean(query?.isPending && !query.data)] as const
   })), [workloadClusterIds, workloadResourceQueries])
   const workloadErrorByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => [clusterId, Boolean(workloadResourceQueries[index]?.isError)] as const)), [workloadClusterIds, workloadResourceQueries])
   const serviceResourcesByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => [clusterId, serviceResourceQueries[index]?.data ?? []] as const)), [serviceResourceQueries, workloadClusterIds])
+  const serviceLoadingByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => {
+    const query = serviceResourceQueries[index]
+    return [clusterId, Boolean(query?.isPending && !query.data)] as const
+  })), [serviceResourceQueries, workloadClusterIds])
+  const serviceErrorByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => [clusterId, Boolean(serviceResourceQueries[index]?.isError)] as const)), [serviceResourceQueries, workloadClusterIds])
   const deploymentRows = useMemo(() => deploymentTargets.map((target) => {
     const clusterId = target.effectiveClusterId
     const targetSummary = runtimeSummary?.targets.find(item => item.id === target.id)
     const release = latestReleaseByTarget[deploymentReleaseKey(target.id)]
+    const serviceError = Boolean(clusterId && serviceErrorByCluster[clusterId])
     return {
+      clusterError: Boolean(clusterId && runtimeClusters.isError),
+      clusterLoading: Boolean(clusterId && runtimeClusters.isPending),
       // 只有后端明确判定为未部署时才隐藏实时状态；结论加载中或不可用时如实展示观察值。
       deployed: targetSummary ? targetSummary.status !== 'not-deployed' : true,
-      internalEndpoint: buildInternalServiceEndpoint(target, serviceResourcesByCluster[clusterId] ?? []),
+      internalEndpoint: serviceError ? undefined : buildInternalServiceEndpoint(target, serviceResourcesByCluster[clusterId] ?? []),
+      internalEndpointError: serviceError,
+      internalEndpointLoading: Boolean(clusterId && serviceLoadingByCluster[clusterId]),
       release,
       rollbackTo: release ? previousSuccessfulRelease(releases, release) : undefined,
-      routes: routes.filter(route => route.deploymentTargetId === target.id),
+      routes: routesError ? [] : routes.filter(route => route.deploymentTargetId === target.id),
+      routesError,
+      routesLoading,
       runtimeStatus: buildDeploymentRuntimeStatus(
         target,
         runtimeClusterMap[clusterId],
@@ -163,7 +190,7 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
       target,
       webConsoleEnabled: effectiveWebConsoleEnabled(projectWebConsoleEnabled, target.webConsoleEnabled),
     }
-  }), [deploymentTargets, latestReleaseByTarget, projectWebConsoleEnabled, releases, routes, runtimeClusterMap, runtimeSummary, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
+  }), [deploymentTargets, latestReleaseByTarget, projectWebConsoleEnabled, releases, routes, routesError, routesLoading, runtimeClusterMap, runtimeClusters.isError, runtimeClusters.isPending, runtimeSummary, serviceErrorByCluster, serviceLoadingByCluster, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
   const openTargetEditor = (target?: DeploymentTarget) => {
     const base = `/projects/${projectId}/apps/${applicationId}/deployments`
     navigate(target ? `${base}/${target.id}/edit` : `${base}/new`)

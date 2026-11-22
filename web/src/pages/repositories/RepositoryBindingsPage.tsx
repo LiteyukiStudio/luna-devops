@@ -13,7 +13,6 @@ import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { GitRepositoryPicker } from '@/components/common/git-repository-picker'
 import { SearchSelect } from '@/components/common/search-select'
@@ -28,6 +27,7 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 const bindingSchema = z.object({
   applicationId: z.string().min(1, { error: () => i18next.t('repositories.applicationRequired') }),
   gitAccountId: z.string().min(1, { error: () => i18next.t('repositories.gitAccountRequired') }),
+  providerId: z.string().optional(),
   owner: z.string().min(1, { error: () => i18next.t('repositories.ownerRequired') }),
   repo: z.string().min(1, { error: () => i18next.t('repositories.repoRequired') }),
   cloneUrl: z.string().optional(),
@@ -83,6 +83,7 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
     defaultValues: {
       applicationId: '',
       gitAccountId: '',
+      providerId: '',
       owner: '',
       repo: '',
       cloneUrl: '',
@@ -91,13 +92,16 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
     },
   })
   const selectedAccountId = form.watch('gitAccountId')
+  const watchedProviderId = form.watch('providerId')
   const selectedApplicationId = applicationId ?? form.watch('applicationId')
   const selectedOwner = form.watch('owner')
   const selectedRepo = form.watch('repo')
   const selectedProviderId = useMemo(() => {
+    if (selectedAccountId === 'anonymous')
+      return watchedProviderId || editingBinding?.gitProviderId || ''
     const selectedAccount = (accounts.data ?? []).find(account => account.id === selectedAccountId)
-    return selectedAccount?.providerId ?? editingBinding?.gitProviderId ?? ''
-  }, [accounts.data, editingBinding?.gitProviderId, selectedAccountId])
+    return selectedAccount?.providerId ?? watchedProviderId ?? editingBinding?.gitProviderId ?? ''
+  }, [accounts.data, editingBinding?.gitProviderId, selectedAccountId, watchedProviderId])
   const duplicateBinding = useMemo(() => {
     if (!selectedApplicationId || !selectedProviderId || !selectedOwner || !selectedRepo)
       return undefined
@@ -164,6 +168,7 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
     form.reset({
       applicationId: binding?.applicationId ?? applicationId ?? '',
       gitAccountId: binding?.gitAccountId ?? '',
+      providerId: binding?.gitProviderId ?? '',
       owner: binding?.owner ?? '',
       repo: binding?.repo ?? '',
       cloneUrl: binding?.cloneUrl ?? '',
@@ -179,12 +184,14 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
     setDialogOpen(true)
   }
 
+  const activeBindingsQuery = applicationId ? allBindings : bindingsPage
+  const listLoading = Boolean(projectId) && (activeBindingsQuery.isPending || providers.isPending || accounts.isPending)
+  const failedListQueries = [activeBindingsQuery, providers, accounts].filter(query => query.isError)
+  const branchesEnabled = Boolean(selectedAccountId && selectedOwner && selectedRepo)
+  const applicationItems = applications.data ?? []
+
   return (
     <div className="grid gap-6">
-      {(providers.isError || accounts.isError || bindingsPage.isError || allBindings.isError) && (
-        <ErrorState title={t('repositories.loadFailedTitle')} description={t('repositories.loadFailedDescription')} />
-      )}
-
       <DataList
         columns={[
           {
@@ -243,7 +250,16 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
         ]}
         emptyTitle={t('repositories.emptyTitle')}
         emptyDescription={t('repositories.emptyDescription')}
+        error={failedListQueries.length > 0
+          ? {
+              description: t('repositories.loadFailedDescription'),
+              onRetry: () => failedListQueries.forEach(query => void query.refetch()),
+              retrying: failedListQueries.some(query => query.isFetching),
+              title: t('repositories.loadFailedTitle'),
+            }
+          : undefined}
         items={visibleBindings}
+        loading={listLoading}
         pagination={!applicationId
           ? {
               page: bindingsPage.data?.page ?? page,
@@ -303,36 +319,66 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
               : (
                   <Field error={form.formState.errors.applicationId?.message} label={t('repositories.application')} required>
                     {fieldControl => (
-                      <Controller
-                        control={form.control}
-                        name="applicationId"
-                        render={({ field }) => (
-                          <Select
-                            value={field.value || undefined}
-                            onValueChange={(next) => {
-                              if (next)
-                                field.onChange(next)
-                            }}
-                          >
-                            <SelectTrigger {...fieldControl} className="w-full">
-                              <SelectValue placeholder={t('repositories.selectApplication')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(applications.data ?? []).map(application => (
-                                <SelectItem key={application.id} value={application.id}>{application.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                      <div className="grid gap-1.5">
+                        <Controller
+                          control={form.control}
+                          name="applicationId"
+                          render={({ field }) => (
+                            <Select
+                              disabled={applications.isPending || applications.isError}
+                              value={!applications.isPending && !applications.isError && applicationItems.some(application => application.id === field.value) ? field.value : ''}
+                              onValueChange={(next) => {
+                                if (next)
+                                  field.onChange(next)
+                              }}
+                            >
+                              <SelectTrigger {...fieldControl} className="w-full">
+                                <SelectValue
+                                  placeholder={
+                                    applications.isPending
+                                      ? t('common.loading')
+                                      : applications.isError
+                                        ? t('common.unavailable')
+                                        : applicationItems.length === 0
+                                          ? t('common.noOptions')
+                                          : t('repositories.selectApplication')
+                                  }
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {applicationItems.length === 0
+                                  ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                                  : applicationItems.map(application => (
+                                      <SelectItem key={application.id} value={application.id}>{application.name}</SelectItem>
+                                    ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                        {applications.isError && (
+                          <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                            <span>{t('common.unavailable')}</span>
+                            <Button disabled={applications.isFetching} size="sm" type="button" variant="outline" onClick={() => void applications.refetch()}>
+                              {t('common.retry')}
+                            </Button>
+                          </div>
                         )}
-                      />
+                      </div>
                     )}
                   </Field>
                 )}
             <GitRepositoryPicker
               accounts={accounts.data ?? []}
+              accountsError={accounts.isError}
+              accountsLoading={accounts.isPending}
+              accountsRetrying={accounts.isFetching}
               providers={providers.data ?? []}
+              providersError={providers.isError}
+              providersLoading={providers.isPending}
+              providersRetrying={providers.isFetching}
               value={{
                 gitAccountId: form.watch('gitAccountId') || '',
+                providerId: watchedProviderId || editingBinding?.gitProviderId || '',
                 owner: form.watch('owner') || '',
                 repo: form.watch('repo') || '',
                 cloneUrl: form.watch('cloneUrl') || '',
@@ -340,12 +386,15 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
               }}
               onChange={(next) => {
                 form.setValue('gitAccountId', next.gitAccountId, { shouldDirty: true, shouldValidate: true })
+                form.setValue('providerId', next.providerId ?? '', { shouldDirty: true, shouldValidate: true })
                 form.setValue('owner', next.owner, { shouldDirty: true, shouldValidate: true })
                 form.setValue('repo', next.repo, { shouldDirty: true, shouldValidate: true })
                 form.setValue('cloneUrl', next.cloneUrl, { shouldDirty: true, shouldValidate: true })
                 form.setValue('defaultBranch', next.defaultBranch || 'main', { shouldDirty: true, shouldValidate: true })
                 setBranchSearch('')
               }}
+              onRetryAccounts={() => void accounts.refetch()}
+              onRetryProviders={() => void providers.refetch()}
             />
             {duplicateBinding && (
               <p className="text-sm text-destructive">{t('repositories.duplicateBinding')}</p>
@@ -354,18 +403,32 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
               <Field error={form.formState.errors.owner?.message} label={t('repositories.owner')} required><Input {...form.register('owner')} aria-invalid={Boolean(form.formState.errors.owner)} placeholder={t('repositories.ownerPlaceholder')} /></Field>
               <Field error={form.formState.errors.repo?.message} label={t('repositories.repo')} required><Input {...form.register('repo')} aria-invalid={Boolean(form.formState.errors.repo)} placeholder={t('repositories.repoPlaceholder')} /></Field>
               <Field error={form.formState.errors.defaultBranch?.message} label={t('repositories.defaultBranch')}>
-                <SearchSelect
-                  disabled={!selectedAccountId || !selectedOwner || !selectedRepo}
-                  emptyLabel={t('repositories.noBranches')}
-                  limited={branches.data?.limited}
-                  loading={branches.isFetching}
-                  options={branchOptions(branches.data?.items ?? [], form.watch('defaultBranch'))}
-                  placeholder={t('repositories.defaultBranchPlaceholder')}
-                  search={branchSearch}
-                  value={form.watch('defaultBranch') || ''}
-                  onSearchChange={setBranchSearch}
-                  onValueChange={value => form.setValue('defaultBranch', value, { shouldDirty: true, shouldValidate: true })}
-                />
+                {fieldControl => (
+                  <div className="grid gap-1.5">
+                    <SearchSelect
+                      {...fieldControl}
+                      disabled={!branchesEnabled}
+                      emptyLabel={branches.isError ? t('common.unavailable') : t('repositories.noBranches')}
+                      error={branchesEnabled && branches.isError}
+                      limited={branches.data?.limited}
+                      loading={branchesEnabled && (branches.isPending || branches.isFetching)}
+                      options={branchOptions(branches.data?.items ?? [], form.watch('defaultBranch'))}
+                      placeholder={branchesEnabled && branches.isPending ? t('common.loading') : t('repositories.defaultBranchPlaceholder')}
+                      search={branchSearch}
+                      value={form.watch('defaultBranch') || ''}
+                      onSearchChange={setBranchSearch}
+                      onValueChange={value => form.setValue('defaultBranch', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                    {branchesEnabled && branches.isError && (
+                      <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                        <span>{t('common.unavailable')}</span>
+                        <Button disabled={branches.isFetching} size="sm" type="button" variant="outline" onClick={() => void branches.refetch()}>
+                          {t('common.retry')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Field>
             </div>
             <div className="grid gap-3">
@@ -387,7 +450,7 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
               <DialogClose asChild>
                 <Button disabled={updateBinding.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
               </DialogClose>
-              <Button disabled={updateBinding.isPending || (accounts.data ?? []).length === 0 || !form.formState.isValid || Boolean(duplicateBinding)} type="submit">
+              <Button disabled={updateBinding.isPending || (selectedAccountId !== 'anonymous' && (accounts.isPending || (accounts.data ?? []).length === 0)) || !form.formState.isValid || Boolean(duplicateBinding)} type="submit">
                 <Save size={16} />
                 {t('save')}
               </Button>

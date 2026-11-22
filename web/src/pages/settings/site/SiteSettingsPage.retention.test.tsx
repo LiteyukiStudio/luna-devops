@@ -169,4 +169,24 @@ describe('site settings page', () => {
     expect(container.querySelectorAll('form')).toHaveLength(1)
     expect(container.querySelector('form form')).toBeNull()
   })
+
+  it('keeps settings tabs accessible while rendering retryable ErrorState in config sections when values fail to load', async () => {
+    mocks.getConfigs
+      .mockRejectedValueOnce(new Error('configs unavailable'))
+      .mockResolvedValueOnce({ 'retention.buildLogsDays': '30' })
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText(i18next.t('settings.configDefinitionsFailedTitle'))).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18next.t('settings.siteConfigTitle') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18next.t('settings.buildConfigTitle') })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: i18next.t('settings.buildConfigTitle') }))
+    expect(screen.getByRole('heading', { name: i18next.t('buildsPage.globalBuildEnvironment') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: i18next.t('common.edit') })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: i18next.t('settings.siteConfigTitle') }))
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    await waitFor(() => expect(screen.queryByText(i18next.t('settings.configDefinitionsFailedTitle'))).not.toBeInTheDocument())
+  })
 })

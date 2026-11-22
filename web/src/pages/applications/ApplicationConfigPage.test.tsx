@@ -271,6 +271,77 @@ describe('application config page', () => {
     await user.click(within(popover).getByRole('button', { name: 'New deploy config' }))
     expect(await screen.findByText('deploy config editor')).toBeVisible()
   })
+
+  it('does not flash the onboarding deploy guide while application runtime observation is still pending', async () => {
+    let resolveRuntime!: (value: unknown) => void
+    mocks.listDeploymentTargets.mockResolvedValue([productionTarget])
+    mocks.listReleases.mockResolvedValue([{
+      id: 'rel_1',
+      applicationId: 'app_1',
+      deploymentTargetId: 'dpt_1',
+      imageRef: 'registry.example.test/app:v1',
+      status: 'succeeded',
+      createdAt: '2026-10-06T00:00:00Z',
+      revision: 1,
+      type: 'deploy',
+    }])
+    mocks.listGatewayRoutes.mockResolvedValue([{
+      id: 'route_1',
+      applicationId: 'app_1',
+      deploymentTargetId: 'dpt_1',
+      accessUrl: 'https://app.example.com',
+      host: 'app.example.com',
+      enabled: true,
+      status: 'ready',
+      deleteStatus: 'active',
+      tlsMode: 'http-challenge',
+      path: '/',
+    }])
+    mocks.getApplicationRuntime.mockImplementation(() => new Promise((resolve) => {
+      resolveRuntime = resolve
+    }))
+
+    renderPage('/projects/prj_1/apps/app_1?tab=overview')
+    await waitFor(() => expect(mocks.getApplicationRuntime).toHaveBeenCalledWith('prj_1', 'app_1'))
+    expect(screen.queryByText(i18next.t('apps.deployGuideTitle'))).not.toBeInTheDocument()
+
+    resolveRuntime({
+      ...applicationFixture,
+      currentRelease: { id: 'rel_1', deploymentTargetId: 'dpt_1', imageRef: 'registry.example.test/app:v1', deployedAt: '2026-10-06T00:05:00Z' },
+      deploymentSummary: {
+        targetCount: 1,
+        desiredReplicas: 2,
+        readyReplicas: 2,
+        status: 'ready',
+        targets: [{ id: 'dpt_1', stage: 'prod', enabled: true, deployed: true, desiredReplicas: 2, readyReplicas: 2, status: 'ready' }],
+      },
+    })
+
+    expect(await screen.findByText(i18next.t('apps.recentActivity'))).toBeVisible()
+    expect(screen.queryByText(i18next.t('apps.deployGuideTitle'))).not.toBeInTheDocument()
+  })
+
+  it('shows unavailable in fact strip cells instead of false empty copy when sub-queries fail', async () => {
+    mocks.getApplicationRuntime.mockRejectedValue(new Error('runtime failed'))
+    mocks.listGatewayRoutes.mockRejectedValue(new Error('routes failed'))
+    mocks.listBuildRuns.mockRejectedValue(new Error('builds failed'))
+
+    renderPage('/projects/prj_1/apps/app_1?tab=topology')
+    const facts = await screen.findByLabelText('Application key facts')
+    await waitFor(() => {
+      expect(within(facts).getAllByText(i18next.t('common.unavailable')).length).toBeGreaterThanOrEqual(3)
+    })
+    expect(within(facts).queryByText(i18next.t('apps.noAccessRoute'))).not.toBeInTheDocument()
+    expect(within(facts).queryByText(i18next.t('apps.noCurrentVersion'))).not.toBeInTheDocument()
+    expect(within(facts).queryByText(i18next.t('apps.noRecentBuild'))).not.toBeInTheDocument()
+  })
+
+  it('renders settings skeleton while the application query is pending', () => {
+    mocks.getApplication.mockReturnValue(new Promise(() => undefined))
+    renderPage('/projects/prj_1/apps/app_1?tab=settings')
+
+    expect(screen.queryByText(i18next.t('apps.basicInfo'))).not.toBeInTheDocument()
+  })
 })
 
 function EditorRouteProbe() {

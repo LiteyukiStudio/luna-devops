@@ -1,4 +1,4 @@
-import type { BillingDisplay, BillingListPage } from './billing-list-cells'
+import type { BillingDisplay, BillingListError, BillingListPage } from './billing-list-cells'
 import type { BillingUsageRecord, Project } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { Gauge } from 'lucide-react'
@@ -13,18 +13,22 @@ import { ApplicationCell, ProjectCell, ResourceCell } from './billing-list-cells
 export function BillingUsageList({
   billingDisplay,
   data,
+  error,
   loading,
   locale,
   page,
   projectMap,
+  projectsLoading = false,
   onPageChange,
 }: {
   billingDisplay: BillingDisplay
   data?: BillingListPage<BillingUsageRecord>
+  error?: BillingListError
   loading: boolean
   locale: string
   page: number
   projectMap: Map<string, Project>
+  projectsLoading?: boolean
   onPageChange: (page: number) => void
 }) {
   const { t } = useTranslation()
@@ -33,7 +37,9 @@ export function BillingUsageList({
       key: 'project',
       header: t('billingPage.project'),
       width: 'primary',
-      render: item => <ProjectCell project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />,
+      render: item => item.projectId
+        ? <ProjectCell loading={projectsLoading} project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />
+        : <span className="text-sm text-muted-foreground">{t('billingPage.accountTransaction')}</span>,
     },
     {
       key: 'application',
@@ -77,7 +83,7 @@ export function BillingUsageList({
       width: 'compact',
       render: item => formatSmartDateTime(item.periodStart, t),
     },
-  ], [billingDisplay, locale, projectMap, t])
+  ], [billingDisplay, locale, projectMap, projectsLoading, t])
 
   return (
     <DataList
@@ -85,8 +91,9 @@ export function BillingUsageList({
       emptyDescription={t('billingPage.emptyUsageDescription')}
       emptyTitle={t('billingPage.emptyUsageTitle')}
       emptyIcon={<Gauge className="size-5" />}
+      error={error}
       items={data?.items ?? []}
-      loading={loading}
+      loading={loading && !error}
       pagination={{
         page: data?.page ?? page,
         pageInfoLabel: t('billingPage.usagePageInfo', {

@@ -208,8 +208,9 @@ export function EventsPage() {
   const advancedFilterFields = (
     <div className="grid gap-3 sm:grid-cols-2">
       <EventFilterMultiSelect
+        error={projects.isError}
         label={t('eventsPage.filters.project')}
-        loading={projects.isLoading}
+        loading={projects.isPending}
         options={projectOptions}
         placeholder={t('eventsPage.filters.allProjects')}
         value={projectIds}
@@ -230,8 +231,9 @@ export function EventsPage() {
       />
       <EventFilterMultiSelect
         disabled={projectIds.length === 0}
+        error={applicationQueries.some(query => query.isError)}
         label={t('eventsPage.filters.application')}
-        loading={applicationQueries.some(query => query.isLoading)}
+        loading={applicationQueries.some(query => query.isPending)}
         options={applicationOptions}
         placeholder={t('eventsPage.filters.allApplications')}
         value={applicationIds}
@@ -247,8 +249,9 @@ export function EventsPage() {
       />
       <EventFilterMultiSelect
         disabled={applicationIds.length === 0}
+        error={(applicationIds.length > 0 && applicationQueries.some(query => query.isError)) || deploymentTargetQueries.some(query => query.isError)}
         label={t('eventsPage.filters.deploymentTarget')}
-        loading={deploymentTargetQueries.some(query => query.isLoading)}
+        loading={(applicationIds.length > 0 && applicationQueries.some(query => query.isPending)) || deploymentTargetQueries.some(query => query.isPending)}
         options={deploymentTargetOptions}
         placeholder={t('eventsPage.filters.allDeploymentTargets')}
         value={deploymentTargetIds}
@@ -258,7 +261,9 @@ export function EventsPage() {
         }}
       />
       <EventFilterMultiSelect
+        error={catalog.isError}
         label={t('eventsPage.filters.type')}
+        loading={catalog.isPending}
         options={eventTypeOptions}
         placeholder={t('eventsPage.filters.allTypes')}
         value={eventTypes}
@@ -327,7 +332,7 @@ export function EventsPage() {
             }
           : undefined}
         items={events.data?.items ?? []}
-        loading={events.isLoading}
+        loading={events.isPending}
         rowActionLabel={() => t('eventsPage.viewDetails')}
         viewportOffset={24}
         pagination={{
@@ -368,6 +373,8 @@ export function EventsPage() {
             <SearchMultiSelect
               ariaLabel={t('eventsPage.filters.category')}
               className="w-full @lg/data-list:w-36"
+              error={catalog.isError}
+              loading={catalog.isPending}
               options={categoryOptions}
               placeholder={t('eventsPage.filters.allCategories')}
               size="sm"
@@ -442,7 +449,7 @@ export function EventsPage() {
       <EventDetailSheet
         error={selectedEvent.isError}
         event={selectedEvent.data}
-        loading={selectedEvent.isLoading}
+        loading={Boolean(selectedEventId) && selectedEvent.isPending}
         open={Boolean(selectedEventId)}
         platformAdmin={platformAdmin}
         retrying={selectedEvent.isFetching}
@@ -453,8 +460,9 @@ export function EventsPage() {
   )
 }
 
-function EventFilterMultiSelect({ disabled, label, loading, options, placeholder, value, onChange }: {
+function EventFilterMultiSelect({ disabled, error, label, loading, options, placeholder, value, onChange }: {
   disabled?: boolean
+  error?: boolean
   label: string
   loading?: boolean
   options: SearchSelectOption[]
@@ -467,6 +475,7 @@ function EventFilterMultiSelect({ disabled, label, loading, options, placeholder
       {label}
       <SearchMultiSelect
         disabled={disabled}
+        error={error}
         loading={loading}
         options={options}
         placeholder={placeholder}
@@ -536,7 +545,7 @@ function EventDetailSheet({ error, event, loading, onOpenChange, onRetry, open, 
             )
           : loading && !event
             ? (
-                <div className="grid gap-3 p-6">
+                <div aria-label={t('common.loading')} className="grid gap-3 p-6" role="status">
                   <Skeleton className="h-6 w-28" />
                   <Skeleton className="h-4 w-full" />
                   <Skeleton className="h-4 w-3/4" />

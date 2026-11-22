@@ -182,6 +182,8 @@ export function defaultChannelFormValues(options: {
   defaultScope?: 'project' | 'global'
   defaultProjectIds?: string[]
   presets: NotificationPreset[]
+  presetsError?: boolean
+  presetsLoading?: boolean
 }): NotificationChannelFormValues {
   const {
     channel,
@@ -189,11 +191,13 @@ export function defaultChannelFormValues(options: {
     defaultScope = 'project',
     defaultProjectIds = [],
     presets,
+    presetsError = false,
+    presetsLoading = false,
   } = options
   const firstPresetId = presets[0]?.id ?? 'feishu-bot'
   if (!channel) {
     return {
-      mode: presets.length > 0 ? defaultMode : (defaultMode === 'preset' ? 'webhook' : defaultMode),
+      mode: (presets.length > 0 || presetsLoading || presetsError) ? defaultMode : (defaultMode === 'preset' ? 'webhook' : defaultMode),
       scope: defaultScope,
       projectIds: [...defaultProjectIds],
       name: '',
@@ -285,7 +289,7 @@ export function buildScopedChannelPayload(
   const existingSecretSet = existingChannel?.secretSet ?? {}
 
   if (values.mode === 'preset') {
-    const preset = presets.find(item => item.id === values.presetId)
+    const preset = presets.find(item => item.id === values.presetId) ?? presets[0]
     if (!preset)
       return null
     const secrets: Record<string, string> = {}

@@ -11,6 +11,9 @@ import { AccountPage } from './AccountPage'
 const mocks = vi.hoisted(() => {
   const updateProfile = vi.fn()
   return {
+    getAuthRegistrationStatus: vi.fn(),
+    listAuthProviders: vi.fn(),
+    listMyExternalIdentities: vi.fn(),
     session: {
       updateProfile,
       user: {
@@ -23,6 +26,19 @@ const mocks = vi.hoisted(() => {
         passwordSet: true,
         role: 'user',
       },
+    },
+  }
+})
+
+vi.mock('@/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api')>()
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      getAuthRegistrationStatus: mocks.getAuthRegistrationStatus,
+      listAuthProviders: mocks.listAuthProviders,
+      listMyExternalIdentities: mocks.listMyExternalIdentities,
     },
   }
 })
@@ -42,6 +58,7 @@ vi.mock('@/components/common/content-tabs', () => ({
     onValueChange: (value: string) => void
   }) => (
     <div data-active-tab={value} data-tab-order={tabs.map(tab => tab.value).join(',')} data-testid="content-tabs">
+      <button type="button" onClick={() => onValueChange('security')}>security-tab</button>
       <button type="button" onClick={() => onValueChange('tokens')}>tokens-tab</button>
       <button type="button" onClick={() => onValueChange('mcp')}>mcp-tab</button>
       <button type="button" onClick={() => onValueChange('oauth-applications')}>oauth-applications-tab</button>
@@ -93,6 +110,7 @@ describe('account page tab tools and MCP access guide', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     window.history.replaceState(null, '', '/settings/account')
+    mocks.session.user.passwordSet = true
     await i18next.changeLanguage('en-US')
   })
 
@@ -193,6 +211,31 @@ describe('account page tab tools and MCP access guide', () => {
 
     await waitFor(() => expect(mocks.session.updateProfile).toHaveBeenCalledWith(expect.objectContaining({ name: 'Owner Saved' })))
     await waitFor(() => expect(document.querySelector('[data-slot="floating-form-save-bar"]')).toBeNull())
+  })
+
+  it('renders skeletons instead of password disabled warning or empty identities while security queries are pending', () => {
+    mocks.session.user.passwordSet = false
+    mocks.getAuthRegistrationStatus.mockReturnValue(new Promise(() => {}))
+    mocks.listAuthProviders.mockReturnValue(new Promise(() => {}))
+    mocks.listMyExternalIdentities.mockReturnValue(new Promise(() => {}))
+
+    const { container } = renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'security-tab' }))
+
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    expect(screen.queryByText(i18next.t('accountPage.password.disabledTitle'))).not.toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('settings.noIdentitiesTitle'))).not.toBeInTheDocument()
+  })
+
+  it('renders only the retryable provider ErrorState without stacking noIdentitiesTitle when identities are empty and providers fail', async () => {
+    mocks.listMyExternalIdentities.mockResolvedValue([])
+    mocks.listAuthProviders.mockRejectedValue(new Error('oidc down'))
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'security-tab' }))
+
+    expect(await screen.findByText(i18next.t('settings.providerLoadFailedTitle'))).toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('settings.noIdentitiesTitle'))).not.toBeInTheDocument()
   })
 })
 

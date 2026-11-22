@@ -81,4 +81,26 @@ describe('application web console panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }))
     expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument()
   })
+
+  it('does not lock container input or pod selector in skeleton when deploymentTargetId is empty', async () => {
+    vi.mocked(api.listDeploymentTargetRuntimePods).mockClear()
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TooltipProvider>
+          <ApplicationWebConsolePanel
+            projectId="prj_123"
+            release={{ ...release, deploymentTargetId: '' }}
+            onClose={vi.fn()}
+          />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('Terminal auto default')).toBeInTheDocument()
+    const containerInput = screen.getByRole('textbox', { name: 'Container' })
+    expect(containerInput).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Replica' })).toHaveTextContent(i18next.t('deploymentsPage.runtimePodAuto'))
+    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
+    expect(api.listDeploymentTargetRuntimePods).not.toHaveBeenCalled()
+  })
 })

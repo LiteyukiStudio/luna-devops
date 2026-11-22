@@ -63,21 +63,29 @@ export interface RelationSavedResult {
 
 interface ProjectTopologyRelationDialogProps {
   applications: Application[]
+  applicationsError?: boolean
+  applicationsLoading?: boolean
+  applicationsRetrying?: boolean
   editingManualEdge?: ProjectTopologyManualEdge
   editingServiceBinding?: ServiceBinding
   initialMode?: RelationDialogMode
   projectId: string
   onOpenChange: (open: boolean) => void
+  onRetryApplications?: () => void
   onSaved: (result: RelationSavedResult) => void
 }
 
 export function ProjectTopologyRelationDialog({
   applications,
+  applicationsError = false,
+  applicationsLoading = false,
+  applicationsRetrying = false,
   editingManualEdge,
   editingServiceBinding,
   initialMode = 'service_binding',
   projectId,
   onOpenChange,
+  onRetryApplications,
   onSaved,
 }: ProjectTopologyRelationDialogProps) {
   const { t } = useTranslation()
@@ -110,8 +118,22 @@ export function ProjectTopologyRelationDialog({
     enabled: Boolean(targetApplicationId),
     ...liveObservationQueryPolicy,
   })
+  const sourceTargetsLoading = Boolean(sourceApplicationId) && sourceTargets.isPending
+  const sourceTargetsError = Boolean(sourceApplicationId) && sourceTargets.isError
+  const targetTargetsLoading = Boolean(targetApplicationId) && targetTargets.isPending
+  const targetTargetsError = Boolean(targetApplicationId) && targetTargets.isError
   const targetDeployment = targetTargets.data?.find(target => target.id === targetDeploymentTargetId)
   const targetPorts = useMemo(() => normalizedServicePorts(targetDeployment), [targetDeployment])
+  const targetPortDisabled = !targetDeploymentTargetId || targetTargetsLoading || targetTargetsError || targetPorts.length === 0
+  const targetPortPlaceholder = !targetDeploymentTargetId
+    ? t('projectTopology.form.selectPort')
+    : targetTargetsLoading
+      ? t('common.loading')
+      : targetTargetsError
+        ? t('common.unavailable')
+        : targetPorts.length === 0
+          ? t('common.noOptions')
+          : t('projectTopology.form.selectPort')
   const applicationOptions = useMemo(() => applications.map(application => ({
     label: application.name,
     description: application.identifier,
@@ -155,33 +177,57 @@ export function ProjectTopologyRelationDialog({
   const sourceTargetField = mode === 'service_binding'
     ? (
         <Field error={form.formState.errors.sourceDeploymentTargetId?.message} label={t('projectTopology.form.sourceTarget')} required>
-          <SearchSelect
-            emptyLabel={t('projectTopology.form.noTargets')}
-            loading={sourceTargets.isLoading}
-            options={sourceTargetOptions}
-            placeholder={t('projectTopology.form.selectDeploymentTarget')}
-            searchPlaceholder={t('projectTopology.form.searchTargets')}
-            value={sourceDeploymentTargetId}
-            onValueChange={value => form.setValue('sourceDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })}
-          />
+          {fieldControl => (
+            <div className="flex min-w-0 gap-2">
+              <SearchSelect
+                {...fieldControl}
+                className="min-w-0 flex-1"
+                emptyLabel={t('projectTopology.form.noTargets')}
+                error={sourceTargetsError}
+                loading={sourceTargetsLoading}
+                options={sourceTargetOptions}
+                placeholder={t('projectTopology.form.selectDeploymentTarget')}
+                searchPlaceholder={t('projectTopology.form.searchTargets')}
+                value={sourceDeploymentTargetId}
+                onValueChange={value => form.setValue('sourceDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })}
+              />
+              {sourceTargetsError && (
+                <Button disabled={sourceTargets.isFetching} size="sm" type="button" variant="outline" onClick={() => void sourceTargets.refetch()}>
+                  {t('common.retry')}
+                </Button>
+              )}
+            </div>
+          )}
         </Field>
       )
     : null
   const targetTargetField = mode === 'service_binding'
     ? (
         <Field error={form.formState.errors.targetDeploymentTargetId?.message} label={t('projectTopology.form.targetTarget')} required>
-          <SearchSelect
-            emptyLabel={t('projectTopology.form.noTargets')}
-            loading={targetTargets.isLoading}
-            options={targetTargetOptions}
-            placeholder={t('projectTopology.form.selectDeploymentTarget')}
-            searchPlaceholder={t('projectTopology.form.searchTargets')}
-            value={targetDeploymentTargetId}
-            onValueChange={(value) => {
-              form.setValue('targetDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })
-              form.setValue('targetPortName', '', { shouldDirty: true, shouldValidate: true })
-            }}
-          />
+          {fieldControl => (
+            <div className="flex min-w-0 gap-2">
+              <SearchSelect
+                {...fieldControl}
+                className="min-w-0 flex-1"
+                emptyLabel={t('projectTopology.form.noTargets')}
+                error={targetTargetsError}
+                loading={targetTargetsLoading}
+                options={targetTargetOptions}
+                placeholder={t('projectTopology.form.selectDeploymentTarget')}
+                searchPlaceholder={t('projectTopology.form.searchTargets')}
+                value={targetDeploymentTargetId}
+                onValueChange={(value) => {
+                  form.setValue('targetDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })
+                  form.setValue('targetPortName', '', { shouldDirty: true, shouldValidate: true })
+                }}
+              />
+              {targetTargetsError && (
+                <Button disabled={targetTargets.isFetching} size="sm" type="button" variant="outline" onClick={() => void targetTargets.refetch()}>
+                  {t('common.retry')}
+                </Button>
+              )}
+            </div>
+          )}
         </Field>
       )
     : null
@@ -224,31 +270,57 @@ export function ProjectTopologyRelationDialog({
           <ProgressiveSection defaultOpen description={t('projectTopology.form.basicSectionDescription')} title={t('projectTopology.form.basicSection')}>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field error={form.formState.errors.sourceApplicationId?.message} label={t('projectTopology.form.sourceApplication')} required>
-                <SearchSelect
-                  emptyLabel={t('projectTopology.form.noApplications')}
-                  options={applicationOptions}
-                  placeholder={t('projectTopology.form.selectApplication')}
-                  searchPlaceholder={t('projectTopology.form.searchApplications')}
-                  value={sourceApplicationId}
-                  onValueChange={(value) => {
-                    form.setValue('sourceApplicationId', value, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('sourceDeploymentTargetId', mode === 'manual' ? applicationTargetValue : '', { shouldDirty: true, shouldValidate: true })
-                  }}
-                />
+                {fieldControl => (
+                  <div className="flex min-w-0 gap-2">
+                    <SearchSelect
+                      {...fieldControl}
+                      className="min-w-0 flex-1"
+                      emptyLabel={t('projectTopology.form.noApplications')}
+                      error={applicationsError}
+                      loading={applicationsLoading}
+                      options={applicationOptions}
+                      placeholder={t('projectTopology.form.selectApplication')}
+                      searchPlaceholder={t('projectTopology.form.searchApplications')}
+                      value={sourceApplicationId}
+                      onValueChange={(value) => {
+                        form.setValue('sourceApplicationId', value, { shouldDirty: true, shouldValidate: true })
+                        form.setValue('sourceDeploymentTargetId', mode === 'manual' ? applicationTargetValue : '', { shouldDirty: true, shouldValidate: true })
+                      }}
+                    />
+                    {applicationsError && onRetryApplications && (
+                      <Button disabled={applicationsRetrying} size="sm" type="button" variant="outline" onClick={onRetryApplications}>
+                        {t('common.retry')}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </Field>
               <Field error={form.formState.errors.targetApplicationId?.message} label={t('projectTopology.form.targetApplication')} required>
-                <SearchSelect
-                  emptyLabel={t('projectTopology.form.noApplications')}
-                  options={applicationOptions}
-                  placeholder={t('projectTopology.form.selectApplication')}
-                  searchPlaceholder={t('projectTopology.form.searchApplications')}
-                  value={targetApplicationId}
-                  onValueChange={(value) => {
-                    form.setValue('targetApplicationId', value, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('targetDeploymentTargetId', mode === 'manual' ? applicationTargetValue : '', { shouldDirty: true, shouldValidate: true })
-                    form.setValue('targetPortName', '', { shouldDirty: true, shouldValidate: true })
-                  }}
-                />
+                {fieldControl => (
+                  <div className="flex min-w-0 gap-2">
+                    <SearchSelect
+                      {...fieldControl}
+                      className="min-w-0 flex-1"
+                      emptyLabel={t('projectTopology.form.noApplications')}
+                      error={applicationsError}
+                      loading={applicationsLoading}
+                      options={applicationOptions}
+                      placeholder={t('projectTopology.form.selectApplication')}
+                      searchPlaceholder={t('projectTopology.form.searchApplications')}
+                      value={targetApplicationId}
+                      onValueChange={(value) => {
+                        form.setValue('targetApplicationId', value, { shouldDirty: true, shouldValidate: true })
+                        form.setValue('targetDeploymentTargetId', mode === 'manual' ? applicationTargetValue : '', { shouldDirty: true, shouldValidate: true })
+                        form.setValue('targetPortName', '', { shouldDirty: true, shouldValidate: true })
+                      }}
+                    />
+                    {applicationsError && onRetryApplications && (
+                      <Button disabled={applicationsRetrying} size="sm" type="button" variant="outline" onClick={onRetryApplications}>
+                        {t('common.retry')}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </Field>
               {sourceTargetField}
               {targetTargetField}
@@ -285,23 +357,26 @@ export function ProjectTopologyRelationDialog({
                     <Controller
                       control={form.control}
                       name="targetPortName"
-                      render={({ field }) => (
-                        <Select
-                          key={targetDeploymentTargetId || 'no-target'}
-                          disabled={!targetDeploymentTargetId}
-                          value={field.value || undefined}
-                          onValueChange={field.onChange}
-                        >
-                          <SelectTrigger {...fieldControl} className="w-full">
-                            <SelectValue placeholder={t('projectTopology.form.selectPort')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {targetPorts.map(port => (
-                              <SelectItem key={port.name} value={port.name}>{`${port.name} · ${port.port}`}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
+                      render={({ field }) => {
+                        const hasSelectedTargetPort = !targetTargetsLoading && targetPorts.some(port => port.name === field.value)
+                        return (
+                          <Select
+                            key={`${targetDeploymentTargetId || 'no-target'}-${targetTargetsLoading ? 'loading' : 'ready'}`}
+                            disabled={targetPortDisabled}
+                            value={hasSelectedTargetPort ? field.value : ''}
+                            onValueChange={field.onChange}
+                          >
+                            <SelectTrigger {...fieldControl} className="w-full">
+                              <SelectValue placeholder={targetPortPlaceholder} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {targetPorts.map(port => (
+                                <SelectItem key={port.name} value={port.name}>{`${port.name} · ${port.port}`}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )
+                      }}
                     />
                   )}
                 </Field>
@@ -349,24 +424,48 @@ export function ProjectTopologyRelationDialog({
               {mode === 'manual' && (
                 <>
                   <Field label={t('projectTopology.form.sourceTarget')}>
-                    <SearchSelect
-                      loading={sourceTargets.isLoading}
-                      options={optionalSourceTargetOptions}
-                      placeholder={t('projectTopology.applicationLevel')}
-                      searchPlaceholder={t('projectTopology.form.searchTargets')}
-                      value={sourceDeploymentTargetId || applicationTargetValue}
-                      onValueChange={value => form.setValue('sourceDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })}
-                    />
+                    {fieldControl => (
+                      <div className="flex min-w-0 gap-2">
+                        <SearchSelect
+                          {...fieldControl}
+                          className="min-w-0 flex-1"
+                          error={sourceTargetsError}
+                          loading={sourceTargetsLoading}
+                          options={sourceTargetsError ? [] : optionalSourceTargetOptions}
+                          placeholder={t('projectTopology.applicationLevel')}
+                          searchPlaceholder={t('projectTopology.form.searchTargets')}
+                          value={sourceDeploymentTargetId || applicationTargetValue}
+                          onValueChange={value => form.setValue('sourceDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })}
+                        />
+                        {sourceTargetsError && (
+                          <Button disabled={sourceTargets.isFetching} size="sm" type="button" variant="outline" onClick={() => void sourceTargets.refetch()}>
+                            {t('common.retry')}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </Field>
                   <Field label={t('projectTopology.form.targetTarget')}>
-                    <SearchSelect
-                      loading={targetTargets.isLoading}
-                      options={optionalTargetTargetOptions}
-                      placeholder={t('projectTopology.applicationLevel')}
-                      searchPlaceholder={t('projectTopology.form.searchTargets')}
-                      value={targetDeploymentTargetId || applicationTargetValue}
-                      onValueChange={value => form.setValue('targetDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })}
-                    />
+                    {fieldControl => (
+                      <div className="flex min-w-0 gap-2">
+                        <SearchSelect
+                          {...fieldControl}
+                          className="min-w-0 flex-1"
+                          error={targetTargetsError}
+                          loading={targetTargetsLoading}
+                          options={targetTargetsError ? [] : optionalTargetTargetOptions}
+                          placeholder={t('projectTopology.applicationLevel')}
+                          searchPlaceholder={t('projectTopology.form.searchTargets')}
+                          value={targetDeploymentTargetId || applicationTargetValue}
+                          onValueChange={value => form.setValue('targetDeploymentTargetId', value, { shouldDirty: true, shouldValidate: true })}
+                        />
+                        {targetTargetsError && (
+                          <Button disabled={targetTargets.isFetching} size="sm" type="button" variant="outline" onClick={() => void targetTargets.refetch()}>
+                            {t('common.retry')}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </Field>
                 </>
               )}

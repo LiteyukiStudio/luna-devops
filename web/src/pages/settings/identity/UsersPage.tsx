@@ -8,11 +8,10 @@ import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
-import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
@@ -201,44 +200,50 @@ export function UsersPage() {
           {t('usersPage.createTitle')}
         </Button>
       </PageChromeTools>
-      {users.isError
-        ? <ErrorState title={t('usersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />
-        : (
-            <DataList
-              columns={columns}
-              emptyDescription={t('usersPage.emptyDescription')}
-              emptyMode={search ? 'filtered' : 'actionable'}
-              emptyTitle={t('usersPage.emptyTitle')}
-              items={userItems}
-              loading={users.isLoading}
-              pagination={{
-                page: users.data?.page ?? page,
-                pageSize: users.data?.pageSize ?? pageSize,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-                total: users.data?.total ?? 0,
-                totalPages: users.data?.totalPages ?? 0,
-                pageInfoLabel: t('pagination.pageInfo', {
-                  page: users.data?.page ?? page,
-                  totalPages: users.data?.totalPages ?? 0,
-                  total: users.data?.total ?? 0,
-                }),
-                onPageChange: setPage,
-                onPageSizeChange: (nextPageSize) => {
-                  setPageSize(nextPageSize)
-                  setPage(1)
-                },
-              }}
-              rowKey={user => user.id}
-              search={{
-                value: search,
-                placeholder: t('usersPage.searchPlaceholder'),
-                onChange: (value) => {
-                  setSearch(value)
-                  setPage(1)
-                },
-              }}
-            />
-          )}
+      <DataList
+        columns={columns}
+        emptyDescription={t('usersPage.emptyDescription')}
+        emptyMode={search ? 'filtered' : 'actionable'}
+        emptyTitle={t('usersPage.emptyTitle')}
+        error={users.isError
+          ? {
+              description: users.error instanceof ApiError && users.error.status === 403
+                ? t('common.platformAdminPermissionRequired')
+                : (users.error instanceof Error ? users.error.message : undefined),
+              onRetry: () => void users.refetch(),
+              retrying: users.isFetching,
+              title: t('usersPage.loadFailedTitle'),
+            }
+          : undefined}
+        items={userItems}
+        loading={users.isPending}
+        pagination={{
+          page: users.data?.page ?? page,
+          pageSize: users.data?.pageSize ?? pageSize,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          total: users.data?.total ?? 0,
+          totalPages: users.data?.totalPages ?? 0,
+          pageInfoLabel: t('pagination.pageInfo', {
+            page: users.data?.page ?? page,
+            totalPages: users.data?.totalPages ?? 0,
+            total: users.data?.total ?? 0,
+          }),
+          onPageChange: setPage,
+          onPageSizeChange: (nextPageSize) => {
+            setPageSize(nextPageSize)
+            setPage(1)
+          },
+        }}
+        rowKey={user => user.id}
+        search={{
+          value: search,
+          placeholder: t('usersPage.searchPlaceholder'),
+          onChange: (value) => {
+            setSearch(value)
+            setPage(1)
+          },
+        }}
+      />
 
       <Dialog
         open={dialogOpen}

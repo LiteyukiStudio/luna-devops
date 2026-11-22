@@ -1,7 +1,8 @@
 import type { BillingDisplay } from '../records/billing-list-cells'
 import type { BillingSummary as BillingSummaryData, GatewayTrafficStatus } from '@/api'
 import { render, screen } from '@testing-library/react'
-import { beforeAll, describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
 import { BillingBalanceWarning, BillingSummary } from './billing-summary'
 
@@ -94,6 +95,70 @@ describe('billing summary', () => {
     expect(screen.queryByText('Balance')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByText('Balance healthy')).toBeNull()
+  })
+
+  it('renders skeletons instead of dashes or empty spend copy while loading', () => {
+    const { container } = render(
+      <BillingSummary
+        accountLoading
+        billingDisplay={billingDisplay}
+        canManageBilling
+        gatewayTrafficStatusLoaded={false}
+        scopedFetching
+        scopedLoading
+      />,
+    )
+
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThanOrEqual(8)
+    expect(screen.queryByText('-')).toBeNull()
+    expect(screen.queryByText('C:')).toBeNull()
+    expect(screen.queryByText(i18next.t('billingPage.emptyPeriodCategories'))).toBeNull()
+  })
+
+  it('renders retryable error states instead of zero credits on summary failure', async () => {
+    const user = userEvent.setup()
+    const onRetryAccount = vi.fn()
+    const onRetryScoped = vi.fn()
+
+    render(
+      <BillingSummary
+        accountError
+        accountLoading={false}
+        billingDisplay={billingDisplay}
+        canManageBilling
+        gatewayTrafficStatusLoaded={false}
+        scopedError
+        scopedFetching={false}
+        scopedLoading={false}
+        onRetryAccount={onRetryAccount}
+        onRetryScoped={onRetryScoped}
+      />,
+    )
+
+    expect(screen.queryByText('C:')).toBeNull()
+    expect(screen.queryByText(i18next.t('billingPage.emptyPeriodCategories'))).toBeNull()
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    expect(onRetryAccount).toHaveBeenCalledTimes(1)
+    expect(onRetryScoped).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps category skeletons instead of emptyPeriodCategories while gatewayTrafficStatusLoading is true', () => {
+    const { container } = render(
+      <BillingSummary
+        accountLoading={false}
+        accountSummary={summary()}
+        billingDisplay={billingDisplay}
+        canManageBilling
+        gatewayTrafficStatusLoaded={false}
+        gatewayTrafficStatusLoading
+        scopedFetching={false}
+        scopedLoading={false}
+        scopedSummary={summary({ periodCategories: [] })}
+      />,
+    )
+
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThanOrEqual(4)
+    expect(screen.queryByText(i18next.t('billingPage.emptyPeriodCategories'))).toBeNull()
   })
 })
 

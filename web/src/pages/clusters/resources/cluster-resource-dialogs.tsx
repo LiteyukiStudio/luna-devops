@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CodeEditor } from '@/components/common/code-editor'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { ViewerToolbarButton } from '@/components/common/terminal-chrome'
 import { downloadTextFile } from '@/components/common/text-file-actions'
@@ -18,10 +19,12 @@ export function ClusterResourceDialogs({
   deleteResourcesPending,
   eventResource,
   events,
+  eventsError,
   eventsLoading,
   resourceToDelete,
   resourcesToDelete,
   yaml,
+  yamlError,
   yamlLoading,
   yamlResource,
   onCloseConsole,
@@ -38,10 +41,18 @@ export function ClusterResourceDialogs({
   deleteResourcesPending: boolean
   eventResource: ClusterResource | null
   events: ClusterResourceEvent[]
+  eventsError?: {
+    onRetry: () => void
+    retrying: boolean
+  }
   eventsLoading: boolean
   resourceToDelete: ClusterResource | null
   resourcesToDelete: ClusterResource[]
   yaml?: ClusterResourceYAML
+  yamlError?: {
+    onRetry: () => void
+    retrying: boolean
+  }
   yamlLoading: boolean
   yamlResource: ClusterResource | null
   onCloseConsole: () => void
@@ -53,7 +64,7 @@ export function ClusterResourceDialogs({
   onResourcesToDeleteChange: (resources: ClusterResource[]) => void
 }) {
   const { t } = useTranslation()
-  const yamlText = yamlLoading ? '' : yaml?.yaml ?? ''
+  const yamlText = yamlLoading || yamlError ? '' : yaml?.yaml ?? ''
 
   const copyYAML = async () => {
     try {
@@ -96,7 +107,7 @@ export function ClusterResourceDialogs({
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            <ClusterResourceEventsList events={events} loading={eventsLoading} />
+            <ClusterResourceEventsList error={eventsError} events={events} loading={eventsLoading} />
           </div>
         </DialogContent>
       </Dialog>
@@ -127,7 +138,16 @@ export function ClusterResourceDialogs({
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {yamlLoading
               ? <ToolViewportSkeleton />
-              : <CodeEditor height="32rem" language="yaml" readOnly value={yamlText} onChange={() => {}} />}
+              : yamlError
+                ? (
+                    <ErrorState
+                      description={t('clustersPage.resourceLoadFailedDescription')}
+                      retrying={yamlError.retrying}
+                      title={t('clustersPage.resourceLoadFailedTitle')}
+                      onRetry={yamlError.onRetry}
+                    />
+                  )
+                : <CodeEditor height="32rem" language="yaml" readOnly value={yamlText} onChange={() => {}} />}
           </div>
         </DialogContent>
       </Dialog>

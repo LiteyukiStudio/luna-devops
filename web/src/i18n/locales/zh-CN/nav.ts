@@ -30,6 +30,7 @@ const nav = {
     placeholder: '搜索应用、域名、模板、仓库、ID 或页面（支持 app: / host: / template:）…',
     empty: '没有匹配的结果',
     contextEmptyHint: '在「{{context}}」中检索，按退格键可切回全局搜索',
+    scopeEmptyHint: '输入关键词在「{{scope}}」中检索',
     clearContextChip: '移除{{context}}过滤并切回全局搜索',
     searching: '正在检索平台资源…',
     searchFailed: '平台资源检索失败，请重试',

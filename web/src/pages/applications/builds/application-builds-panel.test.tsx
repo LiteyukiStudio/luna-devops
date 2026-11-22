@@ -1,16 +1,60 @@
-import type { BuildRun, DeploymentTarget } from '@/api'
+import type { BuildsPanelHandle } from './application-builds-panel'
+import type { BuildJob, BuildRun, DeploymentTarget } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createRef } from 'react'
 import { Link, MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { ApplicationBuildsPanel } from './application-builds-panel'
 
+class FakeBuildLogEventSource {
+  static instances: FakeBuildLogEventSource[] = []
+  listeners: Record<string, Array<(event: Event) => void>> = {}
+  onerror: (() => void) | null = null
+  closed = false
+
+  constructor() {
+    FakeBuildLogEventSource.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void) {
+    this.listeners[type] ??= []
+    this.listeners[type].push(listener)
+  }
+
+  removeEventListener(type: string, listener: (event: Event) => void) {
+    this.listeners[type] = (this.listeners[type] ?? []).filter(item => item !== listener)
+  }
+
+  emitChunk(content: string) {
+    const event = { data: JSON.stringify({ content }) } as unknown as Event
+    for (const listener of this.listeners.chunk ?? [])
+      listener(event)
+  }
+
+  fail() {
+    this.onerror?.()
+  }
+
+  close() {
+    this.closed = true
+  }
+}
+
 const mocks = vi.hoisted(() => ({
   listBuildRunsPage: vi.fn(),
 }))
+
+vi.mock('@/lib/telemetry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/telemetry')>()
+  return {
+    ...actual,
+    createTracedEventSource: vi.fn(() => new FakeBuildLogEventSource() as unknown as EventSource),
+  }
+})
 
 vi.mock('@/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api')>()
@@ -78,6 +122,7 @@ const buildRun: BuildRun = {
 describe('application builds panel', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
+    FakeBuildLogEventSource.instances = []
     await i18next.changeLanguage('en-US')
     mocks.listBuildRunsPage.mockResolvedValue({
       items: [buildRun],
@@ -297,6 +342,185 @@ describe('application builds panel', () => {
     await user.click(screen.getByRole('button', { name: 'Close' }))
     await user.click(screen.getByRole('link', { name: 'Jump Run 2' }))
     expect(await screen.findByText('Diagnosis summary two')).toBeInTheDocument()
+  })
+
+  it('does not flash repositoryBindingRequired while repositoryBindings are still loading', async () => {
+    mocks.listBuildRunsPage.mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    })
+    render(
+      <MemoryRouter initialEntries={['/projects/prj_1/apps/app_1?tab=builds']}>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <ApplicationBuildsPanel
+              applicationId="app_1"
+              applicationIdentifier="example"
+              buildJobs={[]}
+              buildRuns={[]}
+              deploymentTargets={[]}
+              projectId="prj_1"
+              projectIdentifier="project"
+              registries={[]}
+              repositoryBindings={[]}
+              repositoryBindingsLoading
+            />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+
+    await screen.findByRole('button', { name: i18next.t('buildsPage.applicationBuildEnvironment') })
+    expect(screen.queryByText(i18next.t('buildsPage.repositoryBindingRequired'))).not.toBeInTheDocument()
+  })
+
+  it('keeps the log viewer in loading state while a queued build run awaits job creation', async () => {
+    const queuedRun: BuildRun = {
+      ...buildRun,
+      id: 'bldr_queued',
+      status: 'queued',
+    }
+    mocks.listBuildRunsPage.mockResolvedValue({
+      items: [queuedRun],
+      page: 1,
+      pageSize: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 1,
+      totalPages: 1,
+    })
+
+    renderPanel({
+      buildRuns: [queuedRun],
+      initialEntry: '/projects/prj_1/apps/app_1?tab=builds#buildRunId=bldr_queued',
+    })
+
+    expect(await screen.findByText(i18next.t('common.logViewer.waiting'))).toBeInTheDocument()
+    expect(screen.queryByText(i18next.t('buildsPage.noLogs'))).not.toBeInTheDocument()
+  })
+
+  it('shows unavailable status and toolbar retry instead of Logs updated when build log SSE disconnects mid-stream', async () => {
+    const user = userEvent.setup()
+    const runningJob: BuildJob = {
+      id: 'bldj_stream_1',
+      buildRunId: buildRun.id,
+      projectId: 'prj_1',
+      status: 'running',
+      failureCode: '',
+      message: 'run_command',
+      currentStep: '[1/3] FROM node:22-alpine',
+      stepsCompleted: 1,
+      stepsTotal: 3,
+      logRef: '',
+      attempts: 1,
+      startedAt: '2026-10-06T00:00:00Z',
+      finishedAt: '',
+      createdAt: '2026-10-06T00:00:00Z',
+    }
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    })
+    render(
+      <MemoryRouter initialEntries={['/projects/prj_1/apps/app_1?tab=builds']}>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <ApplicationBuildsPanel
+              applicationId="app_1"
+              applicationIdentifier="example"
+              buildJobs={[runningJob]}
+              buildRuns={[buildRun]}
+              deploymentTargets={[]}
+              projectId="prj_1"
+              projectIdentifier="project"
+              registries={[]}
+              repositoryBindings={[]}
+            />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Logs' }))
+    expect(FakeBuildLogEventSource.instances).toHaveLength(1)
+
+    act(() => {
+      FakeBuildLogEventSource.instances[0].emitChunk('Step 1/3: FROM node:22-alpine\n')
+      FakeBuildLogEventSource.instances[0].fail()
+    })
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Step 1\/3: FROM node:22-alpine/)).toBeInTheDocument()
+    expect(within(dialog).getByText(i18next.t('common.unavailable'))).toBeInTheDocument()
+    expect(within(dialog).queryByText(i18next.t('buildsPage.logsUpdated'))).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: i18next.t('common.retry') }))
+    expect(FakeBuildLogEventSource.instances).toHaveLength(2)
+  })
+
+  it('surfaces repositoryBindingsError with retry and disables retry buttons while retrying in Trigger Build dialog', async () => {
+    const user = userEvent.setup()
+    const onRetryRepositoryBindings = vi.fn()
+    const onRetryRegistries = vi.fn()
+    const panelRef = createRef<BuildsPanelHandle>()
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    })
+    render(
+      <MemoryRouter initialEntries={['/projects/prj_1/apps/app_1?tab=builds']}>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <ApplicationBuildsPanel
+              ref={panelRef}
+              applicationId="app_1"
+              applicationIdentifier="example"
+              buildJobs={[]}
+              buildRuns={[]}
+              deploymentTargets={[{
+                id: 'dpt_1',
+                name: 'Production',
+                enabled: true,
+                repositoryBindingId: 'rpb_1',
+                sourceType: 'repository',
+              } as DeploymentTarget]}
+              projectId="prj_1"
+              projectIdentifier="project"
+              registries={[]}
+              registriesError
+              registriesRetrying
+              repositoryBindings={[]}
+              repositoryBindingsError
+              onRetryRegistries={onRetryRegistries}
+              onRetryRepositoryBindings={onRetryRepositoryBindings}
+            />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+
+    await screen.findByRole('button', { name: i18next.t('buildsPage.applicationBuildEnvironment') })
+    act(() => {
+      panelRef.current?.openTriggerDrawer()
+    })
+
+    const dialog = await screen.findByRole('dialog', { name: i18next.t('buildsPage.triggerBuild') })
+    const alerts = within(dialog).getAllByRole('alert')
+    expect(alerts).toHaveLength(2)
+
+    const retryButtons = within(dialog).getAllByRole('button', { name: i18next.t('common.retry') })
+    expect(retryButtons[0]).toBeEnabled()
+    expect(retryButtons[1]).toBeDisabled()
+
+    await user.click(retryButtons[0])
+    expect(onRetryRepositoryBindings).toHaveBeenCalledOnce()
   })
 })
 

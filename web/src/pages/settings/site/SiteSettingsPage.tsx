@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next'
+import type { ReactNode } from 'react'
 import type { BillingRateRule, BillingRateRulePayload, ConfigDefinition, DataRetentionPayload, DataRetentionResult } from '@/api/types'
 import type { DataListColumn } from '@/components/common/data-list'
 import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
@@ -37,11 +38,20 @@ import { configDefinitionText } from './config-definition-text'
 import { changedConfigValues } from './site-settings-values'
 
 const siteBrandColorPresetKey = 'site.brandColorPreset'
+const SITE_SETTINGS_TABS = ['brand', 'registration', 'mail', 'security', 'build', 'billing', 'retention', 'ai'] as const
+
+function resolveInitialSiteSettingsTab(): string {
+  const hash = window.location.hash.replace(/^#/, '')
+  const requested = new URLSearchParams(hash).get('tab')
+  return requested && (SITE_SETTINGS_TABS as readonly string[]).includes(requested)
+    ? requested
+    : 'brand'
+}
 
 export function SiteSettingsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState('brand')
+  const [activeTab, setActiveTab] = useState(resolveInitialSiteSettingsTab)
   const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
   const [environmentVariableRows, setEnvironmentVariableRows] = useState<KeyValueRow[]>([])
   const [environmentSecretRows, setEnvironmentSecretRows] = useState<KeyValueRow[]>([])
@@ -118,20 +128,35 @@ export function SiteSettingsPage() {
     }
   }
 
-  if (definitions.isLoading || (keys.length > 0 && values.isLoading)) {
-    return (
-      <PageShell spacing="compact" width="settings">
-        <SettingsSkeleton />
-      </PageShell>
-    )
+  const configLoading = definitions.isPending || (keys.length > 0 && values.isPending)
+  const configError = definitions.isError || (keys.length > 0 && values.isError)
+  const configRetrying = definitions.isFetching || values.isFetching
+  const retryConfigs = () => {
+    if (definitions.isError)
+      void definitions.refetch()
+    if (values.isError)
+      void values.refetch()
+  }
+  const renderConfigCard = (renderLoaded: () => ReactNode) => {
+    if (configLoading)
+      return <SettingsSkeleton />
+    if (configError) {
+      return (
+        <ErrorState
+          description={t('settings.configDefinitionsFailedDescription')}
+          retrying={configRetrying}
+          title={t('settings.configDefinitionsFailedTitle')}
+          onRetry={retryConfigs}
+        />
+      )
+    }
+    return renderLoaded()
   }
 
   const isConfigFormTab = !['registration', 'mail', 'build', 'ai'].includes(activeTab)
 
   return (
     <PageShell spacing="compact" width="settings">
-      {definitions.isError && <ErrorState title={t('settings.configDefinitionsFailedTitle')} description={t('settings.configDefinitionsFailedDescription')} />}
-
       <div className="grid gap-5">
         <ContentTabs
           tabs={[
@@ -148,9 +173,13 @@ export function SiteSettingsPage() {
           onValueChange={setActiveTab}
         >
           <TabsContent value="brand">
-            <Surface className="max-w-3xl p-6" variant="bordered">
-              <ConfigSection definitions={siteDefinitions} form={form} />
-            </Surface>
+            <div className="max-w-3xl">
+              {renderConfigCard(() => (
+                <Surface className="p-6" variant="bordered">
+                  <ConfigSection definitions={siteDefinitions} form={form} />
+                </Surface>
+              ))}
+            </div>
           </TabsContent>
           <TabsContent value="registration">
             <AuthRegistrationSettingsPanel />
@@ -159,9 +188,13 @@ export function SiteSettingsPage() {
             <MailSettingsPanel />
           </TabsContent>
           <TabsContent value="security">
-            <Surface className="max-w-3xl p-6" variant="bordered">
-              <ConfigSection definitions={securityDefinitions} form={form} />
-            </Surface>
+            <div className="max-w-3xl">
+              {renderConfigCard(() => (
+                <Surface className="p-6" variant="bordered">
+                  <ConfigSection definitions={securityDefinitions} form={form} />
+                </Surface>
+              ))}
+            </div>
           </TabsContent>
           <TabsContent value="build">
             <Section
@@ -179,20 +212,24 @@ export function SiteSettingsPage() {
           </TabsContent>
           <TabsContent value="billing">
             <div className="grid max-w-3xl gap-4">
-              <Surface className="p-6" variant="bordered">
-                <ConfigSection definitions={billingDefinitions} form={form} />
-              </Surface>
+              {renderConfigCard(() => (
+                <Surface className="p-6" variant="bordered">
+                  <ConfigSection definitions={billingDefinitions} form={form} />
+                </Surface>
+              ))}
               <BillingRateRulesSection />
             </div>
           </TabsContent>
           <TabsContent value="retention">
             <div className="grid max-w-3xl gap-4">
-              <Section
-                title={<SectionTitleWithHelp help={t('settings.retentionAutomaticDescription')} title={t('settings.retentionAutomaticTitle')} />}
-                variant="bordered"
-              >
-                <ConfigSection definitions={retentionDefinitions} form={form} />
-              </Section>
+              {renderConfigCard(() => (
+                <Section
+                  title={<SectionTitleWithHelp help={t('settings.retentionAutomaticDescription')} title={t('settings.retentionAutomaticTitle')} />}
+                  variant="bordered"
+                >
+                  <ConfigSection definitions={retentionDefinitions} form={form} />
+                </Section>
+              ))}
               <DataRetentionSection />
             </div>
           </TabsContent>
@@ -202,7 +239,7 @@ export function SiteSettingsPage() {
         </ContentTabs>
         <FloatingFormSaveBar
           className="max-w-3xl"
-          open={isConfigFormTab && form.formState.isDirty}
+          open={isConfigFormTab && !configLoading && !configError && form.formState.isDirty}
           pending={save.isPending}
           saveDisabled={!form.formState.isValid}
           saveLabel={t('settings.saveConfig')}
@@ -368,8 +405,16 @@ function DataRetentionSection() {
     preview.mutate({ requestId, requestPayload: payload })
   }
 
-  if (catalog.isError)
-    return <ErrorState title={t('settings.retentionCatalogFailedTitle')} description={t('settings.retentionCatalogFailedDescription')} />
+  if (catalog.isError) {
+    return (
+      <ErrorState
+        description={t('settings.retentionCatalogFailedDescription')}
+        retrying={catalog.isFetching}
+        title={t('settings.retentionCatalogFailedTitle')}
+        onRetry={() => void catalog.refetch()}
+      />
+    )
+  }
 
   return (
     <>
@@ -385,9 +430,9 @@ function DataRetentionSection() {
             <Field hint={t('settings.retentionDatasetsHint')} label={t('settings.retentionDatasets')} required>
               <SearchMultiSelect
                 ariaLabel={t('settings.retentionDatasets')}
-                disabled={catalog.isLoading || cleanup.isPending}
+                disabled={cleanup.isPending}
                 emptyLabel={t('settings.retentionDatasetsEmpty')}
-                loading={catalog.isLoading}
+                loading={catalog.isPending}
                 options={catalogOptions}
                 placeholder={t('settings.retentionDatasetsPlaceholder')}
                 searchPlaceholder={t('settings.retentionDatasetsSearchPlaceholder')}
@@ -566,9 +611,6 @@ function BillingRateRulesSection() {
       },
     },
   ], [drafts, t])
-  if (rateRules.isError)
-    return <ErrorState title={t('settings.billingRateRulesFailedTitle')} description={t('settings.billingRateRulesFailedDescription')} />
-
   const rules = (rateRules.data ?? []).filter(rule => !rule.meter.startsWith('ai.'))
   const payload = rules
     .map(rule => drafts[rule.meter] ?? billingRateRulePayloadFromRule(rule))
@@ -593,8 +635,16 @@ function BillingRateRulesSection() {
       <DataList
         columns={columns}
         emptyTitle={t('settings.billingRateRulesTitle')}
+        error={rateRules.isError
+          ? {
+              description: t('settings.billingRateRulesFailedDescription'),
+              onRetry: () => void rateRules.refetch(),
+              retrying: rateRules.isFetching,
+              title: t('settings.billingRateRulesFailedTitle'),
+            }
+          : undefined}
         items={rules}
-        loading={rateRules.isLoading}
+        loading={rateRules.isPending}
         rowKey={rule => rule.meter}
       />
     </Section>

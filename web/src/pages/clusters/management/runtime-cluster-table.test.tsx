@@ -89,14 +89,24 @@ describe('runtime cluster table', () => {
     })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: i18next.t('common.actions') })).not.toBeInTheDocument()
   })
+
+  it('renders a skeleton instead of raw project UUIDs while projects are loading', () => {
+    const cluster = runtimeCluster({ projectIds: ['prj_raw_uuid_1'], scope: 'project' })
+    const { container } = renderTable({ clusters: [cluster], projectsLoading: true })
+
+    expect(screen.queryByText('prj_raw_uuid_1')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull()
+  })
 })
 
 function renderTable({
   callbacks = actionCallbacks(),
   clusters = [runtimeCluster()],
+  projectsLoading = false,
 }: {
   callbacks?: ReturnType<typeof actionCallbacks>
   clusters?: RuntimeCluster[]
+  projectsLoading?: boolean
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -115,6 +125,7 @@ function renderTable({
         pressureByClusterId={{}}
         pressureLoading={false}
         projects={[]}
+        projectsLoading={projectsLoading}
         user={platformAdmin}
         {...callbacks}
       />

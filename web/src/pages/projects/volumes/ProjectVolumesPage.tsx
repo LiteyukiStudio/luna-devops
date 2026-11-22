@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EMPTY_SELECT_VALUE, fromSelectValue, toSelectValue } from '@/components/ui/select-value'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { ProjectVolumeDetailSheet } from './project-volume-detail-sheet'
 import { ProjectVolumeImportDialog } from './project-volume-import-dialog'
@@ -182,8 +183,12 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
       <div className="grid min-w-0 gap-section">
         <ErrorState
           description={t(forbidden ? 'projectVolumes.forbiddenDescription' : 'projectVolumes.loadFailedDescription')}
+          retrying={volumes.isFetching}
           title={t(forbidden ? 'projectVolumes.forbiddenTitle' : 'projectVolumes.loadFailedTitle')}
+          onRetry={() => void volumes.refetch()}
         />
+        {capabilities.canWrite && <ProjectVolumeCreateDialog onOpenChange={setCreateOpen} open={createOpen} projectId={projectId} />}
+        {capabilities.canImport && <ProjectVolumeImportDialog onOpenChange={setImportOpen} open={importOpen} projectId={projectId} transferEnabled={capabilities.transferEnabled} />}
       </div>
     )
   }
@@ -209,7 +214,7 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
               <p className="mt-1 truncate text-xs text-muted-foreground">{item.storageClassName}</p>
             </div>
           ) },
-          { key: 'cluster', header: t('projectVolumes.cluster'), mobile: 'hidden', render: item => clusterNames[item.clusterId] ?? item.clusterId },
+          { key: 'cluster', header: t('projectVolumes.cluster'), mobile: 'hidden', render: item => clusterNames[item.clusterId] ?? (clusters.isPending ? <Skeleton className="h-4 w-24" /> : (item.clusterId || '—')) },
           { key: 'source', header: t('projectVolumes.source'), mobile: 'hidden', render: item => (
             <div className="grid gap-1">
               <span>{t(`projectVolumes.sourceKinds.${item.sourceKind}`)}</span>
@@ -238,7 +243,7 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
         emptyMode={hasFilters ? 'filtered' : 'actionable'}
         emptyTitle={t(hasFilters ? 'projectVolumes.noMatches' : 'projectVolumes.emptyTitle')}
         items={volumes.data?.items ?? []}
-        loading={volumes.isLoading}
+        loading={volumes.isPending}
         pagination={{
           page: volumes.data?.page ?? page,
           pageSize: volumes.data?.pageSize ?? pageSize,

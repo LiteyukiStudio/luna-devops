@@ -109,4 +109,29 @@ describe('project network shares card', () => {
     expect(screen.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Share service' })).not.toBeInTheDocument()
   })
+
+  it('renders ErrorState with retry in ShareFormDialog when topology fails instead of an empty selector', async () => {
+    mocks.getProjectTopology
+      .mockRejectedValueOnce(new Error('topology unavailable'))
+      .mockResolvedValueOnce({
+        nodes: [{
+          id: 'app_db',
+          name: 'postgres',
+          deploymentTargets: [{ id: 'dplt_db', name: 'prod', stage: 'prod', clusterId: 'clu_a', deleteStatus: 'active' }],
+        }],
+        edges: [],
+      })
+
+    renderCard(true)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Share service' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(await within(dialog).findByText(i18next.t('projectTopology.loadFailed'))).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Deployment target' })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Share service' })).toBeDisabled()
+
+    await user.click(within(dialog).getByRole('button', { name: i18next.t('common.retry') }))
+    expect(await within(dialog).findByRole('button', { name: 'Deployment target' })).toBeInTheDocument()
+  })
 })

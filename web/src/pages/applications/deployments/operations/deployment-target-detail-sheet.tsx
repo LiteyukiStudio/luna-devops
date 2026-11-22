@@ -10,6 +10,7 @@ import { DescriptionListItem } from '@/components/common/description-list-item'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { formatReleaseTime } from '@/pages/applications/application-config-utils'
@@ -46,9 +47,13 @@ export function DeploymentTargetDetailSheet({
 }) {
   const { t } = useTranslation()
   const target = item?.target
-  const namespace = item?.internalEndpoint?.namespace || '-'
+  const namespace = item?.internalEndpointError
+    ? t('common.unavailable')
+    : item?.internalEndpoint?.namespace || '-'
   const stage = target ? t(`deploymentsPage.stageLabels.${target.stage}`, { defaultValue: target.stage }) : '-'
-  const cluster = item?.runtimeStatus.clusterName || '-'
+  const cluster = item?.clusterError
+    ? t('common.unavailable')
+    : item?.runtimeStatus.clusterName || '-'
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -143,7 +148,17 @@ function DeploymentTargetDetailBody({
       <div className="shrink-0 border-b border-border">
         <SheetHeader className="p-6 pb-3 pr-14">
           <SheetTitle>{target.name}</SheetTitle>
-          <SheetDescription>{`${stage} · ${cluster} · ${namespace}`}</SheetDescription>
+          <SheetDescription>
+            <span>{stage}</span>
+            {' · '}
+            {item.clusterLoading
+              ? <span aria-hidden="true" className="inline-block h-3.5 w-20 animate-pulse rounded-md bg-muted align-middle" />
+              : <span>{cluster}</span>}
+            {' · '}
+            {item.internalEndpointLoading
+              ? <span aria-hidden="true" className="inline-block h-3.5 w-20 animate-pulse rounded-md bg-muted align-middle" />
+              : <span>{namespace}</span>}
+          </SheetDescription>
         </SheetHeader>
         <TabsList className="w-full border-b-0 px-6">
           <TabsTrigger value="overview">{t('deploymentsPage.overviewTab')}</TabsTrigger>
@@ -274,28 +289,40 @@ function DeploymentTargetDetailBody({
             <dl className="grid gap-3 sm:grid-cols-2">
               <DescriptionListItem
                 label={t('deploymentsPage.namespaceLocalAddress')}
-                value={<CopyableValue value={item.internalEndpoint?.serviceName} />}
+                value={item.internalEndpointLoading
+                  ? <Skeleton className="h-4 w-28" />
+                  : item.internalEndpointError
+                    ? <span className="text-xs text-muted-foreground">{t('common.unavailable')}</span>
+                    : <CopyableValue value={item.internalEndpoint?.serviceName} />}
               />
               <DescriptionListItem
                 label={t('deploymentsPage.crossNamespaceAddress')}
-                value={<CopyableValue value={item.internalEndpoint?.fqdn} />}
+                value={item.internalEndpointLoading
+                  ? <Skeleton className="h-4 w-44" />
+                  : item.internalEndpointError
+                    ? <span className="text-xs text-muted-foreground">{t('common.unavailable')}</span>
+                    : <CopyableValue value={item.internalEndpoint?.fqdn} />}
               />
               <DescriptionListItem
                 className="border-t border-border pt-3 sm:col-span-2"
                 label={t('deploymentsPage.projectAddresses')}
                 value={(
-                  projectRoutes.length > 0
-                    ? (
-                        <div className="divide-y divide-separator-subtle">
-                          {projectRoutes.map(route => (
-                            <div key={route.id} className="flex min-w-0 items-center justify-between gap-3 py-1.5 first:pt-0 last:pb-0">
-                              <AccessUrlLink url={gatewayRouteAccessUrl(route)} />
-                              <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={route.status} />
+                  item.routesLoading
+                    ? <Skeleton className="h-4 w-40" />
+                    : item.routesError
+                      ? <span className="text-xs text-muted-foreground">{t('common.unavailable')}</span>
+                      : projectRoutes.length > 0
+                        ? (
+                            <div className="divide-y divide-separator-subtle">
+                              {projectRoutes.map(route => (
+                                <div key={route.id} className="flex min-w-0 items-center justify-between gap-3 py-1.5 first:pt-0 last:pb-0">
+                                  <AccessUrlLink url={gatewayRouteAccessUrl(route)} />
+                                  <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={route.status} />
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      )
-                    : <span className="text-xs text-muted-foreground">{t('deploymentsPage.projectAddressesEmpty')}</span>
+                          )
+                        : <span className="text-xs text-muted-foreground">{t('deploymentsPage.projectAddressesEmpty')}</span>
                 )}
               />
             </dl>
@@ -309,7 +336,11 @@ function DeploymentTargetDetailBody({
               <DescriptionListItem label={t('deploymentsPage.releaseTime')} value={release ? formatReleaseTime(release, t) : '-'} />
               <DescriptionListItem label={t('deploymentsPage.imagePullPolicy')} mono value={target.imagePullPolicy || 'IfNotPresent'} />
               <DescriptionListItem label={t('deploymentsPage.kubernetesResourceName')} value={<CopyableValue value={target.kubernetesName} />} />
-              <DescriptionListItem label={t('deploymentsPage.namespace')} mono value={namespace} />
+              <DescriptionListItem
+                label={t('deploymentsPage.namespace')}
+                mono
+                value={item.internalEndpointLoading ? <Skeleton className="h-4 w-24" /> : namespace}
+              />
               <DescriptionListItem label={t('deploymentsPage.runtimeData')} value={target.dataVolumes.length > 0 ? t('deploymentsPage.dataVolumeCount', { count: target.dataVolumes.length }) : t('common.disabled')} />
               {releaseMessage && (
                 <DescriptionListItem

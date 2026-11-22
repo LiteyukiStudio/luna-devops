@@ -2,6 +2,7 @@ import type { MetricsStreamState } from './use-deployment-target-metrics'
 import { CircleHelp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { UsageRingGraphic } from '@/components/common/usage-ring'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
@@ -44,6 +45,7 @@ export function DeploymentTargetMetricsOverview({ streamState }: { streamState: 
   const { i18n, t } = useTranslation()
   const locale = i18n.language
   const metrics = streamState.kind === 'ready' ? streamState.metrics : null
+  const connecting = streamState.kind === 'connecting'
 
   return (
     <div aria-label={t('deploymentsPage.runtimeMetrics')} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -51,6 +53,7 @@ export function DeploymentTargetMetricsOverview({ streamState }: { streamState: 
         limitText={metrics ? formatMetricsCPU(metrics.cpuLimitMilli, locale) : '-'}
         limitTotal={metrics?.cpuLimitMilli ?? 0}
         liveUsageLabel={t('deploymentsPage.metricsLiveUsage')}
+        loading={connecting}
         locale={locale}
         perReplicaLabel={t('deploymentsPage.metricsPerReplica')}
         perReplicaLim={metrics ? formatMetricsCPU(metrics.replicaCpuLimitMilli, locale) : '-'}
@@ -67,6 +70,7 @@ export function DeploymentTargetMetricsOverview({ streamState }: { streamState: 
         limitText={metrics ? formatMetricsBytes(metrics.memoryLimitBytes, locale) : '-'}
         limitTotal={metrics?.memoryLimitBytes ?? 0}
         liveUsageLabel={t('deploymentsPage.metricsLiveUsage')}
+        loading={connecting}
         locale={locale}
         perReplicaLabel={t('deploymentsPage.metricsPerReplica')}
         perReplicaLim={metrics ? formatMetricsBytes(metrics.replicaMemoryLimitBytes, locale) : '-'}
@@ -87,12 +91,14 @@ export function DeploymentTargetMetricsOverview({ streamState }: { streamState: 
 export function PodResourceMiniRing({
   label,
   limitText,
+  loading = false,
   locale,
   percent,
   usedText,
 }: {
   label: string
   limitText?: string
+  loading?: boolean
   locale: string
   percent?: number
   usedText?: string
@@ -115,7 +121,9 @@ export function PodResourceMiniRing({
               <span className="font-normal text-muted-foreground">{`(${percentText})`}</span>
             </span>
           )
-        : <span className="shrink-0 font-mono tabular-nums text-muted-foreground">-</span>}
+        : loading
+          ? <Skeleton className="h-3.5 w-16" />
+          : <span className="shrink-0 font-mono tabular-nums text-muted-foreground">-</span>}
     </div>
   )
 }
@@ -124,6 +132,7 @@ function ResourceMetricCard({
   limitText,
   limitTotal,
   liveUsageLabel,
+  loading = false,
   locale,
   perReplicaLabel,
   perReplicaLim,
@@ -139,6 +148,7 @@ function ResourceMetricCard({
   limitText: string
   limitTotal: number
   liveUsageLabel: string
+  loading?: boolean
   locale: string
   perReplicaLabel: string
   perReplicaLim: string
@@ -167,9 +177,13 @@ function ResourceMetricCard({
       <UsageRingGraphic
         centerContent={(
           <>
-            <span className={cn('text-sm font-semibold tabular-nums', hasPercent ? 'text-foreground' : 'text-muted-foreground')}>
-              {formatMetricsPercent(percent, locale)}
-            </span>
+            {loading
+              ? <Skeleton className="h-4 w-9" />
+              : (
+                  <span className={cn('text-sm font-semibold tabular-nums', hasPercent ? 'text-foreground' : 'text-muted-foreground')}>
+                    {formatMetricsPercent(percent, locale)}
+                  </span>
+                )}
             <span className="text-[11px] text-muted-foreground">{title}</span>
           </>
         )}
@@ -182,7 +196,9 @@ function ResourceMetricCard({
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-baseline justify-between gap-3">
           <span className="shrink-0 text-xs text-muted-foreground">{liveUsageLabel}</span>
-          <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{livePair}</span>
+          {loading
+            ? <Skeleton className="h-4 w-16" />
+            : <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{livePair}</span>}
         </div>
         <div className="space-y-1 border-t border-border pt-1.5 text-xs">
           <div className="flex items-baseline justify-between gap-3">
@@ -203,16 +219,22 @@ function ResourceMetricCard({
                 </TooltipContent>
               </Tooltip>
             </span>
-            <span className="font-mono font-medium tabular-nums text-foreground">
-              {requestText}
-              {requestPercentText !== null && (
-                <span className="font-normal text-muted-foreground">{` (${requestPercentText})`}</span>
-              )}
-            </span>
+            {loading
+              ? <Skeleton className="h-3.5 w-14" />
+              : (
+                  <span className="font-mono font-medium tabular-nums text-foreground">
+                    {requestText}
+                    {requestPercentText !== null && (
+                      <span className="font-normal text-muted-foreground">{` (${requestPercentText})`}</span>
+                    )}
+                  </span>
+                )}
           </div>
           <div className="flex items-baseline justify-between gap-3">
             <span className="shrink-0 text-muted-foreground">{perReplicaLabel}</span>
-            <span className="font-mono font-medium tabular-nums text-foreground">{perReplicaPair}</span>
+            {loading
+              ? <Skeleton className="h-3.5 w-14" />
+              : <span className="font-mono font-medium tabular-nums text-foreground">{perReplicaPair}</span>}
           </div>
         </div>
       </div>

@@ -22,9 +22,13 @@ interface ProviderDialogProps {
   editingProvider: GitProvider | null
   form: UseFormReturn<ProviderForm>
   projects: Project[]
+  projectsError?: boolean
+  projectsLoading?: boolean
+  projectsRetrying?: boolean
   hasAnotherGithubProvider: boolean
   pending: boolean
   onOpenChange: (open: boolean) => void
+  onRetryProjects?: () => void
   onSubmit: (values: ProviderForm) => void
 }
 
@@ -33,9 +37,13 @@ export function ProviderDialog({
   editingProvider,
   form,
   projects,
+  projectsError = false,
+  projectsLoading = false,
+  projectsRetrying = false,
   hasAnotherGithubProvider,
   pending,
   onOpenChange,
+  onRetryProjects,
   onSubmit,
 }: ProviderDialogProps) {
   const { t } = useTranslation()
@@ -161,11 +169,26 @@ export function ProviderDialog({
               </Field>
               {providerScope === 'project' && (
                 <Field error={form.formState.errors.projectIds?.message} hint={t('codeRepositoriesView.ownerProjectHint')} label={t('codeRepositoriesView.ownerProject')} required>
-                  <ProjectSpaceMultiSelect
-                    projects={projects}
-                    value={form.watch('projectIds')}
-                    onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
-                  />
+                  {fieldControl => (
+                    <div className="grid gap-1.5">
+                      <ProjectSpaceMultiSelect
+                        {...fieldControl}
+                        error={projectsError}
+                        loading={projectsLoading}
+                        projects={projects}
+                        value={form.watch('projectIds')}
+                        onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                      />
+                      {projectsError && onRetryProjects && (
+                        <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                          <span>{t('common.unavailable')}</span>
+                          <Button disabled={projectsRetrying} size="sm" type="button" variant="outline" onClick={onRetryProjects}>
+                            {t('common.retry')}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </Field>
               )}
               <div className="grid gap-3 sm:grid-cols-2">
@@ -223,13 +246,39 @@ interface CredentialDialogProps {
   editingCredential: GitAccount | null
   form: UseFormReturn<CredentialForm>
   projects: Project[]
+  projectsError?: boolean
+  projectsLoading?: boolean
+  projectsRetrying?: boolean
   providers: GitProvider[]
+  providersError?: boolean
+  providersLoading?: boolean
+  providersRetrying?: boolean
   pending: boolean
   onOpenChange: (open: boolean) => void
+  onRetryProjects?: () => void
+  onRetryProviders?: () => void
   onSubmit: (values: CredentialForm) => void
 }
 
-export function CredentialDialog({ canManageGlobal = false, open, editingCredential, form, projects, providers, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
+export function CredentialDialog({
+  canManageGlobal = false,
+  open,
+  editingCredential,
+  form,
+  projects,
+  projectsError = false,
+  projectsLoading = false,
+  projectsRetrying = false,
+  providers,
+  providersError = false,
+  providersLoading = false,
+  providersRetrying = false,
+  pending,
+  onOpenChange,
+  onRetryProjects,
+  onRetryProviders,
+  onSubmit,
+}: CredentialDialogProps) {
   const { t } = useTranslation()
   const selectedProvider = providers.find(provider => provider.id === form.watch('providerId'))
   const credentialScope = form.watch('scope')
@@ -255,32 +304,58 @@ export function CredentialDialog({ canManageGlobal = false, open, editingCredent
           <DialogBody className="grid gap-3">
             <Field error={form.formState.errors.providerId?.message} label={t('codeRepositoriesView.provider')} required>
               {fieldControl => (
-                <Controller
-                  control={form.control}
-                  name="providerId"
-                  render={({ field }) => (
-                    <Select
-                      disabled={Boolean(editingCredential)}
-                      value={field.value || undefined}
-                      onValueChange={(next) => {
-                        if (!next || next === field.value)
-                          return
-                        field.onChange(next)
-                        form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
-                        form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
-                      }}
-                    >
-                      <SelectTrigger {...fieldControl} className="w-full">
-                        <SelectValue placeholder={t('codeRepositoriesView.selectProvider')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {providers.map(provider => (
-                          <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="grid gap-1.5">
+                  <Controller
+                    control={form.control}
+                    name="providerId"
+                    render={({ field }) => (
+                      <Select
+                        disabled={Boolean(editingCredential) || providersLoading || providersError}
+                        value={!providersLoading && !providersError && providers.some(provider => provider.id === field.value) ? field.value : ''}
+                        onValueChange={(next) => {
+                          if (!next || next === field.value)
+                            return
+                          field.onChange(next)
+                          form.setValue('scope', 'user', { shouldDirty: true, shouldValidate: true })
+                          form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
+                        }}
+                      >
+                        <SelectTrigger {...fieldControl} className="w-full">
+                          <SelectValue
+                            placeholder={
+                              providersLoading
+                                ? t('common.loading')
+                                : providersError
+                                  ? t('common.unavailable')
+                                  : providers.length === 0
+                                    ? t('common.noOptions')
+                                    : t('codeRepositoriesView.selectProvider')
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {providersLoading
+                            ? <SelectItem disabled value="__loading__">{t('common.loading')}</SelectItem>
+                            : providersError
+                              ? <SelectItem disabled value="__error__">{t('common.unavailable')}</SelectItem>
+                              : providers.length === 0
+                                ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                                : providers.map(provider => (
+                                    <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
+                                  ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {providersError && onRetryProviders && (
+                    <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                      <span>{t('common.unavailable')}</span>
+                      <Button disabled={providersRetrying} size="sm" type="button" variant="outline" onClick={onRetryProviders}>
+                        {t('common.retry')}
+                      </Button>
+                    </div>
                   )}
-                />
+                </div>
               )}
             </Field>
             {selectedProvider && <CredentialOAuthGuide provider={selectedProvider} />}
@@ -315,11 +390,26 @@ export function CredentialDialog({ canManageGlobal = false, open, editingCredent
             </Field>
             {credentialScope === 'project' && (
               <Field error={form.formState.errors.projectIds?.message} hint={t('codeRepositoriesView.ownerProjectHint')} label={t('codeRepositoriesView.ownerProject')} required>
-                <ProjectSpaceMultiSelect
-                  projects={allowedProjects}
-                  value={form.watch('projectIds')}
-                  onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
-                />
+                {fieldControl => (
+                  <div className="grid gap-1.5">
+                    <ProjectSpaceMultiSelect
+                      {...fieldControl}
+                      error={projectsError}
+                      loading={projectsLoading}
+                      projects={allowedProjects}
+                      value={form.watch('projectIds')}
+                      onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                    {projectsError && onRetryProjects && (
+                      <div className="flex items-center justify-between gap-2 text-xs text-danger" role="alert">
+                        <span>{t('common.unavailable')}</span>
+                        <Button disabled={projectsRetrying} size="sm" type="button" variant="outline" onClick={onRetryProjects}>
+                          {t('common.retry')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Field>
             )}
             <Field error={form.formState.errors.username?.message} hint={t('codeRepositoriesView.usernameHint')} label={t('codeRepositoriesView.username')} required><Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} autoComplete="off" placeholder={t('codeRepositoriesView.usernamePlaceholder')} /></Field>

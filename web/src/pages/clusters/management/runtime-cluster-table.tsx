@@ -9,9 +9,10 @@ import { RuntimeClusterPressureRings } from '@/components/common/runtime-cluster
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Skeleton } from '@/components/ui/skeleton'
 import { canManageCluster, gatewayAccessSummary, scopeLabel } from './cluster-helpers'
 
-export function RuntimeClusterTable({ clusters, error, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onCreate, onDelete, onEdit, onEgressExceptions, onTest }: {
+export function RuntimeClusterTable({ clusters, error, loading, pagination, pressureByClusterId, pressureLoading, projects, projectsLoading = false, user, onCreate, onDelete, onEdit, onEgressExceptions, onTest }: {
   clusters: RuntimeCluster[]
   error?: {
     onRetry: () => void
@@ -29,6 +30,7 @@ export function RuntimeClusterTable({ clusters, error, loading, pagination, pres
   pressureByClusterId: Record<string, RuntimeClusterPressure>
   pressureLoading: boolean
   projects: Project[]
+  projectsLoading?: boolean
   user?: CurrentUser
   onCreate?: () => void
   onDelete: (cluster: RuntimeCluster) => void
@@ -52,13 +54,17 @@ export function RuntimeClusterTable({ clusters, error, loading, pagination, pres
               ? <PendingShareApprovalsBadge cluster={item} onOpen={onEgressExceptions} />
               : null}
           </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {scopeLabel(item, projectMap, t)}
-            {' · '}
-            {t('clustersPage.maxConcurrentBuilds')}
-            {' '}
-            {item.maxConcurrentBuilds || 4}
-          </p>
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            {item.scope === 'project' && projectsLoading && (item.projectIds ?? []).some(projectId => !projectMap[projectId])
+              ? <Skeleton className="h-4 w-24" />
+              : scopeLabel(item, projectMap, t)}
+            <span>·</span>
+            <span>
+              {t('clustersPage.maxConcurrentBuilds')}
+              {' '}
+              {item.maxConcurrentBuilds || 4}
+            </span>
+          </div>
         </div>
       ),
     },

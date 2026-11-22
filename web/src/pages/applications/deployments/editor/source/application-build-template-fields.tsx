@@ -20,17 +20,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useFieldError } from '../deployment-target-editor-utils'
 
 export function ApplicationBuildTemplateFields({
-  dockerfileSuggestions,
   onRetryTemplates,
   recommendedTemplateIds,
+  showNoDockerfileNotice = false,
   templates,
   templatesError = false,
   templatesLoading = false,
   templatesRetrying = false,
 }: {
-  dockerfileSuggestions: string[]
+  dockerfileSuggestions?: string[]
   onRetryTemplates?: () => void
   recommendedTemplateIds: string[]
+  showNoDockerfileNotice?: boolean
   templates: BuildTemplate[]
   templatesError?: boolean
   templatesLoading?: boolean
@@ -101,7 +102,7 @@ export function ApplicationBuildTemplateFields({
         )}
       </Field>
 
-      {mode === 'repository_dockerfile' && dockerfileSuggestions.length === 0 && (
+      {mode === 'repository_dockerfile' && showNoDockerfileNotice && (
         <Alert className="@xl/workspace:col-span-2">
           <Sparkles className="size-4" />
           <AlertTitle>{t('buildTemplates.noDockerfileTitle')}</AlertTitle>
@@ -135,16 +136,18 @@ export function ApplicationBuildTemplateFields({
                     {control => (
                       <Select value={templateID || undefined} onValueChange={selectTemplate}>
                         <SelectTrigger {...control} className="w-full">
-                          <SelectValue placeholder={t('common.select')} />
+                          <SelectValue placeholder={orderedTemplates.length === 0 ? t('common.noOptions') : t('common.select')} />
                         </SelectTrigger>
                         <SelectContent position="popper">
-                          {orderedTemplates.map(item => (
-                            <SelectItem key={`${item.id}:${item.version}`} value={item.id}>
-                              {buildTemplateIcon(item)}
-                              <span>{t(`buildTemplates.names.${item.id}`)}</span>
-                              {recommendedTemplateIds.includes(item.id) && <Badge className="ml-auto" variant="secondary">{t('buildTemplates.recommended')}</Badge>}
-                            </SelectItem>
-                          ))}
+                          {orderedTemplates.length === 0
+                            ? <SelectItem disabled value="__empty__">{t('common.noOptions')}</SelectItem>
+                            : orderedTemplates.map(item => (
+                                <SelectItem key={`${item.id}:${item.version}`} value={item.id}>
+                                  {buildTemplateIcon(item)}
+                                  <span>{t(`buildTemplates.names.${item.id}`)}</span>
+                                  {recommendedTemplateIds.includes(item.id) && <Badge className="ml-auto" variant="secondary">{t('buildTemplates.recommended')}</Badge>}
+                                </SelectItem>
+                              ))}
                         </SelectContent>
                       </Select>
                     )}
