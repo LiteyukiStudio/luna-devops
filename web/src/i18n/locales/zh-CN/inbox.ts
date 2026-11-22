@@ -92,6 +92,11 @@ export default {
       runtimeDegraded: { title: '工作负载副本就绪异常' },
       runtimeAnomaly: { content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）检测到运行异常：{{reason}}（就绪副本 {{readyReplicas}}/{{desiredReplicas}}）。' },
       runtimeRecovered: { title: '运行状态已恢复', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）已恢复正常运行（故障持续 {{durationSeconds}} 秒）。' },
+      buildFailed: { title: '构建失败', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}} · {{gitRef}}）构建失败：{{reason}}' },
+      releaseFailed: { title: '发布失败', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}} · v{{revision}}）发布失败：{{reason}}' },
+      hookFailed: { title: '生命周期钩子执行失败', content: '「{{projectName}}」中的 {{applicationName}} 钩子 {{hookName}}（{{phase}}）执行失败：{{reason}}' },
+      gatewayFailed: { title: '网关路由同步失败', content: '「{{projectName}}」中的 {{applicationName}} 域名 {{domain}} 路由同步失败：{{reason}}' },
+      certificateFailed: { title: '证书签发或续期异常', content: '「{{projectName}}」中的 {{applicationName}} 域名 {{domain}} 证书异常：{{reason}}' },
     },
   },
 }

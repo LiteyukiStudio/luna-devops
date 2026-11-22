@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './application-deployment-runtime-utils'
 import type { BuildRun, DeploymentTarget, GatewayRoute, Release } from '@/api'
-import { CircleStop, Download, Eye, MoreHorizontal, Package, PanelRightOpen, Pencil, Plus, RefreshCw, Rocket, RotateCcw, Terminal, Trash2 } from 'lucide-react'
+import { CircleStop, Download, Eye, LoaderCircle, MoreHorizontal, Package, PanelRightOpen, Pencil, Plus, RefreshCw, Rocket, RotateCcw, Sparkles, Terminal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -380,6 +380,7 @@ function DeploymentVersionSummary({ onViewLogs, release }: { onViewLogs: (releas
     return <span className="text-sm text-muted-foreground">{t('deploymentsPage.notDeployed')}</span>
 
   const failureReason = releaseFailureReason(release, t)
+  const aiStatus = release.aiDiagnosis?.status
   return (
     <div className="grid min-w-0 max-w-72 gap-0.5">
       <div className="flex min-w-0 items-center gap-2">
@@ -399,6 +400,22 @@ function DeploymentVersionSummary({ onViewLogs, release }: { onViewLogs: (releas
             {t('deploymentsPage.viewLogs')}
           </Button>
         </div>
+      )}
+      {aiStatus === 'running' && (
+        <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+          <LoaderCircle aria-hidden="true" className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
+          <span className="truncate">{t('aiAssistant.deliveryDiagnosis.badgeRunning')}</span>
+        </span>
+      )}
+      {aiStatus === 'succeeded' && (
+        <button
+          className="inline-flex w-fit max-w-full items-center gap-1 rounded-sm text-left text-xs font-medium text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          type="button"
+          onClick={() => onViewLogs(release)}
+        >
+          <Sparkles aria-hidden="true" className="size-3 shrink-0" />
+          <span className="truncate">{t('aiAssistant.deliveryDiagnosis.viewAction')}</span>
+        </button>
       )}
     </div>
   )

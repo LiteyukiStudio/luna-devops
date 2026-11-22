@@ -234,6 +234,41 @@ describe('application deployment targets behavior', () => {
     expect(onViewLogs).toHaveBeenCalledWith(failedRelease)
   })
 
+  it('shows inline AI diagnosis status and opens release logs when clicking View AI Diagnosis', async () => {
+    const user = userEvent.setup()
+    const onViewLogs = vi.fn()
+    const diagnosedRelease: Release = {
+      ...release,
+      failureCode: 'rollout_failed',
+      status: 'failed',
+      aiDiagnosis: {
+        id: 'aidg_rel_1',
+        subjectType: 'release',
+        subjectId: release.id,
+        status: 'succeeded',
+        failureCode: 'rollout_failed',
+        rootCauseSummary: 'Readiness probe failed on port 8080',
+        confidence: 'high',
+        suggestions: ['Update readiness probe port to 3000'],
+        createdAt: '2026-11-22T06:53:45Z',
+      },
+    }
+    renderList([{
+      deployed: true,
+      release: diagnosedRelease,
+      routes: [],
+      runtimeStatus: { podCount: 1, summary: '', value: 'ready' },
+      target: deploymentTarget,
+      webConsoleEnabled: false,
+    }], { onViewLogs })
+
+    const card = screen.getAllByText('app-dev', { selector: 'button' })
+      .map(element => element.closest<HTMLElement>('[data-slot="deployment-target-card"]'))
+      .find(element => element !== null) as HTMLElement
+    await user.click(within(card).getByRole('button', { name: 'View AI Diagnosis' }))
+    expect(onViewLogs).toHaveBeenCalledWith(diagnosedRelease)
+  })
+
   it('offers cancel only while the release is active', async () => {
     const user = userEvent.setup()
     const onCancelRelease = vi.fn()

@@ -1,5 +1,5 @@
 import type { BuildJob, BuildRun } from '@/api'
-import { MoreHorizontal, Package, RotateCcw, ScrollText, Square, Trash2 } from 'lucide-react'
+import { LoaderCircle, MoreHorizontal, Package, RotateCcw, ScrollText, Sparkles, Square, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -33,7 +33,7 @@ const buildFailedStatuses = new Set(['failed', 'timeout'])
 export interface BuildRunBinding { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
 
 /** 构建状态：执行中显示“构建中 n/m”，悬停查看当前阶段和步骤进度；失败、超时或取消时直接显示原因摘要，悬停查看任务诊断信息。 */
-export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, run: BuildRun }) {
+export function BuildRunStatusCell({ latestJob, onOpenDiagnosis, run }: { latestJob?: BuildJob, onOpenDiagnosis?: () => void, run: BuildRun }) {
   const { t } = useTranslation()
   const building = latestJob?.status === 'running'
   const steps = building && latestJob.stepsTotal ? `${latestJob.stepsCompleted}/${latestJob.stepsTotal}` : undefined
@@ -41,6 +41,7 @@ export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, r
   const failureReason = run.failureCode ? t(`buildsPage.failureCodes.${run.failureCode}`) : ''
   const status = <StatusIndicator detail={steps} label={building ? t('buildsPage.building') : t(`buildsPage.statuses.${run.status}`)} state={statusIndicatorStateFor(run.status)} />
   const hint = failureMessage || (building ? buildJobLiveHint(latestJob, t) : '')
+  const aiStatus = run.aiDiagnosis?.status
   return (
     <div className="grid min-w-0 max-w-full gap-0.5">
       {hint
@@ -51,6 +52,22 @@ export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, r
           )
         : status}
       {failureReason && <span className="truncate text-xs text-muted-foreground" title={failureReason}>{failureReason}</span>}
+      {aiStatus === 'running' && (
+        <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+          <LoaderCircle aria-hidden="true" className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
+          <span className="truncate">{t('aiAssistant.deliveryDiagnosis.badgeRunning')}</span>
+        </span>
+      )}
+      {aiStatus === 'succeeded' && onOpenDiagnosis && (
+        <button
+          className="inline-flex w-fit max-w-full items-center gap-1 rounded-sm text-left text-xs font-medium text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          type="button"
+          onClick={onOpenDiagnosis}
+        >
+          <Sparkles aria-hidden="true" className="size-3 shrink-0" />
+          <span className="truncate">{t('aiAssistant.deliveryDiagnosis.viewAction')}</span>
+        </button>
+      )}
     </div>
   )
 }

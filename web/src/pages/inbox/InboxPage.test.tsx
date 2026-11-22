@@ -139,8 +139,8 @@ describe('inbox runtime self-heal proposal workflow', () => {
     const user = userEvent.setup()
     renderInbox()
 
-    expect(await screen.findByText('Worker container exceeded 256Mi memory limit during batch export.')).toBeInTheDocument()
-    expect(screen.getByText(i18next.t('inbox.selfHeal.circuitBreakerBanner'))).toBeInTheDocument()
+    expect(await screen.findByText(i18next.t('inbox.selfHeal.circuitBreakerBanner'))).toBeInTheDocument()
+    expect(screen.getAllByText('Worker container exceeded 256Mi memory limit during batch export.')).toHaveLength(2)
 
     // Click "Confirm self-heal"
     await user.click(screen.getByRole('button', { name: i18next.t('inbox.selfHeal.confirmAction') }))

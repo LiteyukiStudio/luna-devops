@@ -1,10 +1,15 @@
 package worker
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"gorm.io/gorm"
 )
@@ -105,7 +110,7 @@ func TestNotificationEntityRefsRetainIDsForSoftDeletedLookups(t *testing.T) {
 		}
 	}
 
-	loadedProject, loadedApplication, loadedTarget := (&Runner{db: db}).notificationContext(project.ID, application.ID, target.ID)
+	loadedProject, loadedApplication, loadedTarget := (&Runner{db: db}).notificationContext(t.Context(), project.ID, application.ID, target.ID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(project.ID, application.ID, target.ID, loadedProject, loadedApplication, loadedTarget)
 	if projectRef.ID != project.ID || applicationRef.ID != application.ID || targetRef.ID != target.ID {
 		t.Fatalf("soft-deleted refs lost authoritative IDs: project=%#v application=%#v target=%#v", projectRef, applicationRef, targetRef)
@@ -136,7 +141,7 @@ func TestNotificationDeploymentTargetOwnerUsesSoftDeletedTargetForBuildAndReleas
 	}
 
 	runner := &Runner{db: db}
-	_, _, loadedTarget := runner.notificationContext(target.ProjectID, target.ApplicationID, target.ID)
+	_, _, loadedTarget := runner.notificationContext(t.Context(), target.ProjectID, target.ApplicationID, target.ID)
 	if loadedTarget.ID != "" {
 		t.Fatalf("normal notification context unexpectedly loaded soft-deleted target %#v", loadedTarget)
 	}
@@ -189,7 +194,7 @@ func TestNotificationBuildImageRefPrefersPersistedImage(t *testing.T) {
 		TargetTag:        "fallback",
 	}
 
-	if got := (&Runner{}).notificationBuildImageRef(run); got != run.ImageRef {
+	if got := (&Runner{}).notificationBuildImageRef(t.Context(), run); got != run.ImageRef {
 		t.Fatalf("notificationBuildImageRef() = %q, want %q", got, run.ImageRef)
 	}
 }
@@ -203,7 +208,7 @@ func TestNotificationBuildImageRefFallsBackToBuildTarget(t *testing.T) {
 	}
 
 	want := "registry.example.com/team/app:feature-identifier-notifications-1234567890ab"
-	if got := (&Runner{}).notificationBuildImageRef(run); got != want {
+	if got := (&Runner{}).notificationBuildImageRef(t.Context(), run); got != want {
 		t.Fatalf("notificationBuildImageRef() = %q, want %q", got, want)
 	}
 }
@@ -316,7 +321,7 @@ func TestNotificationHookOwnerPrefersDeploymentTargetThenHookConfig(t *testing.T
 		t.Fatalf("create soft-deleted deployment target: %v", err)
 	}
 	runWithTarget.DeploymentTargetID = deletedTarget.ID
-	_, _, lookedUpTarget := runner.notificationContext(config.ProjectID, "", deletedTarget.ID)
+	_, _, lookedUpTarget := runner.notificationContext(t.Context(), config.ProjectID, "", deletedTarget.ID)
 	if got := runner.notificationHookOwnerUserID(t.Context(), runWithTarget, lookedUpTarget); got != deletedTarget.CreatedBy {
 		t.Fatalf("owner for soft-deleted deployment target = %q, want %q", got, deletedTarget.CreatedBy)
 	}
@@ -332,5 +337,219 @@ func TestNotificationHookOwnerPrefersDeploymentTargetThenHookConfig(t *testing.T
 	}
 	if got := runner.notificationHookOwnerUserID(t.Context(), model.HookRun{ProjectID: config.ProjectID, HookConfigID: "hook_missing"}, model.DeploymentTarget{}); got != "" {
 		t.Fatalf("owner for missing hook config = %q, want empty", got)
+	}
+}
+
+func TestDeliveryFailuresPublishAndSyncInboxMessagesPostgres(t *testing.T) {
+	db := testdb.OpenDatabase(t, testdb.Options{
+		SchemaPrefix: "luna_delivery_inbox_sync",
+		Migrate: func(db *gorm.DB) error {
+			return database.MigrateContext(context.Background(), db)
+		},
+	})
+	ctx := context.Background()
+
+	owner := model.User{ID: "usr_inb_owner", Email: "owner@example.test", Name: "Owner", Role: authz.PlatformRoleUser}
+	adminActor := model.User{ID: "usr_inb_admin", Email: "admin@example.test", Name: "Admin", Role: authz.PlatformRoleAdmin}
+	viewer := model.User{ID: "usr_inb_viewer", Email: "viewer@example.test", Name: "Viewer", Role: authz.PlatformRoleUser}
+	for _, u := range []model.User{owner, adminActor, viewer} {
+		if err := db.Create(&u).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	proj := model.Project{ID: "prj_inb_1", Name: "Space", Identifier: "space", DeleteStatus: "active"}
+	if err := db.Create(&proj).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []model.ProjectMember{
+		{ID: "pm_inb_1", ProjectID: proj.ID, UserID: owner.ID, Role: authz.ProjectRoleOwner},
+		{ID: "pm_inb_2", ProjectID: proj.ID, UserID: viewer.ID, Role: authz.ProjectRoleViewer},
+	} {
+		if err := db.Create(&m).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := model.Application{ID: "app_inb_1", ProjectID: proj.ID, Name: "Web", Identifier: "web", DeleteStatus: "active"}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatal(err)
+	}
+	target := model.DeploymentTarget{ID: "dplt_inb_1", ProjectID: proj.ID, ApplicationID: app.ID, Name: "Prod", Stage: "prod", WorkloadType: "Deployment", Enabled: true, DeleteStatus: "active"}
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &Runner{db: db, publicBaseURL: "https://devops.example.test"}
+	run := model.BuildRun{
+		ID:                 "bldr_inb_1",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Status:             "failed",
+		FailureCode:        "job_failed",
+		SourceBranch:       "main",
+		CreatedBy:          adminActor.ID,
+	}
+
+	// 1. Immediate failure publishes Inbox to Owner AND triggering Admin (not Viewer), redacting secrets.
+	runner.publishBuildFailureInboxOnly(ctx, run, "pull failed Authorization: Bearer secret_tok_12345", nil)
+
+	var msgs []model.InboxMessage
+	if err := db.Where("project_id = ? AND resource_id = ?", proj.ID, run.ID).Find(&msgs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 inbox recipients (owner + triggering admin), got %d: %+v", len(msgs), msgs)
+	}
+	for _, m := range msgs {
+		if m.RecipientUserID == viewer.ID {
+			t.Fatalf("viewer should not receive build failure inbox message")
+		}
+		if strings.Contains(m.ParamsJSON, "secret_tok_12345") {
+			t.Fatalf("expected secret token redacted from params_json, got %s", m.ParamsJSON)
+		}
+		if m.DeepLink != "/projects/prj_inb_1/apps/app_inb_1?tab=builds#buildRunId=bldr_inb_1" {
+			t.Fatalf("unexpected deep link %q", m.DeepLink)
+		}
+	}
+
+	// 2. Subsequent AI diagnosis completion updates the SAME Inbox rows in-place with aiRootCauseSummary!
+	runner.publishBuildFailureInboxOnly(ctx, run, "pull failed", &notification.AIDiagnosisContext{
+		RootCauseSummary: "Dockerfile FROM nginxx:1.27-alpine has a typo",
+		Suggestions:      []string{"Change nginxx to nginx"},
+	})
+	if err := db.Where("project_id = ? AND resource_id = ?", proj.ID, run.ID).Find(&msgs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected coalesced 2 rows after AI update, got %d", len(msgs))
+	}
+	for _, m := range msgs {
+		if !strings.Contains(m.ParamsJSON, "Dockerfile FROM nginxx:1.27-alpine has a typo") {
+			t.Fatalf("expected AI diagnosis summary in params_json, got %s", m.ParamsJSON)
+		}
+	}
+
+	// 3. Release failure also publishes with #releaseId deep link.
+	rel := model.Release{
+		ID:                 "rel_inb_1",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Status:             "failed",
+		Revision:           3,
+		CreatedBy:          owner.ID,
+	}
+	runner.publishReleaseFailureInboxOnly(ctx, rel, "ImagePullBackOff", nil)
+	var relMsg model.InboxMessage
+	if err := db.First(&relMsg, "recipient_user_id = ? AND resource_id = ?", owner.ID, rel.ID).Error; err != nil {
+		t.Fatalf("expected release failure inbox message: %v", err)
+	}
+	if relMsg.DeepLink != "/projects/prj_inb_1/apps/app_inb_1?tab=deployments#releaseId=rel_inb_1" {
+		t.Fatalf("unexpected release deep link: %q", relMsg.DeepLink)
+	}
+
+	// 4. Revoked ex-member (non-admin) and downgraded viewer MUST NOT receive Inbox messages even as CreatedBy!
+	exMember := model.User{ID: "usr_inb_ex", Email: "ex@example.test", Name: "Ex", Role: authz.PlatformRoleUser}
+	if err := db.Create(&exMember).Error; err != nil {
+		t.Fatal(err)
+	}
+	exRun := model.BuildRun{
+		ID:                 "bldr_inb_ex",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Status:             "failed",
+		FailureCode:        "job_failed",
+		CreatedBy:          exMember.ID,
+	}
+	runner.publishBuildFailureInboxOnly(ctx, exRun, "build failed", nil)
+	viewerRun := model.BuildRun{
+		ID:                 "bldr_inb_viewer",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Status:             "failed",
+		FailureCode:        "job_failed",
+		CreatedBy:          viewer.ID,
+	}
+	runner.publishBuildFailureInboxOnly(ctx, viewerRun, "build failed", nil)
+	var leakedCount int64
+	if err := db.Model(&model.InboxMessage{}).Where("recipient_user_id IN ?", []string{exMember.ID, viewer.ID}).Count(&leakedCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if leakedCount != 0 {
+		t.Fatalf("expected 0 leaked inbox messages to ex-member or viewer, got %d", leakedCount)
+	}
+
+	// 5. Superseded / user-canceled builds & releases MUST NOT publish failure Inbox messages!
+	runner.publishReleaseFailureInboxOnly(ctx, model.Release{
+		ID:                 "rel_inb_superseded",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Status:             "failed",
+		FailureCode:        model.ReleaseFailureSuperseded,
+		CreatedBy:          owner.ID,
+	}, "superseded", nil)
+	runner.publishBuildFailureInboxOnly(ctx, model.BuildRun{
+		ID:                 "bldr_inb_canceled",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Status:             "failed",
+		FailureCode:        model.BuildFailureCanceledByUser,
+		CreatedBy:          owner.ID,
+	}, "canceled", nil)
+	var noiseCount int64
+	if err := db.Model(&model.InboxMessage{}).Where("resource_id IN ?", []string{"rel_inb_superseded", "bldr_inb_canceled"}).Count(&noiseCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if noiseCount != 0 {
+		t.Fatalf("expected 0 inbox messages for superseded/canceled runs, got %d", noiseCount)
+	}
+
+	// 6. Timed-out build preserves Type == "build.timeout" across initial publish and AI diagnosis update.
+	timeoutRun := model.BuildRun{
+		ID:                 "bldr_inb_timeout",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Status:             "timeout",
+		FailureCode:        "timeout",
+		CreatedBy:          owner.ID,
+	}
+	runner.publishBuildFailureInboxOnly(ctx, timeoutRun, "timed out", nil)
+	_ = runner.emitBuildEventWithAIError(ctx, timeoutRun, "failed", "timed out", &notification.AIDiagnosisContext{
+		RootCauseSummary: "npm install hung on private registry",
+		Suggestions:      []string{"Configure registry mirror", "Configure registry mirror"},
+	})
+	var timeoutMsg model.InboxMessage
+	if err := db.First(&timeoutMsg, "recipient_user_id = ? AND resource_id = ?", owner.ID, timeoutRun.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if timeoutMsg.Type != "build.timeout" {
+		t.Fatalf("expected timeoutMsg.Type == build.timeout, got %q", timeoutMsg.Type)
+	}
+	if strings.Count(timeoutMsg.ParamsJSON, "Configure registry mirror") != 1 {
+		t.Fatalf("expected deduplicated suggestions in params_json, got %s", timeoutMsg.ParamsJSON)
+	}
+
+	// 7. Patrolled background certificate expiration also publishes certificateFailed to Inbox.
+	certRoute := model.GatewayRoute{
+		ID:                 "gwr_cert_exp",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		Host:               "expired.example.test",
+		CreatedBy:          owner.ID,
+	}
+	runner.emitPatrolledCertificateEvent(ctx, certRoute, "expired", "certificate has expired", "certificate:gwr_cert_exp:expired:1700000000", time.Now().UTC())
+	var certMsg model.InboxMessage
+	if err := db.First(&certMsg, "recipient_user_id = ? AND resource_id = ?", owner.ID, certRoute.ID).Error; err != nil {
+		t.Fatalf("expected patrolled certificate expired inbox message: %v", err)
+	}
+	if certMsg.TitleKey != "inbox.delivery.certificateFailed.title" {
+		t.Fatalf("unexpected cert titleKey %q", certMsg.TitleKey)
 	}
 }

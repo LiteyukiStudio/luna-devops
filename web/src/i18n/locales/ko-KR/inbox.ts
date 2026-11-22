@@ -92,6 +92,11 @@ export default {
       runtimeDegraded: { title: '워크로드 상태 저하' },
       runtimeAnomaly: { content: '「{{projectName}}」의 {{applicationName}}({{targetName}})에서 런타임 이상이 감지되었습니다: {{reason}} (준비 레플리카 {{readyReplicas}}/{{desiredReplicas}}).' },
       runtimeRecovered: { title: '런타임 상태 복구됨', content: '「{{projectName}}」의 {{applicationName}}({{targetName}})이 정상 복구되었습니다 (지속 {{durationSeconds}}초).' },
+      buildFailed: { title: '빌드 실패', content: '「{{projectName}}」의 {{applicationName}}({{targetName}} · {{gitRef}}) 빌드에 실패했습니다: {{reason}}' },
+      releaseFailed: { title: '릴리스 실패', content: '「{{projectName}}」의 {{applicationName}}({{targetName}} · v{{revision}}) 릴리스에 실패했습니다: {{reason}}' },
+      hookFailed: { title: '훅 실행 실패', content: '「{{projectName}}」의 {{applicationName}} 훅 {{hookName}}({{phase}}) 실행에 실패했습니다: {{reason}}' },
+      gatewayFailed: { title: '게이트웨이 라우트 동기화 실패', content: '「{{projectName}}」의 {{applicationName}} 도메인 {{domain}} 라우트 동기화에 실패했습니다: {{reason}}' },
+      certificateFailed: { title: '인증서 오류', content: '「{{projectName}}」의 {{applicationName}} 도메인 {{domain}} 인증서 오류: {{reason}}' },
     },
   },
 }

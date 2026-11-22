@@ -2201,6 +2201,42 @@ export interface UpdateProjectAIAutomationConfigInput {
   circuitBreakerWindowSeconds?: number
 }
 
+export type ProjectAIDiagnosisCategory = 'delivery' | 'runtime'
+export type ProjectAIDiagnosisSubjectType = 'build_run' | 'release' | 'runtime_incident'
+export type ProjectAIDiagnosisStatus = 'running' | 'succeeded' | 'failed'
+export type ProjectAIAutoHealStatus = 'none' | 'succeeded' | 'failed' | 'circuit_broken'
+
+export interface ProjectAIDiagnosisRecord {
+  id: string
+  projectId: string
+  applicationId: string
+  applicationName: string
+  deploymentTargetId: string
+  deploymentTargetName: string
+  category: ProjectAIDiagnosisCategory
+  subjectType: ProjectAIDiagnosisSubjectType
+  subjectId: string
+  status: ProjectAIDiagnosisStatus
+  triggerCode: string
+  rootCauseSummary: string
+  confidence: 'high' | 'medium' | 'low'
+  suggestions: string[]
+  proposedAction?: AIProposedAction
+  autoHealMode?: AISelfHealMode
+  autoHealStatus?: ProjectAIAutoHealStatus
+  autoHealSummary?: string
+  circuitBreakerTripped?: boolean
+  errorCode?: string
+  deepLink: string
+  createdAt: string
+  finishedAt?: string | null
+}
+
+export interface ProjectAIDiagnosisListParams extends PaginationParams {
+  category?: 'all' | ProjectAIDiagnosisCategory
+  status?: ProjectAIDiagnosisStatus
+}
+
 export interface AIActionProposalPreviewOutput {
   toolName: string
   approvalTier: 'L0' | 'L1' | 'L2'

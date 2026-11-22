@@ -6,6 +6,7 @@ import { Settings2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, buildJobLogsStreamUrl } from '@/api'
 import { BuildEnvironmentEditorDialog } from '@/components/common/build-environment-editor-dialog'
@@ -64,25 +65,26 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
   registries: ArtifactRegistry[]
 }) {
   const { i18n, t } = useTranslation()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const billingDisplay = useBillingDisplay(i18n.language)
+  const hashBuildRunId = buildRunIdFromHash(location.hash)
+  const currentHashToken = hashBuildRunId ? `${location.key}:${hashBuildRunId}` : ''
   const [dialogOpen, setDialogOpen] = useState(false)
   const [branchSearch, setBranchSearch] = useState('')
-  const [runSearch, setRunSearch] = useState(() => buildRunIdFromHash(window.location.hash))
+  const [runSearch, setRunSearch] = useState('')
   const [runsPage, setRunsPage] = useState(1)
   const [runsPageSize, setRunsPageSize] = useState(10)
   const [eventFilter, setEventFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
   const [actorFilter, setActorFilter] = useState('')
-  const [logJob, setLogJob] = useState<BuildJob | null>(null)
+  const [manualLogTarget, setManualLogTarget] = useState<{ job: BuildJob | null, runId: string } | null>(null)
+  const [dismissedHashToken, setDismissedHashToken] = useState('')
   const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
   const [environmentVariableRows, setEnvironmentVariableRows] = useState<KeyValueRow[]>([])
   const [environmentSecretRows, setEnvironmentSecretRows] = useState<KeyValueRow[]>([])
   const [logStreamState, setLogStreamState] = useState<BuildLogStreamState>({ jobId: '', content: '', streaming: false })
-  const logJobId = logJob?.id ?? ''
-  const logContent = logStreamState.jobId === logJobId ? logStreamState.content : ''
-  const logStreaming = Boolean(logJobId) && (logStreamState.jobId !== logJobId || logStreamState.streaming)
   const form = useForm<TriggerForm>({ defaultValues: triggerDefaults, mode: 'onChange' })
   const selectedDeploymentTarget = deploymentTargets.find(config => config.id === form.watch('deploymentTargetId')) ?? firstSelectableDeploymentTarget(deploymentTargets)
   const selectedBinding = repositoryBindings.find(item => item.id === selectedDeploymentTarget?.repositoryBindingId) ?? binding
@@ -102,19 +104,26 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     }
     return grouped
   }, [buildJobs])
+  const activeHashRunId = !manualLogTarget && currentHashToken && dismissedHashToken !== currentHashToken ? hashBuildRunId : ''
+  const effectiveSearch = activeHashRunId || runSearch.trim()
+  const effectivePage = activeHashRunId ? 1 : runsPage
+  const effectiveActor = activeHashRunId ? undefined : (actorFilter || undefined)
+  const effectiveBranch = activeHashRunId ? undefined : (branchFilter || undefined)
+  const effectiveStatus = activeHashRunId ? undefined : (statusFilter ? statusFilter as BuildRun['status'] : undefined)
+  const effectiveTrigger = activeHashRunId ? undefined : (eventFilter ? eventFilter as BuildRun['triggerType'] : undefined)
   const buildRunsPage = useQuery({
-    queryKey: ['build-runs-page', projectId, applicationId, runsPage, runsPageSize, runSearch, eventFilter, statusFilter, branchFilter, actorFilter],
+    queryKey: ['build-runs-page', projectId, applicationId, effectivePage, runsPageSize, effectiveSearch, effectiveTrigger ?? '', effectiveStatus ?? '', effectiveBranch ?? '', effectiveActor ?? ''],
     queryFn: () => api.listBuildRunsPage(projectId, {
       applicationId,
-      createdBy: actorFilter || undefined,
-      page: runsPage,
+      createdBy: effectiveActor,
+      page: effectivePage,
       pageSize: runsPageSize,
-      search: runSearch.trim() || undefined,
+      search: effectiveSearch || undefined,
       sortBy: 'createdAt',
       sortOrder: 'desc',
-      sourceBranch: branchFilter || undefined,
-      status: statusFilter ? statusFilter as BuildRun['status'] : undefined,
-      triggerType: eventFilter ? eventFilter as BuildRun['triggerType'] : undefined,
+      sourceBranch: effectiveBranch,
+      status: effectiveStatus,
+      triggerType: effectiveTrigger,
     }),
     enabled: Boolean(projectId && applicationId),
     refetchInterval: projectId && applicationId ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
@@ -149,11 +158,22 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     }
   }
   const pagedRuns = useMemo(() => buildRunsPage.data?.items ?? [], [buildRunsPage.data?.items])
+  const activeRunId = manualLogTarget?.runId ?? activeHashRunId
   const activeLogRun = useMemo(() => {
-    if (!logJob)
+    if (!activeRunId)
       return undefined
-    return pagedRuns.find(run => run.id === logJob.buildRunId) ?? buildRuns.find(run => run.id === logJob.buildRunId)
-  }, [buildRuns, logJob, pagedRuns])
+    return pagedRuns.find(run => run.id === activeRunId) ?? buildRuns.find(run => run.id === activeRunId)
+  }, [activeRunId, buildRuns, pagedRuns])
+  const effectiveLogJob = useMemo(() => {
+    if (manualLogTarget)
+      return manualLogTarget.job ?? buildJobMap.get(manualLogTarget.runId)?.[0] ?? null
+    if (activeHashRunId)
+      return buildJobMap.get(activeHashRunId)?.[0] ?? null
+    return null
+  }, [activeHashRunId, buildJobMap, manualLogTarget])
+  const logJobId = effectiveLogJob?.id ?? ''
+  const logContent = logStreamState.jobId === logJobId ? logStreamState.content : ''
+  const logStreaming = Boolean(logJobId) && (logStreamState.jobId !== logJobId || logStreamState.streaming)
   const runsTotal = buildRunsPage.data?.total ?? 0
   const branchFilterOptions = useMemo(() => uniqueBuildFilterValues([
     selectedBinding?.defaultBranch,
@@ -164,7 +184,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     ...buildRuns.map(run => run.createdBy),
     actorFilter,
   ]), [actorFilter, buildRuns])
-  const hasRunFilters = Boolean(runSearch.trim() || eventFilter || statusFilter || branchFilter || actorFilter)
+  const hasRunFilters = Boolean(effectiveSearch || eventFilter || statusFilter || branchFilter || actorFilter)
   // 构建记录只归属到它当时的部署配置所绑定的仓库，避免把旧构建算到替换后的仓库上。
   const runContext = (run: BuildRun) => {
     const config = deploymentTargets.find(item => item.id === run.deploymentTargetId)
@@ -173,25 +193,34 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       : config ? binding : undefined
     return { binding: rowBinding, config }
   }
+  const dismissHashFocus = () => {
+    if (currentHashToken)
+      setDismissedHashToken(currentHashToken)
+  }
   const updateRunSearch = (value: string) => {
     setRunSearch(value)
     setRunsPage(1)
+    dismissHashFocus()
   }
   const updateEventFilter = (value: string) => {
     setEventFilter(value)
     setRunsPage(1)
+    dismissHashFocus()
   }
   const updateStatusFilter = (value: string) => {
     setStatusFilter(value)
     setRunsPage(1)
+    dismissHashFocus()
   }
   const updateBranchFilter = (value: string) => {
     setBranchFilter(value)
     setRunsPage(1)
+    dismissHashFocus()
   }
   const updateActorFilter = (value: string) => {
     setActorFilter(value)
     setRunsPage(1)
+    dismissHashFocus()
   }
   const branches = useQuery({
     queryKey: ['git-branches', selectedBinding?.gitAccountId, selectedBinding?.owner, selectedBinding?.repo, branchSearch],
@@ -291,17 +320,6 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
   useImperativeHandle(ref, () => ({
     openTriggerDrawer: openTriggerDialog,
   }))
-  useEffect(() => {
-    const syncBuildRunFromHash = () => {
-      const buildRunId = buildRunIdFromHash(window.location.hash)
-      if (!buildRunId)
-        return
-      setRunSearch(buildRunId)
-      setRunsPage(1)
-    }
-    window.addEventListener('hashchange', syncBuildRunFromHash)
-    return () => window.removeEventListener('hashchange', syncBuildRunFromHash)
-  }, [])
 
   useEffect(() => {
     if (!logJobId)
@@ -371,7 +389,19 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       <DataList
         columns={[
           // 列宽上限按 1440 宽视口的正文宽度预算，长文本省略并悬停查看，宽屏不出现横向滚动。
-          { key: 'status', header: t('common.status'), width: 'status', maxWidth: 160, render: run => <BuildRunStatusCell latestJob={buildJobMap.get(run.id)?.[0]} run={run} /> },
+          {
+            key: 'status',
+            header: t('common.status'),
+            width: 'status',
+            maxWidth: 160,
+            render: run => (
+              <BuildRunStatusCell
+                latestJob={buildJobMap.get(run.id)?.[0]}
+                run={run}
+                onOpenDiagnosis={() => setManualLogTarget({ job: buildJobMap.get(run.id)?.[0] ?? null, runId: run.id })}
+              />
+            ),
+          },
           { key: 'source', header: t('buildsPage.sourceColumn'), width: 'primary', maxWidth: 320, render: (run) => {
             const { binding: rowBinding, config } = runContext(run)
             return <BuildRunSourceCell binding={rowBinding} deploymentTargetName={config?.name} run={run} />
@@ -390,7 +420,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
                 run={run}
                 onCancel={() => cancelBuild.mutate(run.id)}
                 onDelete={() => deleteBuild.mutate(run.id)}
-                onOpenLogs={job => setLogJob(job)}
+                onOpenLogs={job => setManualLogTarget({ job, runId: job.buildRunId })}
                 onRetry={() => retryBuild.mutate(run.id)}
               />
             )
@@ -419,14 +449,18 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
           total: runsTotal,
           totalPages: buildRunsPage.data?.totalPages ?? 0,
           pageInfoLabel: t('buildsPage.workflowRunCount', { count: runsTotal }),
-          onPageChange: setRunsPage,
+          onPageChange: (nextPage) => {
+            dismissHashFocus()
+            setRunsPage(nextPage)
+          },
           onPageSizeChange: (pageSize) => {
+            dismissHashFocus()
             setRunsPageSize(pageSize)
             setRunsPage(1)
           },
         }}
         rowKey={run => run.id}
-        search={{ value: runSearch, placeholder: t('buildsPage.filterRuns'), onChange: updateRunSearch }}
+        search={{ value: effectiveSearch, placeholder: t('buildsPage.filterRuns'), onChange: updateRunSearch }}
         toolbar={(
           <ApplicationBuildRunFilterBar
             actor={actorFilter}
@@ -616,7 +650,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       <ApplicationBuildLogPanel
         applicationId={applicationId}
         content={logContent}
-        job={logJob}
+        job={effectiveLogJob}
         loading={logStreaming}
         projectId={projectId}
         run={activeLogRun}
@@ -627,7 +661,11 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
           void queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })
           void queryClient.invalidateQueries({ queryKey: ['application-runtime', projectId, applicationId] })
         }}
-        onClose={() => setLogJob(null)}
+        onClose={() => {
+          setManualLogTarget(null)
+          if (currentHashToken)
+            setDismissedHashToken(currentHashToken)
+        }}
       />
       <BuildEnvironmentEditorDialog
         description={t('buildsPage.applicationBuildEnvironmentDescription')}

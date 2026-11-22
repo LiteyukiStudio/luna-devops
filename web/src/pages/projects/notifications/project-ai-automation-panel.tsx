@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { ProjectAIDiagnosisHistorySection } from './project-ai-diagnosis-history'
 
 const INHERIT_STAGE_MODE = '__inherit__' as const
 
@@ -184,12 +185,15 @@ export function ProjectAIAutomationPanel({
   }
 
   return (
-    <ProjectAIAutomationForm
-      canManage={canManage}
-      config={configQuery.data}
-      key={configQuery.data.projectId}
-      projectId={projectId}
-    />
+    <div className="space-y-8">
+      <ProjectAIAutomationForm
+        canManage={canManage}
+        config={configQuery.data}
+        key={`form:${configQuery.data.projectId}`}
+        projectId={projectId}
+      />
+      <ProjectAIDiagnosisHistorySection key={`history:${projectId}`} projectId={projectId} />
+    </div>
   )
 }
 

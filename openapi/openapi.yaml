@@ -3647,6 +3647,48 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/v1/projects/{projectId}/ai-automation-diagnoses:
+    get:
+      operationId: listProjectAIDiagnoses
+      tags: [Projects]
+      summary: List project AI failure diagnoses and runtime self-healing history
+      x-luna-cli:
+        requiredScopes: ["notification:read"]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, delivery, runtime]
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [running, succeeded, failed]
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [createdAt]
+            default: createdAt
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated project AI diagnosis and runtime self-healing history.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedProjectAIDiagnosisRecords" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/projects/{projectId}/ai-action-proposals/preview:
     post:
       operationId: previewProjectAIActionProposal
@@ -17047,6 +17089,66 @@ components:
           items: { type: string }
         maxConsecutiveAutoHeals: { type: integer, minimum: 1, maximum: 10 }
         circuitBreakerWindowSeconds: { type: integer, minimum: 60, maximum: 86400 }
+    ProjectAIDiagnosisRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - applicationId
+        - applicationName
+        - deploymentTargetId
+        - deploymentTargetName
+        - category
+        - subjectType
+        - subjectId
+        - status
+        - triggerCode
+        - rootCauseSummary
+        - confidence
+        - suggestions
+        - deepLink
+        - createdAt
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        applicationId: { type: string }
+        applicationName: { type: string }
+        deploymentTargetId: { type: string }
+        deploymentTargetName: { type: string }
+        category: { type: string, enum: [delivery, runtime] }
+        subjectType: { type: string, enum: [build_run, release, runtime_incident] }
+        subjectId: { type: string }
+        status: { type: string, enum: [running, succeeded, failed] }
+        triggerCode: { type: string }
+        rootCauseSummary: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+        suggestions:
+          type: array
+          items: { type: string }
+        proposedAction: { $ref: "#/components/schemas/AIProposedAction" }
+        autoHealMode: { type: string, enum: [suggest_only, auto_l1, auto_l2] }
+        autoHealStatus: { type: string, enum: [none, succeeded, failed, circuit_broken] }
+        autoHealSummary: { type: string }
+        circuitBreakerTripped: { type: boolean }
+        errorCode: { type: string }
+        deepLink: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    PaginatedProjectAIDiagnosisRecords:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectAIDiagnosisRecord" }
+        page: { type: integer }
+        pageSize: { type: integer }
+        sortBy: { type: string }
+        sortOrder: { type: string }
+        total: { type: integer }
+        totalPages: { type: integer }
     AIActionProposalPreviewInput:
       type: object
       additionalProperties: false

@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, NetworkServiceShare, NetworkServiceShareDirection, NetworkServiceSharePayload, PaginatedResponse, PaginationParams, PlatformAppTemplate, PlatformAppTemplateBundle, PlatformAppTemplateImportPayload, PlatformAppTemplateWritePayload, Project, ProjectAIAutomationConfig, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse, UpdateProjectAIAutomationConfigInput } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, NetworkServiceShare, NetworkServiceShareDirection, NetworkServiceSharePayload, PaginatedResponse, PaginationParams, PlatformAppTemplate, PlatformAppTemplateBundle, PlatformAppTemplateImportPayload, PlatformAppTemplateWritePayload, Project, ProjectAIAutomationConfig, ProjectAIDiagnosisListParams, ProjectAIDiagnosisRecord, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse, UpdateProjectAIAutomationConfigInput } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -66,6 +66,17 @@ export const projectsApi = {
     request<ProjectAIAutomationConfig>(`/projects/${encodeURIComponent(projectId)}/ai-automation-config`, { signal }),
   updateProjectAIAutomationConfig: (projectId: string, payload: UpdateProjectAIAutomationConfigInput) =>
     request<ProjectAIAutomationConfig>(`/projects/${encodeURIComponent(projectId)}/ai-automation-config`, { method: 'PUT', body: JSON.stringify(payload) }),
+  listProjectAIDiagnoses: (projectId: string, params: ProjectAIDiagnosisListParams, signal?: AbortSignal) => {
+    const search = new URLSearchParams(paginationQuery(params))
+    if (params.category && params.category !== 'all')
+      search.set('category', params.category)
+    if (params.status)
+      search.set('status', params.status)
+    return request<PaginatedResponse<ProjectAIDiagnosisRecord>>(
+      `/projects/${encodeURIComponent(projectId)}/ai-automation-diagnoses?${search.toString()}`,
+      { signal },
+    )
+  },
   listProjectNetworkShares: (projectId: string, direction: NetworkServiceShareDirection, params: PaginationParams) =>
     request<PaginatedResponse<NetworkServiceShare>>(`/projects/${projectId}/network-shares?direction=${direction}&${paginationQuery(params)}`),
   createProjectNetworkShare: (projectId: string, payload: NetworkServiceSharePayload) =>

@@ -69,18 +69,19 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
   const hashParams = useMemo(() => new URLSearchParams(location.hash.replace(/^#/, '')), [location.hash])
   const hashTargetId = hashParams.get('targetId')?.trim() ?? ''
   const hashReleaseId = hashParams.get('releaseId')?.trim() ?? ''
-  const [readyHashReleaseId, setReadyHashReleaseId] = useState('')
-  const [dismissedHashReleaseId, setDismissedHashReleaseId] = useState('')
+  const currentReleaseToken = hashReleaseId ? `${location.key}:${hashReleaseId}` : ''
+  const [readyReleaseToken, setReadyReleaseToken] = useState('')
+  const [dismissedReleaseToken, setDismissedReleaseToken] = useState('')
   useEffect(() => {
     let cancelled = false
     queueMicrotask(() => {
       if (!cancelled)
-        setReadyHashReleaseId(hashReleaseId)
+        setReadyReleaseToken(currentReleaseToken)
     })
     return () => {
       cancelled = true
     }
-  }, [hashReleaseId])
+  }, [currentReleaseToken])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [bundleImportOpen, setBundleImportOpen] = useState(false)
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null)
@@ -273,7 +274,7 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
     ? releases.find(release => release.id === hashReleaseId) ?? null
     : null
   // 先挂载底层详情抽屉，下一帧再叠加上层发布日志抽屉，避免两个 Radix Modal 同帧挂载互相标记 aria-hidden。
-  const hashRelease = hashReleaseMatched && readyHashReleaseId === hashReleaseId && dismissedHashReleaseId !== hashReleaseId
+  const hashRelease = hashReleaseMatched && currentReleaseToken && readyReleaseToken === currentReleaseToken && dismissedReleaseToken !== currentReleaseToken
     ? hashReleaseMatched
     : null
   const activeLogTarget: LogTarget | null = logTarget ?? (hashRelease ? { release: hashRelease, view: 'deployment' } : null)
@@ -354,8 +355,8 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
           release={logRelease}
           onClose={() => {
             setLogTarget(null)
-            if (hashReleaseId)
-              setDismissedHashReleaseId(hashReleaseId)
+            if (currentReleaseToken)
+              setDismissedReleaseToken(currentReleaseToken)
           }}
         />
       )}

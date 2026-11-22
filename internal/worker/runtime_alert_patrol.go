@@ -893,8 +893,9 @@ func (r *Runner) emitPatrolledCertificateEvent(
 	dedupKey string,
 	now time.Time,
 ) {
-	project, application, target := r.notificationContext(route.ProjectID, route.ApplicationID, route.DeploymentTargetID)
+	project, application, target := r.notificationContext(ctx, route.ProjectID, route.ApplicationID, route.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(route.ProjectID, route.ApplicationID, route.DeploymentTargetID, project, application, target)
+	r.publishCertificateFailureInbox(ctx, route, "", status, message, dedupKey, project, application)
 	r.emitNotificationEvent(ctx, notification.Event{
 		Type:             "certificate." + status,
 		Severity:         notificationSeverity(status),

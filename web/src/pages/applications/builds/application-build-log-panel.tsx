@@ -27,13 +27,15 @@ export function ApplicationBuildLogPanel({
   run?: BuildRun
 }) {
   const { t } = useTranslation()
-  if (!job)
+  if (!job && !run)
     return null
+  const displayId = job?.id ?? run?.id ?? ''
+  const displayStatus = job?.status ?? run?.status ?? 'failed'
   return (
     <OutputViewerSheet
-      description={<span className="font-mono text-xs">{job.id}</span>}
-      title={t('buildsPage.logsTitle', { id: shortBuildId(job.id) })}
-      titleAccessory={<StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={job.status} />}
+      description={<span className="font-mono text-xs">{displayId}</span>}
+      title={t('buildsPage.logsTitle', { id: shortBuildId(displayId) })}
+      titleAccessory={<StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={displayStatus} />}
       onClose={onClose}
     >
       {run?.aiDiagnosis && (
@@ -51,7 +53,7 @@ export function ApplicationBuildLogPanel({
       <LogViewer
         className="flex-1"
         content={content}
-        downloadName={`build-${job.id}.log`}
+        downloadName={`build-${displayId}.log`}
         emptyLabel={t('buildsPage.noLogs')}
         live={loading}
         loadingLabel={t('common.logViewer.waiting')}
@@ -62,7 +64,7 @@ export function ApplicationBuildLogPanel({
             state={loading ? 'running' : 'neutral'}
           />
         )}
-        resetKey={job.id}
+        resetKey={displayId}
         state={loading ? 'loading' : 'ready'}
       />
     </OutputViewerSheet>

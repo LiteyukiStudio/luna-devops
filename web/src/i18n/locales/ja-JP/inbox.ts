@@ -92,6 +92,11 @@ export default {
       runtimeDegraded: { title: 'ワークロード劣化' },
       runtimeAnomaly: { content: '「{{projectName}}」の {{applicationName}}（{{targetName}}）で実行異常を検出しました：{{reason}}（Ready レプリカ {{readyReplicas}}/{{desiredReplicas}}）。' },
       runtimeRecovered: { title: '実行状態が復旧しました', content: '「{{projectName}}」の {{applicationName}}（{{targetName}}）は正常に復旧しました（継続 {{durationSeconds}} 秒）。' },
+      buildFailed: { title: 'ビルドに失敗しました', content: '「{{projectName}}」の {{applicationName}}（{{targetName}} · {{gitRef}}）のビルドに失敗しました：{{reason}}' },
+      releaseFailed: { title: 'リリースに失敗しました', content: '「{{projectName}}」の {{applicationName}}（{{targetName}} · v{{revision}}）のリリースに失敗しました：{{reason}}' },
+      hookFailed: { title: 'フック実行に失敗しました', content: '「{{projectName}}」の {{applicationName}} のフック {{hookName}}（{{phase}}）が失敗しました：{{reason}}' },
+      gatewayFailed: { title: 'ゲートウェイルート同期に失敗しました', content: '「{{projectName}}」の {{applicationName}} のドメイン {{domain}} の同期に失敗しました：{{reason}}' },
+      certificateFailed: { title: '証明書エラー', content: '「{{projectName}}」の {{applicationName}} のドメイン {{domain}} で証明書エラーが発生しました：{{reason}}' },
     },
   },
 }

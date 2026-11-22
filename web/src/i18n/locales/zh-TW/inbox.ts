@@ -92,6 +92,11 @@ export default {
       runtimeDegraded: { title: '工作負載副本就緒異常' },
       runtimeAnomaly: { content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）偵測到執行異常：{{reason}}（就緒副本 {{readyReplicas}}/{{desiredReplicas}}）。' },
       runtimeRecovered: { title: '執行狀態已恢復', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）已恢復正常執行（故障持續 {{durationSeconds}} 秒）。' },
+      buildFailed: { title: '建置失敗', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}} · {{gitRef}}）建置失敗：{{reason}}' },
+      releaseFailed: { title: '發佈失敗', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}} · v{{revision}}）發佈失敗：{{reason}}' },
+      hookFailed: { title: '生命週期鉤子執行失敗', content: '「{{projectName}}」中的 {{applicationName}} 鉤子 {{hookName}}（{{phase}}）執行失敗：{{reason}}' },
+      gatewayFailed: { title: '閘道路由同步失敗', content: '「{{projectName}}」中的 {{applicationName}} 網域 {{domain}} 路由同步失敗：{{reason}}' },
+      certificateFailed: { title: '憑證簽發或續期異常', content: '「{{projectName}}」中的 {{applicationName}} 網域 {{domain}} 憑證異常：{{reason}}' },
     },
   },
 }

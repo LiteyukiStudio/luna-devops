@@ -1,5 +1,5 @@
 import type { InboxMessage } from '@/api'
-import { Bell, Boxes, CreditCard, Megaphone, Rocket, ShieldAlert, UserRoundCheck } from 'lucide-react'
+import { Bell, Boxes, CreditCard, Megaphone, Rocket, ShieldAlert, Sparkles, UserRoundCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -10,6 +10,7 @@ export function InboxMessageRow({ compact = false, message, onSelect }: { compac
   const { t } = useTranslation()
   const text = inboxMessageText(message, t)
   const pending = message.actionRequest?.status === 'pending'
+  const aiSummary = typeof message.params?.aiRootCauseSummary === 'string' ? message.params.aiRootCauseSummary.trim() : ''
 
   return (
     <button
@@ -29,6 +30,12 @@ export function InboxMessageRow({ compact = false, message, onSelect }: { compac
           {!message.readAt && <span aria-label={t('inbox.states.unread')} className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />}
         </span>
         <span className={cn('mt-1 block text-xs leading-5 text-muted-foreground', compact ? 'line-clamp-2' : 'line-clamp-3')}>{text.content}</span>
+        {aiSummary && (
+          <span className="mt-1 flex min-w-0 items-center gap-1 text-xs text-primary-text">
+            <Sparkles aria-hidden="true" className="size-3 shrink-0" />
+            <span className="truncate">{aiSummary}</span>
+          </span>
+        )}
         <span className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">{formatSmartDateTime(message.createdAt, t)}</span>
           {pending && <StatusBadge tone="warning">{t('inbox.states.pending')}</StatusBadge>}

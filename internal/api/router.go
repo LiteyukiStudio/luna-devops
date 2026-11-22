@@ -344,6 +344,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.POST("/projects/:projectId/notifications/deliveries/:deliveryId/retry", domains.notification.RetryProjectNotificationDelivery)
 		v1.GET("/projects/:projectId/ai-automation-config", domains.project.GetProjectAIAutomationConfig)
 		v1.PUT("/projects/:projectId/ai-automation-config", domains.project.UpdateProjectAIAutomationConfig)
+		v1.GET("/projects/:projectId/ai-automation-diagnoses", domains.project.ListProjectAIDiagnoses)
 		v1.POST("/projects/:projectId/ai-action-proposals/preview", domains.ai.PreviewProjectAIActionProposal)
 		v1.POST("/projects/:projectId/ai-action-proposals/execute", domains.ai.ExecuteProjectAIActionProposal)
 

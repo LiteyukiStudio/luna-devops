@@ -2,10 +2,12 @@ package projectapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/database"
@@ -112,5 +114,139 @@ func TestProjectAIAutomationConfigWalletConsentAndSessionGuardsPostgres(t *testi
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "ai_automation.billing_user_must_be_self") {
 		t.Fatalf("expected 403 when co-manager re-enables diagnosis on Alice's wallet, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListProjectAIDiagnosesPaginationAndFilteringPostgres(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := testdb.OpenDatabase(t, testdb.Options{
+		SchemaPrefix: "luna_proj_ai_diag_list",
+		Migrate: func(db *gorm.DB) error {
+			return database.MigrateContext(context.Background(), db)
+		},
+	})
+
+	alice := model.User{ID: "usr_diag_a", Email: "diag@example.test", Name: "Alice", Role: authz.PlatformRoleUser}
+	if err := db.Create(&alice).Error; err != nil {
+		t.Fatal(err)
+	}
+	proj := model.Project{ID: "prj_diag_hist", Name: "Hist", Identifier: "hist", DeleteStatus: "active"}
+	if err := db.Create(&proj).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ProjectMember{ID: "pm_diag_a", ProjectID: proj.ID, UserID: alice.ID, Role: authz.ProjectRoleOwner}).Error; err != nil {
+		t.Fatal(err)
+	}
+	app := model.Application{ID: "app_diag_1", ProjectID: proj.ID, Name: "WebApp", Identifier: "webapp", DeleteStatus: "active"}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatal(err)
+	}
+	target := model.DeploymentTarget{ID: "dplt_diag_1", ProjectID: proj.ID, ApplicationID: app.ID, Name: "Production", Stage: "prod", WorkloadType: "Deployment", Enabled: true, DeleteStatus: "active"}
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+	inc := model.RuntimeAlertIncident{
+		ID:                    "rai_diag_1",
+		ProjectID:             proj.ID,
+		ApplicationID:         app.ID,
+		DeploymentTargetID:    target.ID,
+		ResourceID:            target.ID,
+		IncidentKind:          "runtime.pod_oom_killed",
+		Status:                "active",
+		Fingerprint:           "oom",
+		ConsecutiveFailures:   2,
+		FirstDetectedAt:       time.Now().UTC(),
+		LastObservedAt:        time.Now().UTC(),
+		SummaryJSON:           "{}",
+		RuleNotificationsJSON: "{}",
+		InboxCoalesceKey:      "runtime_incident:rai_diag_1",
+	}
+	if err := db.Create(&inc).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	base := time.Date(2026, 11, 22, 6, 0, 0, 0, time.UTC)
+	if err := db.Create(&model.AIDeliveryDiagnosis{
+		ID:                 "aidg_hist_1",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		SubjectType:        model.AIDeliverySubjectBuildRun,
+		SubjectID:          "bldr_hist_1",
+		BilledUserID:       alice.ID,
+		Status:             model.AIDiagnosisStatusSucceeded,
+		FailureCode:        "job_failed",
+		RootCauseSummary:   "Dockerfile typo nginxx",
+		Confidence:         "high",
+		SuggestionsJSON:    `["Fix FROM nginx"]`,
+		CreatedAt:          base,
+		UpdatedAt:          base,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.AIRuntimeIncidentDiagnosis{
+		ID:                 "airtd_hist_2",
+		ProjectID:          proj.ID,
+		ApplicationID:      app.ID,
+		DeploymentTargetID: target.ID,
+		IncidentID:         inc.ID,
+		BilledUserID:       alice.ID,
+		Status:             model.AIDiagnosisStatusRunning,
+		AnomalyType:        "runtime.pod_oom_killed",
+		AutoHealMode:       model.AISelfHealModeAutoL2,
+		AutoHealStatus:     model.AIAutoHealStatusNone,
+		AutoHealSummary:    "in_progress",
+		SuggestionsJSON:    "[]",
+		CreatedAt:          base.Add(1 * time.Minute),
+		UpdatedAt:          base.Add(1 * time.Minute),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	host := &aiAutomationTestHost{
+		stubProjectAIHost: &stubProjectAIHost{db: db, user: alice},
+		hasSession:        true,
+	}
+	handler := New(host)
+	router := gin.New()
+	router.GET("/api/v1/projects/:projectId/ai-automation-diagnoses", handler.ListProjectAIDiagnoses)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/prj_diag_hist/ai-automation-diagnoses?page=1&pageSize=10", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	var page struct {
+		Items []ProjectAIDiagnosisRecordResponse `json:"items"`
+		Total int64                              `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || len(page.Items) != 2 {
+		t.Fatalf("expected 2 items, got total=%d items=%+v", page.Total, page.Items)
+	}
+	// Newest first (runtime row created at base + 1m)
+	if page.Items[0].ID != "airtd_hist_2" || page.Items[0].AutoHealSummary != "" {
+		t.Fatalf("expected airtd_hist_2 first with internal 'in_progress' stripped, got %+v", page.Items[0])
+	}
+	if page.Items[1].ID != "aidg_hist_1" || page.Items[1].ApplicationName != "WebApp" || !strings.Contains(page.Items[1].DeepLink, "#buildRunId=bldr_hist_1") {
+		t.Fatalf("unexpected delivery diagnosis record: %+v", page.Items[1])
+	}
+
+	// Filter by category=delivery & status=succeeded
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/projects/prj_diag_hist/ai-automation-diagnoses?category=delivery&status=succeeded", nil)
+	router.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on filtered list, got %d %s", rec2.Code, rec2.Body.String())
+	}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || page.Items[0].ID != "aidg_hist_1" {
+		t.Fatalf("expected single delivery record, got %+v", page)
 	}
 }

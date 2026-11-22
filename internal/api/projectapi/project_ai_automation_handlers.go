@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -440,4 +441,352 @@ func (h *Handler) lookupUserDisplayName(ctx *gin.Context, userID string) string 
 		return strings.TrimSpace(u.Email)
 	}
 	return ""
+}
+
+type ProjectAIDiagnosisRecordResponse struct {
+	ID                    string                  `json:"id"`
+	ProjectID             string                  `json:"projectId"`
+	ApplicationID         string                  `json:"applicationId"`
+	ApplicationName       string                  `json:"applicationName"`
+	DeploymentTargetID    string                  `json:"deploymentTargetId"`
+	DeploymentTargetName  string                  `json:"deploymentTargetName"`
+	Category              string                  `json:"category"`
+	SubjectType           string                  `json:"subjectType"`
+	SubjectID             string                  `json:"subjectId"`
+	Status                string                  `json:"status"`
+	TriggerCode           string                  `json:"triggerCode"`
+	RootCauseSummary      string                  `json:"rootCauseSummary"`
+	Confidence            string                  `json:"confidence"`
+	Suggestions           []string                `json:"suggestions"`
+	ProposedAction        *model.AIProposedAction `json:"proposedAction,omitempty"`
+	AutoHealMode          string                  `json:"autoHealMode,omitempty"`
+	AutoHealStatus        string                  `json:"autoHealStatus,omitempty"`
+	AutoHealSummary       string                  `json:"autoHealSummary,omitempty"`
+	CircuitBreakerTripped bool                    `json:"circuitBreakerTripped,omitempty"`
+	ErrorCode             string                  `json:"errorCode,omitempty"`
+	DeepLink              string                  `json:"deepLink"`
+	CreatedAt             time.Time               `json:"createdAt"`
+	FinishedAt            *time.Time              `json:"finishedAt,omitempty"`
+}
+
+func (h *Handler) ListProjectAIDiagnoses(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
+	_, project, ok := h.authorizeProject(ctx, authz.ActionNotificationRead)
+	if !ok {
+		return
+	}
+
+	category := strings.ToLower(strings.TrimSpace(ctx.Query("category")))
+	if category != "" && category != "all" && category != "delivery" && category != "runtime" {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "category must be all, delivery, or runtime")
+		return
+	}
+	status := strings.ToLower(strings.TrimSpace(ctx.Query("status")))
+	if status != "" && status != model.AIDiagnosisStatusRunning && status != model.AIDiagnosisStatusSucceeded && status != model.AIDiagnosisStatusFailed {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "status must be running, succeeded, or failed")
+		return
+	}
+
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{
+		"createdAt": "created_at",
+	}, "createdAt")
+	dir := "desc"
+	if strings.EqualFold(pagination.SortOrder, "asc") {
+		dir = "asc"
+	}
+
+	db := h.dbFor(ctx)
+	includeDelivery := category == "" || category == "all" || category == "delivery"
+	includeRuntime := category == "" || category == "all" || category == "runtime"
+
+	type indexRow struct {
+		Source string `gorm:"column:source"`
+		ID     string `gorm:"column:id"`
+	}
+
+	var total int64
+	var pageIndex []indexRow
+
+	if includeDelivery {
+		q := db.Model(&model.AIDeliveryDiagnosis{}).Where("project_id = ?", project.ID)
+		if status != "" {
+			q = q.Where("status = ?", status)
+		}
+		var cnt int64
+		if err := q.Count(&cnt).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		total += cnt
+	}
+	if includeRuntime {
+		q := db.Model(&model.AIRuntimeIncidentDiagnosis{}).Where("project_id = ?", project.ID)
+		if status != "" {
+			q = q.Where("status = ?", status)
+		}
+		var cnt int64
+		if err := q.Count(&cnt).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		total += cnt
+	}
+
+	if total == 0 {
+		ctx.JSON(http.StatusOK, paginatedResponse([]ProjectAIDiagnosisRecordResponse{}, 0, pagination))
+		return
+	}
+
+	switch {
+	case includeDelivery && includeRuntime:
+		var args []any
+		deliverySQL := "SELECT 'delivery' AS source, id, created_at FROM ai_delivery_diagnoses WHERE project_id = ?"
+		args = append(args, project.ID)
+		if status != "" {
+			deliverySQL += " AND status = ?"
+			args = append(args, status)
+		}
+		runtimeSQL := "SELECT 'runtime' AS source, id, created_at FROM ai_runtime_incident_diagnoses WHERE project_id = ?"
+		args = append(args, project.ID)
+		if status != "" {
+			runtimeSQL += " AND status = ?"
+			args = append(args, status)
+		}
+		unionSQL := "SELECT source, id FROM (" + deliverySQL + " UNION ALL " + runtimeSQL + ") AS combined ORDER BY created_at " + dir + ", id " + dir + " LIMIT ? OFFSET ?"
+		args = append(args, pagination.PageSize, pagination.Offset())
+		if err := db.Raw(unionSQL, args...).Scan(&pageIndex).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+	case includeDelivery:
+		q := db.Model(&model.AIDeliveryDiagnosis{}).
+			Select("'delivery' AS source, id").
+			Where("project_id = ?", project.ID)
+		if status != "" {
+			q = q.Where("status = ?", status)
+		}
+		if err := q.Order("created_at " + dir + ", id " + dir).
+			Limit(pagination.PageSize).
+			Offset(pagination.Offset()).
+			Scan(&pageIndex).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+	case includeRuntime:
+		q := db.Model(&model.AIRuntimeIncidentDiagnosis{}).
+			Select("'runtime' AS source, id").
+			Where("project_id = ?", project.ID)
+		if status != "" {
+			q = q.Where("status = ?", status)
+		}
+		if err := q.Order("created_at " + dir + ", id " + dir).
+			Limit(pagination.PageSize).
+			Offset(pagination.Offset()).
+			Scan(&pageIndex).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	var deliveryIDs, runtimeIDs []string
+	for _, idx := range pageIndex {
+		if idx.Source == "delivery" {
+			deliveryIDs = append(deliveryIDs, idx.ID)
+		} else if idx.Source == "runtime" {
+			runtimeIDs = append(runtimeIDs, idx.ID)
+		}
+	}
+
+	deliveryByID := map[string]model.AIDeliveryDiagnosis{}
+	if len(deliveryIDs) > 0 {
+		var rows []model.AIDeliveryDiagnosis
+		if err := db.Where("project_id = ? AND id IN ?", project.ID, deliveryIDs).Find(&rows).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, r := range rows {
+			deliveryByID[r.ID] = r
+		}
+	}
+
+	runtimeByID := map[string]model.AIRuntimeIncidentDiagnosis{}
+	if len(runtimeIDs) > 0 {
+		var rows []model.AIRuntimeIncidentDiagnosis
+		if err := db.Where("project_id = ? AND id IN ?", project.ID, runtimeIDs).Find(&rows).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, r := range rows {
+			runtimeByID[r.ID] = r
+		}
+	}
+
+	appIDSet := map[string]struct{}{}
+	targetIDSet := map[string]struct{}{}
+	for _, r := range deliveryByID {
+		if id := strings.TrimSpace(r.ApplicationID); id != "" {
+			appIDSet[id] = struct{}{}
+		}
+		if id := strings.TrimSpace(r.DeploymentTargetID); id != "" {
+			targetIDSet[id] = struct{}{}
+		}
+	}
+	for _, r := range runtimeByID {
+		if id := strings.TrimSpace(r.ApplicationID); id != "" {
+			appIDSet[id] = struct{}{}
+		}
+		if id := strings.TrimSpace(r.DeploymentTargetID); id != "" {
+			targetIDSet[id] = struct{}{}
+		}
+	}
+
+	appNames := map[string]string{}
+	if len(appIDSet) > 0 {
+		ids := make([]string, 0, len(appIDSet))
+		for id := range appIDSet {
+			ids = append(ids, id)
+		}
+		var apps []model.Application
+		if err := db.Unscoped().Select("id", "name", "identifier").Where("project_id = ? AND id IN ?", project.ID, ids).Find(&apps).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, a := range apps {
+			appNames[a.ID] = fallback(strings.TrimSpace(a.Name), strings.TrimSpace(a.Identifier))
+		}
+	}
+
+	targetNames := map[string]string{}
+	if len(targetIDSet) > 0 {
+		ids := make([]string, 0, len(targetIDSet))
+		for id := range targetIDSet {
+			ids = append(ids, id)
+		}
+		var targets []model.DeploymentTarget
+		if err := db.Unscoped().Select("id", "name", "stage").Where("project_id = ? AND id IN ?", project.ID, ids).Find(&targets).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, tgt := range targets {
+			targetNames[tgt.ID] = fallback(strings.TrimSpace(tgt.Name), strings.TrimSpace(tgt.Stage))
+		}
+	}
+
+	items := make([]ProjectAIDiagnosisRecordResponse, 0, len(pageIndex))
+	for _, idx := range pageIndex {
+		if idx.Source == "delivery" {
+			row, found := deliveryByID[idx.ID]
+			if !found {
+				continue
+			}
+			view := row.ToView()
+			items = append(items, ProjectAIDiagnosisRecordResponse{
+				ID:                   row.ID,
+				ProjectID:            row.ProjectID,
+				ApplicationID:        row.ApplicationID,
+				ApplicationName:      appNames[row.ApplicationID],
+				DeploymentTargetID:   row.DeploymentTargetID,
+				DeploymentTargetName: targetNames[row.DeploymentTargetID],
+				Category:             "delivery",
+				SubjectType:          row.SubjectType,
+				SubjectID:            row.SubjectID,
+				Status:               row.Status,
+				TriggerCode:          row.FailureCode,
+				RootCauseSummary:     view.RootCauseSummary,
+				Confidence:           view.Confidence,
+				Suggestions:          view.Suggestions,
+				ProposedAction:       view.ProposedAction,
+				ErrorCode:            row.ErrorCode,
+				DeepLink:             aiDiagnosisRecordDeepLink(row.ProjectID, row.ApplicationID, row.DeploymentTargetID, row.SubjectType, row.SubjectID),
+				CreatedAt:            row.CreatedAt,
+				FinishedAt:           row.FinishedAt,
+			})
+		} else if idx.Source == "runtime" {
+			row, found := runtimeByID[idx.ID]
+			if !found {
+				continue
+			}
+			suggestions := []string{}
+			if raw := strings.TrimSpace(row.SuggestionsJSON); raw != "" {
+				_ = json.Unmarshal([]byte(raw), &suggestions)
+			}
+			if suggestions == nil {
+				suggestions = []string{}
+			}
+			var action *model.AIProposedAction
+			if raw := strings.TrimSpace(row.ProposedActionJSON); raw != "" {
+				var parsed model.AIProposedAction
+				if err := json.Unmarshal([]byte(raw), &parsed); err == nil && strings.TrimSpace(parsed.ToolName) != "" {
+					if parsed.Arguments == nil {
+						parsed.Arguments = map[string]any{}
+					}
+					action = &parsed
+				}
+			}
+			healSummary := strings.TrimSpace(row.AutoHealSummary)
+			if healSummary == "in_progress" {
+				healSummary = ""
+			}
+			items = append(items, ProjectAIDiagnosisRecordResponse{
+				ID:                    row.ID,
+				ProjectID:             row.ProjectID,
+				ApplicationID:         row.ApplicationID,
+				ApplicationName:       appNames[row.ApplicationID],
+				DeploymentTargetID:    row.DeploymentTargetID,
+				DeploymentTargetName:  targetNames[row.DeploymentTargetID],
+				Category:              "runtime",
+				SubjectType:           "runtime_incident",
+				SubjectID:             row.IncidentID,
+				Status:                row.Status,
+				TriggerCode:           row.AnomalyType,
+				RootCauseSummary:      row.RootCauseSummary,
+				Confidence:            row.Confidence,
+				Suggestions:           suggestions,
+				ProposedAction:        action,
+				AutoHealMode:          row.AutoHealMode,
+				AutoHealStatus:        row.AutoHealStatus,
+				AutoHealSummary:       healSummary,
+				CircuitBreakerTripped: row.CircuitBreakerTripped,
+				ErrorCode:             row.ErrorCode,
+				DeepLink:              aiDiagnosisRecordDeepLink(row.ProjectID, row.ApplicationID, row.DeploymentTargetID, "runtime_incident", row.IncidentID),
+				CreatedAt:             row.CreatedAt,
+				FinishedAt:            row.FinishedAt,
+			})
+		}
+	}
+
+	ctx.JSON(http.StatusOK, paginatedResponse(items, total, pagination))
+}
+
+func aiDiagnosisRecordDeepLink(projectID, applicationID, targetID, subjectType, subjectID string) string {
+	projectID = strings.TrimSpace(projectID)
+	applicationID = strings.TrimSpace(applicationID)
+	targetID = strings.TrimSpace(targetID)
+	subjectID = strings.TrimSpace(subjectID)
+	if projectID == "" {
+		return ""
+	}
+	if applicationID == "" {
+		return "/projects/" + url.PathEscape(projectID)
+	}
+	base := "/projects/" + url.PathEscape(projectID) + "/apps/" + url.PathEscape(applicationID)
+	switch subjectType {
+	case model.AIDeliverySubjectBuildRun:
+		if subjectID != "" {
+			return base + "?tab=builds#buildRunId=" + url.QueryEscape(subjectID)
+		}
+		return base + "?tab=builds"
+	case model.AIDeliverySubjectRelease:
+		if subjectID != "" {
+			return base + "?tab=deployments#releaseId=" + url.QueryEscape(subjectID)
+		}
+		return base + "?tab=deployments"
+	case "runtime_incident":
+		if targetID != "" {
+			return base + "?tab=deployments#targetId=" + url.QueryEscape(targetID)
+		}
+		return base + "?tab=deployments"
+	default:
+		return base
+	}
 }

@@ -109,6 +109,7 @@ func (r *Runner) onBuildFailureTerminal(ctx context.Context, run model.BuildRun,
 			preferredBuildBillingUserID(run),
 			db,
 		) {
+			r.publishBuildFailureInboxOnly(ctx, run, message, nil)
 			return
 		}
 	}
@@ -132,6 +133,7 @@ func (r *Runner) onReleaseFailureTerminal(ctx context.Context, release model.Rel
 			preferredReleaseBillingUserID(db, release),
 			db,
 		) {
+			r.publishReleaseFailureInboxOnly(ctx, release, message, nil)
 			return
 		}
 	}
@@ -403,11 +405,14 @@ func (r *Runner) handleAIDeliveryDiagnosis(ctx context.Context, task *asynq.Task
 			)
 			r.markDeliveryDiagnosisFailed(ctx, &diag, "ai.internal_error")
 		}
-		if diag.NotificationEmittedAt != nil {
-			return
-		}
 		emitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
+		if diag.NotificationEmittedAt != nil {
+			if aiNotificationCtx != nil {
+				r.syncDeliveryDiagnosisInbox(emitCtx, &diag, aiNotificationCtx)
+			}
+			return
+		}
 		if emitErr := r.emitAndStampDeliveryFailureNotification(emitCtx, &diag, aiNotificationCtx); emitErr != nil && retErr == nil {
 			retErr = emitErr
 		}
@@ -693,6 +698,31 @@ func (r *Runner) emitAndStampDeliveryFailureNotification(
 		return emitErr
 	}
 	return stampEmitted()
+}
+
+func (r *Runner) syncDeliveryDiagnosisInbox(
+	ctx context.Context,
+	diag *model.AIDeliveryDiagnosis,
+	aiDiag *notification.AIDiagnosisContext,
+) {
+	if diag == nil || r.db == nil || aiDiag == nil {
+		return
+	}
+	db := r.db.WithContext(ctx)
+	switch diag.SubjectType {
+	case model.AIDeliverySubjectBuildRun:
+		var run model.BuildRun
+		if err := db.First(&run, "id = ? AND project_id = ?", diag.SubjectID, diag.ProjectID).Error; err == nil {
+			msg := r.authoritativeBuildFailureMessage(db, run)
+			r.scoped(ctx).publishBuildFailureInboxOnly(ctx, run, msg, aiDiag)
+		}
+	case model.AIDeliverySubjectRelease:
+		var release model.Release
+		if err := db.First(&release, "id = ? AND project_id = ?", diag.SubjectID, diag.ProjectID).Error; err == nil {
+			msg := firstNonEmpty(strings.TrimSpace(release.Message), strings.TrimSpace(release.FailureCode))
+			r.scoped(ctx).publishReleaseFailureInboxOnly(ctx, release, msg, aiDiag)
+		}
+	}
 }
 
 func (r *Runner) reconcileAIDeliveryDiagnoses(ctx context.Context) error {

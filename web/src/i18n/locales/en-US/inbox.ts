@@ -92,6 +92,11 @@ export default {
       runtimeDegraded: { title: 'Workload degraded' },
       runtimeAnomaly: { content: '{{applicationName}} ({{targetName}}) in “{{projectName}}” encountered a runtime issue: {{reason}} ({{readyReplicas}}/{{desiredReplicas}} ready).' },
       runtimeRecovered: { title: 'Runtime recovered', content: '{{applicationName}} ({{targetName}}) in “{{projectName}}” is healthy again (duration: {{durationSeconds}}s).' },
+      buildFailed: { title: 'Build failed', content: 'Build failed for {{applicationName}} ({{targetName}} · {{gitRef}}) in “{{projectName}}”: {{reason}}' },
+      releaseFailed: { title: 'Release failed', content: 'Release failed for {{applicationName}} ({{targetName}} · v{{revision}}) in “{{projectName}}”: {{reason}}' },
+      hookFailed: { title: 'Hook execution failed', content: 'Hook {{hookName}} ({{phase}}) for {{applicationName}} in “{{projectName}}” failed: {{reason}}' },
+      gatewayFailed: { title: 'Gateway route sync failed', content: 'Gateway route sync for {{domain}} ({{applicationName}} in “{{projectName}}”) failed: {{reason}}' },
+      certificateFailed: { title: 'Certificate issue', content: 'Certificate issue on {{domain}} ({{applicationName}} in “{{projectName}}”): {{reason}}' },
     },
   },
 }

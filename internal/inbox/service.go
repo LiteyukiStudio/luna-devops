@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
@@ -203,28 +204,75 @@ func (s *Service) PublishOrUpdate(ctx context.Context, input PublishInput, markU
 // PublishCoalescedToProjectRoles fans out or updates a coalesced inbox message
 // for every active project member holding one of the target roles.
 func (s *Service) PublishCoalescedToProjectRoles(ctx context.Context, projectID string, roles []string, input PublishInput, markUnread bool) error {
+	return s.PublishCoalescedToProjectRolesAndUsers(ctx, projectID, roles, nil, input, markUnread)
+}
+
+// PublishCoalescedToProjectRolesAndUsers fans out or updates a coalesced inbox message
+// for every active project member holding one of the target roles plus any active Platform Admin
+// user IDs listed in extraUserIDs (non-admin ex-members and lower-role members are never admitted via extraUserIDs).
+func (s *Service) PublishCoalescedToProjectRolesAndUsers(
+	ctx context.Context,
+	projectID string,
+	roles []string,
+	extraUserIDs []string,
+	input PublishInput,
+	markUnread bool,
+) error {
 	projectID = strings.TrimSpace(projectID)
-	if s == nil || s.db == nil || projectID == "" || len(roles) == 0 {
+	if s == nil || s.db == nil || projectID == "" || (len(roles) == 0 && len(extraUserIDs) == 0) {
 		return nil
 	}
-	var members []model.ProjectMember
-	if err := s.db.WithContext(ctx).
-		Select("user_id").
-		Where("project_id = ? AND role IN ?", projectID, roles).
-		Find(&members).Error; err != nil {
-		return err
-	}
-	seen := make(map[string]struct{}, len(members))
-	var errs []error
-	for _, member := range members {
-		uid := strings.TrimSpace(member.UserID)
+	seen := make(map[string]struct{})
+	var recipientIDs []string
+	addRecipient := func(raw string) {
+		uid := strings.TrimSpace(raw)
 		if uid == "" {
-			continue
+			return
 		}
-		if _, ok := seen[uid]; ok {
-			continue
+		if _, exists := seen[uid]; exists {
+			return
 		}
 		seen[uid] = struct{}{}
+		recipientIDs = append(recipientIDs, uid)
+	}
+
+	if len(roles) > 0 {
+		var members []model.ProjectMember
+		if err := s.db.WithContext(ctx).
+			Select("project_members.user_id").
+			Joins("JOIN users ON users.id = project_members.user_id AND users.disabled = ?", false).
+			Where("project_members.project_id = ? AND project_members.role IN ?", projectID, roles).
+			Find(&members).Error; err != nil {
+			return err
+		}
+		for _, member := range members {
+			addRecipient(member.UserID)
+		}
+	}
+
+	var candidateExtras []string
+	for _, raw := range extraUserIDs {
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			if _, exists := seen[trimmed]; !exists {
+				candidateExtras = append(candidateExtras, trimmed)
+			}
+		}
+	}
+	if len(candidateExtras) > 0 {
+		var validAdmins []model.User
+		if err := s.db.WithContext(ctx).
+			Select("id").
+			Where("id IN ? AND disabled = ? AND role = ?", candidateExtras, false, authz.PlatformRoleAdmin).
+			Find(&validAdmins).Error; err != nil {
+			return err
+		}
+		for _, u := range validAdmins {
+			addRecipient(u.ID)
+		}
+	}
+
+	var errs []error
+	for _, uid := range recipientIDs {
 		memberInput := input
 		memberInput.RecipientUserID = uid
 		memberInput.ProjectID = projectID

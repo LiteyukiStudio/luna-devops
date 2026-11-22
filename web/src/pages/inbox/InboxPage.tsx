@@ -120,6 +120,7 @@ export function InboxPage() {
       width: 'primary',
       render: (message) => {
         const text = inboxMessageText(message, t)
+        const aiSummary = typeof message.params?.aiRootCauseSummary === 'string' ? message.params.aiRootCauseSummary.trim() : ''
         return (
           <div className="flex min-w-0 items-start gap-3">
             <span className="relative mt-1 grid size-8 shrink-0 place-items-center rounded-control bg-surface-subtle text-muted-foreground">
@@ -129,6 +130,12 @@ export function InboxPage() {
             <div className="min-w-0">
               <p className={message.readAt ? 'truncate font-medium' : 'truncate font-semibold'}>{text.title}</p>
               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{text.content}</p>
+              {aiSummary && (
+                <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-primary-text">
+                  <Sparkles aria-hidden="true" className="size-3 shrink-0" />
+                  <span className="truncate">{aiSummary}</span>
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2 @xl/data-list:hidden">
                 <StatusBadge>{t(`inbox.categories.${message.category}`)}</StatusBadge>
                 {message.actionRequest
@@ -296,7 +303,7 @@ function InboxDetail({
   const params = message?.params ?? {}
   const aiRootCauseSummary = typeof params.aiRootCauseSummary === 'string' ? params.aiRootCauseSummary.trim() : ''
   const aiSuggestions = Array.isArray(params.aiSuggestions)
-    ? params.aiSuggestions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    ? [...new Set(params.aiSuggestions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0))]
     : []
   const aiAutoHealSummary = typeof params.aiAutoHealSummary === 'string' ? params.aiAutoHealSummary.trim() : ''
   const aiCircuitBreakerTripped = params.aiCircuitBreakerTripped === true

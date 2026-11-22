@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
@@ -8,6 +9,7 @@ import { ProjectAIAutomationPanel } from './project-ai-automation-panel'
 
 const mocks = vi.hoisted(() => ({
   getProjectAIAutomationConfig: vi.fn(),
+  listProjectAIDiagnoses: vi.fn(),
   updateProjectAIAutomationConfig: vi.fn(),
 }))
 
@@ -35,11 +37,13 @@ function renderPanel(canManage = true) {
     defaultOptions: { queries: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ProjectAIAutomationPanel canManage={canManage} projectId="prj_1" />
-      </TooltipProvider>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <ProjectAIAutomationPanel canManage={canManage} projectId="prj_1" />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
 }
 
@@ -66,6 +70,15 @@ describe('project AI automation panel', () => {
       circuitBreakerWindowSeconds: 1800,
       updatedBy: '',
       updatedAt: '2026-04-17T00:00:00Z',
+    })
+    mocks.listProjectAIDiagnoses.mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
     })
     mocks.updateProjectAIAutomationConfig.mockImplementation(async (_projectId, payload) => ({
       projectId: 'prj_1',
@@ -170,5 +183,50 @@ describe('project AI automation panel', () => {
     const toggle = await screen.findByRole('switch', { name: 'Enable automatic failure diagnosis' })
     expect(toggle).toBeDisabled()
     expect(screen.queryByRole('button', { name: i18next.t('common.save') })).not.toBeInTheDocument()
+  })
+
+  it('renders diagnosis & self-healing history and opens detail drawer on click', async () => {
+    mocks.listProjectAIDiagnoses.mockResolvedValue({
+      items: [
+        {
+          id: 'aidg_1',
+          projectId: 'prj_1',
+          applicationId: 'app_1',
+          applicationName: 'Wordle Helper',
+          deploymentTargetId: 'dplt_1',
+          deploymentTargetName: 'prod',
+          category: 'delivery',
+          subjectType: 'build_run',
+          subjectId: 'bldr_1',
+          status: 'succeeded',
+          triggerCode: 'job_failed',
+          rootCauseSummary: 'Dockerfile typo FROM nginxx:1.27-alpine',
+          confidence: 'high',
+          suggestions: ['Change FROM nginxx to FROM nginx'],
+          deepLink: '/projects/prj_1/apps/app_1?tab=builds#buildRunId=bldr_1',
+          createdAt: '2026-11-22T06:53:45Z',
+          finishedAt: '2026-11-22T06:53:55Z',
+        },
+      ],
+      page: 1,
+      pageSize: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 1,
+      totalPages: 1,
+    })
+
+    const user = userEvent.setup()
+    renderPanel(true)
+
+    expect(await screen.findByText('Wordle Helper / prod')).toBeInTheDocument()
+    expect(screen.getByText('Dockerfile typo FROM nginxx:1.27-alpine')).toBeInTheDocument()
+
+    await user.click(screen.getByText('Wordle Helper / prod'))
+    expect(await screen.findByText('Change FROM nginxx to FROM nginx')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open related resource/i })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/apps/app_1?tab=builds#buildRunId=bldr_1',
+    )
   })
 })

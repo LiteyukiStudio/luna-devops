@@ -54,4 +54,24 @@ describe('inboxMessageText', () => {
     expect(result.title).toBe('You joined a project')
     expect(result.content).not.toContain('invalid')
   })
+
+  it('translates build and release failure inbox catalog keys', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const buildText = inboxMessageText(message({
+      type: 'build.failed',
+      category: 'delivery',
+      titleKey: 'inbox.delivery.buildFailed.title',
+      contentKey: 'inbox.delivery.buildFailed.body',
+      params: {
+        projectName: 'Wordle',
+        applicationName: 'web',
+        targetName: 'prod',
+        gitRef: 'main',
+        reason: 'exitCode=1',
+      },
+    }), i18next.t)
+    expect(buildText.title).toBe('构建失败')
+    expect(buildText.content).toContain('Wordle')
+    expect(buildText.content).toContain('exitCode=1')
+  })
 })

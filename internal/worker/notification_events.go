@@ -9,10 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/imageref"
+	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
+	"unicode/utf8"
 )
 
 func (r *Runner) emitNotificationEvent(ctx context.Context, event notification.Event) {
@@ -20,7 +23,10 @@ func (r *Runner) emitNotificationEvent(ctx context.Context, event notification.E
 }
 
 func (r *Runner) emitNotificationEventError(ctx context.Context, event notification.Event) error {
-	enqueuer := notification.DeliveryEnqueuer(r.taskClient)
+	var enqueuer notification.DeliveryEnqueuer
+	if r.taskClient != nil {
+		enqueuer = r.taskClient
+	}
 	if r.notificationDeliveryEnqueuer != nil {
 		enqueuer = r.notificationDeliveryEnqueuer
 	}
@@ -49,8 +55,11 @@ func (r *Runner) emitBuildEventWithAI(ctx context.Context, run model.BuildRun, s
 }
 
 func (r *Runner) emitBuildEventWithAIError(ctx context.Context, run model.BuildRun, status string, message string, aiDiag *notification.AIDiagnosisContext) error {
-	project, application, target := r.notificationContext(run.ProjectID, run.ApplicationID, run.DeploymentTargetID)
+	project, application, target := r.notificationContext(ctx, run.ProjectID, run.ApplicationID, run.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(run.ProjectID, run.ApplicationID, run.DeploymentTargetID, project, application, target)
+	if status == "failed" || status == "timeout" {
+		r.publishBuildFailureInboxWithContext(ctx, run, status, project, application, target, message, aiDiag)
+	}
 	return r.emitNotificationEventError(ctx, notification.Event{
 		Type:             "build." + status,
 		Severity:         notificationSeverity(status),
@@ -61,7 +70,7 @@ func (r *Runner) emitBuildEventWithAIError(ctx context.Context, run model.BuildR
 			ID:      run.ID,
 			Status:  status,
 			Message: strings.TrimSpace(message),
-			Image:   r.notificationBuildImageRef(run),
+			Image:   r.notificationBuildImageRef(ctx, run),
 			GitRef:  firstNonEmpty(run.SourceBranch, run.SourceTag, run.SourceCommit),
 			GitSHA:  run.SourceCommit,
 		},
@@ -82,13 +91,13 @@ func (r *Runner) emitBuildEventWithAIError(ctx context.Context, run model.BuildR
 	})
 }
 
-func (r *Runner) notificationBuildImageRef(run model.BuildRun) string {
+func (r *Runner) notificationBuildImageRef(ctx context.Context, run model.BuildRun) string {
 	if imageRef := strings.TrimSpace(run.ImageRef); imageRef != "" {
 		return imageRef
 	}
 	var registry model.ArtifactRegistry
 	if r.db != nil && strings.TrimSpace(run.TargetRegistryID) != "" {
-		_ = r.db.First(&registry, "id = ?", run.TargetRegistryID).Error
+		_ = r.db.WithContext(ctx).First(&registry, "id = ?", run.TargetRegistryID).Error
 	}
 	return imageref.BuildImageRef(registry, run)
 }
@@ -106,8 +115,15 @@ func (r *Runner) emitReleaseEventWithAI(ctx context.Context, release model.Relea
 }
 
 func (r *Runner) emitReleaseEventWithAIError(ctx context.Context, release model.Release, status string, message string, aiDiag *notification.AIDiagnosisContext) error {
-	project, application, target := r.notificationContext(release.ProjectID, release.ApplicationID, release.DeploymentTargetID)
+	project, application, target := r.notificationContext(ctx, release.ProjectID, release.ApplicationID, release.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(release.ProjectID, release.ApplicationID, release.DeploymentTargetID, project, application, target)
+	if status == "failed" {
+		r.publishReleaseFailureInboxWithContext(ctx, release, project, application, target, message, aiDiag)
+	}
+	focusKey := ""
+	if strings.TrimSpace(release.ID) != "" {
+		focusKey = "releaseId"
+	}
 	return r.emitNotificationEventError(ctx, notification.Event{
 		Type:             "release." + status,
 		Severity:         notificationSeverity(status),
@@ -133,7 +149,7 @@ func (r *Runner) emitReleaseEventWithAIError(ctx context.Context, release model.
 		CorrelationID: release.ID,
 		DedupKey:      "release:" + release.ID + ":" + status,
 		OccurredAt:    time.Now(),
-		Links:         r.notificationLinks(release.ProjectID, release.ApplicationID, "deployments", "release", "", ""),
+		Links:         r.notificationLinks(release.ProjectID, release.ApplicationID, "deployments", "release", focusKey, release.ID),
 		Message:       firstNonEmpty(message, "Release "+status),
 	})
 }
@@ -143,8 +159,32 @@ func (r *Runner) emitHookFailed(ctx context.Context, run model.HookRun, message 
 }
 
 func (r *Runner) emitHookEvent(ctx context.Context, run model.HookRun, status string, message string) {
-	project, application, target := r.notificationContext(run.ProjectID, run.ApplicationID, run.DeploymentTargetID)
+	project, application, target := r.notificationContext(ctx, run.ProjectID, run.ApplicationID, run.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(run.ProjectID, run.ApplicationID, run.DeploymentTargetID, project, application, target)
+	actor := r.notificationHookActor(ctx, run)
+	if status == "failed" {
+		r.publishProjectDeliveryInbox(ctx, run.ProjectID, []string{actor.ID}, inbox.PublishInput{
+			Type:         "hook.failed",
+			Category:     inbox.CategoryDelivery,
+			Priority:     inbox.PriorityHigh,
+			ActorID:      actor.ID,
+			ProjectID:    run.ProjectID,
+			ResourceType: "hook_run",
+			ResourceID:   run.ID,
+			TitleKey:     "inbox.delivery.hookFailed.title",
+			ContentKey:   "inbox.delivery.hookFailed.body",
+			Params: map[string]any{
+				"projectName":     firstNonEmpty(project.Name, project.Identifier, run.ProjectID),
+				"applicationName": firstNonEmpty(application.Name, application.Identifier, run.ApplicationID, "-"),
+				"hookName":        firstNonEmpty(run.Name, run.ID),
+				"phase":           firstNonEmpty(run.Phase, "-"),
+				"reason":          truncateInboxReason(telemetry.RedactText(firstNonEmpty(strings.TrimSpace(message), "hook_failed"))),
+			},
+			DeepLink: relativeResourceDeepLink(run.ProjectID, run.ApplicationID, "deployments", "", ""),
+			GroupKey: "hook:" + firstNonEmpty(run.ApplicationID, run.ProjectID),
+			DedupKey: "delivery_hook:" + run.ID,
+		})
+	}
 	r.emitNotificationEvent(ctx, notification.Event{
 		Type:             "hook." + status,
 		Severity:         notificationSeverity(status),
@@ -158,7 +198,7 @@ func (r *Runner) emitHookEvent(ctx context.Context, run model.HookRun, status st
 			Status:  status,
 			Message: strings.TrimSpace(message),
 		},
-		Actor:               r.notificationHookActor(ctx, run),
+		Actor:               actor,
 		ResourceOwnerUserID: r.notificationHookOwnerUserID(ctx, run, target),
 		CorrelationID:       firstNonEmpty(run.ReleaseID, run.BuildRunID, run.ID),
 		DedupKey:            "hook:" + run.ID + ":" + status,
@@ -173,8 +213,30 @@ func (r *Runner) emitGatewayApplyFailed(ctx context.Context, route model.Gateway
 }
 
 func (r *Runner) emitGatewayEvent(ctx context.Context, route model.GatewayRoute, actorID string, status string, message string) {
-	project, application, target := r.notificationContext(route.ProjectID, route.ApplicationID, route.DeploymentTargetID)
+	project, application, target := r.notificationContext(ctx, route.ProjectID, route.ApplicationID, route.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(route.ProjectID, route.ApplicationID, route.DeploymentTargetID, project, application, target)
+	if status == "apply_failed" {
+		r.publishProjectDeliveryInbox(ctx, route.ProjectID, []string{actorID, route.CreatedBy}, inbox.PublishInput{
+			Type:         "gateway.apply_failed",
+			Category:     inbox.CategoryDelivery,
+			Priority:     inbox.PriorityHigh,
+			ActorID:      strings.TrimSpace(actorID),
+			ProjectID:    route.ProjectID,
+			ResourceType: "gateway_route",
+			ResourceID:   route.ID,
+			TitleKey:     "inbox.delivery.gatewayFailed.title",
+			ContentKey:   "inbox.delivery.gatewayFailed.body",
+			Params: map[string]any{
+				"projectName":     firstNonEmpty(project.Name, project.Identifier, route.ProjectID),
+				"applicationName": firstNonEmpty(application.Name, application.Identifier, route.ApplicationID, "-"),
+				"domain":          firstNonEmpty(route.Host, route.ID),
+				"reason":          truncateInboxReason(telemetry.RedactText(firstNonEmpty(strings.TrimSpace(message), "gateway_apply_failed"))),
+			},
+			DeepLink: relativeResourceDeepLink(route.ProjectID, route.ApplicationID, "gateway", "", ""),
+			GroupKey: "gateway:" + route.ID,
+			DedupKey: "delivery_" + gatewayEventDedupKey(route, status),
+		})
+	}
 	r.emitNotificationEvent(ctx, notification.Event{
 		Type:             "gateway." + status,
 		Severity:         notificationSeverity(status),
@@ -199,8 +261,10 @@ func (r *Runner) emitGatewayEvent(ctx context.Context, route model.GatewayRoute,
 }
 
 func (r *Runner) emitCertificateEvent(ctx context.Context, route model.GatewayRoute, actorID string, status string, message string) {
-	project, application, target := r.notificationContext(route.ProjectID, route.ApplicationID, route.DeploymentTargetID)
+	project, application, target := r.notificationContext(ctx, route.ProjectID, route.ApplicationID, route.DeploymentTargetID)
 	projectRef, applicationRef, targetRef := notificationEntityRefs(route.ProjectID, route.ApplicationID, route.DeploymentTargetID, project, application, target)
+	dedupKey := certificateEventDedupKey(route, status)
+	r.publishCertificateFailureInbox(ctx, route, actorID, status, message, dedupKey, project, application)
 	r.emitNotificationEvent(ctx, notification.Event{
 		Type:             "certificate." + status,
 		Severity:         notificationSeverity(status),
@@ -225,11 +289,233 @@ func (r *Runner) emitCertificateEvent(ctx context.Context, route model.GatewayRo
 		Actor:               r.notificationActor(ctx, actorID, "", ""),
 		ResourceOwnerUserID: route.CreatedBy,
 		CorrelationID:       route.ID,
-		DedupKey:            certificateEventDedupKey(route, status),
+		DedupKey:            dedupKey,
 		OccurredAt:          time.Now(),
 		Links:               r.notificationLinks(route.ProjectID, route.ApplicationID, "gateway", "certificate", "", ""),
 		Message:             firstNonEmpty(message, "Certificate "+status),
 	})
+}
+
+func (r *Runner) publishCertificateFailureInbox(
+	ctx context.Context,
+	route model.GatewayRoute,
+	actorID string,
+	status string,
+	message string,
+	dedupKey string,
+	project model.Project,
+	application model.Application,
+) {
+	if status != "failed" && status != "expired" {
+		return
+	}
+	r.publishProjectDeliveryInbox(ctx, route.ProjectID, []string{actorID, route.CreatedBy}, inbox.PublishInput{
+		Type:         "certificate." + status,
+		Category:     inbox.CategoryDelivery,
+		Priority:     inbox.PriorityHigh,
+		ActorID:      strings.TrimSpace(actorID),
+		ProjectID:    route.ProjectID,
+		ResourceType: "gateway_route",
+		ResourceID:   route.ID,
+		TitleKey:     "inbox.delivery.certificateFailed.title",
+		ContentKey:   "inbox.delivery.certificateFailed.body",
+		Params: map[string]any{
+			"projectName":     firstNonEmpty(project.Name, project.Identifier, route.ProjectID),
+			"applicationName": firstNonEmpty(application.Name, application.Identifier, route.ApplicationID, "-"),
+			"domain":          firstNonEmpty(route.Host, route.ID),
+			"reason":          truncateInboxReason(telemetry.RedactText(firstNonEmpty(strings.TrimSpace(message), "certificate_"+status))),
+		},
+		DeepLink: relativeResourceDeepLink(route.ProjectID, route.ApplicationID, "gateway", "", ""),
+		GroupKey: "certificate:" + route.ID,
+		DedupKey: "delivery_" + strings.TrimSpace(dedupKey),
+	})
+}
+
+func (r *Runner) publishBuildFailureInboxOnly(ctx context.Context, run model.BuildRun, message string, aiDiag *notification.AIDiagnosisContext) {
+	if r.db == nil {
+		return
+	}
+	project, application, target := r.notificationContext(ctx, run.ProjectID, run.ApplicationID, run.DeploymentTargetID)
+	status := strings.TrimSpace(run.Status)
+	if status == "" {
+		status = "failed"
+	}
+	r.publishBuildFailureInboxWithContext(ctx, run, status, project, application, target, message, aiDiag)
+}
+
+func (r *Runner) publishBuildFailureInboxWithContext(
+	ctx context.Context,
+	run model.BuildRun,
+	status string,
+	project model.Project,
+	application model.Application,
+	target model.DeploymentTarget,
+	message string,
+	aiDiag *notification.AIDiagnosisContext,
+) {
+	if strings.TrimSpace(run.ID) == "" || strings.TrimSpace(run.ProjectID) == "" {
+		return
+	}
+	effectiveStatus := firstNonEmpty(strings.TrimSpace(run.Status), strings.TrimSpace(status), "failed")
+	if !isDiagnosableBuildFailure(effectiveStatus, run.FailureCode) {
+		return
+	}
+	inboxType := "build.failed"
+	if effectiveStatus == "timeout" || strings.TrimSpace(status) == "timeout" {
+		inboxType = "build.timeout"
+	}
+	params := map[string]any{
+		"projectName":     firstNonEmpty(project.Name, project.Identifier, run.ProjectID),
+		"applicationName": firstNonEmpty(application.Name, application.Identifier, run.ApplicationID, "-"),
+		"targetName":      firstNonEmpty(target.Name, target.Stage, "-"),
+		"gitRef":          firstNonEmpty(run.SourceBranch, run.SourceTag, shortInboxCommit(run.SourceCommit), "-"),
+		"reason":          truncateInboxReason(telemetry.RedactText(firstNonEmpty(strings.TrimSpace(message), strings.TrimSpace(run.FailureCode), "build_failed"))),
+	}
+	attachRedactedAIDiagnosisInboxParams(params, aiDiag)
+	r.publishProjectDeliveryInbox(ctx, run.ProjectID, []string{run.CreatedBy}, inbox.PublishInput{
+		Type:         inboxType,
+		Category:     inbox.CategoryDelivery,
+		Priority:     inbox.PriorityHigh,
+		ActorID:      strings.TrimSpace(run.CreatedBy),
+		ProjectID:    run.ProjectID,
+		ResourceType: "build_run",
+		ResourceID:   run.ID,
+		TitleKey:     "inbox.delivery.buildFailed.title",
+		ContentKey:   "inbox.delivery.buildFailed.body",
+		Params:       params,
+		DeepLink:     relativeResourceDeepLink(run.ProjectID, run.ApplicationID, "builds", "buildRunId", run.ID),
+		GroupKey:     "build:" + firstNonEmpty(run.ApplicationID, run.ProjectID),
+		DedupKey:     "delivery_build:" + run.ID,
+	})
+}
+
+func (r *Runner) publishReleaseFailureInboxOnly(ctx context.Context, release model.Release, message string, aiDiag *notification.AIDiagnosisContext) {
+	if r.db == nil {
+		return
+	}
+	project, application, target := r.notificationContext(ctx, release.ProjectID, release.ApplicationID, release.DeploymentTargetID)
+	r.publishReleaseFailureInboxWithContext(ctx, release, project, application, target, message, aiDiag)
+}
+
+func (r *Runner) publishReleaseFailureInboxWithContext(
+	ctx context.Context,
+	release model.Release,
+	project model.Project,
+	application model.Application,
+	target model.DeploymentTarget,
+	message string,
+	aiDiag *notification.AIDiagnosisContext,
+) {
+	if strings.TrimSpace(release.ID) == "" || strings.TrimSpace(release.ProjectID) == "" {
+		return
+	}
+	effectiveStatus := firstNonEmpty(strings.TrimSpace(release.Status), "failed")
+	if !isDiagnosableReleaseFailure(effectiveStatus, release.FailureCode) {
+		return
+	}
+	params := map[string]any{
+		"projectName":     firstNonEmpty(project.Name, project.Identifier, release.ProjectID),
+		"applicationName": firstNonEmpty(application.Name, application.Identifier, release.ApplicationID, "-"),
+		"targetName":      firstNonEmpty(target.Name, target.Stage, "-"),
+		"revision":        release.Revision,
+		"reason":          truncateInboxReason(telemetry.RedactText(firstNonEmpty(strings.TrimSpace(message), strings.TrimSpace(release.FailureCode), "release_failed"))),
+	}
+	attachRedactedAIDiagnosisInboxParams(params, aiDiag)
+	r.publishProjectDeliveryInbox(ctx, release.ProjectID, []string{release.CreatedBy}, inbox.PublishInput{
+		Type:         "release.failed",
+		Category:     inbox.CategoryDelivery,
+		Priority:     inbox.PriorityHigh,
+		ActorID:      strings.TrimSpace(release.CreatedBy),
+		ProjectID:    release.ProjectID,
+		ResourceType: "release",
+		ResourceID:   release.ID,
+		TitleKey:     "inbox.delivery.releaseFailed.title",
+		ContentKey:   "inbox.delivery.releaseFailed.body",
+		Params:       params,
+		DeepLink:     relativeResourceDeepLink(release.ProjectID, release.ApplicationID, "deployments", "releaseId", release.ID),
+		GroupKey:     "release:" + firstNonEmpty(release.DeploymentTargetID, release.ProjectID),
+		DedupKey:     "delivery_release:" + release.ID,
+	})
+}
+
+func attachRedactedAIDiagnosisInboxParams(params map[string]any, aiDiag *notification.AIDiagnosisContext) {
+	if params == nil || aiDiag == nil {
+		return
+	}
+	summary := strings.TrimSpace(telemetry.RedactText(aiDiag.RootCauseSummary))
+	if summary == "" {
+		return
+	}
+	params["aiRootCauseSummary"] = summary
+	if len(aiDiag.Suggestions) > 0 {
+		seen := make(map[string]struct{}, len(aiDiag.Suggestions))
+		clean := make([]string, 0, len(aiDiag.Suggestions))
+		for _, raw := range aiDiag.Suggestions {
+			item := strings.TrimSpace(telemetry.RedactText(raw))
+			if item == "" {
+				continue
+			}
+			if _, dup := seen[item]; dup {
+				continue
+			}
+			seen[item] = struct{}{}
+			clean = append(clean, item)
+		}
+		if len(clean) > 0 {
+			params["aiSuggestions"] = clean
+		}
+	}
+}
+
+func (r *Runner) publishProjectDeliveryInbox(ctx context.Context, projectID string, extraActors []string, input inbox.PublishInput) {
+	if r == nil || r.db == nil || strings.TrimSpace(projectID) == "" {
+		return
+	}
+	roles := []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper}
+	if err := inbox.NewService(r.db).PublishCoalescedToProjectRolesAndUsers(ctx, projectID, roles, extraActors, input, true); err != nil {
+		telemetry.RecordError(ctx, "inbox.delivery_failure_publish_failed", err,
+			slog.String("inbox.type", strings.TrimSpace(input.Type)),
+		)
+	}
+}
+
+func relativeResourceDeepLink(projectID string, applicationID string, tab string, focusKey string, focusID string) string {
+	projectID = strings.TrimSpace(projectID)
+	applicationID = strings.TrimSpace(applicationID)
+	if projectID == "" {
+		return ""
+	}
+	if applicationID == "" {
+		return "/projects/" + url.PathEscape(projectID)
+	}
+	link := "/projects/" + url.PathEscape(projectID) + "/apps/" + url.PathEscape(applicationID)
+	if trimmedTab := strings.TrimSpace(tab); trimmedTab != "" {
+		link += "?tab=" + url.QueryEscape(trimmedTab)
+	}
+	if trimmedKey := strings.TrimSpace(focusKey); trimmedKey != "" && strings.TrimSpace(focusID) != "" {
+		link += "#" + url.QueryEscape(trimmedKey) + "=" + url.QueryEscape(strings.TrimSpace(focusID))
+	}
+	return link
+}
+
+func shortInboxCommit(commit string) string {
+	trimmed := strings.TrimSpace(commit)
+	if len(trimmed) > 8 {
+		return trimmed[:8]
+	}
+	return trimmed
+}
+
+func truncateInboxReason(reason string) string {
+	trimmed := strings.TrimSpace(reason)
+	if len(trimmed) <= 280 {
+		return trimmed
+	}
+	end := 280
+	for end > 0 && !utf8.RuneStart(trimmed[end]) {
+		end--
+	}
+	return strings.ToValidUTF8(trimmed[:end], "") + "…"
 }
 
 func (r *Runner) notificationHookOwnerUserID(ctx context.Context, run model.HookRun, target model.DeploymentTarget) string {
@@ -331,16 +617,20 @@ func gatewayRouteGeneration(route model.GatewayRoute) string {
 	return strconv.FormatInt(route.UpdatedAt.UTC().UnixMicro(), 10)
 }
 
-func (r *Runner) notificationContext(projectID string, applicationID string, targetID string) (model.Project, model.Application, model.DeploymentTarget) {
+func (r *Runner) notificationContext(ctx context.Context, projectID string, applicationID string, targetID string) (model.Project, model.Application, model.DeploymentTarget) {
 	var project model.Project
 	var application model.Application
 	var target model.DeploymentTarget
-	_ = r.db.First(&project, "id = ?", projectID).Error
+	if r.db == nil {
+		return project, application, target
+	}
+	db := r.db.WithContext(ctx)
+	_ = db.First(&project, "id = ?", projectID).Error
 	if strings.TrimSpace(applicationID) != "" {
-		_ = r.db.First(&application, "id = ?", applicationID).Error
+		_ = db.First(&application, "id = ?", applicationID).Error
 	}
 	if strings.TrimSpace(targetID) != "" {
-		_ = r.db.First(&target, "id = ?", targetID).Error
+		_ = db.First(&target, "id = ?", targetID).Error
 	}
 	return project, application, target
 }

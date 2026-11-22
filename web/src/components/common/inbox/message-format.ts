@@ -15,6 +15,11 @@ const titleCatalog: Record<string, string> = {
   'inbox.runtime.startFailed.title': 'inbox.catalog.runtimeStartFailed.title',
   'inbox.runtime.degraded.title': 'inbox.catalog.runtimeDegraded.title',
   'inbox.runtime.recovered.title': 'inbox.catalog.runtimeRecovered.title',
+  'inbox.delivery.buildFailed.title': 'inbox.catalog.buildFailed.title',
+  'inbox.delivery.releaseFailed.title': 'inbox.catalog.releaseFailed.title',
+  'inbox.delivery.hookFailed.title': 'inbox.catalog.hookFailed.title',
+  'inbox.delivery.gatewayFailed.title': 'inbox.catalog.gatewayFailed.title',
+  'inbox.delivery.certificateFailed.title': 'inbox.catalog.certificateFailed.title',
 }
 
 const contentCatalog: Record<string, string> = {
@@ -28,6 +33,11 @@ const contentCatalog: Record<string, string> = {
   'inbox.system.announcement.content': 'inbox.catalog.systemAnnouncement.content',
   'inbox.runtime.anomaly.body': 'inbox.catalog.runtimeAnomaly.content',
   'inbox.runtime.recovered.body': 'inbox.catalog.runtimeRecovered.content',
+  'inbox.delivery.buildFailed.body': 'inbox.catalog.buildFailed.content',
+  'inbox.delivery.releaseFailed.body': 'inbox.catalog.releaseFailed.content',
+  'inbox.delivery.hookFailed.body': 'inbox.catalog.hookFailed.content',
+  'inbox.delivery.gatewayFailed.body': 'inbox.catalog.gatewayFailed.content',
+  'inbox.delivery.certificateFailed.body': 'inbox.catalog.certificateFailed.content',
 }
 
 export function inboxMessageText(message: InboxMessage, t: TFunction) {
