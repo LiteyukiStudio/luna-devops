@@ -11,6 +11,14 @@ import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { isAIUIActionRepeatable } from './actions'
+import {
+  extractToolTargetContext,
+  formatHumanApprovalValue,
+  isOpaqueResourceId,
+  resolveApprovalFieldLabel,
+  resolveApprovalScopeSummary,
+  resolveApprovalWarningText,
+} from './approval-presentation'
 import { runFailureTranslationKey } from './errors'
 import { LiveProgressBlock } from './live-progress-block'
 import { aiToolIndicatorState } from './status-indicator-states'
@@ -60,7 +68,7 @@ function extractWaitForTaskInfo(block: ToolCallBlock): WaitForTaskDisplayInfo | 
   }
 }
 
-export function AIToolCallCard({ block, onAction, onApproval, surface = 'window' }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface?: 'page' | 'window' }) {
+export function AIToolCallCard({ block, defaultOpenTechnical = false, onAction, onApproval, surface = 'window' }: { block: ToolCallBlock, defaultOpenTechnical?: boolean, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface?: 'page' | 'window' }) {
   const { t, i18n } = useTranslation()
   const page = surface === 'page'
   const waitTask = extractWaitForTaskInfo(block)
@@ -70,7 +78,12 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
       : t('aiAssistant.waitForTask.targetRelease', { id: waitTask.taskId })
     : undefined
   const baseTitle = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : toolDisplayName(t, block.operationId)
-  const title = waitTargetLabel ? `${baseTitle} · ${waitTargetLabel}` : baseTitle
+  const contextTarget = !waitTargetLabel ? extractToolTargetContext(block.arguments, block.approvalPreview?.targetResource) : undefined
+  const title = waitTargetLabel
+    ? `${baseTitle} · ${waitTargetLabel}`
+    : contextTarget
+      ? `${baseTitle} · ${contextTarget}`
+      : baseTitle
   const errorCode = block.errorCode ?? block.result?.errorCode
   const summary = block.status === 'failed'
     ? t(runFailureTranslationKey(errorCode))
@@ -130,7 +143,7 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
           )}
         </summary>
         <div className={page ? 'pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11' : undefined}>
-          <AIToolCallDetails block={block} errorCode={errorCode} summary={summary} />
+          <AIToolCallDetails block={block} defaultOpenTechnical={defaultOpenTechnical} errorCode={errorCode} summary={summary} />
         </div>
         {block.uiActions.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2 border-t border-border px-3 py-2.5">
@@ -236,9 +249,18 @@ function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock
   const [pendingDecision, setPendingDecision] = useState<AIApprovalDecision | null>(null)
   const decidingRef = useRef(false)
   const pending = pendingDecision !== null
-  const rememberable = block.approvalRememberable === true && block.approvalTier === 'L1'
+  const isL1 = block.approvalTier === 'L1'
+  const rememberable = block.approvalRememberable === true && isL1
   const preview = block.approvalPreview
   const parameterEntries = formatApprovalParameterEntries(block.arguments)
+  const hasDiffPreview = Boolean(preview?.changes && preview.changes.length > 0)
+  const scopeSummary = resolveApprovalScopeSummary(block.arguments, preview)
+  const nonOpaqueEntries = parameterEntries.filter(entry => !isOpaqueResourceId(entry.value))
+  const opaqueEntries = parameterEntries.filter(entry => isOpaqueResourceId(entry.value))
+  // Keep human settings first, followed by compact target/scope IDs so no resource binding is ever hidden from review.
+  const orderedPrimaryEntries = [...nonOpaqueEntries, ...opaqueEntries]
+  const hasOpaqueEntries = opaqueEntries.length > 0
+
   const decide = async (decision: AIApprovalDecision) => {
     if (decidingRef.current)
       return
@@ -261,16 +283,16 @@ function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock
     }
   }
   return (
-    <div className="grid gap-2.5 bg-warning-subtle/60 px-3 py-3" data-ai-approval-tier={rememberable ? 'L1' : 'L2'}>
+    <div className="grid gap-2.5 bg-warning-subtle/50 px-3 py-3" data-ai-approval-tier={isL1 ? 'L1' : 'L2'}>
       <div className="flex items-start gap-2">
         <ShieldAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
         <div className="grid min-w-0 flex-1 gap-0.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <strong className="text-sm font-medium text-foreground">
-              {rememberable ? t('aiAssistant.approval.reversibleTitle') : t('aiAssistant.approval.title')}
+              {isL1 ? t('aiAssistant.approval.reversibleTitle') : t('aiAssistant.approval.title')}
             </strong>
-            <StatusBadge className="px-1.5 py-0 text-[11px] leading-4" tone={rememberable ? 'info' : 'warning'}>
-              {rememberable ? t('aiAssistant.approval.tierL1') : t('aiAssistant.approval.tierL2')}
+            <StatusBadge className="px-1.5 py-0 text-[11px] leading-4" tone={isL1 ? 'info' : 'warning'}>
+              {isL1 ? t('aiAssistant.approval.tierL1') : t('aiAssistant.approval.tierL2')}
             </StatusBadge>
           </div>
           {preview?.summary && (
@@ -279,31 +301,61 @@ function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock
             </p>
           )}
           <p className="text-xs leading-5 text-muted-foreground">
-            {rememberable ? t('aiAssistant.approval.rememberHint') : t('aiAssistant.approval.bindingHint')}
+            {rememberable
+              ? t('aiAssistant.approval.rememberHint')
+              : isL1
+                ? t('aiAssistant.approval.strictHint')
+                : t('aiAssistant.approval.bindingHint')}
           </p>
         </div>
       </div>
+
+      {(scopeSummary.project || scopeSummary.target) && (
+        <div className="grid gap-1 rounded-control border border-border/70 bg-surface px-2.5 py-1.5 text-xs" data-ai-approval-scope>
+          {scopeSummary.project && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="shrink-0 text-muted-foreground">{t('aiAssistant.tools.resources.project')}</span>
+              <span className="min-w-0 truncate font-mono text-[11px] font-medium text-foreground" title={scopeSummary.project.rawTitle}>
+                {scopeSummary.project.display}
+              </span>
+            </div>
+          )}
+          {scopeSummary.target && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="shrink-0 text-muted-foreground">{t('aiAssistant.approval.targetLabel')}</span>
+              <span className="min-w-0 truncate font-medium text-foreground" title={scopeSummary.target.rawTitle}>
+                {scopeSummary.target.display}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {preview?.changes && preview.changes.length > 0 && (
-        <div className="grid gap-1 rounded-control border border-border/70 bg-surface px-2.5 py-2 text-xs" data-ai-approval-diff>
+        <div className="grid gap-1.5 rounded-control border border-border/70 bg-surface px-2.5 py-2 text-xs" data-ai-approval-diff>
           <span className="text-[11px] font-medium text-muted-foreground">{t('aiAssistant.approval.changesTitle')}</span>
-          <div className="grid max-h-44 gap-1 overflow-y-auto">
+          <div className="grid max-h-44 gap-1.5 overflow-y-auto">
             {preview.changes.map(change => (
-              <div key={`${change.field}-${change.action ?? 'diff'}-${formatPreviewScalar(change.after)}`} className="flex flex-wrap items-baseline justify-between gap-2 font-mono text-[11px]">
-                <span className="text-muted-foreground">{change.field}</span>
-                <span className="min-w-0 break-all text-right text-foreground">
-                  {change.before !== undefined ? `${formatPreviewScalar(change.before)} -> ${formatPreviewScalar(change.after)}` : formatPreviewScalar(change.after)}
+              <div key={`${change.field}-${change.action ?? 'diff'}-${formatPreviewScalar(change.after)}`} className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">{resolveApprovalFieldLabel(t, change.field)}</span>
+                <span className="min-w-0 break-all text-right font-mono text-[11px] font-medium text-foreground">
+                  {change.before !== undefined
+                    ? `${formatHumanApprovalValue(t, formatPreviewScalar(change.before))} -> ${formatHumanApprovalValue(t, formatPreviewScalar(change.after))}`
+                    : formatHumanApprovalValue(t, formatPreviewScalar(change.after))}
                 </span>
               </div>
             ))}
           </div>
         </div>
       )}
+
       {preview?.sensitiveKeys && preview.sensitiveKeys.length > 0 && (
         <div className="grid gap-0.5 rounded-control border border-border/70 bg-surface px-2.5 py-1.5 text-[11px]" data-ai-approval-sensitive-keys>
           <span className="font-medium text-muted-foreground">{t('aiAssistant.approval.sensitiveKeysTitle')}</span>
           <span className="font-mono text-foreground">{preview.sensitiveKeys.join(', ')}</span>
         </div>
       )}
+
       {preview?.impact && preview.impact.length > 0 && (
         <div className="grid gap-0.5 rounded-control border border-border/70 bg-surface px-2.5 py-1.5 text-[11px]" data-ai-approval-impact>
           <span className="font-medium text-muted-foreground">{t('aiAssistant.approval.impactTitle')}</span>
@@ -312,24 +364,77 @@ function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock
           ))}
         </div>
       )}
+
       {preview?.warnings && preview.warnings.length > 0 && (
         <div className="grid gap-0.5 rounded-control border border-warning/40 bg-warning-subtle/80 px-2.5 py-1.5 text-[11px]" data-ai-approval-warnings>
           <span className="font-medium text-warning">{t('aiAssistant.approval.warningsTitle')}</span>
           {preview.warnings.map(line => (
-            <span key={line} className="text-foreground">{line}</span>
+            <span key={line} className="text-foreground">{resolveApprovalWarningText(t, line)}</span>
           ))}
         </div>
       )}
+
       {parameterEntries.length > 0 && (
-        <dl className="grid max-h-44 gap-1 overflow-y-auto rounded-control border border-border/70 bg-surface px-2.5 py-2 text-xs" data-ai-approval-parameters>
-          {parameterEntries.map(entry => (
-            <div key={entry.key} className="flex items-baseline justify-between gap-3">
-              <dt className="shrink-0 font-mono text-[11px] text-muted-foreground">{entry.key}</dt>
-              <dd className="min-w-0 break-all text-right font-mono text-[11px] text-foreground">{entry.value}</dd>
-            </div>
-          ))}
-        </dl>
+        hasDiffPreview
+          ? (
+              <details className="group/raw rounded-control border border-border/70 bg-surface text-xs" data-ai-approval-parameters>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  <span>{t('aiAssistant.approval.rawParametersTitle')}</span>
+                  <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 transition-transform duration-fast group-open/raw:rotate-90" />
+                </summary>
+                <dl className="grid max-h-40 gap-1 overflow-y-auto border-t border-border/60 px-2.5 py-2">
+                  {parameterEntries.map(entry => (
+                    <div key={entry.key} className="flex items-baseline justify-between gap-3">
+                      <dt className="shrink-0 font-mono text-[11px] text-muted-foreground">{entry.key}</dt>
+                      <dd className="min-w-0 break-all text-right font-mono text-[11px] text-foreground">{entry.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            )
+          : (
+              <div className="grid gap-1.5 rounded-control border border-border/70 bg-surface px-2.5 py-2 text-xs" data-ai-approval-parameters>
+                <span className="text-[11px] font-medium text-muted-foreground">{t('aiAssistant.approval.keySettingsTitle')}</span>
+                <dl className="grid max-h-44 gap-1.5 overflow-y-auto">
+                  {orderedPrimaryEntries.map((entry) => {
+                    const label = resolveApprovalFieldLabel(t, entry.key)
+                    const opaque = isOpaqueResourceId(entry.value)
+                    return (
+                      <div key={entry.key} className="flex items-baseline justify-between gap-3">
+                        <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
+                        <dd
+                          className={cn(
+                            'min-w-0 break-all text-right font-mono text-[11px]',
+                            opaque ? 'text-muted-foreground' : 'font-medium text-foreground',
+                          )}
+                          title={opaque ? entry.value : undefined}
+                        >
+                          {formatHumanApprovalValue(t, entry.value)}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+                {hasOpaqueEntries && (
+                  <details className="group/raw mt-0.5 border-t border-border/60 pt-1.5">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm text-[11px] font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                      <span>{t('aiAssistant.approval.rawParametersTitle')}</span>
+                      <ChevronRight aria-hidden="true" className="size-3 shrink-0 transition-transform duration-fast group-open/raw:rotate-90" />
+                    </summary>
+                    <dl className="mt-1.5 grid max-h-36 gap-1 overflow-y-auto">
+                      {parameterEntries.map(entry => (
+                        <div key={`raw:${entry.key}`} className="flex items-baseline justify-between gap-3">
+                          <dt className="shrink-0 font-mono text-[11px] text-muted-foreground">{entry.key}</dt>
+                          <dd className="min-w-0 break-all text-right font-mono text-[11px] text-foreground">{entry.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
+                )}
+              </div>
+            )
       )}
+
       <div className={page ? 'grid grid-cols-2 gap-2 pointer-fine:flex pointer-fine:flex-wrap pointer-fine:justify-end' : 'flex flex-wrap justify-end gap-2'}>
         <Button className={page ? 'min-h-12 w-full pointer-fine:min-h-8 pointer-fine:w-auto' : 'h-8 px-3 text-xs'} disabled={pending} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
         {rememberable && (

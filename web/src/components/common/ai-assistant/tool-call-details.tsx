@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import type { AIBlock } from './state'
+import { ChevronRight } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
@@ -70,9 +72,12 @@ function ValueView({ value }: { value: unknown }) {
   )
 }
 
-export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCallBlock, errorCode?: string, summary: string }) {
+export function AIToolCallDetails({ block, defaultOpenTechnical = false, errorCode, summary }: { block: ToolCallBlock, defaultOpenTechnical?: boolean, errorCode?: string, summary: string }) {
   const { t, i18n } = useTranslation()
   const entries = Object.entries(block.arguments).filter(([key]) => !SECRET_FIELD.test(key)).slice(0, 20)
+  const hasValidationIssues = Boolean(block.result?.issues?.length)
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null)
+  const isTechnicalOpen = manualOpen ?? (defaultOpenTechnical || hasValidationIssues)
   const metadata = [
     { label: t('aiAssistant.toolIdentifier'), value: block.operationId, copyable: true },
     { label: t('aiAssistant.toolCallId'), value: block.toolCallId, copyable: true },
@@ -81,34 +86,13 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
     ...(block.durationMs !== undefined
       ? [{ label: t('aiAssistant.duration'), value: formatMillisecondsDuration(block.durationMs, i18n.language), mono: false }]
       : []),
-    ...(block.result?.requestId ? [{ label: t('aiAssistant.requestId'), value: block.result.requestId, copyable: true }] : []),
+    ...(block.result?.requestId && block.status !== 'failed'
+      ? [{ label: t('aiAssistant.requestId'), value: block.result.requestId, copyable: true }]
+      : []),
   ]
 
   return (
     <div className="grid gap-3 border-t border-border bg-surface-subtle/60 px-3 py-3">
-      <section className="grid gap-1.5" aria-labelledby={`${block.id}-identifiers`}>
-        <DetailHeading><span id={`${block.id}-identifiers`}>{t('aiAssistant.identifiers')}</span></DetailHeading>
-        <dl className="m-0 grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-2">
-          {metadata.map(item => <MetadataItem key={item.label} {...item} />)}
-        </dl>
-      </section>
-
-      <section className="grid gap-1.5" aria-labelledby={`${block.id}-arguments`}>
-        <DetailHeading><span id={`${block.id}-arguments`}>{t('aiAssistant.arguments')}</span></DetailHeading>
-        {entries.length
-          ? (
-              <dl className="m-0 grid rounded-control border border-border bg-surface px-2.5 text-xs">
-                {entries.map(([key, value]) => (
-                  <div key={key} className="grid min-w-0 grid-cols-[minmax(5rem,35%)_minmax(0,1fr)] gap-2 border-b border-border py-2 last:border-b-0">
-                    <dt className="min-w-0 truncate font-mono text-muted-foreground">{key}</dt>
-                    <dd className="m-0 min-w-0"><ValueView value={value} /></dd>
-                  </div>
-                ))}
-              </dl>
-            )
-          : <p className="m-0 rounded-control border border-border bg-surface px-2.5 py-2 text-xs text-muted-foreground">{t('aiAssistant.noArguments')}</p>}
-      </section>
-
       <section className="grid gap-1.5" aria-labelledby={`${block.id}-result`}>
         <DetailHeading><span id={`${block.id}-result`}>{t('aiAssistant.returnValue')}</span></DetailHeading>
         {block.result
@@ -122,6 +106,17 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">{t('aiAssistant.errorCode')}</span>
                     <code className="break-all text-right font-mono text-[11px]">{errorCode}</code>
+                  </div>
+                )}
+                {block.status === 'failed' && block.result.requestId && (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">{t('aiAssistant.requestId')}</span>
+                    <CopyableHoverText
+                      className="break-all font-mono text-xs leading-5 text-foreground"
+                      copyLabel={`${t('common.copy')} ${t('aiAssistant.requestId')}`}
+                      truncate={false}
+                      value={block.result.requestId}
+                    />
                   </div>
                 )}
                 {block.result.errorMessage && (
@@ -164,12 +159,6 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
                     </ul>
                   </div>
                 )}
-                {block.result.data !== undefined && (
-                  <div className="grid min-w-0 gap-1">
-                    <strong className="text-[11px] font-medium text-muted-foreground">{t('aiAssistant.responseData')}</strong>
-                    <ValueView value={block.result.data} />
-                  </div>
-                )}
               </div>
             )
           : (
@@ -179,6 +168,52 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
               </div>
             )}
       </section>
+
+      <details
+        className="group/tech rounded-control border border-border/80 bg-surface/80"
+        data-ai-tool-technical-details
+        open={isTechnicalOpen}
+        onToggle={(event) => {
+          if (event.currentTarget.open !== isTechnicalOpen)
+            setManualOpen(event.currentTarget.open)
+        }}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <span>{t('aiAssistant.technicalDetails')}</span>
+          <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 transition-transform duration-fast group-open/tech:rotate-90" />
+        </summary>
+        <div className="grid gap-3 border-t border-border/70 p-2.5">
+          <section className="grid gap-1.5" aria-labelledby={`${block.id}-arguments`}>
+            <DetailHeading><span id={`${block.id}-arguments`}>{t('aiAssistant.arguments')}</span></DetailHeading>
+            {entries.length
+              ? (
+                  <dl className="m-0 grid rounded-control border border-border bg-surface px-2.5 text-xs">
+                    {entries.map(([key, value]) => (
+                      <div key={key} className="grid min-w-0 grid-cols-[minmax(5rem,35%)_minmax(0,1fr)] gap-2 border-b border-border py-2 last:border-b-0">
+                        <dt className="min-w-0 truncate font-mono text-muted-foreground">{key}</dt>
+                        <dd className="m-0 min-w-0"><ValueView value={value} /></dd>
+                      </div>
+                    ))}
+                  </dl>
+                )
+              : <p className="m-0 rounded-control border border-border bg-surface px-2.5 py-2 text-xs text-muted-foreground">{t('aiAssistant.noArguments')}</p>}
+          </section>
+
+          {block.result?.data !== undefined && (
+            <section className="grid min-w-0 gap-1.5" aria-labelledby={`${block.id}-response-data`}>
+              <DetailHeading><span id={`${block.id}-response-data`}>{t('aiAssistant.responseData')}</span></DetailHeading>
+              <ValueView value={block.result.data} />
+            </section>
+          )}
+
+          <section className="grid gap-1.5" aria-labelledby={`${block.id}-identifiers`}>
+            <DetailHeading><span id={`${block.id}-identifiers`}>{t('aiAssistant.identifiers')}</span></DetailHeading>
+            <dl className="m-0 grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {metadata.map(item => <MetadataItem key={item.label} {...item} />)}
+            </dl>
+          </section>
+        </div>
+      </details>
     </div>
   )
 }

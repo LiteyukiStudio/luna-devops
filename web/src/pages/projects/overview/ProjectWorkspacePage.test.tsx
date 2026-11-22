@@ -181,6 +181,11 @@ describe('project workspace overview', () => {
     await user.click(retryButtons[0])
     expect(await screen.findByText('No build records yet')).toBeInTheDocument()
   })
+
+  it('redirects legacy notification ai-automation subtab URLs to the top-level AI diagnosis section', async () => {
+    renderPage('/projects/prj_1?tab=notifications&subtab=ai-automation')
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/projects/prj_1?tab=ai-diagnosis'))
+  })
 })
 
 function LocationProbe() {

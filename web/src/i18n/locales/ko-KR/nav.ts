@@ -18,6 +18,7 @@ const nav = {
     volumes: '데이터 볼륨',
     members: '멤버',
     notifications: '알림',
+    aiDiagnosis: 'AI 진단',
     topology: '서비스 관계',
   },
   commandPalette: {

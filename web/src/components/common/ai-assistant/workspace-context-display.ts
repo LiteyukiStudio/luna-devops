@@ -139,6 +139,8 @@ function resolveProjectSectionLabel(
       return t('aiAssistant.contextSummary.projectSections.topology')
     case 'notifications':
       return t('aiAssistant.contextSummary.projectSections.notifications')
+    case 'ai-diagnosis':
+      return t('aiAssistant.contextSummary.projectSections.aiDiagnosis')
   }
 }
 

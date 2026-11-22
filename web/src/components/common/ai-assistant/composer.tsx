@@ -301,7 +301,7 @@ export function AIAssistantComposer({
               value={draft}
               onChange={event => onDraftChange(event.target.value)}
               onKeyDown={(event) => {
-                const submitShortcut = page ? event.metaKey || event.ctrlKey : !event.shiftKey
+                const submitShortcut = !event.shiftKey || event.metaKey || event.ctrlKey
                 if (event.key === 'Enter' && submitShortcut && !isConfirmingIME(event) && submitEnabled) {
                   event.preventDefault()
                   onSubmit()

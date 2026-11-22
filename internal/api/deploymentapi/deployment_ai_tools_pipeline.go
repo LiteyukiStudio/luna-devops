@@ -193,8 +193,15 @@ func (h *Handler) preparePipelinePatchPlan(tc *aitool.ToolContext, in buildConfi
 			return preparedPipelinePatchPlan{}, bErr
 		}
 		if binding.ID != existing.RepositoryBindingID {
+			beforeRepo := existing.RepositoryBindingID
+			if strings.TrimSpace(existing.RepositoryBindingID) != "" {
+				var prevBinding model.RepositoryBinding
+				if db.First(&prevBinding, "id = ? AND project_id = ? AND deleted_at IS NULL", existing.RepositoryBindingID, project.ID).Error == nil {
+					beforeRepo = fmt.Sprintf("%s/%s", prevBinding.Owner, prevBinding.Repo)
+				}
+			}
 			next.RepositoryBindingID = binding.ID
-			addChange("repositoryBindingId", existing.RepositoryBindingID, binding.ID)
+			addChange("repositoryBinding", beforeRepo, fmt.Sprintf("%s/%s", binding.Owner, binding.Repo))
 		}
 	}
 	if nextSourceType == "repository" && strings.TrimSpace(next.RepositoryBindingID) == "" {
@@ -393,6 +400,19 @@ func (h *Handler) preparePipelinePatchPlan(tc *aitool.ToolContext, in buildConfi
 	}
 
 	// TargetRegistry & TargetRepository/TargetTag
+	resolveRegistryDisplayName := func(registryID string) string {
+		trimmed := strings.TrimSpace(registryID)
+		if trimmed == "" {
+			return ""
+		}
+		var prevReg model.ArtifactRegistry
+		if db.First(&prevReg, "id = ? AND deleted_at IS NULL", trimmed).Error == nil && strings.TrimSpace(prevReg.Name) != "" {
+			if authz.IsPlatformAdmin(user.Role) || canUseScopedResourceForTargetProject(db, user, prevReg.Scope, prevReg.OwnerRef, scopedResourceArtifactRegistry, prevReg.ID, project.ID) {
+				return prevReg.Name
+			}
+		}
+		return trimmed
+	}
 	registryChanged := false
 	if strings.TrimSpace(in.TargetRegistry) != "" {
 		reg, rErr := h.resolveArtifactRegistryForProject(tc, user, project.ID, in.TargetRegistry)
@@ -402,7 +422,7 @@ func (h *Handler) preparePipelinePatchPlan(tc *aitool.ToolContext, in buildConfi
 		if reg.ID != existing.TargetRegistryID {
 			next.TargetRegistryID = reg.ID
 			registryChanged = true
-			addChange("targetRegistryId", existing.TargetRegistryID, reg.ID)
+			addChange("targetRegistry", resolveRegistryDisplayName(existing.TargetRegistryID), fallback(strings.TrimSpace(reg.Name), reg.ID))
 		}
 	} else if nextSourceType == "repository" && strings.TrimSpace(next.TargetRegistryID) == "" {
 		defReg, hasDef := h.resolveDefaultArtifactRegistryForProject(tc, user, project.ID)
@@ -416,7 +436,7 @@ func (h *Handler) preparePipelinePatchPlan(tc *aitool.ToolContext, in buildConfi
 		}
 		next.TargetRegistryID = defReg.ID
 		registryChanged = true
-		addChange("targetRegistryId", existing.TargetRegistryID, defReg.ID)
+		addChange("targetRegistry", resolveRegistryDisplayName(existing.TargetRegistryID), fallback(strings.TrimSpace(defReg.Name), defReg.ID))
 	}
 
 	imageFieldsTouched := registryChanged
@@ -499,7 +519,29 @@ func (h *Handler) preparePipelinePatchPlan(tc *aitool.ToolContext, in buildConfi
 		encodedSets := encodeBuildVariableSetIDs(mergedIDs)
 		if encodedSets != existing.BuildVariableSetIDs {
 			next.BuildVariableSetIDs = encodedSets
-			addChange("buildVariableSetIds", curSetIDs, buildVariableSetIDs(encodedSets))
+			resolveVarSetNames := func(ids []string) []string {
+				if len(ids) == 0 {
+					return []string{}
+				}
+				var sets []model.BuildVariableSet
+				_ = db.Where("id IN ? AND deleted_at IS NULL", ids).Find(&sets).Error
+				nameByID := make(map[string]string, len(sets))
+				for _, s := range sets {
+					if strings.TrimSpace(s.Name) != "" && (authz.IsPlatformAdmin(user.Role) || canUseScopedResourceForTargetProject(db, user, s.Scope, s.OwnerRef, scopedResourceBuildVariableSet, s.ID, project.ID)) {
+						nameByID[s.ID] = s.Name
+					}
+				}
+				out := make([]string, 0, len(ids))
+				for _, idItem := range ids {
+					if name, ok := nameByID[idItem]; ok {
+						out = append(out, name)
+					} else {
+						out = append(out, idItem)
+					}
+				}
+				return out
+			}
+			addChange("buildVariableSets", resolveVarSetNames(curSetIDs), resolveVarSetNames(buildVariableSetIDs(encodedSets)))
 		}
 	}
 
@@ -512,7 +554,7 @@ func (h *Handler) preparePipelinePatchPlan(tc *aitool.ToolContext, in buildConfi
 		addChange("requireApproval", existing.RequireApproval, next.RequireApproval)
 	}
 	if next.AutoDeploy && next.RequireApproval {
-		warnings = append(warnings, "Both autoDeploy=true and requireApproval=true are set: automatic release after build will remain gated until requireApproval=false or a manual deploy is triggered.")
+		warnings = append(warnings, "auto_deploy_gated_by_approval")
 	}
 
 	if pol := strings.TrimSpace(in.BuildConcurrencyPolicy); pol != "" {
@@ -648,7 +690,7 @@ func (h *Handler) preparePipelinePatchPlan(tc *aitool.ToolContext, in buildConfi
 
 	requiresRelease := strings.TrimSpace(next.ImageRef) != strings.TrimSpace(existing.ImageRef)
 	if !requiresRelease && nextSourceType == "repository" {
-		warnings = append(warnings, "Build pipeline changes apply to future builds; call `build_trigger_run` to build a new image, then `delivery_deploy_target` to deploy it.")
+		warnings = append(warnings, "pipeline_applies_to_next_build")
 	}
 
 	return preparedPipelinePatchPlan{
@@ -754,8 +796,7 @@ func (h *Handler) previewBuildConfigureTargetPipeline(tc *aitool.ToolContext, in
 	}
 	return &aitool.PreviewResult{
 		Preview: aitool.ApprovalPreview{
-			Summary:        fmt.Sprintf("增量更新部署目标 %s/%s 的构建流水线配置", plan.app.Identifier, plan.existing.Stage),
-			TargetResource: fmt.Sprintf("%s/%s", plan.app.Identifier, plan.existing.Stage),
+			TargetResource: fmt.Sprintf("%s/%s/%s", plan.project.Identifier, plan.app.Identifier, plan.existing.Stage),
 			TargetID:       plan.existing.ID,
 			ProjectID:      plan.project.ID,
 			Changes:        plan.changes,

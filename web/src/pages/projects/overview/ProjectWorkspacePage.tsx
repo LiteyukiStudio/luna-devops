@@ -26,7 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
 import { buildRunPath, platformEventDetailPath, platformEventResourcePath, projectEventsPath } from '@/lib/resource-routes'
-import { ProjectAction, projectActionAllowed, ProjectRole } from '@/lib/roles'
+import { isPlatformAdmin, ProjectAction, projectActionAllowed, ProjectRole } from '@/lib/roles'
 import { ProjectSharedConfigPanel } from '@/pages/projects/delivery-config/ProjectSharedConfigPanel'
 import { BillingOwnerTransferDialog } from '@/pages/projects/governance/billing-owner-transfer-dialog'
 import { legacyProjectWorkspaceSearch, normalizeProjectWorkspaceSection, projectSharedConfigTabParam, projectWorkspaceSectionPath } from './project-workspace-sections'
@@ -40,6 +40,7 @@ const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/Projec
 const ProjectNetworkPolicyCard = lazy(() => import('@/pages/projects/topology/project-network-policy-card').then(module => ({ default: module.ProjectNetworkPolicyCard })))
 const ProjectNetworkSharesCard = lazy(() => import('@/pages/projects/topology/project-network-shares-card').then(module => ({ default: module.ProjectNetworkSharesCard })))
 const ProjectNotificationsPanel = lazy(() => import('@/pages/projects/notifications/ProjectNotificationsPanel').then(module => ({ default: module.ProjectNotificationsPanel })))
+const ProjectAIAutomationPanel = lazy(() => import('@/pages/projects/notifications/project-ai-automation-panel').then(module => ({ default: module.ProjectAIAutomationPanel })))
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/topology/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
 
@@ -152,6 +153,17 @@ export function ProjectWorkspacePage() {
             <ProjectNotificationsPanel
               key={`notifications-${projectId}`}
               currentUserActions={currentUserActions}
+              projectId={projectId}
+            />
+          </Suspense>
+        )
+      case 'ai-diagnosis':
+        return (
+          <Suspense fallback={<ToolViewportSkeleton />}>
+            <ProjectAIAutomationPanel
+              key={`ai-diagnosis-${projectId}`}
+              canManage={isPlatformAdmin(user?.role) || projectActionAllowed(currentUserActions, ProjectAction.NotificationManage)}
+              canRead={isPlatformAdmin(user?.role) || projectActionAllowed(currentUserActions, ProjectAction.NotificationRead)}
               projectId={projectId}
             />
           </Suspense>

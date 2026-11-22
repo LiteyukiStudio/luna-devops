@@ -32,15 +32,15 @@ vi.mock('@/api', async (importOriginal) => {
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-function renderPanel(canManage = true) {
+function renderPanel(canManage = true, initialEntry = '/projects/prj_1?tab=ai-diagnosis', canRead = true) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <ProjectAIAutomationPanel canManage={canManage} projectId="prj_1" />
+          <ProjectAIAutomationPanel canManage={canManage} canRead={canRead} projectId="prj_1" />
         </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -102,9 +102,13 @@ describe('project AI automation panel', () => {
     }))
   })
 
-  it('auto-binds current user personal wallet when enabling delivery diagnosis and saves configuration', async () => {
+  it('lands on history with status summary by default, switches to settings, auto-binds wallet, and saves configuration', async () => {
     const user = userEvent.setup()
     renderPanel(true)
+
+    expect(await screen.findByText('Build/release diagnosis: Off')).toBeInTheDocument()
+    expect(screen.getByText('Runtime self-healing: Off')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Configure' }))
 
     const toggle = await screen.findByRole('switch', { name: 'Enable automatic failure diagnosis' })
     expect(toggle).toHaveAttribute('data-state', 'unchecked')
@@ -153,7 +157,7 @@ describe('project AI automation panel', () => {
     })
 
     const user = userEvent.setup()
-    renderPanel(true)
+    renderPanel(true, '/projects/prj_1?tab=ai-diagnosis&view=settings')
 
     const restartCheckbox = await screen.findByRole('checkbox', { name: /delivery_restart_target/i })
     await user.click(restartCheckbox)
@@ -178,7 +182,7 @@ describe('project AI automation panel', () => {
   })
 
   it('disables controls and hides save button when user is read-only', async () => {
-    renderPanel(false)
+    renderPanel(false, '/projects/prj_1?tab=ai-diagnosis&view=settings')
 
     const toggle = await screen.findByRole('switch', { name: 'Enable automatic failure diagnosis' })
     expect(toggle).toBeDisabled()
@@ -228,5 +232,14 @@ describe('project AI automation panel', () => {
       'href',
       '/projects/prj_1/apps/app_1?tab=builds#buildRunId=bldr_1',
     )
+  })
+
+  it('shows read-only empty state without firing unauthorized queries when canRead is false (viewer role)', () => {
+    renderPanel(false, '/projects/prj_1?tab=ai-diagnosis', false)
+
+    expect(screen.getByText(i18next.t('nav.projectSections.aiDiagnosis'))).toBeInTheDocument()
+    expect(screen.getByText(i18next.t('notificationsPage.projectReadOnlyHint'))).toBeInTheDocument()
+    expect(mocks.getProjectAIAutomationConfig).not.toHaveBeenCalled()
+    expect(mocks.listProjectAIDiagnoses).not.toHaveBeenCalled()
   })
 })

@@ -22,6 +22,7 @@ import { AINavigationEvent } from './navigation-event'
 import { AIOptionsBar } from './options'
 import { shouldShowTypingIndicator } from './timeline-stream-state'
 import { AIToolCallCard } from './tool-call'
+import { toolDisplayName } from './tool-display-name'
 import { groupAIAssistantBlocksByTurn, isInteractionCardOperationId } from './turns'
 
 interface AIAssistantTimelineProps {
@@ -261,6 +262,7 @@ export function AIAssistantTimeline({ activeTurnId, blocks, emptyState, error, g
                 <ConversationTurn
                   key={turn.id}
                   generating={showTypingIndicator && (activeTurnId ? turn.id === activeTurnId : index === turns.length - 1)}
+                  historical={index < turns.length - 1}
                   responseBlocks={turn.responseBlocks}
                   userMessage={turn.userMessage}
                   onAction={onAction}
@@ -299,8 +301,9 @@ export function AIAssistantTimeline({ activeTurnId, blocks, emptyState, error, g
   )
 }
 
-function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onResend, resendDisabled, showInternalTools, surface }: {
+function ConversationTurn({ generating, historical = false, responseBlocks, userMessage, onAction, onApproval, onResend, resendDisabled, showInternalTools, surface }: {
   generating: boolean
+  historical?: boolean
   responseBlocks: AIBlock[]
   userMessage?: MessageBlock
   onAction: (action: AIUIAction) => Promise<boolean>
@@ -335,7 +338,9 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
       {(visibleResponseBlocks.length > 0 || generating) && (
         <AssistantReply
           generating={generating}
+          historical={historical}
           responseBlocks={visibleResponseBlocks}
+          showInternalTools={showInternalTools}
           surface={surface}
           onAction={onAction}
           onApproval={onApproval}
@@ -345,9 +350,141 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   )
 }
 
-function AssistantReply({ generating, responseBlocks, surface, onAction, onApproval }: {
+const READ_DISCOVERY_TOOL_PATTERN = /^(?:[a-z]+_(?:list|get|search|check|inspect|preview|read)_|(?:list|get|search|read|fetch)[A-Z_]|webSearch\b|ops_web_)/
+
+function isCollapsibleProcessBlock(block: AIBlock): boolean {
+  if (block.type === 'thinking')
+    return true
+  if (block.type !== 'tool_call')
+    return false
+  if (block.status !== 'succeeded' && block.status !== 'running' && block.status !== 'proposed')
+    return false
+  if (block.uiActions.length > 0)
+    return false
+  if (isInteractionCardOperationId(block.operationId) || block.operationId === 'create_options' || block.operationId === 'navigate_to_route' || block.operationId === 'wait_for_task' || block.operationId === 'rename_conversation')
+    return false
+  if (block.visibility === 'internal')
+    return false
+  return READ_DISCOVERY_TOOL_PATTERN.test(block.operationId)
+}
+
+function isProcessBlockActive(block: AIBlock): boolean {
+  if (block.type === 'thinking')
+    return block.status === 'streaming'
+  return block.type === 'tool_call' && (block.status === 'running' || block.status === 'proposed')
+}
+
+type ReplySegment
+  = | { kind: 'single', block: AIBlock }
+    | { kind: 'process_group', id: string, blocks: AIBlock[] }
+
+function segmentAssistantResponseBlocks(blocks: AIBlock[]): ReplySegment[] {
+  const segments: ReplySegment[] = []
+  let index = 0
+  while (index < blocks.length) {
+    const current = blocks[index]!
+    if (!isCollapsibleProcessBlock(current)) {
+      segments.push({ kind: 'single', block: current })
+      index += 1
+      continue
+    }
+    const run: AIBlock[] = [current]
+    let cursor = index + 1
+    while (cursor < blocks.length && isCollapsibleProcessBlock(blocks[cursor]!)) {
+      run.push(blocks[cursor]!)
+      cursor += 1
+    }
+    if (run.length >= 2) {
+      segments.push({ kind: 'process_group', id: `group:${run[0]!.id}`, blocks: run })
+    }
+    else {
+      segments.push({ kind: 'single', block: current })
+    }
+    index = cursor
+  }
+  return segments
+}
+
+function ProcessStepGroup({ blocks, historical, showInternalTools, surface, onAction, onApproval }: {
+  blocks: AIBlock[]
+  historical?: boolean
+  showInternalTools?: boolean
+  surface: 'page' | 'window'
+  onAction: (action: AIUIAction) => Promise<boolean>
+  onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const page = surface === 'page'
+  const [isOpen, setIsOpen] = useState(false)
+  const isRunning = blocks.some(isProcessBlockActive)
+  const toolCount = blocks.filter(block => block.type === 'tool_call').length
+  const latestBlock = blocks.at(-1)
+  const latestPreview = latestBlock?.type === 'tool_call'
+    ? toolDisplayName(t, latestBlock.operationId)
+    : latestBlock?.type === 'thinking'
+      ? latestBlock.text.trim().split('\n').filter(Boolean).at(-1)
+      : undefined
+  const label = isRunning
+    ? t('aiAssistant.processGroup.running', { count: blocks.length })
+    : toolCount > 0
+      ? t('aiAssistant.processGroup.completedWithTools', { count: blocks.length, tools: toolCount })
+      : t('aiAssistant.processGroup.completed', { count: blocks.length })
+
+  return (
+    <details
+      className="group/process min-w-0 rounded-control border border-border/75 bg-surface/88 px-2.5 py-1.5 backdrop-blur-[2px]"
+      data-ai-process-group={isRunning ? 'running' : 'completed'}
+      open={isOpen}
+      onToggle={(event) => {
+        if (event.currentTarget.open !== isOpen)
+          setIsOpen(event.currentTarget.open)
+      }}
+    >
+      <summary
+        className={cn(
+          'flex cursor-pointer list-none items-center gap-2 rounded-sm text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden',
+          page && 'min-h-9 pointer-fine:min-h-7 sm:text-[13px]',
+        )}
+      >
+        {isRunning
+          ? <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-info motion-reduce:animate-none" />
+          : <Brain aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/85" />}
+        <span className="shrink-0 font-medium text-foreground/90">{label}</span>
+        {isRunning && !isOpen && latestPreview && (
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+            ·
+            {' '}
+            {latestPreview}
+          </span>
+        )}
+        <ChevronRight
+          aria-hidden="true"
+          className={cn('ml-auto size-3.5 shrink-0 transition-transform duration-fast', isOpen && 'rotate-90')}
+        />
+      </summary>
+      <div className="mt-2 grid min-w-0 gap-2 border-t border-border/60 pt-2">
+        {blocks.map(block => (
+          <ResponseBlock
+            key={block.id}
+            block={block}
+            historical={historical}
+            parentOpen={isOpen}
+            showInternalTools={showInternalTools}
+            surface={surface}
+            onAction={onAction}
+            onApproval={onApproval}
+          />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function AssistantReply({ generating, historical = false, responseBlocks, showInternalTools, surface, onAction, onApproval }: {
   generating: boolean
+  historical?: boolean
   responseBlocks: AIBlock[]
+  showInternalTools?: boolean
   surface: 'page' | 'window'
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>
@@ -356,12 +493,35 @@ function AssistantReply({ generating, responseBlocks, surface, onAction, onAppro
   const assistantMessages = responseBlocks.filter((block): block is MessageBlock => block.type === 'message' && block.role === 'assistant' && Boolean(block.text.trim()))
   const copyText = assistantMessages.map(block => block.text).join('\n\n')
   const createdAt = assistantMessages.at(-1)?.createdAt
+  const segments = segmentAssistantResponseBlocks(responseBlocks)
   return (
     <div className="flex min-w-0 max-w-full items-start gap-3" data-ai-reply>
       <AIAssistantMark className="mt-px" />
       <div className="group/message flex w-full min-w-0 max-w-full flex-1 flex-col items-start" data-ai-message-group>
         <div className={cn('grid w-full min-w-0 max-w-full gap-3', page && 'pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11')} data-ai-assistant-bubble>
-          {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} surface={surface} onAction={onAction} onApproval={onApproval} />)}
+          {segments.map(segment => segment.kind === 'process_group'
+            ? (
+                <ProcessStepGroup
+                  key={segment.id}
+                  blocks={segment.blocks}
+                  historical={historical}
+                  showInternalTools={showInternalTools}
+                  surface={surface}
+                  onAction={onAction}
+                  onApproval={onApproval}
+                />
+              )
+            : (
+                <ResponseBlock
+                  key={segment.block.id}
+                  block={segment.block}
+                  historical={historical}
+                  showInternalTools={showInternalTools}
+                  surface={surface}
+                  onAction={onAction}
+                  onApproval={onApproval}
+                />
+              ))}
           {generating && <TypingIndicator />}
         </div>
         {createdAt && <AIMessageMeta align="start" copyText={copyText} createdAt={createdAt} surface={surface} />}
@@ -383,14 +543,14 @@ function TypingIndicator() {
   )
 }
 
-function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBlock, surface: 'page' | 'window', onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void> }) {
+function ResponseBlock({ block, historical = false, parentOpen = true, showInternalTools = false, surface, onAction, onApproval }: { block: AIBlock, historical?: boolean, parentOpen?: boolean, showInternalTools?: boolean, surface: 'page' | 'window', onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void> }) {
   const page = surface === 'page'
   if (block.type === 'thinking')
-    return <ThinkingBlock block={block} surface={surface} />
+    return <ThinkingBlock block={block} parentOpen={parentOpen} surface={surface} />
   if (block.type === 'tool_call' && isInteractionCardOperationId(block.operationId) && block.status === 'running')
     return <AIInteractionCardPlaceholder arguments={block.arguments} result={block.result} />
   if (block.type === 'tool_call' && isInteractionCardOperationId(block.operationId) && block.status === 'succeeded')
-    return <AIInteractionCards arguments={block.arguments} onAction={onAction} />
+    return <AIInteractionCards arguments={block.arguments} historical={historical} onAction={onAction} />
   if (block.type === 'tool_call' && block.operationId === 'create_options' && block.status === 'succeeded' && parseAIOptionActions(block.uiActions).length > 0) {
     return (
       <AIOptionsBar
@@ -405,7 +565,7 @@ function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBloc
   if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')
     return <AINavigationEvent block={block} onAction={onAction} />
   if (block.type === 'tool_call')
-    return <AIToolCallCard block={block} surface={surface} onAction={onAction} onApproval={onApproval} />
+    return <AIToolCallCard block={block} defaultOpenTechnical={showInternalTools} surface={surface} onAction={onAction} onApproval={onApproval} />
   if (block.type === 'run_status')
     return <RunStatusBlock block={block} />
   if (block.type === 'context_compacted')
@@ -420,7 +580,12 @@ function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBloc
     )
   }
   return (
-    <AIMarkdown className={cn('min-w-0 max-w-full text-foreground', page && 'text-base leading-6')}>
+    <AIMarkdown
+      className={cn(
+        'min-w-0 max-w-full rounded-control bg-surface/88 px-3 py-1.5 text-foreground backdrop-blur-[2px]',
+        page && 'px-3.5 py-2 text-base leading-6',
+      )}
+    >
       {block.text}
     </AIMarkdown>
   )
@@ -443,27 +608,41 @@ function RunStatusBlock({ block }: { block: Extract<AIBlock, { type: 'run_status
   )
 }
 
-function ThinkingBlock({ block, surface }: { block: Extract<AIBlock, { type: 'thinking' }>, surface: 'page' | 'window' }) {
+function ThinkingBlock({ block, parentOpen = true, surface }: { block: Extract<AIBlock, { type: 'thinking' }>, parentOpen?: boolean, surface: 'page' | 'window' }) {
   const { t } = useTranslation()
   const page = surface === 'page'
   const viewportRef = useRef<HTMLDivElement>(null)
   const [following, setFollowing] = useState(true)
   const [expanded, setExpanded] = useState(false)
 
-  // 折叠状态下始终跟随最新内容
-  useEffect(() => {
-    if (!expanded && viewportRef.current)
-      viewportRef.current.scrollTop = viewportRef.current.scrollHeight
-  }, [block.text, expanded])
+  // 折叠状态下始终跟随最新内容，仅当真实滚出顶部时才添加顶部渐隐遮罩
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport)
+      return
+    if (expanded) {
+      delete viewport.dataset.scrolledTop
+      return
+    }
+    if (!parentOpen) {
+      viewport.dataset.scrolledTop = 'false'
+      return
+    }
+    viewport.scrollTop = viewport.scrollHeight
+    viewport.dataset.scrolledTop = String(viewport.scrollTop > 2)
+  }, [block.text, expanded, parentOpen])
 
   // 展开时跟随滚动到底部
   useEffect(() => {
-    if (expanded && following && viewportRef.current)
+    if (expanded && following && parentOpen && viewportRef.current)
       viewportRef.current.scrollTop = viewportRef.current.scrollHeight
-  }, [block.text, expanded, following])
+  }, [block.text, expanded, following, parentOpen])
 
   return (
-    <div className="min-w-0 border-l-2 border-border pl-3">
+    <div
+      className="min-w-0 rounded-r-control border-l-2 border-border bg-surface/88 px-3 py-2 backdrop-blur-[2px]"
+      data-ai-thinking=""
+    >
       <button aria-expanded={expanded} className={cn('flex w-full items-center gap-1.5 rounded-sm text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring', page && 'min-h-11 text-sm pointer-fine:min-h-6')} type="button" onClick={() => setExpanded(value => !value)}>
         {block.status === 'completed' ? <Brain className="size-3.5" /> : <Sparkles className="size-3.5 animate-pulse motion-reduce:animate-none" />}
         <span>{t(block.display === 'summary' ? `aiAssistant.thinking.${block.status === 'completed' ? 'summaryComplete' : 'summaryStreaming'}` : `aiAssistant.thinking.${block.status === 'completed' ? 'progressComplete' : 'progressStreaming'}`)}</span>
@@ -476,7 +655,7 @@ function ThinkingBlock({ block, surface }: { block: Extract<AIBlock, { type: 'th
           page && 'text-sm leading-6',
           expanded
             ? 'mt-1 max-h-56 overflow-y-auto'
-            : 'mt-1 max-h-10 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_60%)]',
+            : 'mt-1 max-h-10 overflow-hidden data-[scrolled-top=true]:[mask-image:linear-gradient(to_bottom,transparent,black_32%)]',
         )}
         onScroll={expanded
           ? (event) => {

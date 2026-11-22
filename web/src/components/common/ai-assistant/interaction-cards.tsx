@@ -1,5 +1,6 @@
 import type { Control } from 'react-hook-form'
 import type { InteractionCard, InteractionCardAction, InteractionCardGroup, InteractionContentBlock, InteractionFormField } from './interaction-card-schema'
+import type { AIAssistantRuntimeValue } from './runtime-context'
 import type { AIUIAction } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
@@ -63,12 +64,13 @@ function withOccurrenceKeys<T>(items: readonly T[], identity: (item: T) => strin
 
 interface AIInteractionCardsProps {
   arguments: unknown
+  historical?: boolean
   onAction: (action: AIUIAction) => Promise<boolean>
 }
 
 type FormValues = Record<string, unknown>
 
-export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInteractionCardsProps) {
+export function AIInteractionCards({ arguments: rawArguments, historical = false, onAction }: AIInteractionCardsProps) {
   const { t } = useTranslation()
   const group = useMemo(() => readValidatedInteractionCardGroup(rawArguments), [rawArguments])
   if (!group) {
@@ -80,12 +82,12 @@ export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInte
   }
   return (
     <InteractionCardErrorBoundary resetKey={group.generationId} scope="group">
-      <InteractionCardGroupView group={group} onAction={onAction} />
+      <InteractionCardGroupView group={group} historical={historical} onAction={onAction} />
     </InteractionCardErrorBoundary>
   )
 }
 
-function InteractionCardGroupView({ group, onAction }: { group: InteractionCardGroup, onAction: (action: AIUIAction) => Promise<boolean> }) {
+function InteractionCardGroupView({ group, historical, onAction }: { group: InteractionCardGroup, historical: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
   const { t } = useTranslation()
   const density = interactionCardDensity(group)
   const templateConfig = interactionCardTemplateConfigs[group.template]
@@ -99,7 +101,7 @@ function InteractionCardGroupView({ group, onAction }: { group: InteractionCardG
       <div className={cn('grid min-w-0', density === 'compact' ? 'gap-1.5' : 'gap-2', templateConfig.gridClassName)}>
         {group.cards.map(card => (
           <InteractionCardErrorBoundary key={card.id} resetKey={`${group.generationId}:${card.id}`} scope="card">
-            <InteractionCardView card={card} density={density} group={group} onAction={onAction} />
+            <InteractionCardView card={card} density={density} group={group} historical={historical} onAction={onAction} />
           </InteractionCardErrorBoundary>
         ))}
       </div>
@@ -112,14 +114,51 @@ function InteractionCardGroupView({ group, onAction }: { group: InteractionCardG
   )
 }
 
-function InteractionCardView({ card, density, group, onAction }: {
+function summarizeSubmittedFormFields(fields: InteractionFormField[], values: FormValues): string {
+  const parts: string[] = []
+  for (const field of fields) {
+    if (field.type === 'secret' || (field.type === 'key_value' && field.valueMode === 'secret'))
+      continue
+    if (!isFieldVisible(field, values))
+      continue
+    const raw = values[field.id]
+    if (raw === undefined || raw === null || raw === '')
+      continue
+    if (Array.isArray(raw) && raw.length === 0)
+      continue
+    const formatted = formatMessageValue(raw).trim()
+    if (!formatted)
+      continue
+    parts.push(`${field.label}: ${formatted}`)
+    if (parts.length >= 3)
+      break
+  }
+  return parts.join(' · ')
+}
+
+function InteractionCardView({ card, density, group, historical, onAction }: {
   card: InteractionCard
   density: 'comfortable' | 'compact'
   group: InteractionCardGroup
+  historical: boolean
   onAction: (action: AIUIAction) => Promise<boolean>
 }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(() => shouldExpandInteractionCard(group, Boolean(card.form), Boolean(card.blocks?.some(block => block.defaultExpanded))))
+  const runtime = use(AIAssistantRuntimeContext)
+  const hasForm = Boolean(card.form)
+  const [activeSubmission, setActiveSubmission] = useState<{ action: InteractionCardAction, binding: ConsumedActionBinding, summary: string } | null>(null)
+  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
+  const submissionFailed = activeSubmission !== null && isConsumedBindingFailed(activeSubmission.binding, activeSubmission.action, runtime)
+  const submissionAwaitingApproval = activeSubmission !== null && isConsumedBindingAwaitingApproval(activeSubmission.binding, activeSubmission.action, runtime)
+  const hasValidLocalSubmission = activeSubmission !== null && !submissionFailed && !submissionAwaitingApproval
+  const defaultExpanded = hasForm
+    ? submissionFailed
+      ? true
+      : (historical || (activeSubmission !== null && !submissionFailed))
+          ? false
+          : shouldExpandInteractionCard(group, hasForm, Boolean(card.blocks?.some(block => block.defaultExpanded)))
+    : shouldExpandInteractionCard(group, hasForm, Boolean(card.blocks?.some(block => block.defaultExpanded)))
+  const expanded = manualExpanded ?? defaultExpanded
   const fields = useMemo(() => card.form?.sections.flatMap(section => section.fields) ?? [], [card.form])
   const formSchema = useMemo(() => buildFormSchema(fields, t), [fields, t])
   const form = useForm<FormValues>({
@@ -147,17 +186,46 @@ function InteractionCardView({ card, density, group, onAction }: {
   const hasDetails = Boolean(card.blocks?.length || card.form)
   const primaryAction = card.actions?.find(action => action.emphasis === 'primary') ?? card.actions?.[0]
   const secondaryActions = card.actions?.filter(action => action !== primaryAction) ?? []
+  const isFormSubmitted = hasForm && hasValidLocalSubmission
+  const submittedSummary = hasValidLocalSubmission ? activeSubmission.summary : null
+  const handleFormActionConsumed = (action: InteractionCardAction, binding: ConsumedActionBinding | null) => {
+    if (!hasForm || !actionNeedsValidForm(action))
+      return
+    setActiveSubmission(binding ? { action, binding, summary: summarizeSubmittedFormFields(fields, publicFormValues) } : null)
+    if (binding) {
+      setManualExpanded(null)
+      for (const field of fields) {
+        if (field.type === 'secret')
+          form.setValue(field.id, '', { shouldValidate: true })
+        else if (field.type === 'key_value' && field.valueMode === 'secret')
+          form.setValue(field.id, [], { shouldValidate: true })
+      }
+    }
+  }
 
   return (
-    <article className="min-w-0 overflow-hidden rounded-container border border-border bg-surface shadow-sm" data-ai-card={card.presentation.variant} data-ai-card-id={card.id} data-ai-card-template={group.template}>
+    <article className="min-w-0 overflow-hidden rounded-container border border-border bg-surface shadow-sm" data-ai-card={card.presentation.variant} data-ai-card-id={card.id} data-ai-card-submitted={isFormSubmitted ? 'true' : undefined} data-ai-card-template={group.template}>
       <div className={cn('flex min-w-0 items-start', density === 'compact' ? 'gap-2.5 p-3' : 'gap-3 p-3.5')}>
         <span className={cn('grid shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text', density === 'compact' ? 'size-8' : 'size-9')}>
           <CardIcon category={card.presentation.icon?.type === 'category' ? card.presentation.icon.name : card.presentation.variant} />
         </span>
         <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-semibold leading-5"><AIInlineMarkdown>{card.presentation.title}</AIInlineMarkdown></h4>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h4 className="text-sm font-semibold leading-5"><AIInlineMarkdown>{card.presentation.title}</AIInlineMarkdown></h4>
+            {isFormSubmitted && (
+              <StatusBadge className="px-1.5 py-0 text-[11px]" tone="success">
+                {t('aiAssistant.cards.submitted')}
+              </StatusBadge>
+            )}
+          </div>
           {card.presentation.subtitle && <AIInlineMarkdown className="block text-xs leading-4 text-muted-foreground">{card.presentation.subtitle}</AIInlineMarkdown>}
-          {card.presentation.description && <AIMarkdown className="mt-1 text-xs leading-5 text-muted-foreground">{card.presentation.description}</AIMarkdown>}
+          {!expanded && isFormSubmitted
+            ? (
+                <p className="mt-1 truncate text-xs leading-5 text-muted-foreground">
+                  {submittedSummary || t('aiAssistant.cards.submittedSummary')}
+                </p>
+              )
+            : card.presentation.description && <AIMarkdown className="mt-1 text-xs leading-5 text-muted-foreground">{card.presentation.description}</AIMarkdown>}
           {card.presentation.badges && card.presentation.badges.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {withOccurrenceKeys(card.presentation.badges, badge => `${badge.label}:${badge.tone}`).map(({ item: badge, key }) => (
@@ -180,14 +248,14 @@ function InteractionCardView({ card, density, group, onAction }: {
           )}
         </div>
         {hasDetails && (
-          <Button aria-expanded={expanded} aria-label={t('aiAssistant.cards.toggleDetails')} className="size-8 text-muted-foreground" size="icon" variant="ghost" onClick={() => setExpanded(value => !value)}>
+          <Button aria-expanded={expanded} aria-label={t('aiAssistant.cards.toggleDetails')} className="size-8 text-muted-foreground" size="icon" variant="ghost" onClick={() => setManualExpanded(!expanded)}>
             <ChevronDown className={cn('size-3.5 transition-transform', expanded && 'rotate-180')} />
           </Button>
         )}
       </div>
-      {expanded && (
+      {(expanded || hasForm) && (
         <form
-          className={cn('grid min-w-0 border-t border-border', density === 'compact' ? 'gap-3 p-3' : 'gap-3.5 p-3.5')}
+          className={cn('grid min-w-0 border-t border-border', density === 'compact' ? 'gap-3 p-3' : 'gap-3.5 p-3.5', !expanded && 'hidden')}
           onSubmit={event => event.preventDefault()}
         >
           {card.blocks?.map(block => <ContentBlock key={block.id} block={block} onAction={onAction} />)}
@@ -202,8 +270,8 @@ function InteractionCardView({ card, density, group, onAction }: {
           ))}
           {(primaryAction || secondaryActions.length > 0) && (
             <div className="flex flex-wrap justify-end gap-2 pt-1">
-              {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />)}
-              {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />}
+              {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} onConsumedChange={binding => handleFormActionConsumed(action, binding)} />)}
+              {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} onConsumedChange={binding => handleFormActionConsumed(primaryAction, binding)} />}
             </div>
           )}
         </form>
@@ -622,50 +690,83 @@ type ConsumedActionBinding
   = | { kind: 'exact', runId: string, turnId?: string }
     | { kind: 'next_after', maxOrderAtClick: number, knownRunIds: ReadonlySet<string>, knownTurnIds: ReadonlySet<string> }
 
-function CardActionButton({ action, cardId, values, messageValues = values, disabled = false, onAction }: { action: InteractionCardAction, cardId: string, values: FormValues, messageValues?: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
+function resolveConsumedTargetRunId(
+  consumedBinding: ConsumedActionBinding | null,
+  runtime: AIAssistantRuntimeValue | null,
+): string | undefined {
+  if (!consumedBinding || !runtime)
+    return undefined
+  if (consumedBinding.kind === 'exact')
+    return consumedBinding.runId
+  let targetRunId: string | undefined
+  let earliestOrder = Number.POSITIVE_INFINITY
+  for (const block of runtime.timelineProps.blocks) {
+    if (!block.runId)
+      continue
+    if (block.index <= consumedBinding.maxOrderAtClick || consumedBinding.knownRunIds.has(block.runId))
+      continue
+    if (block.index < earliestOrder) {
+      earliestOrder = block.index
+      targetRunId = block.runId
+    }
+  }
+  return targetRunId
+}
+
+function isConsumedBindingAwaitingApproval(
+  consumedBinding: ConsumedActionBinding | null,
+  action: InteractionCardAction,
+  runtime: AIAssistantRuntimeValue | null,
+): boolean {
+  const targetRunId = resolveConsumedTargetRunId(consumedBinding, runtime)
+  if (!targetRunId || !runtime)
+    return false
+  const runStatus = runtime.runStatuses?.[targetRunId]
+  if (runStatus === 'waiting_approval' || (action.type === 'tool' && runStatus === 'queued'))
+    return true
+  return runtime.timelineProps.blocks.some(block =>
+    block.runId === targetRunId
+    && block.type === 'tool_call'
+    && (action.type !== 'tool' || block.operationId === action.operationId)
+    && (block.status === 'awaiting_approval' || (action.type === 'tool' && block.status === 'proposed')),
+  )
+}
+
+function isConsumedBindingFailed(
+  consumedBinding: ConsumedActionBinding | null,
+  action: InteractionCardAction,
+  runtime: AIAssistantRuntimeValue | null,
+): boolean {
+  const targetRunId = resolveConsumedTargetRunId(consumedBinding, runtime)
+  if (!targetRunId || !runtime)
+    return false
+  const runStatus = runtime.runStatuses?.[targetRunId]
+  if (runStatus === 'failed' || runStatus === 'canceled' || runStatus === 'interrupted')
+    return true
+  for (const block of runtime.timelineProps.blocks) {
+    if (block.runId !== targetRunId)
+      continue
+    if (action.type === 'tool' && block.type === 'tool_call' && block.operationId === action.operationId) {
+      if (block.status === 'rejected' || block.status === 'failed' || block.status === 'canceled')
+        return true
+    }
+    if (block.type === 'run_status' && (block.status === 'failed' || block.status === 'canceled' || block.status === 'interrupted'))
+      return true
+  }
+  return false
+}
+
+function CardActionButton({ action, cardId, values, messageValues = values, disabled = false, onAction, onConsumedChange }: { action: InteractionCardAction, cardId: string, values: FormValues, messageValues?: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean>, onConsumedChange?: (binding: ConsumedActionBinding | null) => void }) {
   const { t } = useTranslation()
   const runtime = use(AIAssistantRuntimeContext)
   const executingRef = useRef(false)
   const [pending, setPending] = useState(false)
   const [consumedBinding, setConsumedBinding] = useState<ConsumedActionBinding | null>(null)
   const repeatable = action.repeatable ?? action.type === 'navigate'
-  const downstreamFailed = useMemo(() => {
-    if (!consumedBinding || !runtime)
-      return false
-    let targetRunId: string | undefined
-    if (consumedBinding.kind === 'exact') {
-      targetRunId = consumedBinding.runId
-    }
-    else {
-      let earliestOrder = Number.POSITIVE_INFINITY
-      for (const block of runtime.timelineProps.blocks) {
-        if (!block.runId)
-          continue
-        if (block.index <= consumedBinding.maxOrderAtClick || consumedBinding.knownRunIds.has(block.runId))
-          continue
-        if (block.index < earliestOrder) {
-          earliestOrder = block.index
-          targetRunId = block.runId
-        }
-      }
-    }
-    if (!targetRunId)
-      return false
-    const runStatus = runtime.runStatuses?.[targetRunId]
-    if (runStatus === 'failed' || runStatus === 'canceled' || runStatus === 'interrupted')
-      return true
-    for (const block of runtime.timelineProps.blocks) {
-      if (block.runId !== targetRunId)
-        continue
-      if (action.type === 'tool' && block.type === 'tool_call' && block.operationId === action.operationId) {
-        if (block.status === 'rejected' || block.status === 'failed' || block.status === 'canceled')
-          return true
-      }
-      if (block.type === 'run_status' && (block.status === 'failed' || block.status === 'canceled' || block.status === 'interrupted'))
-        return true
-    }
-    return false
-  }, [action, consumedBinding, runtime])
+  const downstreamFailed = useMemo(
+    () => isConsumedBindingFailed(consumedBinding, action, runtime),
+    [action, consumedBinding, runtime],
+  )
   const done = consumedBinding !== null && !downstreamFailed
   const run = async () => {
     if (executingRef.current || pending || (done && !repeatable))
@@ -681,19 +782,22 @@ function CardActionButton({ action, cardId, values, messageValues = values, disa
       const success = await executeCardAction(action, cardId, values, messageValues, onAction)
       if (!success) {
         setConsumedBinding(null)
+        onConsumedChange?.(null)
         toast.error(t('aiAssistant.cards.actionFailed'))
         return
       }
       if (!repeatable) {
         const dispatched = runtime?.readLastDispatchedActionRun?.()
-        if (dispatched && dispatched.sequence > beforeDispatchSequence)
-          setConsumedBinding({ kind: 'exact', runId: dispatched.runId, turnId: dispatched.turnId })
-        else
-          setConsumedBinding({ kind: 'next_after', maxOrderAtClick, knownRunIds, knownTurnIds })
+        const nextBinding: ConsumedActionBinding = dispatched && dispatched.sequence > beforeDispatchSequence
+          ? { kind: 'exact', runId: dispatched.runId, turnId: dispatched.turnId }
+          : { kind: 'next_after', maxOrderAtClick, knownRunIds, knownTurnIds }
+        setConsumedBinding(nextBinding)
+        onConsumedChange?.(nextBinding)
       }
     }
     catch (error) {
       setConsumedBinding(null)
+      onConsumedChange?.(null)
       toast.error(formatCardActionError(error, t('aiAssistant.cards.actionFailed')))
     }
     finally {

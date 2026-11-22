@@ -126,7 +126,6 @@ export function LiveProgressBlock({ actionDisabled = false, block, onAction }: {
           message: t('aiAssistant.cards.liveProgress.diagnoseFailurePrompt', {
             type: translateOperationType(t, operationType),
             id: operationId,
-            projectId,
           }),
         },
       })

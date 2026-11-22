@@ -18,6 +18,7 @@ const nav = {
     volumes: 'Volumes',
     members: 'Members',
     notifications: 'Notifications',
+    aiDiagnosis: 'AI diagnosis',
     topology: 'Service relations',
   },
   commandPalette: {

@@ -129,16 +129,17 @@ describe('ai assistant composer keyboard submission', () => {
     expect(onSubmit).toHaveBeenCalledOnce()
   })
 
-  it('keeps Enter for newlines on a page surface and submits with command shortcuts', () => {
+  it('unifies Enter to submit and Shift+Enter for newlines on a page surface while also supporting command shortcuts', () => {
     const onSubmit = vi.fn()
     const { input } = renderComposer({ onSubmit, surface: 'page' })
 
-    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
     expect(onSubmit).not.toHaveBeenCalled()
 
+    fireEvent.keyDown(input, { key: 'Enter' })
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
     fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
-    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(onSubmit).toHaveBeenCalledTimes(3)
     expect(screen.getByRole('button', { name: i18next.t('aiAssistant.send') })).toHaveClass('size-11')
     expect(document.querySelector('[data-ai-composer-submit-visual]')).toHaveClass('size-7')
     expect(document.querySelector('[data-ai-composer-model-visual]')).toHaveClass('h-7', 'px-2.5', 'text-xs')

@@ -783,4 +783,41 @@ describe('ai assistant turn topology', () => {
 
     expect(viewport.scrollTop).toBe(420)
   })
+
+  it('collapses consecutive thinking and read-only query steps into an expandable process group while keeping write approvals visible', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const multiStepBlocks: AIBlock[] = [
+      { id: 'u1', turnId: 'turn-multi', index: -1, type: 'message', role: 'user', status: 'completed', text: '帮我配置流水线', createdAt: '2026-08-01T09:00:00+08:00' },
+      { id: 't1', turnId: 'turn-multi', index: 0, type: 'thinking', status: 'completed', display: 'summary', text: '先查看代码源' },
+      { id: 'c1', turnId: 'turn-multi', runId: 'run-multi', index: 1, type: 'tool_call', toolCallId: 'tc_1', operationId: 'build_list_git_sources', visibility: 'normal', status: 'succeeded', arguments: {}, uiActions: [] },
+      { id: 't2', turnId: 'turn-multi', index: 2, type: 'thinking', status: 'completed', display: 'summary', text: '再查看项目空间' },
+      { id: 'c2', turnId: 'turn-multi', runId: 'run-multi', index: 3, type: 'tool_call', toolCallId: 'tc_2', operationId: 'workspace_list_projects', visibility: 'normal', status: 'succeeded', arguments: {}, uiActions: [] },
+      { id: 'w1', turnId: 'turn-multi', runId: 'run-multi', index: 4, type: 'tool_call', toolCallId: 'tc_3', operationId: 'build_configure_target_pipeline', visibility: 'normal', status: 'awaiting_approval', approvalTier: 'L2', arguments: { application: 'blog-xingluo' }, uiActions: [] },
+    ]
+
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={multiStepBlocks}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    const processGroup = container.querySelector('details[data-ai-process-group="completed"]')
+    expect(processGroup).not.toBeNull()
+    expect(processGroup).not.toHaveAttribute('open')
+    expect(processGroup).toHaveTextContent('已完成 4 步分析（调用 2 次查询）')
+    // 待批准的写操作绝不被折叠进过程组
+    expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
+
+    fireEvent.click(processGroup!.querySelector('summary')!)
+    expect(processGroup).toHaveAttribute('open')
+  })
 })

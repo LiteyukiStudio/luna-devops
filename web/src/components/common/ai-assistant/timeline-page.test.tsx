@@ -168,4 +168,33 @@ describe('ai assistant page timeline', () => {
     requestFrame.mockRestore()
     cancelFrame.mockRestore()
   })
+
+  it('renders a translucent reading surface behind thinking blocks and only masks scrolled overflow', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          {...timelineProps}
+          blocks={[
+            blocks[0]!,
+            {
+              id: 'thinking-short',
+              turnId: 'page-turn',
+              index: 0,
+              type: 'thinking',
+              display: 'summary',
+              status: 'completed',
+              text: 'Let me call workspace_list_projects.',
+            },
+            blocks[1]!,
+          ]}
+        />
+      </MemoryRouter>,
+    )
+
+    const thinking = container.querySelector<HTMLElement>('[data-ai-thinking]')!
+    expect(thinking).toBeInTheDocument()
+    expect(thinking.className).toContain('bg-surface/88')
+    const shortPreview = screen.getByText('Let me call workspace_list_projects.')
+    expect(shortPreview).toHaveAttribute('data-scrolled-top', 'false')
+  })
 })

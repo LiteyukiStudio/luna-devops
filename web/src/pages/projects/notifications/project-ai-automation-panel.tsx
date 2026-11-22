@@ -2,16 +2,19 @@ import type { AISelfHealMode, ProjectAIAutomationConfig } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Activity, LoaderCircle, Save, Sparkles, Wallet } from 'lucide-react'
+import { Activity, Info, LoaderCircle, Save, SlidersHorizontal, Sparkles, Wallet } from 'lucide-react'
 import { useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { toolDisplayName } from '@/components/common/ai-assistant/tool-display-name'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { ContentTabs } from '@/components/common/content-tabs'
+import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { OverviewSkeleton } from '@/components/common/loading-states'
@@ -22,7 +25,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { normalizeProjectAIDiagnosisTab, projectAIDiagnosisTabParam, projectAIDiagnosisTabs } from '@/pages/projects/overview/project-workspace-sections'
 import { ProjectAIDiagnosisHistorySection } from './project-ai-diagnosis-history'
 
 const INHERIT_STAGE_MODE = '__inherit__' as const
@@ -156,19 +161,45 @@ function configToFormValues(data: {
 
 export function ProjectAIAutomationPanel({
   canManage,
+  canRead = true,
   projectId,
 }: {
   canManage: boolean
+  canRead?: boolean
   projectId: string
 }) {
   const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = normalizeProjectAIDiagnosisTab(searchParams.get(projectAIDiagnosisTabParam))
+
+  const changeTab = (nextValue: string) => {
+    const tab = normalizeProjectAIDiagnosisTab(nextValue)
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (tab === projectAIDiagnosisTabs[0])
+        next.delete(projectAIDiagnosisTabParam)
+      else
+        next.set(projectAIDiagnosisTabParam, tab)
+      return next
+    }, { replace: true })
+  }
 
   const configQuery = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['project-ai-automation-config', projectId],
     queryFn: ({ signal }) => api.getProjectAIAutomationConfig(projectId, signal),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId && canRead),
   })
+
+  if (!canRead) {
+    return (
+      <EmptyState
+        description={t('notificationsPage.projectReadOnlyHint')}
+        icon={<Sparkles className="size-5" />}
+        title={t('nav.projectSections.aiDiagnosis')}
+      />
+    )
+  }
 
   if (configQuery.isLoading || !configQuery.data) {
     if (configQuery.isError) {
@@ -184,16 +215,58 @@ export function ProjectAIAutomationPanel({
     return <OverviewSkeleton />
   }
 
+  const config = configQuery.data
+
   return (
-    <div className="space-y-8">
-      <ProjectAIAutomationForm
-        canManage={canManage}
-        config={configQuery.data}
-        key={`form:${configQuery.data.projectId}`}
-        projectId={projectId}
-      />
-      <ProjectAIDiagnosisHistorySection key={`history:${projectId}`} projectId={projectId} />
-    </div>
+    <ContentTabs
+      hashRouting={false}
+      tabs={[
+        { label: t('aiAssistant.projectAutomation.tabs.history'), value: 'history' },
+        { label: t('aiAssistant.projectAutomation.tabs.settings'), value: 'settings' },
+      ]}
+      value={activeTab}
+      onValueChange={changeTab}
+    >
+      <TabsContent value="history">
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-container border border-border bg-surface px-4 py-3 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone={config.deliveryDiagnosisEnabled ? 'success' : 'neutral'}>
+                {t(config.deliveryDiagnosisEnabled ? 'aiAssistant.projectAutomation.statusSummary.deliveryOn' : 'aiAssistant.projectAutomation.statusSummary.deliveryOff')}
+              </StatusBadge>
+              <StatusBadge tone={config.runtimeDiagnosisEnabled ? 'success' : 'neutral'}>
+                {t(config.runtimeDiagnosisEnabled ? 'aiAssistant.projectAutomation.statusSummary.runtimeOn' : 'aiAssistant.projectAutomation.statusSummary.runtimeOff')}
+              </StatusBadge>
+            </div>
+            <Button size="sm" type="button" variant="outline" onClick={() => changeTab('settings')}>
+              <SlidersHorizontal className="size-3.5" />
+              {t(canManage ? 'aiAssistant.projectAutomation.statusSummary.configureAction' : 'aiAssistant.projectAutomation.tabs.settings')}
+            </Button>
+          </div>
+          <ProjectAIDiagnosisHistorySection key={`history:${projectId}`} projectId={projectId} />
+        </div>
+      </TabsContent>
+
+      <TabsContent value="settings">
+        <div className="grid gap-4">
+          {!canManage && (
+            <div
+              className="flex items-center gap-2.5 rounded-control border border-border bg-surface-subtle/60 px-3.5 py-2.5 text-xs text-muted-foreground"
+              role="status"
+            >
+              <Info className="size-4 shrink-0 text-muted-foreground" />
+              <span>{t('notificationsPage.projectReadOnlyHint')}</span>
+            </div>
+          )}
+          <ProjectAIAutomationForm
+            canManage={canManage}
+            config={config}
+            key={`form:${config.projectId}`}
+            projectId={projectId}
+          />
+        </div>
+      </TabsContent>
+    </ContentTabs>
   )
 }
 

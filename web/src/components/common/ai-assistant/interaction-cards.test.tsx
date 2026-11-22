@@ -1114,5 +1114,160 @@ describe('ai interaction cards', () => {
       </AIAssistantRuntimeContext>,
     )
     await waitFor(() => expect(retryableButton).toBeEnabled())
+    expect(secondRender.container.querySelector('[data-ai-card-submitted]')).toBeNull()
+  })
+
+  it('collapses completed form cards into a submitted summary without leaking secret values', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const formCard = {
+      schemaVersion: 1,
+      generationId: 'form-collapse-summary',
+      title: '凭据接入',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'git-cred',
+        presentation: { variant: 'form', title: '接入代码源' },
+        form: {
+          sections: [{
+            id: 'main',
+            fields: [
+              { id: 'username', type: 'text', label: '用户名', required: true, defaultValue: 'snowykami' },
+              { id: 'token', type: 'secret', label: '访问令牌', required: true, generation: 'disabled' },
+            ],
+          }],
+        },
+        actions: [{
+          id: 'save',
+          type: 'tool',
+          label: '保存凭据',
+          emphasis: 'primary',
+          repeatable: false,
+          operationId: 'build_save_git_account',
+          bindings: [
+            { target: '/username', value: { type: 'field', fieldId: 'username' } },
+            { target: '/token', value: { type: 'field', fieldId: 'token' } },
+          ],
+        }],
+      }],
+    }
+
+    const { container } = render(<AIInteractionCards arguments={formCard} onAction={onAction} />)
+    const secretInput = screen.getByLabelText(/访问令牌/)
+    fireEvent.change(secretInput, { target: { value: 'super-secret-pat-value' } })
+    const saveButton = screen.getByRole('button', { name: '保存凭据' })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+
+    fireEvent.click(saveButton)
+    await waitFor(() => expect(screen.getByText('Submitted')).toBeInTheDocument())
+    expect(container.querySelector('[data-ai-card-submitted="true"]')).not.toBeNull()
+    expect(screen.getByText('用户名: snowykami')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('super-secret-pat-value')
+    expect((secretInput as HTMLInputElement).value).toBe('')
+  })
+
+  it('does not falsely claim Submitted on unsubmitted historical form cards or while downstream approval is pending, and re-opens on rejection', async () => {
+    const formCard = {
+      schemaVersion: 1,
+      generationId: 'historical-unsubmitted',
+      title: '配置表单',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'cfg',
+        presentation: { variant: 'form', title: '填写域名', description: '请填写需要绑定的访问域名' },
+        form: {
+          sections: [{
+            id: 'main',
+            fields: [{ id: 'host', type: 'text', label: '域名', required: true, defaultValue: 'app.example.com' }],
+          }],
+        },
+        actions: [{
+          id: 'save',
+          type: 'tool',
+          label: '提交',
+          emphasis: 'primary',
+          repeatable: false,
+          operationId: 'network_create_gateway_route',
+          bindings: [{ target: '/host', value: { type: 'field', fieldId: 'host' } }],
+        }],
+      }],
+    }
+
+    const historicalRender = render(<AIInteractionCards arguments={formCard} historical onAction={vi.fn(async () => true)} />)
+    expect(historicalRender.container.querySelector('[data-ai-card-submitted]')).toBeNull()
+    expect(screen.queryByText('Submitted')).not.toBeInTheDocument()
+    expect(screen.getByText('请填写需要绑定的访问域名')).toBeInTheDocument()
+    historicalRender.unmount()
+
+    let dispatchedSeq = 0
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>(async () => {
+      dispatchedSeq = 1
+      return true
+    })
+    const makeRuntime = (
+      runStatuses: Record<string, 'queued' | 'running' | 'waiting_approval' | 'completed' | 'failed' | 'canceled' | 'interrupted'>,
+      blocks: AIAssistantRuntimeValue['timelineProps']['blocks'],
+    ): AIAssistantRuntimeValue => ({
+      runStatuses,
+      readLastDispatchedActionRun: () => dispatchedSeq > 0 ? { sequence: dispatchedSeq, runId: 'run-route-1', turnId: 'turn-route-1' } : null,
+      timelineProps: { blocks },
+    } as unknown as AIAssistantRuntimeValue)
+
+    const { container, rerender } = render(
+      <AIAssistantRuntimeContext value={makeRuntime({}, [])}>
+        <AIInteractionCards arguments={formCard} onAction={onAction} />
+      </AIAssistantRuntimeContext>,
+    )
+
+    const submitButton = screen.getByRole('button', { name: '提交' })
+    await waitFor(() => expect(submitButton).toBeEnabled())
+    fireEvent.click(submitButton)
+    await waitFor(() => expect(onAction).toHaveBeenCalledOnce())
+
+    // While waiting_approval: card collapses cleanly, does NOT claim Submitted yet
+    rerender(
+      <AIAssistantRuntimeContext value={makeRuntime({ 'run-route-1': 'waiting_approval' }, [{
+        id: 'route-tool-1',
+        turnId: 'turn-route-1',
+        runId: 'run-route-1',
+        index: 10,
+        type: 'tool_call',
+        toolCallId: 'tc-route-1',
+        operationId: 'network_create_gateway_route',
+        visibility: 'normal',
+        status: 'awaiting_approval',
+        arguments: { host: 'app.example.com' },
+        uiActions: [],
+      }])}
+      >
+        <AIInteractionCards arguments={formCard} onAction={onAction} />
+      </AIAssistantRuntimeContext>,
+    )
+    expect(container.querySelector('[data-ai-card-submitted]')).toBeNull()
+    expect(screen.queryByText('Submitted')).not.toBeInTheDocument()
+    expect(container.querySelector('form')?.className).toContain('hidden')
+
+    // Once user rejects the downstream tool approval: card re-expands and unlocks submit button
+    rerender(
+      <AIAssistantRuntimeContext value={makeRuntime({ 'run-route-1': 'completed' }, [{
+        id: 'route-tool-1',
+        turnId: 'turn-route-1',
+        runId: 'run-route-1',
+        index: 10,
+        type: 'tool_call',
+        toolCallId: 'tc-route-1',
+        operationId: 'network_create_gateway_route',
+        visibility: 'normal',
+        status: 'rejected',
+        arguments: { host: 'app.example.com' },
+        uiActions: [],
+      }])}
+      >
+        <AIInteractionCards arguments={formCard} onAction={onAction} />
+      </AIAssistantRuntimeContext>,
+    )
+    expect(container.querySelector('form')?.className).not.toContain('hidden')
+    await waitFor(() => expect(screen.getByRole('button', { name: '提交' })).toBeEnabled())
   })
 })

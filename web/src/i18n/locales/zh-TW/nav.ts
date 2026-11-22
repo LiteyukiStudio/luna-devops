@@ -18,6 +18,7 @@ const nav = {
     volumes: '資料卷',
     members: '成員',
     notifications: '通知',
+    aiDiagnosis: 'AI 診斷',
     topology: '服務關係',
   },
   commandPalette: {

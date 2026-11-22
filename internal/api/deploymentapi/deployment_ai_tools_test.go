@@ -635,6 +635,62 @@ func TestDeliveryAndPipelineToolsPreserveExistingStateAndPreviewLocks(t *testing
 		t.Fatalf("BuildEnvironmentID was wiped: got %q", checkEnvID.BuildEnvironmentID)
 	}
 
+	// Verify pipeline preview emits authoritative project/app/stage TargetResource, empty localized Summary,
+	// stable warning codes, and never leaks display names of out-of-scope registries or variable sets.
+	privateOtherUserReg := model.ArtifactRegistry{
+		ID: "reg_other_user", Name: "secret-bob-registry", Provider: "harbor",
+		Endpoint: "https://bob.reg.internal", Namespace: "bob", Scope: "user", OwnerRef: "usr_bob",
+	}
+	privateOtherProjectVarSet := model.BuildVariableSet{
+		ID: "bvs_other_proj", Name: "secret-other-proj-vars", Scope: "project", OwnerRef: "prj_other",
+	}
+	allowedVarSet := model.BuildVariableSet{
+		ID: "bvs_allowed", Name: "shared-node-vars", Scope: "project", OwnerRef: project.ID,
+	}
+	for _, rec := range []any{&privateOtherUserReg, &privateOtherProjectVarSet, &allowedVarSet} {
+		if err := db.Create(rec).Error; err != nil {
+			t.Fatalf("seed scoped preview test record: %v", err)
+		}
+	}
+	if err := db.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Updates(map[string]any{
+		"target_registry_id":     privateOtherUserReg.ID,
+		"build_variable_set_ids": `["bvs_other_proj"]`,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	scopedPipePreview, err := pipeTool.Preview(newTC("", nil), json.RawMessage(`{
+		"project":"demo-proj","application":"api-svc","target":"prod",
+		"targetRegistry":"main-reg",
+		"attachVariableSets":["bvs_allowed"],
+		"detachVariableSets":["bvs_other_proj"],
+		"autoDeploy":true
+	}`))
+	if err != nil {
+		t.Fatalf("scoped build_configure_target_pipeline preview failed: %v", err)
+	}
+	if scopedPipePreview.Preview.Summary != "" {
+		t.Fatalf("expected empty backend Summary (no localized UI copy), got %q", scopedPipePreview.Preview.Summary)
+	}
+	if scopedPipePreview.Preview.TargetResource != "demo-proj/api-svc/prod" {
+		t.Fatalf("expected TargetResource demo-proj/api-svc/prod, got %q", scopedPipePreview.Preview.TargetResource)
+	}
+	if !slices.Contains(scopedPipePreview.Preview.Warnings, "pipeline_applies_to_next_build") || !slices.Contains(scopedPipePreview.Preview.Warnings, "auto_deploy_gated_by_approval") {
+		t.Fatalf("expected stable snake_case warning codes, got %v", scopedPipePreview.Preview.Warnings)
+	}
+	scopedPreviewBytes, _ := json.Marshal(scopedPipePreview.Preview)
+	if strings.Contains(string(scopedPreviewBytes), "secret-bob-registry") || strings.Contains(string(scopedPreviewBytes), "secret-other-proj-vars") {
+		t.Fatalf("pipeline preview leaked out-of-scope resource names: %s", string(scopedPreviewBytes))
+	}
+	if !strings.Contains(string(scopedPreviewBytes), "main-reg") || !strings.Contains(string(scopedPreviewBytes), "shared-node-vars") {
+		t.Fatalf("expected in-scope registry and variable set names resolved in diff: %s", string(scopedPreviewBytes))
+	}
+	if err := db.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Updates(map[string]any{
+		"target_registry_id":     registry.ID,
+		"build_variable_set_ids": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	// 5. delivery_deploy_target PreviewLock + Idempotency + cluster immutability after release
 	if err := db.Create(&model.BuildRun{
 		ID: "bldr_1", ProjectID: project.ID, ApplicationID: app.ID, DeploymentTargetID: target.ID,

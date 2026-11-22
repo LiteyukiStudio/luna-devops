@@ -213,7 +213,7 @@ describe('ai assistant tool status icon', () => {
 
     expect(container.querySelector('details')).not.toHaveAttribute('open')
     expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
-    expect(container.querySelector('[data-ai-approval-parameters]')).toHaveTextContent('applicationId')
+    expect(container.querySelector('[data-ai-approval-parameters]')).toHaveTextContent('应用')
     expect(container.querySelector('[data-ai-approval-parameters]')).toHaveTextContent('app-1')
     expect(screen.getByRole('button', { name: '拒绝' })).toBeVisible()
     expect(screen.getByRole('button', { name: '批准执行' })).toBeVisible()
@@ -402,8 +402,93 @@ describe('ai assistant tool status icon', () => {
 
     expect(container.querySelector('[data-ai-approval-preview-summary]')).toHaveTextContent('更新 prod 环境配置（需重新发布生效）')
     expect(container.querySelector('[data-ai-approval-diff]')).toHaveTextContent('2 -> 4')
+    expect(container.querySelector('[data-ai-approval-diff]')).toHaveTextContent('副本数')
     expect(container.querySelector('[data-ai-approval-sensitive-keys]')).toHaveTextContent('DATABASE_PASSWORD')
     expect(container.querySelector('[data-ai-approval-impact]')).toHaveTextContent('影响 1 个部署环境 (prod)')
     expect(container.querySelector('[data-ai-approval-warnings]')).toHaveTextContent('变更将在下次发布后下发 Kubernetes')
+    expect(container.querySelector('[data-ai-approval-scope]')).toHaveTextContent('prj_1')
+    expect(container.querySelector('[data-ai-approval-scope]')).toHaveTextContent('api')
+    expect(container.querySelector('details[data-ai-approval-parameters]')).not.toHaveAttribute('open')
+  })
+
+  it('keeps target project scope visible by default even when diff changes collapse raw parameters', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container } = render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('awaiting_approval'),
+          operationId: 'build_configure_target_pipeline',
+          approvalTier: 'L2',
+          approvalRememberable: false,
+          approvalPreview: {
+            summary: '',
+            targetResource: 'build_environment_config',
+            targetId: 'clu_89e66ebb87c11976a0d33667',
+            projectId: 'prj_33d6a910384769b3b35984e5',
+            changes: [{ field: 'autoDeploy', before: false, after: true, action: 'update' }],
+          },
+          arguments: {
+            project: 'prj_33d6a910384769b3b35984e5',
+            cluster: 'clu_89e66ebb87c11976a0d33667',
+            autoDeploy: true,
+          },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+
+    expect(container.querySelector('[data-ai-tool-summary]')).not.toHaveTextContent('build_environment_config')
+    expect(container.querySelector('details[data-ai-approval-parameters]')).not.toHaveAttribute('open')
+    const scopeBox = container.querySelector<HTMLElement>('[data-ai-approval-scope]')!
+    expect(scopeBox).toHaveTextContent('项目空间')
+    expect(scopeBox).toHaveTextContent('prj_33d6…984e5')
+    expect(scopeBox).toHaveTextContent('clu_89e6…33667')
+  })
+
+  it('keeps L1 strict-mode calls labeled as standard changes, humanizes settings, and collapses technical details by default', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container } = render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('awaiting_approval'),
+          operationId: 'build_configure_target_pipeline',
+          approvalTier: 'L1',
+          approvalRememberable: false,
+          approvalPreview: {
+            summary: '',
+            targetResource: 'deployment_target',
+            warnings: ['pipeline_applies_to_next_build'],
+          },
+          arguments: {
+            project: 'prj_33d6a910384769b3b35984e5',
+            target: 'dplt_89e66ebb87c11976a0d33667',
+            targetRegistry: 'reg_5ba728de4e545c5bda7a310f',
+            application: 'blog-xingluo',
+            identifier: 'app_backend',
+            autoDeploy: true,
+            branchPattern: 'main',
+          },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+
+    expect(container.querySelector('[data-ai-tool-summary]')).toHaveTextContent('配置构建流水线 · blog-xingluo')
+    expect(container.querySelector('[data-ai-tool-summary]')).not.toHaveTextContent('deployment_target')
+    expect(container.querySelector('[data-ai-approval-tier="L1"]')).not.toBeNull()
+    expect(screen.getByText('请确认变更内容')).toBeInTheDocument()
+    expect(screen.getByText('常规变更')).toBeInTheDocument()
+    expect(screen.getByText('当前会话开启了严格确认模式，请核对以下内容后执行。')).toBeInTheDocument()
+    expect(screen.getByText('流水线配置将在下一次触发构建时生效。')).toBeInTheDocument()
+    const paramsPanel = container.querySelector<HTMLElement>('[data-ai-approval-parameters]')!
+    expect(paramsPanel).toHaveTextContent('自动发布')
+    expect(paramsPanel).toHaveTextContent('开启')
+    expect(paramsPanel).toHaveTextContent('标识')
+    expect(paramsPanel).toHaveTextContent('app_backend')
+    // 24-hex scope/target IDs remain visible in compact form so target project/resource cannot be hidden
+    expect(paramsPanel).toHaveTextContent('prj_33d6…984e5')
+    expect(container.querySelector('[data-ai-tool-technical-details]')).not.toHaveAttribute('open')
   })
 })

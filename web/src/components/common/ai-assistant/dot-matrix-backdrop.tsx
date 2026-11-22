@@ -17,10 +17,10 @@ interface PaletteSnapshot {
 }
 
 const DOT_SPACING = 18
-const BASE_RADIUS = 1.15
-const PEAK_RADIUS_BOOST = 1.05
-const INFLUENCE_RADIUS = 132
-const RADIAL_PUSH = 2.4
+const BASE_RADIUS = 1.1
+const PEAK_RADIUS_BOOST = 0.55
+const INFLUENCE_RADIUS = 124
+const RADIAL_PUSH = 1.6
 
 function sampleCSSColor(sampleCtx: CanvasRenderingContext2D, cssColor: string, fallback: RGBTuple): RGBTuple {
   const trimmed = cssColor.trim()
@@ -59,8 +59,8 @@ function readPalette(sampleCtx: CanvasRenderingContext2D, element: HTMLElement):
       primaryRaw,
       { r: 31, g: 116, b: 191 },
     ),
-    baseAlpha: isDark ? 0.17 : 0.145,
-    peakAlpha: isDark ? 0.62 : 0.52,
+    baseAlpha: isDark ? 0.11 : 0.095,
+    peakAlpha: isDark ? 0.32 : 0.26,
   }
 }
 
