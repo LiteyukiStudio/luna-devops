@@ -162,6 +162,8 @@ const errors = {
     rate_rule_unknown: 'Unknown billing rule meter',
     transaction_invalid: 'The balance adjustment request is invalid',
     transaction_invalid_amount: 'Balance adjustment amount must be a non-zero number',
+    granularity_invalid: 'Time granularity must be hourly, daily, or monthly.',
+    period_too_wide_for_granularity: 'The selected period is too wide for this granularity. Narrow the date range or switch to daily or monthly.',
   },
   build: {
     image_repository_claimed: 'The target image repository is already used by another project space. Change the target image repository of the deployment target, then retry.',

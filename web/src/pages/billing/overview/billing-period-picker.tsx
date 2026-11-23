@@ -7,12 +7,26 @@ import { periodSelectionForPreset } from './billing-page-utils'
 
 export function BillingPeriodPicker({ period, onChange }: { period: BillingPeriodSelection, onChange: (period: BillingPeriodSelection) => void }) {
   const { t } = useTranslation()
-  const presets: BillingPeriodPreset[] = ['thisWeek', 'last7Days', 'thisMonth', 'last30Days', 'thisYear', 'lastYear']
+  const presets: BillingPeriodPreset[] = [
+    'last24Hours',
+    'today',
+    'thisWeek',
+    'last7Days',
+    'thisMonth',
+    'last30Days',
+    'thisYear',
+    'lastYear',
+  ]
 
   const updateDate = (field: 'startDate' | 'endDate', value: string) => {
     if (!value)
       return
-    const next = { ...period, [field]: value, preset: 'custom' as const }
+    const next: BillingPeriodSelection = {
+      endDate: period.endDate,
+      preset: 'custom',
+      startDate: period.startDate,
+      [field]: value,
+    }
     if (next.startDate > next.endDate) {
       if (field === 'startDate')
         next.endDate = value
@@ -28,7 +42,7 @@ export function BillingPeriodPicker({ period, onChange }: { period: BillingPerio
         value={period.preset}
         onValueChange={(value) => {
           if (value === 'custom')
-            onChange({ ...period, preset: 'custom' })
+            onChange({ endDate: period.endDate, preset: 'custom', startDate: period.startDate })
           else
             onChange(periodSelectionForPreset(value as BillingPeriodPreset))
         }}

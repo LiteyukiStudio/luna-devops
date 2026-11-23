@@ -1,4 +1,4 @@
-import type { BillingListParams, BillingPeriodParams, BuildRunListParams, PaginationParams, ResultVisibility, RuntimeClusterResourceListParams } from './types'
+import type { BillingListParams, BillingPeriodParams, BillingSpendTimeseriesParams, BuildRunListParams, PaginationParams, ResultVisibility, RuntimeClusterResourceListParams } from './types'
 import i18next from '@/i18n'
 import { startAPIRequestSpan } from '@/lib/telemetry'
 
@@ -125,6 +125,26 @@ export function billingSummaryQuery(projectIds?: string[], period?: BillingPerio
     search.set('userId', period.userId)
   if (period?.timeZone)
     search.set('timeZone', period.timeZone)
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
+
+export function billingSpendTimeseriesQuery(projectIds?: string[], params?: BillingSpendTimeseriesParams) {
+  const search = new URLSearchParams()
+  for (const projectId of projectIds ?? []) {
+    if (projectId)
+      search.append('projectIds', projectId)
+  }
+  if (params?.periodStart)
+    search.set('periodStart', params.periodStart)
+  if (params?.periodEnd)
+    search.set('periodEnd', params.periodEnd)
+  if (params?.granularity)
+    search.set('granularity', params.granularity)
+  if (params?.userId)
+    search.set('userId', params.userId)
+  if (params?.timeZone)
+    search.set('timeZone', params.timeZone)
   const query = search.toString()
   return query ? `?${query}` : ''
 }

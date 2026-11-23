@@ -48,18 +48,37 @@ export function BillingPage() {
         accountLoading={billing.accountSummaryQuery.isPending}
         accountRetrying={billing.accountSummaryQuery.isFetching}
         accountSummary={accountSummary}
+        activeCategory={billing.activeCategory}
         billingDisplay={billingDisplay}
+        billingPeriod={billing.billingPeriod}
         canManageBilling={billing.canManageBilling}
+        chartType={billing.chartType}
+        focusedBucket={billing.focusedBucket}
         gatewayTrafficStatus={billing.gatewayTrafficStatusQuery.data}
         gatewayTrafficStatusLoaded={billing.gatewayTrafficStatusQuery.isSuccess}
         gatewayTrafficStatusLoading={billing.gatewayTrafficStatusQuery.isLoading}
+        granularity={billing.effectiveGranularity}
+        locale={i18n.language}
         scopedError={billing.scopedSummaryQuery.isError}
         scopedFetching={billing.scopedSummaryQuery.isFetching}
         scopedLoading={billing.scopedSummaryQuery.isPending}
         scopedRetrying={billing.scopedSummaryQuery.isFetching}
         scopedSummary={billing.scopedSummaryQuery.data}
+        timeseries={billing.spendTimeseriesQuery.data}
+        timeseriesError={billing.spendTimeseriesQuery.isError}
+        timeseriesErrorMessage={billing.spendTimeseriesQuery.error instanceof Error ? billing.spendTimeseriesQuery.error.message : undefined}
+        timeseriesFetching={billing.spendTimeseriesQuery.isFetching}
+        timeseriesLoading={billing.spendTimeseriesQuery.isPending}
+        timeseriesRetrying={billing.spendTimeseriesQuery.isFetching}
+        timeZone={billing.timeZone}
+        onActiveCategoryChange={billing.setActiveCategory}
+        onChartTypeChange={billing.setChartType}
+        onClearFocusedBucket={billing.handleClearFocusedBucket}
+        onGranularityChange={billing.handleGranularityChange}
         onRetryAccount={() => void billing.accountSummaryQuery.refetch()}
         onRetryScoped={() => void billing.scopedSummaryQuery.refetch()}
+        onRetryTimeseries={() => void billing.spendTimeseriesQuery.refetch()}
+        onSelectBucket={billing.handleSelectBucket}
       />
 
       <ContentTabs

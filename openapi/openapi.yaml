@@ -10648,6 +10648,71 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/billing/spend-timeseries:
+    get:
+      operationId: getBillingSpendTimeseries
+      x-luna-cli:
+        requiredScopes: ["billing:read"]
+      tags:
+        - Billing
+      summary: Get Billing Spend Timeseries
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectIds
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: periodStart
+          in: query
+          required: false
+          description: Inclusive RFC3339 start. Usage is counted at its usage period start (occurrence time); entries without a usage record use their posting time.
+          schema:
+            type: string
+        - name: periodEnd
+          in: query
+          required: false
+          description: Exclusive RFC3339 end, provided together with periodStart.
+          schema:
+            type: string
+        - name: granularity
+          in: query
+          required: false
+          description: Time bucket granularity in the requested timeZone. Defaults to `day`.
+          schema:
+            type: string
+            enum: [hour, day, month]
+            default: day
+        - name: timeZone
+          in: query
+          required: false
+          description: IANA time zone used to align hour, day, and month bucket boundaries. Defaults to UTC.
+          schema:
+            type: string
+            example: Asia/Shanghai
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingSpendTimeseries"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/billing/deployment-spend:
     get:
       operationId: listBillingDeploymentSpend
@@ -17682,6 +17747,52 @@ components:
         category: { type: string, enum: [build, runtime, storage, gateway, ai, adjustment, other] }
         amountCredits: { type: string }
       required: [category, amountCredits]
+    BillingSpendTimeseriesBucket:
+      type: object
+      additionalProperties: false
+      properties:
+        bucketStart:
+          type: string
+          format: date-time
+          description: Calendar start of the hour, day, or month bucket in the requested timeZone.
+        periodStart:
+          type: string
+          format: date-time
+          description: Effective inclusive start clamped to the requested periodStart.
+        periodEnd:
+          type: string
+          format: date-time
+          description: Effective exclusive end clamped to the requested periodEnd.
+        totalCredits:
+          type: string
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/BillingSpendCategory" }
+      required: [bucketStart, periodStart, periodEnd, totalCredits, categories]
+    BillingSpendTimeseries:
+      type: object
+      additionalProperties: false
+      properties:
+        granularity:
+          type: string
+          enum: [hour, day, month]
+        timeZone:
+          type: string
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        totalCredits:
+          type: string
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/BillingSpendCategory" }
+        buckets:
+          type: array
+          items: { $ref: "#/components/schemas/BillingSpendTimeseriesBucket" }
+      required: [granularity, timeZone, periodStart, periodEnd, totalCredits, categories, buckets]
     BillingDeploymentSpend:
       type: object
       additionalProperties: false

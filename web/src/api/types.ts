@@ -2498,9 +2498,31 @@ export interface BillingSummary {
   periodCategories: BillingSpendCategory[]
 }
 
+export type BillingSpendCategoryKey = 'build' | 'runtime' | 'storage' | 'gateway' | 'ai' | 'adjustment' | 'other'
+
 export interface BillingSpendCategory {
-  category: 'build' | 'runtime' | 'storage' | 'gateway' | 'adjustment' | 'other' | string
+  category: BillingSpendCategoryKey
   amountCredits: string
+}
+
+export type BillingSpendGranularity = 'hour' | 'day' | 'month'
+
+export interface BillingSpendTimeseriesBucket {
+  bucketStart: string
+  periodStart: string
+  periodEnd: string
+  totalCredits: string
+  categories: BillingSpendCategory[]
+}
+
+export interface BillingSpendTimeseries {
+  granularity: BillingSpendGranularity
+  timeZone: string
+  periodStart: string
+  periodEnd: string
+  totalCredits: string
+  categories: BillingSpendCategory[]
+  buckets: BillingSpendTimeseriesBucket[]
 }
 
 export interface BillingDeploymentSpend {
@@ -2632,6 +2654,14 @@ export interface BillingPeriodParams {
   accountScope?: 'current'
   userId?: string
   /** IANA time zone that defines today and this month. */
+  timeZone?: string
+}
+
+export interface BillingSpendTimeseriesParams {
+  periodStart?: string
+  periodEnd?: string
+  granularity?: BillingSpendGranularity
+  userId?: string
   timeZone?: string
 }
 

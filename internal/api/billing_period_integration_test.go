@@ -229,3 +229,111 @@ func TestBillingDeploymentSpendGroupsStorageAndFiltersByOccurrence(t *testing.T)
 		}
 	}
 }
+
+func TestBillingSpendTimeseriesZeroFillsAndMatchesSummary(t *testing.T) {
+	fixture := newBillingPeriodFixture(t)
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load Asia/Shanghai: %v", err)
+	}
+	dayStart := time.Date(2026, 11, 22, 0, 0, 0, 0, shanghai)
+	periodEnd := dayStart.Add(48 * time.Hour)
+
+	fixture.addDebit(t, "rt_h1", billing.ResourceTypeRuntime, "dplt_billing_period:h1", billing.MeterRuntimeCPU, billing.ReasonRuntimeUsage, "2.5",
+		dayStart.Add(2*time.Hour), dayStart.Add(3*time.Hour), dayStart.Add(3*time.Hour+5*time.Minute))
+	fixture.addDebit(t, "build_d2", billing.ResourceTypeBuildRun, "bld_d2", "build.cpu_vcpu_minute", billing.ReasonBuildUsage, "1.25",
+		dayStart.Add(26*time.Hour), dayStart.Add(26*time.Hour+10*time.Minute), dayStart.Add(26*time.Hour+12*time.Minute))
+
+	// Personal AI debit (empty ProjectID) + credit recharge (must be excluded from spend)
+	aiUsage := model.BillingUsageRecord{
+		ID: "busg_ai_1", ProjectID: "", BilledUserID: fixture.user.ID, Meter: "ai.completion_tokens_1m",
+		Quantity: decimal.NewFromInt(1), Unit: "1M tokens", AmountCredits: decimal.RequireFromString("6.25"),
+		ResourceType: "ai_model_usage", ResourceID: "aimu_1",
+		PeriodStart: dayStart.Add(23 * time.Hour), PeriodEnd: dayStart.Add(23*time.Hour + time.Minute),
+		Status: "settled", CreatedAt: dayStart.Add(23*time.Hour + time.Minute),
+	}
+	aiLedger := model.BillingLedgerEntry{
+		ID: "bled_ai_1", UserID: fixture.user.ID, ProjectID: "", Type: "debit",
+		AmountCredits: decimal.RequireFromString("-6.25"), Reason: "ai.usage", Meter: "ai.completion_tokens_1m",
+		UsageRecordID: aiUsage.ID, ResourceType: "ai_model_usage", ResourceID: "aimu_1", CreatedAt: dayStart.Add(23*time.Hour + time.Minute),
+	}
+	creditLedger := model.BillingLedgerEntry{
+		ID: "bled_recharge_1", UserID: fixture.user.ID, ProjectID: "", Type: "credit",
+		AmountCredits: decimal.RequireFromString("100"), Reason: "billing.recharge", CreatedAt: dayStart.Add(5 * time.Hour),
+	}
+	for _, row := range []any{&aiUsage, &aiLedger, &creditLedger} {
+		if err := fixture.handlers.db.Create(row).Error; err != nil {
+			t.Fatalf("seed row %T: %v", row, err)
+		}
+	}
+
+	baseQuery := "?periodStart=" + dayStart.UTC().Format(time.RFC3339) +
+		"&periodEnd=" + periodEnd.UTC().Format(time.RFC3339) +
+		"&timeZone=Asia%2FShanghai"
+
+	summaryRec := fixture.get(t, fixture.user, "/api/v1/billing/summary"+baseQuery, fixture.handlers.domains.billing.GetBillingSummary)
+	if summaryRec.Code != http.StatusOK {
+		t.Fatalf("summary status = %d body = %s", summaryRec.Code, summaryRec.Body.String())
+	}
+	var summary billing.ProjectBillingSummary
+	if err := json.Unmarshal(summaryRec.Body.Bytes(), &summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+
+	for _, tc := range []struct {
+		granularity string
+		wantBuckets int
+	}{
+		{granularity: "hour", wantBuckets: 48},
+		{granularity: "day", wantBuckets: 2},
+		{granularity: "month", wantBuckets: 1},
+	} {
+		t.Run(tc.granularity, func(t *testing.T) {
+			rec := fixture.get(t, fixture.user, "/api/v1/billing/spend-timeseries"+baseQuery+"&granularity="+tc.granularity, fixture.handlers.domains.billing.GetBillingSpendTimeseries)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+			}
+			var series billing.SpendTimeseries
+			if err := json.Unmarshal(rec.Body.Bytes(), &series); err != nil {
+				t.Fatalf("decode timeseries: %v", err)
+			}
+			if len(series.Buckets) != tc.wantBuckets {
+				t.Fatalf("buckets = %d, want %d", len(series.Buckets), tc.wantBuckets)
+			}
+			if !series.TotalCredits.Equal(summary.PeriodSpend) || !series.TotalCredits.Equal(decimal.RequireFromString("10")) {
+				t.Fatalf("totalCredits = %s, summary.PeriodSpend = %s, want 10", series.TotalCredits, summary.PeriodSpend)
+			}
+			bucketSum := decimal.Zero
+			for _, b := range series.Buckets {
+				bucketSum = bucketSum.Add(b.TotalCredits)
+			}
+			if !bucketSum.Equal(series.TotalCredits) {
+				t.Fatalf("bucketSum = %s, want %s", bucketSum, series.TotalCredits)
+			}
+		})
+	}
+
+	// Project filter excludes personal AI debits (3.75 instead of 10)
+	projectRec := fixture.get(t, fixture.user, "/api/v1/billing/spend-timeseries"+baseQuery+"&granularity=day&projectIds="+fixture.project.ID, fixture.handlers.domains.billing.GetBillingSpendTimeseries)
+	if projectRec.Code != http.StatusOK {
+		t.Fatalf("project-scoped status = %d body = %s", projectRec.Code, projectRec.Body.String())
+	}
+	var projectSeries billing.SpendTimeseries
+	if err := json.Unmarshal(projectRec.Body.Bytes(), &projectSeries); err != nil {
+		t.Fatalf("decode project series: %v", err)
+	}
+	if !projectSeries.TotalCredits.Equal(decimal.RequireFromString("3.75")) {
+		t.Fatalf("project totalCredits = %s, want 3.75", projectSeries.TotalCredits)
+	}
+
+	// Guardrails: invalid granularity & wide range for hourly
+	badGran := fixture.get(t, fixture.user, "/api/v1/billing/spend-timeseries"+baseQuery+"&granularity=minute", fixture.handlers.domains.billing.GetBillingSpendTimeseries)
+	if badGran.Code != http.StatusBadRequest {
+		t.Fatalf("invalid granularity status = %d, want 400", badGran.Code)
+	}
+	wideQuery := "?periodStart=2026-01-01T00:00:00Z&periodEnd=2027-01-01T00:00:00Z&granularity=hour"
+	tooWide := fixture.get(t, fixture.user, "/api/v1/billing/spend-timeseries"+wideQuery, fixture.handlers.domains.billing.GetBillingSpendTimeseries)
+	if tooWide.Code != http.StatusBadRequest {
+		t.Fatalf("too wide hourly status = %d, want 400", tooWide.Code)
+	}
+}

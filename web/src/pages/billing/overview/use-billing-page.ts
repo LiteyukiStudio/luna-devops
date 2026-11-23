@@ -1,4 +1,5 @@
-import type { BillingPeriodSelection } from './billing-page-utils'
+import type { BillingChartType, BillingFocusedBucket, BillingPeriodSelection } from './billing-page-utils'
+import type { BillingSpendGranularity, BillingSpendTimeseriesBucket } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -7,7 +8,16 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
-import { BILLING_PAGE_SIZE, billingPeriodToQuery, browserTimeZone, periodSelectionForPreset, readCachedBillingProjectScope, writeCachedBillingProjectScope } from './billing-page-utils'
+import {
+  BILLING_PAGE_SIZE,
+  billingPeriodToQuery,
+  browserTimeZone,
+  defaultGranularityForPeriod,
+  isGranularityAllowedForPeriod,
+  periodSelectionForPreset,
+  readCachedBillingProjectScope,
+  writeCachedBillingProjectScope,
+} from './billing-page-utils'
 
 export function useBillingPage() {
   const { t } = useTranslation()
@@ -16,6 +26,10 @@ export function useBillingPage() {
   const [activeTab, setActiveTab] = useState('deployment-spend')
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(readCachedBillingProjectScope)
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriodSelection>(() => periodSelectionForPreset('thisMonth'))
+  const [granularity, setGranularity] = useState<BillingSpendGranularity>(() => defaultGranularityForPeriod(periodSelectionForPreset('thisMonth')))
+  const [chartType, setChartType] = useState<BillingChartType>('bar')
+  const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [focusedBucket, setFocusedBucket] = useState<BillingFocusedBucket | null>(null)
   const [deploymentSpendPage, setDeploymentSpendPage] = useState(1)
   const [ledgerPage, setLedgerPage] = useState(1)
   const [usagePage, setUsagePage] = useState(1)
@@ -27,6 +41,9 @@ export function useBillingPage() {
   const [transactionDescription, setTransactionDescription] = useState('')
   const canManageBilling = isPlatformAdmin(user?.role)
   const billingUserScopeId = selectedBillingUserId ?? (canManageBilling ? user?.id ?? '' : '')
+  const effectiveGranularity = isGranularityAllowedForPeriod(granularity, billingPeriod)
+    ? granularity
+    : defaultGranularityForPeriod(billingPeriod)
 
   const projectsQuery = useQuery({
     queryKey: ['billing', 'projects', canManageBilling],
@@ -41,6 +58,12 @@ export function useBillingPage() {
   const projectMap = useMemo(() => new Map(projectItems.map(project => [project.id, project])), [projectItems])
   const projectIds = selectedProjectIds.length > 0 ? selectedProjectIds : undefined
   const billingPeriodQuery = useMemo(() => billingPeriodToQuery(billingPeriod), [billingPeriod])
+  const detailPeriodQuery = useMemo(
+    () => focusedBucket
+      ? { periodEnd: focusedBucket.periodEnd, periodStart: focusedBucket.periodStart }
+      : billingPeriodQuery,
+    [billingPeriodQuery, focusedBucket],
+  )
   const billingUserQuery = canManageBilling && billingUserScopeId ? billingUserScopeId : undefined
   // Today and this month follow the viewer's local calendar, not the server's.
   const timeZone = browserTimeZone()
@@ -62,12 +85,20 @@ export function useBillingPage() {
     queryKey: ['billing', 'summary', 'scope', selectedProjectIds, billingPeriodQuery, billingUserQuery, timeZone],
     queryFn: () => api.getBillingSummary(projectIds, { ...billingPeriodQuery, timeZone, userId: billingUserQuery }),
   })
+  const spendTimeseriesQuery = useQuery({
+    queryKey: ['billing', 'spend-timeseries', selectedProjectIds, billingPeriodQuery, effectiveGranularity, billingUserQuery, timeZone],
+    queryFn: ({ signal }) => api.getBillingSpendTimeseries(
+      projectIds,
+      { ...billingPeriodQuery, granularity: effectiveGranularity, timeZone, userId: billingUserQuery },
+      signal,
+    ),
+  })
   const deploymentSpendQuery = useQuery({
-    queryKey: ['billing', 'deployment-spend', selectedProjectIds, billingPeriodQuery, billingUserQuery, deploymentSpendPage],
+    queryKey: ['billing', 'deployment-spend', selectedProjectIds, detailPeriodQuery, billingUserQuery, deploymentSpendPage],
     queryFn: () => api.listBillingDeploymentSpend({
       page: deploymentSpendPage,
       pageSize: BILLING_PAGE_SIZE,
-      ...billingPeriodQuery,
+      ...detailPeriodQuery,
       projectIds,
       userId: billingUserQuery,
       sortBy: 'amountCredits',
@@ -75,11 +106,11 @@ export function useBillingPage() {
     }),
   })
   const ledgerQuery = useQuery({
-    queryKey: ['billing', 'ledger', selectedProjectIds, billingPeriodQuery, billingUserQuery, ledgerPage],
+    queryKey: ['billing', 'ledger', selectedProjectIds, detailPeriodQuery, billingUserQuery, ledgerPage],
     queryFn: () => api.listBillingLedgerEntries({
       page: ledgerPage,
       pageSize: BILLING_PAGE_SIZE,
-      ...billingPeriodQuery,
+      ...detailPeriodQuery,
       projectIds,
       userId: billingUserQuery,
       sortBy: 'occurredAt',
@@ -87,11 +118,11 @@ export function useBillingPage() {
     }),
   })
   const usageQuery = useQuery({
-    queryKey: ['billing', 'usage', selectedProjectIds, billingPeriodQuery, billingUserQuery, usagePage],
+    queryKey: ['billing', 'usage', selectedProjectIds, detailPeriodQuery, billingUserQuery, usagePage],
     queryFn: () => api.listBillingUsageRecords({
       page: usagePage,
       pageSize: BILLING_PAGE_SIZE,
-      ...billingPeriodQuery,
+      ...detailPeriodQuery,
       projectIds,
       userId: billingUserQuery,
       sortBy: 'periodStart',
@@ -129,6 +160,7 @@ export function useBillingPage() {
   function handleProjectFilterChange(projectIds: string[]) {
     setSelectedProjectIds(projectIds)
     writeCachedBillingProjectScope(projectIds)
+    setFocusedBucket(null)
     resetBillingPages()
   }
 
@@ -139,29 +171,67 @@ export function useBillingPage() {
 
   function handlePeriodChange(period: BillingPeriodSelection) {
     setBillingPeriod(period)
+    setGranularity(defaultGranularityForPeriod(period))
+    setFocusedBucket(null)
+    resetBillingPages()
+  }
+
+  function handleGranularityChange(nextGranularity: BillingSpendGranularity) {
+    if (!isGranularityAllowedForPeriod(nextGranularity, billingPeriod))
+      return
+    setGranularity(nextGranularity)
+    setFocusedBucket(null)
+    resetBillingPages()
+  }
+
+  function handleSelectBucket(bucket: BillingSpendTimeseriesBucket) {
+    const isDeselecting = focusedBucket?.bucketStart === bucket.bucketStart
+    setFocusedBucket(isDeselecting
+      ? null
+      : {
+          bucketStart: bucket.bucketStart,
+          periodEnd: bucket.periodEnd,
+          periodStart: bucket.periodStart,
+        })
+    if (!isDeselecting && activeTab === 'prices')
+      setActiveTab('ledger')
+    resetBillingPages()
+  }
+
+  function handleClearFocusedBucket() {
+    setFocusedBucket(null)
     resetBillingPages()
   }
 
   return {
     accountSummaryQuery,
+    activeCategory,
     activeTab,
     billingPeriod,
     billingUserScopeId,
     canManageBilling,
+    chartType,
     createTransaction,
     deploymentSpendPage,
     deploymentSpendQuery,
+    effectiveGranularity,
+    focusedBucket,
     gatewayTrafficStatusQuery,
     handleBillingUserChange,
+    handleClearFocusedBucket,
+    handleGranularityChange,
     handlePeriodChange,
     handleProjectFilterChange,
+    handleSelectBucket,
     ledgerPage,
     ledgerQuery,
     projectMap,
     projectsQuery,
     scopedSummaryQuery,
     selectedProjectIds,
+    setActiveCategory,
     setActiveTab,
+    setChartType,
     setDeploymentSpendPage,
     setLedgerPage,
     setTransactionAmount,
@@ -170,6 +240,8 @@ export function useBillingPage() {
     setTransactionType,
     setTransactionUserId,
     setUsagePage,
+    spendTimeseriesQuery,
+    timeZone,
     transactionAmount,
     transactionDescription,
     transactionOpen,

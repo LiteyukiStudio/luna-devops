@@ -14,6 +14,7 @@ When an administrator selects **All users**, the balance card shows **Platform w
 - Ledger entries without a usage record, such as manual recharges and adjustments, use the time they were posted.
 - **Today** and **this month** follow the calendar day and month in your browser's time zone, and the selected start and end dates are interpreted in the same local time zone.
 - The **Occurred at** column in ledger entries and usage records shows the time used for filtering and sorting.
+- **Spend distribution** lets you switch between **Hourly**, **Daily**, and **Monthly** granularity as well as **Bar** and **Area** views. Filter by category to isolate one cost type, or click any time bucket to narrow the tables below to that interval.
 
 Each ledger entry shows both its standard reason and the specific description recorded when it was created. Empty descriptions and descriptions that duplicate the reason are omitted.
 

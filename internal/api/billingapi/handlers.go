@@ -1,6 +1,7 @@
 package billingapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -52,4 +53,48 @@ func (h *Handler) GetBillingSummary(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, summary)
+}
+
+func (h *Handler) GetBillingSpendTimeseries(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	scope, ok := h.billingScopeForUser(ctx, user)
+	if !ok {
+		return
+	}
+	period, ok := billingPeriodFromQuery(ctx)
+	if !ok {
+		return
+	}
+	location, ok := billingTimeZoneFromQuery(ctx)
+	if !ok {
+		return
+	}
+	granularity := strings.TrimSpace(ctx.Query("granularity"))
+	if granularity == "" {
+		granularity = billing.GranularityDay
+	}
+	if !billing.ValidGranularity(granularity) {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.granularity_invalid", "granularity must be hour, day, or month")
+		return
+	}
+	series, err := (billing.Service{DB: h.dbFor(ctx)}).SpendTimeseries(billing.SpendTimeseriesInput{
+		UserIDs:     scope.UserIDs,
+		ProjectIDs:  scope.ProjectIDs,
+		Now:         time.Now().In(location),
+		PeriodStart: period.Start,
+		PeriodEnd:   period.End,
+		Granularity: granularity,
+	})
+	if err != nil {
+		if errors.Is(err, billing.ErrPeriodTooWideForGranularity) {
+			writeErrorCode(ctx, http.StatusBadRequest, "billing.period_too_wide_for_granularity", "requested period produces too many buckets for the selected granularity")
+			return
+		}
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, series)
 }

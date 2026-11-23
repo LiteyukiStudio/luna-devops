@@ -410,6 +410,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.POST("/projects/:projectId/repository-bindings/:bindingId/webhook/reconfigure", domains.git.ReconfigureRepositoryWebhook)
 
 		v1.GET("/billing/summary", domains.billing.GetBillingSummary)
+		v1.GET("/billing/spend-timeseries", domains.billing.GetBillingSpendTimeseries)
 		v1.GET("/billing/deployment-spend", domains.billing.ListBillingDeploymentSpend)
 		v1.GET("/billing/ledger", domains.billing.ListBillingLedgerEntries)
 		v1.GET("/billing/usage-records", domains.billing.ListBillingUsageRecords)

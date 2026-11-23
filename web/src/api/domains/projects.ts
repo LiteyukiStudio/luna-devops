@@ -1,5 +1,5 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, NetworkServiceShare, NetworkServiceShareDirection, NetworkServiceSharePayload, PaginatedResponse, PaginationParams, PlatformAppTemplate, PlatformAppTemplateBundle, PlatformAppTemplateImportPayload, PlatformAppTemplateWritePayload, Project, ProjectAIAutomationConfig, ProjectAIDiagnosisListParams, ProjectAIDiagnosisRecord, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse, UpdateProjectAIAutomationConfigInput } from '../types'
-import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSpendTimeseries, BillingSpendTimeseriesParams, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, NetworkServiceShare, NetworkServiceShareDirection, NetworkServiceSharePayload, PaginatedResponse, PaginationParams, PlatformAppTemplate, PlatformAppTemplateBundle, PlatformAppTemplateImportPayload, PlatformAppTemplateWritePayload, Project, ProjectAIAutomationConfig, ProjectAIDiagnosisListParams, ProjectAIDiagnosisRecord, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse, UpdateProjectAIAutomationConfigInput } from '../types'
+import { billingQuery, billingSpendTimeseriesQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const projectsApi = {
@@ -43,6 +43,8 @@ export const projectsApi = {
     request<SystemComponentInstallResponse>(`/app-templates/${encodeURIComponent(templateId)}/system-install`, { method: 'POST', body: JSON.stringify(payload) }),
   getBillingSummary: (projectIds?: string[], period?: BillingPeriodParams) =>
     request<BillingSummary>(`/billing/summary${billingSummaryQuery(projectIds, period)}`),
+  getBillingSpendTimeseries: (projectIds?: string[], params?: BillingSpendTimeseriesParams, signal?: AbortSignal) =>
+    request<BillingSpendTimeseries>(`/billing/spend-timeseries${billingSpendTimeseriesQuery(projectIds, params)}`, { signal }),
   getGatewayTrafficStatus: () => request<GatewayTrafficStatus>('/billing/gateway-traffic-status'),
   listBillingDeploymentSpend: (params: BillingListParams) =>
     request<PaginatedResponse<BillingDeploymentSpend>>(`/billing/deployment-spend?${billingQuery(params)}`),

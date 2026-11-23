@@ -162,6 +162,8 @@ const errors = {
     rate_rule_unknown: '不明な課金ルール Meter',
     transaction_invalid: '残高調整リクエストが正しくありません',
     transaction_invalid_amount: '残高調整金額は非ゼロの数値である必要があります',
+    granularity_invalid: '時間粒度は時間別・日別・月別のいずれかである必要があります。',
+    period_too_wide_for_granularity: '選択した期間がこの粒度に対して長すぎます。期間を狭めるか、日別または月別に切り替えてください。',
   },
   build: {
     image_repository_claimed: 'ターゲットイメージリポジトリは別のプロジェクトスペースで使用されています。デプロイ設定のターゲットイメージリポジトリを変更してから再試行してください。',
