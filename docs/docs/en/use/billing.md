@@ -13,10 +13,10 @@ When an administrator selects **All users**, the balance card shows **Platform w
 - Costs are assigned to a time range by **when the usage occurred**: each usage record counts entirely in the range that contains the start of its metering period. Settlement time and period overlap are not used. For example, runtime usage for 23:00–24:00 settled at 00:05 the next day still counts toward the previous day.
 - Ledger entries without a usage record, such as manual recharges and adjustments, use the time they were posted.
 - **Today** and **this month** follow the calendar day and month in your browser's time zone, and the selected start and end dates are interpreted in the same local time zone.
-- The **Occurred at** column in ledger entries and usage records shows the time used for filtering and sorting.
+- The **Occurred at** column in the billing ledger shows the time used for filtering and sorting.
 - **Spend distribution** lets you switch between **Hourly**, **Daily**, and **Monthly** granularity as well as **Bar** and **Area** views. Filter by category to isolate one cost type, or click any time bucket to narrow the tables below to that interval.
 
-Each ledger entry shows both its standard reason and the specific description recorded when it was created. Empty descriptions and descriptions that duplicate the reason are omitted.
+Each ledger entry shows its standard reason, associated metered quantity (such as vCPU-hours, GiB-days, or 1M tokens, or `-` for recharges and adjustments), and the specific description recorded when it was created. Empty descriptions and descriptions that duplicate the reason are omitted. Use the ledger toolbar to filter by entry type or cost category.
 
 Settlement uses Credits. Administrators may configure a display currency and conversion ratio, but this does not change settlement or recalculate historical bills.
 
@@ -62,4 +62,4 @@ The billing page may show:
 - **Waiting for reports**: the collector is ready but no valid traffic data has arrived.
 - **Unavailable**: the platform cannot currently read the cluster state.
 
-Already settled usage remains in billing history.
+Settled debit and usage details follow the platform data-retention policy (90 days by default), while wallet balances and recharge or adjustment entries are retained permanently.

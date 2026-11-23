@@ -164,6 +164,49 @@ func TestAuthoritativeAIUsageSettlementPostgres(t *testing.T) {
 		}
 		assertWalletBalance(t, db, userID, "-113")
 	})
+
+	t.Run("zero-token and partial-meter AI usages skip zero-quantity ledger rows while marking settlement complete", func(t *testing.T) {
+		if err := db.Exec(`INSERT INTO ai.model_usages (
+			id, run_id, owner_user_id, operation, attempt, status, settlement_status,
+			model_id, model_name, max_context_tokens_snapshot, max_output_tokens_snapshot,
+			input_credits_per_million, output_credits_per_million, cached_input_credits_per_million,
+			prompt_tokens, completion_tokens, total_tokens,
+			cached_prompt_tokens, cache_write_prompt_tokens, reasoning_completion_tokens, call_type
+		) VALUES
+			('aiuse_zero_tokens', 'airun_ai_usage_pg', ?, 'assistant', 99, 'reported', 'pending', 'aimod_ai_usage_pg', 'usage', 4096, 512, 2000000, 4000000, 1000000, 0, 0, 0, 0, 0, 0, 'stream'),
+			('aiuse_no_cache', 'airun_ai_usage_pg', ?, 'assistant', 100, 'reported', 'pending', 'aimod_ai_usage_pg', 'usage', 4096, 512, 2000000, 4000000, 1000000, 5, 2, 7, 0, 0, 0, 'stream')`,
+			userID, userID,
+		).Error; err != nil {
+			t.Fatalf("insert zero/no-cache usages: %v", err)
+		}
+		// Remove the malformed row from the previous subtest so batch settlement returns nil error.
+		if err := db.Exec("DELETE FROM ai.model_usages WHERE id = 'aiuse_invalid_model'").Error; err != nil {
+			t.Fatalf("cleanup invalid model usage: %v", err)
+		}
+
+		settled, err := service.SettlePendingAIModelUsage(t.Context(), 10)
+		if err != nil || settled != 2 {
+			t.Fatalf("settle zero/no-cache = (%d, %v), want (2, nil)", settled, err)
+		}
+		var zeroStatus string
+		if err := db.Raw("SELECT settlement_status FROM ai.model_usages WHERE id = 'aiuse_zero_tokens'").Scan(&zeroStatus).Error; err != nil {
+			t.Fatal(err)
+		}
+		if zeroStatus != "settled" {
+			t.Fatalf("zero-token settlement_status = %q, want settled", zeroStatus)
+		}
+		var zeroRecordCount, noCacheRecordCount int64
+		if err := db.Model(&model.BillingUsageRecord{}).Where("resource_id = 'aiuse_zero_tokens'").Count(&zeroRecordCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&model.BillingUsageRecord{}).Where("resource_id = 'aiuse_no_cache'").Count(&noCacheRecordCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if zeroRecordCount != 0 || noCacheRecordCount != 2 {
+			t.Fatalf("record counts = (%d, %d), want (0, 2)", zeroRecordCount, noCacheRecordCount)
+		}
+		assertWalletBalance(t, db, userID, "-131")
+	})
 }
 
 func insertReportedUsage(db *gorm.DB, usageID, userID string, promptTokens, completionTokens, totalTokens int64) error {

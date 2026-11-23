@@ -52,4 +52,23 @@ func TestValidateReportedUsageAcceptsNormalizedGatewayTotals(t *testing.T) {
 	if err := validateReportedUsage(invalidCache); err == nil {
 		t.Fatal("validateReportedUsage accepted cached + cache_write > prompt_tokens")
 	}
+
+	withoutCache := valid
+	withoutCache.CachedPromptTokens = 0
+	withoutCache.CacheWritePromptTokens = 0
+	withoutCacheRecords := aiUsageRecords(withoutCache, withoutCache.OccurredAt, withoutCache.EventID)
+	if len(withoutCacheRecords) != 2 {
+		t.Fatalf("records without cache tokens = %d, want 2", len(withoutCacheRecords))
+	}
+
+	zeroUsage := valid
+	zeroUsage.PromptTokens = 0
+	zeroUsage.CompletionTokens = 0
+	zeroUsage.TotalTokens = 0
+	zeroUsage.CachedPromptTokens = 0
+	zeroUsage.CacheWritePromptTokens = 0
+	zeroUsage.ReasoningCompletionTokens = 0
+	if got := aiUsageRecords(zeroUsage, zeroUsage.OccurredAt, zeroUsage.EventID); len(got) != 0 {
+		t.Fatalf("zero-token records = %d, want 0", len(got))
+	}
 }

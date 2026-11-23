@@ -192,6 +192,112 @@ CREATE TABLE platform_events (id text PRIMARY KEY, occurred_at timestamptz NOT N
 	assertIDExists(t, db, "platform_events", "event_recent")
 }
 
+func TestRuntimeObservationsAndBillingRecordsCleanupInPostgres(t *testing.T) {
+	db := openRetentionTestDB(t)
+	if err := db.Exec(`
+CREATE TABLE runtime_observations (id text PRIMARY KEY, period_start timestamptz NOT NULL);
+CREATE TABLE user_wallets (id text PRIMARY KEY, user_id text NOT NULL, balance_credits numeric NOT NULL);
+CREATE TABLE volume_transfers (id text PRIMARY KEY);
+CREATE TABLE billing_usage_records (
+    id text PRIMARY KEY,
+    status text NOT NULL,
+    resource_type text NOT NULL,
+    resource_id text NOT NULL,
+    period_start timestamptz NOT NULL
+);
+CREATE TABLE billing_ledger_entries (
+    id text PRIMARY KEY,
+    type text NOT NULL,
+    usage_record_id text NOT NULL,
+    resource_type text NOT NULL,
+    resource_id text NOT NULL,
+    created_at timestamptz NOT NULL
+);
+`).Error; err != nil {
+		t.Fatalf("create billing/observation retention tables: %v", err)
+	}
+
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	expired := now.AddDate(0, 0, -100)
+	withinLookback := now.Add(-6 * time.Hour)
+
+	if err := db.Exec(
+		"INSERT INTO runtime_observations(id, period_start) VALUES (?, ?), (?, ?)",
+		"robs_expired", expired,
+		"robs_recent", withinLookback,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO user_wallets(id, user_id, balance_credits) VALUES ('wlt_1', 'usr_1', 42.5)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO volume_transfers(id) VALUES ('vtx_active')").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO billing_usage_records(id, status, resource_type, resource_id, period_start) VALUES
+		('busg_expired_settled', 'settled', 'runtime_target', 'tgt_1:2026040100', ?),
+		('busg_expired_pending', 'pending', 'ai_model_request', 'ai_1', ?),
+		('busg_recent_settled', 'settled', 'runtime_target', 'tgt_1:2026071406', ?),
+		('busg_transfer_active', 'settled', 'volume_transfer', 'vtx_active', ?),
+		('busg_transfer_deleted', 'settled', 'volume_transfer', 'vtx_gone', ?)`,
+		expired, expired, withinLookback, expired, expired,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO billing_ledger_entries(id, type, usage_record_id, resource_type, resource_id, created_at) VALUES
+		('bled_expired_debit', 'debit', 'busg_expired_settled', 'runtime_target', 'tgt_1:2026040100', ?),
+		('bled_expired_credit', 'credit', '', 'user_wallet', 'usr_1', ?),
+		('bled_expired_adjustment', 'adjustment', '', 'user_wallet', 'usr_1', ?),
+		('bled_recent_debit', 'debit', 'busg_recent_settled', 'runtime_target', 'tgt_1:2026071406', ?),
+		('bled_transfer_active', 'debit', 'busg_transfer_active', 'volume_transfer', 'vtx_active', ?),
+		('bled_transfer_deleted', 'debit', 'busg_transfer_deleted', 'volume_transfer', 'vtx_gone', ?)`,
+		expired, expired, expired, withinLookback, expired, expired,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(db)
+	start := now.AddDate(0, 0, -120)
+	end := now.Add(time.Hour)
+	datasets := []string{DatasetRuntimeObservations, DatasetBillingRecords}
+
+	preview, err := service.Preview(t.Context(), datasets, start, end, now)
+	if err != nil {
+		t.Fatalf("preview cleanup: %v", err)
+	}
+	if len(preview) != 2 || preview[0].Matched != 1 || preview[1].Matched != 4 {
+		t.Fatalf("preview = %#v, want [1, 4]", preview)
+	}
+
+	results, err := service.Cleanup(t.Context(), datasets, start, end, now)
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if len(results) != 2 || results[0].Matched != 1 || results[0].Deleted != 1 || results[1].Matched != 4 || results[1].Deleted != 4 {
+		t.Fatalf("cleanup results = %#v, want [1/1, 4/4]", results)
+	}
+
+	assertRowCount(t, db, "runtime_observations", 1)
+	assertIDExists(t, db, "runtime_observations", "robs_recent")
+	assertRowCount(t, db, "billing_usage_records", 3)
+	assertIDExists(t, db, "billing_usage_records", "busg_expired_pending")
+	assertIDExists(t, db, "billing_usage_records", "busg_recent_settled")
+	assertIDExists(t, db, "billing_usage_records", "busg_transfer_active")
+	assertRowCount(t, db, "billing_ledger_entries", 4)
+	assertIDExists(t, db, "billing_ledger_entries", "bled_expired_credit")
+	assertIDExists(t, db, "billing_ledger_entries", "bled_expired_adjustment")
+	assertIDExists(t, db, "billing_ledger_entries", "bled_recent_debit")
+	assertIDExists(t, db, "billing_ledger_entries", "bled_transfer_active")
+
+	var balance float64
+	if err := db.Raw("SELECT balance_credits FROM user_wallets WHERE id = 'wlt_1'").Scan(&balance).Error; err != nil {
+		t.Fatal(err)
+	}
+	if balance != 42.5 {
+		t.Fatalf("wallet balance = %v, want 42.5", balance)
+	}
+}
+
 func openRetentionTestDB(t *testing.T) *gorm.DB {
 	return testdb.Open(t, testdb.Options{SchemaPrefix: "retention_test"})
 }

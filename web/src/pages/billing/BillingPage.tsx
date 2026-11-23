@@ -8,7 +8,6 @@ import { useBillingPage } from './overview/use-billing-page'
 import { BillingPriceList } from './pricing/billing-price-list'
 import { BillingDeploymentSpendList } from './records/billing-deployment-spend-list'
 import { BillingLedgerList } from './records/billing-ledger-list'
-import { BillingUsageList } from './records/billing-usage-list'
 import { BillingWalletTransactionDialog } from './wallet/billing-wallet-transaction-dialog'
 
 export function BillingPage() {
@@ -85,7 +84,6 @@ export function BillingPage() {
         tabs={[
           { label: t('billingPage.deploymentSpendTitle'), value: 'deployment-spend' },
           { label: t('billingPage.ledgerTitle'), value: 'ledger' },
-          { label: t('billingPage.usageTitle'), value: 'usage' },
           { label: t('billingPage.priceTableTitle'), value: 'prices' },
         ]}
         value={billing.activeTab}
@@ -112,6 +110,7 @@ export function BillingPage() {
         <TabsContent value="ledger">
           <BillingLedgerList
             billingDisplay={billingDisplay}
+            categoryFilter={billing.ledgerCategoryFilter}
             data={billing.ledgerQuery.data}
             error={billing.ledgerQuery.isError
               ? {
@@ -121,29 +120,15 @@ export function BillingPage() {
                 }
               : undefined}
             loading={billing.ledgerQuery.isPending}
+            locale={i18n.language}
             page={billing.ledgerPage}
             projectMap={billing.projectMap}
             projectsLoading={billing.projectsQuery.isPending}
+            typeFilter={billing.ledgerTypeFilter}
+            onCategoryFilterChange={billing.handleLedgerCategoryFilterChange}
+            onClearFilters={billing.handleClearLedgerFilters}
             onPageChange={billing.setLedgerPage}
-          />
-        </TabsContent>
-        <TabsContent value="usage">
-          <BillingUsageList
-            billingDisplay={billingDisplay}
-            data={billing.usageQuery.data}
-            error={billing.usageQuery.isError
-              ? {
-                  onRetry: () => void billing.usageQuery.refetch(),
-                  retrying: billing.usageQuery.isFetching,
-                  title: t('errors.request.failed'),
-                }
-              : undefined}
-            loading={billing.usageQuery.isPending}
-            locale={i18n.language}
-            page={billing.usagePage}
-            projectMap={billing.projectMap}
-            projectsLoading={billing.projectsQuery.isPending}
-            onPageChange={billing.setUsagePage}
+            onTypeFilterChange={billing.handleLedgerTypeFilterChange}
           />
         </TabsContent>
         <TabsContent value="prices">

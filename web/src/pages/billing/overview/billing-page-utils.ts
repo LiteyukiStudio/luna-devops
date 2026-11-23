@@ -4,8 +4,11 @@ import { formatBillingNumber } from '@/lib/billing-display'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 
 const BILLING_PROJECT_SCOPE_CACHE_KEY = 'luna.billing.projectScope'
-export const BILLING_PAGE_SIZE = 10
+export const BILLING_PAGE_SIZE = 20
 const MAX_TIMESERIES_BUCKETS = 800
+
+export type BillingLedgerTypeFilter = 'all' | 'debit' | 'credit' | 'adjustment'
+export type BillingLedgerCategoryFilter = 'all' | (typeof BILLING_CATEGORY_ORDER)[number]
 
 export type BillingPeriodPreset
   = | 'last24Hours'
@@ -84,7 +87,7 @@ export function gatewayTrafficStatusLabel(status: GatewayTrafficStatus, t: (key:
 }
 
 export function ledgerReasonLabel(item: BillingLedgerEntry, t: (key: string, options?: Record<string, unknown>) => string) {
-  if (item.reason.endsWith('.usage') && item.meter)
+  if ((item.reason.endsWith('.usage') || item.reason.endsWith('_usage')) && item.meter)
     return t(`billingPage.meters.${item.meter}`, { defaultValue: item.meter })
 
   return t(`billingPage.reasons.${item.reason}`, { defaultValue: item.reason || '-' })

@@ -2581,6 +2581,8 @@ export interface BillingLedgerEntry {
   reason: string
   meter: string
   usageRecordId: string
+  usageQuantity?: string
+  usageUnit?: string
   resourceType: string
   resourceId: string
   description: string
@@ -2642,6 +2644,7 @@ export interface BuildRunListParams extends PaginationParams {
 export interface BillingListParams extends PaginationParams {
   projectIds?: string[]
   type?: string
+  category?: string
   meter?: string
   periodStart?: string
   periodEnd?: string

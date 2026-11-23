@@ -1,4 +1,4 @@
-import type { BillingChartType, BillingFocusedBucket, BillingPeriodSelection } from './billing-page-utils'
+import type { BillingChartType, BillingFocusedBucket, BillingLedgerCategoryFilter, BillingLedgerTypeFilter, BillingPeriodSelection } from './billing-page-utils'
 import type { BillingSpendGranularity, BillingSpendTimeseriesBucket } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
@@ -32,7 +32,8 @@ export function useBillingPage() {
   const [focusedBucket, setFocusedBucket] = useState<BillingFocusedBucket | null>(null)
   const [deploymentSpendPage, setDeploymentSpendPage] = useState(1)
   const [ledgerPage, setLedgerPage] = useState(1)
-  const [usagePage, setUsagePage] = useState(1)
+  const [ledgerTypeFilter, setLedgerTypeFilter] = useState<BillingLedgerTypeFilter>('all')
+  const [ledgerCategoryFilter, setLedgerCategoryFilter] = useState<BillingLedgerCategoryFilter>('all')
   const [selectedBillingUserId, setSelectedBillingUserId] = useState<string | null>(null)
   const [transactionOpen, setTransactionOpen] = useState(false)
   const [transactionUserId, setTransactionUserId] = useState('')
@@ -106,26 +107,16 @@ export function useBillingPage() {
     }),
   })
   const ledgerQuery = useQuery({
-    queryKey: ['billing', 'ledger', selectedProjectIds, detailPeriodQuery, billingUserQuery, ledgerPage],
+    queryKey: ['billing', 'ledger', selectedProjectIds, detailPeriodQuery, billingUserQuery, ledgerTypeFilter, ledgerCategoryFilter, ledgerPage],
     queryFn: () => api.listBillingLedgerEntries({
       page: ledgerPage,
       pageSize: BILLING_PAGE_SIZE,
       ...detailPeriodQuery,
+      category: ledgerCategoryFilter === 'all' ? undefined : ledgerCategoryFilter,
       projectIds,
+      type: ledgerTypeFilter === 'all' ? undefined : ledgerTypeFilter,
       userId: billingUserQuery,
       sortBy: 'occurredAt',
-      sortOrder: 'desc',
-    }),
-  })
-  const usageQuery = useQuery({
-    queryKey: ['billing', 'usage', selectedProjectIds, detailPeriodQuery, billingUserQuery, usagePage],
-    queryFn: () => api.listBillingUsageRecords({
-      page: usagePage,
-      pageSize: BILLING_PAGE_SIZE,
-      ...detailPeriodQuery,
-      projectIds,
-      userId: billingUserQuery,
-      sortBy: 'periodStart',
       sortOrder: 'desc',
     }),
   })
@@ -154,7 +145,22 @@ export function useBillingPage() {
   function resetBillingPages() {
     setDeploymentSpendPage(1)
     setLedgerPage(1)
-    setUsagePage(1)
+  }
+
+  function handleLedgerTypeFilterChange(nextType: BillingLedgerTypeFilter) {
+    setLedgerTypeFilter(nextType)
+    setLedgerPage(1)
+  }
+
+  function handleLedgerCategoryFilterChange(nextCategory: BillingLedgerCategoryFilter) {
+    setLedgerCategoryFilter(nextCategory)
+    setLedgerPage(1)
+  }
+
+  function handleClearLedgerFilters() {
+    setLedgerTypeFilter('all')
+    setLedgerCategoryFilter('all')
+    setLedgerPage(1)
   }
 
   function handleProjectFilterChange(projectIds: string[]) {
@@ -219,12 +225,17 @@ export function useBillingPage() {
     gatewayTrafficStatusQuery,
     handleBillingUserChange,
     handleClearFocusedBucket,
+    handleClearLedgerFilters,
     handleGranularityChange,
+    handleLedgerCategoryFilterChange,
+    handleLedgerTypeFilterChange,
     handlePeriodChange,
     handleProjectFilterChange,
     handleSelectBucket,
+    ledgerCategoryFilter,
     ledgerPage,
     ledgerQuery,
+    ledgerTypeFilter,
     projectMap,
     projectsQuery,
     scopedSummaryQuery,
@@ -239,7 +250,6 @@ export function useBillingPage() {
     setTransactionOpen,
     setTransactionType,
     setTransactionUserId,
-    setUsagePage,
     spendTimeseriesQuery,
     timeZone,
     transactionAmount,
@@ -247,8 +257,6 @@ export function useBillingPage() {
     transactionOpen,
     transactionType,
     transactionUserId,
-    usagePage,
-    usageQuery,
     userItems,
     usersQuery,
     visibleProjectItems,

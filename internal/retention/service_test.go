@@ -101,6 +101,32 @@ func TestExpiredAuthQueriesUseExpiry(t *testing.T) {
 	}
 }
 
+func TestRuntimeObservationAndBillingRetentionSafetyGuards(t *testing.T) {
+	obsPlan := plans[DatasetRuntimeObservations]
+	if len(obsPlan.queries) != 1 || !obsPlan.queries[0].requireExpired {
+		t.Fatalf("runtime observation plan = %#v, want 1 requireExpired query", obsPlan)
+	}
+	for _, fragment := range []string{
+		"period_start >= ? AND period_start < ?",
+		"period_start <= (?::timestamptz - interval '24 hours')",
+	} {
+		if !strings.Contains(obsPlan.queries[0].countSQL, fragment) || !strings.Contains(obsPlan.queries[0].deleteSQL, fragment) {
+			t.Fatalf("runtime observation query missing %q", fragment)
+		}
+	}
+
+	billingPlan := plans[DatasetBillingRecords]
+	if len(billingPlan.queries) != 2 || !billingPlan.queries[0].requireExpired || !billingPlan.queries[1].requireExpired {
+		t.Fatalf("billing records plan = %#v, want 2 requireExpired queries", billingPlan)
+	}
+	if !strings.Contains(billingPlan.queries[0].deleteSQL, "ledger.type = 'debit'") {
+		t.Fatal("billing ledger cleanup must only delete debit entries and preserve credit/adjustment entries")
+	}
+	if !strings.Contains(billingPlan.queries[1].deleteSQL, "usage.status = 'settled'") || !strings.Contains(billingPlan.queries[1].deleteSQL, "volume_transfers") {
+		t.Fatal("billing usage cleanup must enforce settled status and volume_transfers idempotency guard")
+	}
+}
+
 var (
 	startOfTestRange = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	endOfTestRange   = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)

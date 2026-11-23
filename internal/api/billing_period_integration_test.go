@@ -336,4 +336,50 @@ func TestBillingSpendTimeseriesZeroFillsAndMatchesSummary(t *testing.T) {
 	if tooWide.Code != http.StatusBadRequest {
 		t.Fatalf("too wide hourly status = %d, want 400", tooWide.Code)
 	}
+
+	// Unified ledger entries carry joined usageQuantity/usageUnit and support category filtering
+	aiLedgerRec := fixture.get(t, fixture.user, "/api/v1/billing/ledger"+baseQuery+"&category=ai", fixture.handlers.domains.billing.ListBillingLedgerEntries)
+	if aiLedgerRec.Code != http.StatusOK {
+		t.Fatalf("ai category ledger status = %d body = %s", aiLedgerRec.Code, aiLedgerRec.Body.String())
+	}
+	var aiLedgerPage struct {
+		Total int64 `json:"total"`
+		Items []struct {
+			ID            string `json:"id"`
+			UsageQuantity string `json:"usageQuantity"`
+			UsageUnit     string `json:"usageUnit"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(aiLedgerRec.Body.Bytes(), &aiLedgerPage); err != nil {
+		t.Fatalf("decode ai ledger page: %v", err)
+	}
+	if aiLedgerPage.Total != 1 || len(aiLedgerPage.Items) != 1 || aiLedgerPage.Items[0].ID != "bled_ai_1" ||
+		aiLedgerPage.Items[0].UsageQuantity != "1" || aiLedgerPage.Items[0].UsageUnit != "1M tokens" {
+		t.Fatalf("ai ledger page = %+v", aiLedgerPage)
+	}
+
+	creditLedgerRec := fixture.get(t, fixture.user, "/api/v1/billing/ledger"+baseQuery+"&category=adjustment&type=credit", fixture.handlers.domains.billing.ListBillingLedgerEntries)
+	if creditLedgerRec.Code != http.StatusOK {
+		t.Fatalf("credit adjustment ledger status = %d body = %s", creditLedgerRec.Code, creditLedgerRec.Body.String())
+	}
+	var creditLedgerPage struct {
+		Total int64 `json:"total"`
+		Items []struct {
+			ID            string `json:"id"`
+			UsageQuantity string `json:"usageQuantity"`
+			UsageUnit     string `json:"usageUnit"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(creditLedgerRec.Body.Bytes(), &creditLedgerPage); err != nil {
+		t.Fatalf("decode credit ledger page: %v", err)
+	}
+	if creditLedgerPage.Total != 1 || len(creditLedgerPage.Items) != 1 || creditLedgerPage.Items[0].ID != "bled_recharge_1" ||
+		creditLedgerPage.Items[0].UsageQuantity != "" || creditLedgerPage.Items[0].UsageUnit != "" {
+		t.Fatalf("credit ledger page = %+v", creditLedgerPage)
+	}
+
+	invalidCategoryRec := fixture.get(t, fixture.user, "/api/v1/billing/ledger"+baseQuery+"&category=bogus", fixture.handlers.domains.billing.ListBillingLedgerEntries)
+	if invalidCategoryRec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid category status = %d, want 400", invalidCategoryRec.Code)
+	}
 }

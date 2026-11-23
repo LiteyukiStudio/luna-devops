@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   listBillingDeploymentSpend: vi.fn(),
   listBillingLedgerEntries: vi.fn(),
   listBillingRateRules: vi.fn(),
-  listBillingUsageRecords: vi.fn(),
   listProjectsPage: vi.fn(),
   listUsers: vi.fn(),
 }))
@@ -43,7 +42,6 @@ vi.mock('@/api', async (importOriginal) => {
       listBillingDeploymentSpend: mocks.listBillingDeploymentSpend,
       listBillingLedgerEntries: mocks.listBillingLedgerEntries,
       listBillingRateRules: mocks.listBillingRateRules,
-      listBillingUsageRecords: mocks.listBillingUsageRecords,
       listProjectsPage: mocks.listProjectsPage,
       listUsers: mocks.listUsers,
     },
@@ -54,7 +52,7 @@ function emptyPage() {
   return {
     items: [],
     page: 1,
-    pageSize: 10,
+    pageSize: 20,
     sortBy: 'amountCredits',
     sortOrder: 'desc' as const,
     total: 0,
@@ -128,7 +126,6 @@ describe('billing page spend chart integration', () => {
     })
     mocks.listBillingDeploymentSpend.mockResolvedValue(emptyPage())
     mocks.listBillingLedgerEntries.mockResolvedValue(emptyPage())
-    mocks.listBillingUsageRecords.mockResolvedValue(emptyPage())
   })
 
   it('switches granularity and chart view and drills down into a focused time bucket', async () => {
@@ -182,5 +179,103 @@ describe('billing page spend chart integration', () => {
     await user.keyboard('{ArrowRight}{ArrowRight}{Enter}')
     expect(screen.queryByText(/Filtered to:/i)).toBeNull()
     expect(screen.getByRole('tab', { name: 'Price table' })).toHaveAttribute('data-state', 'active')
+  })
+
+  it('displays inline usage quantities in unified billing ledger and filters by type and category', async () => {
+    const user = userEvent.setup()
+    mocks.listBillingLedgerEntries.mockImplementation((params) => {
+      if (params?.category === 'gateway')
+        return Promise.resolve(emptyPage())
+      return Promise.resolve({
+        items: [
+          {
+            amountCredits: '-6.25',
+            applicationId: '',
+            applicationIdentifier: '',
+            applicationName: '',
+            balanceAfterCredits: '93.75',
+            createdAt: '2026-11-23T01:00:00Z',
+            createdBy: 'system',
+            description: 'AI model token usage',
+            id: 'bled_ai_1',
+            meter: 'ai.completion_tokens_1m',
+            occurredAt: '2026-11-23T00:59:00Z',
+            projectId: '',
+            reason: 'ai.usage',
+            resourceId: 'aiuse_1',
+            resourceType: 'ai_model_request',
+            type: 'debit',
+            usageQuantity: '1.5',
+            usageRecordId: 'busg_ai_1',
+            usageUnit: 'million_tokens',
+            userId: 'usr_1',
+          },
+          {
+            amountCredits: '100',
+            applicationId: '',
+            applicationIdentifier: '',
+            applicationName: '',
+            balanceAfterCredits: '100',
+            createdAt: '2026-11-22T00:00:00Z',
+            createdBy: 'usr_admin',
+            description: 'Initial recharge',
+            id: 'bled_credit_1',
+            meter: '',
+            occurredAt: '2026-11-22T00:00:00Z',
+            projectId: '',
+            reason: 'billing.recharge',
+            resourceId: 'usr_1',
+            resourceType: 'user_wallet',
+            type: 'credit',
+            usageRecordId: '',
+            userId: 'usr_1',
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        sortBy: 'occurredAt',
+        sortOrder: 'desc' as const,
+        total: 2,
+        totalPages: 1,
+      })
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <BillingPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByRole('tab', { name: 'Billing ledger' })).toBeVisible()
+    expect(screen.queryByRole('tab', { name: 'Usage records' })).toBeNull()
+
+    await user.click(screen.getByRole('tab', { name: 'Billing ledger' }))
+    expect((await screen.findAllByText('1.5 1M tokens')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('AI completion tokens').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('combobox', { name: 'Filter by category' }))
+    await user.click(await screen.findByRole('option', { name: 'Gateway' }))
+    await waitFor(() => {
+      expect(mocks.listBillingLedgerEntries).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'gateway', page: 1, pageSize: 20 }),
+      )
+    })
+    expect(await screen.findByText('No matching billing ledger entries')).toBeVisible()
+
+    // Clearing filters from the filtered empty state restores the full ledger list
+    const clearButtons = screen.getAllByRole('button', { name: 'Clear filters' })
+    await user.click(clearButtons[0])
+    await waitFor(() => {
+      expect(mocks.listBillingLedgerEntries).toHaveBeenLastCalledWith(
+        expect.objectContaining({ category: undefined, page: 1, type: undefined }),
+      )
+    })
+    expect((await screen.findAllByText('1.5 1M tokens')).length).toBeGreaterThan(0)
   })
 })

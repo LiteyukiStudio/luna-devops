@@ -1035,6 +1035,8 @@ func queryBillingLedger(
 			ledger.reason,
 			ledger.meter,
 			ledger.usage_record_id,
+			usage.quantity AS usage_quantity,
+			COALESCE(usage.unit, '') AS usage_unit,
 			ledger.resource_type,
 			ledger.resource_id,
 			ledger.description,

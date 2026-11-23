@@ -10805,6 +10805,13 @@ paths:
           required: false
           schema:
             type: string
+        - name: category
+          in: query
+          required: false
+          description: Optional billing category filter (`build`, `runtime`, `storage`, `gateway`, `ai`, `adjustment`, `other`).
+          schema:
+            type: string
+            enum: [build, runtime, storage, gateway, ai, adjustment, other]
         - name: periodStart
           in: query
           required: false
@@ -15525,7 +15532,7 @@ components:
       properties:
         key:
           type: string
-          enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data]
+          enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data, runtime_observations, billing_records]
         configKey: { type: string }
         defaultDays: { type: integer, minimum: 0, maximum: 3650 }
       required: [key, configKey, defaultDays]
@@ -15545,7 +15552,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data]
+            enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data, runtime_observations, billing_records]
         startAt: { type: string, format: date-time }
         endAt: { type: string, format: date-time }
       required: [datasets, startAt, endAt]

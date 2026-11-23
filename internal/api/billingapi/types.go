@@ -17,23 +17,25 @@ type updateBillingRateRuleInput struct {
 }
 
 type billingLedgerEntryItem struct {
-	ID                    string          `json:"id"`
-	UserID                string          `json:"userId"`
-	ProjectID             string          `json:"projectId"`
-	ApplicationID         string          `json:"applicationId"`
-	ApplicationName       string          `json:"applicationName"`
-	ApplicationIdentifier string          `json:"applicationIdentifier"`
-	Type                  string          `json:"type"`
-	AmountCredits         decimal.Decimal `json:"amountCredits"`
-	BalanceAfterCredits   decimal.Decimal `json:"balanceAfterCredits"`
-	Reason                string          `json:"reason"`
-	Meter                 string          `json:"meter"`
-	UsageRecordID         string          `json:"usageRecordId"`
-	ResourceType          string          `json:"resourceType"`
-	ResourceID            string          `json:"resourceId"`
-	Description           string          `json:"description"`
-	CreatedBy             string          `json:"createdBy"`
-	CreatedAt             time.Time       `json:"createdAt"`
+	ID                    string           `json:"id"`
+	UserID                string           `json:"userId"`
+	ProjectID             string           `json:"projectId"`
+	ApplicationID         string           `json:"applicationId"`
+	ApplicationName       string           `json:"applicationName"`
+	ApplicationIdentifier string           `json:"applicationIdentifier"`
+	Type                  string           `json:"type"`
+	AmountCredits         decimal.Decimal  `json:"amountCredits"`
+	BalanceAfterCredits   decimal.Decimal  `json:"balanceAfterCredits"`
+	Reason                string           `json:"reason"`
+	Meter                 string           `json:"meter"`
+	UsageRecordID         string           `json:"usageRecordId"`
+	UsageQuantity         *decimal.Decimal `json:"usageQuantity,omitempty"`
+	UsageUnit             string           `json:"usageUnit,omitempty"`
+	ResourceType          string           `json:"resourceType"`
+	ResourceID            string           `json:"resourceId"`
+	Description           string           `json:"description"`
+	CreatedBy             string           `json:"createdBy"`
+	CreatedAt             time.Time        `json:"createdAt"`
 	// OccurredAt is the billing occurrence time used by period filters.
 	OccurredAt time.Time `json:"occurredAt"`
 }

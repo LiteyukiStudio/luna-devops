@@ -98,6 +98,8 @@ export function billingQuery(params: BillingListParams) {
   }
   if (params.type)
     search.set('type', params.type)
+  if (params.category)
+    search.set('category', params.category)
   if (params.meter)
     search.set('meter', params.meter)
   if (params.periodStart)

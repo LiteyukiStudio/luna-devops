@@ -224,6 +224,36 @@ func billingCategory(reason string, meter string) string {
 	}
 }
 
+// LedgerCategoryWhereSQL returns a parameterized SQL predicate matching
+// billingCategory(ledger.reason, ledger.meter) for /api/v1/billing/ledger.
+func LedgerCategoryWhereSQL(category string) (string, []any, bool) {
+	const expr = "COALESCE(NULLIF(BTRIM(ledger.reason), ''), NULLIF(BTRIM(ledger.meter), ''), '')"
+	switch strings.TrimSpace(category) {
+	case "build":
+		return expr + " LIKE ?", []any{"build.%"}, true
+	case "runtime":
+		return expr + " LIKE ?", []any{"runtime.%"}, true
+	case "storage":
+		return expr + " LIKE ?", []any{"storage.%"}, true
+	case "gateway":
+		return expr + " LIKE ?", []any{"gateway.%"}, true
+	case "ai":
+		return expr + " LIKE ?", []any{"ai.%"}, true
+	case "adjustment":
+		return expr + " LIKE ?", []any{"billing.%"}, true
+	case "other":
+		return "NOT (" +
+			expr + " LIKE ? OR " +
+			expr + " LIKE ? OR " +
+			expr + " LIKE ? OR " +
+			expr + " LIKE ? OR " +
+			expr + " LIKE ? OR " +
+			expr + " LIKE ?)", []any{"build.%", "runtime.%", "storage.%", "gateway.%", "ai.%", "billing.%"}, true
+	default:
+		return "", nil, false
+	}
+}
+
 func balanceStatus(available decimal.Decimal, lowBalanceLimit decimal.Decimal) string {
 	if available.IsNegative() || available.IsZero() {
 		return "insufficient"

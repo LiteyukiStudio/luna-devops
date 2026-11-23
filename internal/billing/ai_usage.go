@@ -148,12 +148,20 @@ func aiUsageRecords(input AIModelUsageInput, periodStart time.Time, resourceID s
 		"reasoningCompletionTokens": input.ReasoningCompletionTokens,
 	})
 	now := time.Now()
-	return []model.BillingUsageRecord{
-		newAIUsageRecord(MeterAIPromptTokens, tokenBillingQuantity(normalPrompt), input.Pricing.InputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now),
-		newAIUsageRecord(MeterAICompletionTokens, tokenBillingQuantity(input.CompletionTokens), input.Pricing.OutputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now),
-		newAIUsageRecord(MeterAICachedPromptTokens, tokenBillingQuantity(input.CachedPromptTokens), input.Pricing.CachedInputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now),
-		newAIUsageRecord(MeterAICacheWritePromptTokens, tokenBillingQuantity(input.CacheWritePromptTokens), input.Pricing.CachedInputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now),
+	records := make([]model.BillingUsageRecord, 0, 4)
+	if normalPrompt > 0 {
+		records = append(records, newAIUsageRecord(MeterAIPromptTokens, tokenBillingQuantity(normalPrompt), input.Pricing.InputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now))
 	}
+	if input.CompletionTokens > 0 {
+		records = append(records, newAIUsageRecord(MeterAICompletionTokens, tokenBillingQuantity(input.CompletionTokens), input.Pricing.OutputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now))
+	}
+	if input.CachedPromptTokens > 0 {
+		records = append(records, newAIUsageRecord(MeterAICachedPromptTokens, tokenBillingQuantity(input.CachedPromptTokens), input.Pricing.CachedInputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now))
+	}
+	if input.CacheWritePromptTokens > 0 {
+		records = append(records, newAIUsageRecord(MeterAICacheWritePromptTokens, tokenBillingQuantity(input.CacheWritePromptTokens), input.Pricing.CachedInputCreditsPerMillion, input, resourceID, periodStart, periodEnd, metadata, now))
+	}
+	return records
 }
 
 func newAIUsageRecord(meter string, quantity, rate decimal.Decimal, input AIModelUsageInput, resourceID string, periodStart, periodEnd time.Time, metadata []byte, now time.Time) model.BillingUsageRecord {

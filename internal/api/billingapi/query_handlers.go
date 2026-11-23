@@ -31,6 +31,14 @@ func (h *Handler) ListBillingLedgerEntries(ctx *gin.Context) {
 	if entryType := strings.TrimSpace(ctx.Query("type")); entryType != "" {
 		query = query.Where("ledger.type = ?", entryType)
 	}
+	if category := strings.TrimSpace(ctx.Query("category")); category != "" {
+		categorySQL, categoryArgs, valid := billing.LedgerCategoryWhereSQL(category)
+		if !valid {
+			writeErrorCode(ctx, http.StatusBadRequest, "billing.category_invalid", "invalid billing category")
+			return
+		}
+		query = query.Where(categorySQL, categoryArgs...)
+	}
 	query = applyBillingOccurredPeriod(query, billing.OccurredAtSQL, period)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -54,6 +62,8 @@ func (h *Handler) ListBillingLedgerEntries(ctx *gin.Context) {
 			ledger.reason,
 			ledger.meter,
 			ledger.usage_record_id,
+			usage.quantity AS usage_quantity,
+			COALESCE(usage.unit, '') AS usage_unit,
 			ledger.resource_type,
 			ledger.resource_id,
 			ledger.description,

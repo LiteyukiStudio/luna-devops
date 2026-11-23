@@ -83,8 +83,8 @@ func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	if err := db.Model(&model.BillingLedgerEntry{}).Count(&ledgerCount).Error; err != nil {
 		t.Fatalf("count ledger entries: %v", err)
 	}
-	if usageCount != 4 || ledgerCount != 4 {
-		t.Fatalf("usage count = %d, ledger count = %d", usageCount, ledgerCount)
+	if usageCount != 2 || ledgerCount != 2 {
+		t.Fatalf("usage count = %d, ledger count = %d, want 2 non-zero meters", usageCount, ledgerCount)
 	}
 	// AI 费用只归属个人，不关联项目空间：所有记录的 project_id 必须为空
 	var nonEmptyProject int64
@@ -107,7 +107,7 @@ func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	if err := db.Model(&model.BillingUsageRecord{}).Count(&usageCount).Error; err != nil {
 		t.Fatalf("recount usage records: %v", err)
 	}
-	if usageCount != 4 {
+	if usageCount != 2 {
 		t.Fatalf("usage count after replay = %d", usageCount)
 	}
 }

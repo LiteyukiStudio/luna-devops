@@ -44,4 +44,4 @@ Import and export do not require S3 or another object store. The runtime cluster
 
 ## Platform history retention
 
-**Global Settings → Data Retention** cleans expired events, notifications, task history, and logs. It **does not delete project volumes, billing ledgers, or running-task data**. Preview the matched records before irreversible manual cleanup, and export logs to an external system when long-term retention is required.
+**Global Settings → Data Retention** cleans expired events, notifications, build/release/Hook logs, runtime resource observations, and historical billing details according to policy. It **does not delete project volumes, wallet balances, recharge or adjustment ledger entries, or running-task data**, and automatically preserves the recent 24-hour settlement window. Preview the matched records before irreversible manual cleanup, and export logs or historical details to an external system when long-term retention is required.

@@ -7,6 +7,8 @@ const (
 	DatasetReleaseLogs            = "release_logs"
 	DatasetHookRunLogs            = "hook_run_logs"
 	DatasetExpiredAuthData        = "expired_auth_data"
+	DatasetRuntimeObservations    = "runtime_observations"
+	DatasetBillingRecords         = "billing_records"
 
 	MinRetentionDays = 0
 	MaxRetentionDays = 3650
@@ -28,6 +30,8 @@ var catalog = []Dataset{
 	{Key: DatasetReleaseLogs, DefaultDays: 90, ConfigKey: "retention.releaseLogsDays"},
 	{Key: DatasetHookRunLogs, DefaultDays: 90, ConfigKey: "retention.hookRunLogsDays"},
 	{Key: DatasetExpiredAuthData, DefaultDays: 30, ConfigKey: "retention.expiredAuthDataDays"},
+	{Key: DatasetRuntimeObservations, DefaultDays: 7, ConfigKey: "retention.runtimeObservationsDays"},
+	{Key: DatasetBillingRecords, DefaultDays: 90, ConfigKey: "retention.billingRecordsDays"},
 }
 
 // Catalog returns a copy so callers cannot alter the retention whitelist.

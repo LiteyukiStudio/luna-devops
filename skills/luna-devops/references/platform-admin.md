@@ -37,10 +37,10 @@ description: 面向平台管理员（role=admin，未绑定单项目的全局上
 
 ## 3. SOP：数据保留两阶段安全清理（强制 Preview）
 
-历史事件、投递记录与构建/发布/Hook 日志的物理清理不可逆，必须严格执行以下低自由度序列：
+历史事件、投递记录、构建/发布/Hook 日志、运行资源采样记录与历史扣费明细的物理清理不可逆，必须严格执行以下低自由度序列：
 
 - [ ] **Step 1 — 目录与范围预检（`admin_preview_data_retention`，`L0`）**：
-  - 先调用 `admin_preview_data_retention` 查看支持的 6 类数据集目录（`platform_events | notification_deliveries | build_logs | release_logs | hook_run_logs | expired_auth_data`）及拟清理时间窗口（`startAt` ～ `endAt`，RFC3339）内的预计命中行数与时间水位。
+  - 先调用 `admin_preview_data_retention` 查看支持的 8 类数据集目录（`platform_events | notification_deliveries | build_logs | release_logs | hook_run_logs | expired_auth_data | runtime_observations | billing_records`）及拟清理时间窗口（`startAt` ～ `endAt`，RFC3339）内的预计命中行数与时间水位。
 - [ ] **Step 2 — 影响面确认（Gate）**：
   - 将命中的数据集名称、起止时间窗口与预计删除记录条数清晰呈现给管理员，若命中条数为 `0` 则直接结束无需执行清理。
 - [ ] **Step 3 — 预检加锁并执行清理（`admin_execute_data_retention_cleanup`，`L2`）**：

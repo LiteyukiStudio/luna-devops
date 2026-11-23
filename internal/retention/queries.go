@@ -202,4 +202,112 @@ WHERE target.id = victims.id`,
 			},
 		},
 	},
+	DatasetRuntimeObservations: {
+		dataset: catalog[6],
+		queries: []querySpec{{
+			requireExpired: true,
+			countSQL: `SELECT COUNT(*) AS count
+FROM runtime_observations
+WHERE period_start >= ? AND period_start < ?
+  AND period_start <= (?::timestamptz - interval '24 hours')`,
+			deleteSQL: `WITH victims AS (
+    SELECT id
+    FROM runtime_observations
+    WHERE period_start >= ? AND period_start < ?
+      AND period_start <= (?::timestamptz - interval '24 hours')
+    ORDER BY period_start, id
+    LIMIT 1000
+)
+DELETE FROM runtime_observations AS target
+USING victims
+WHERE target.id = victims.id`,
+		}},
+	},
+	DatasetBillingRecords: {
+		dataset: catalog[7],
+		queries: []querySpec{
+			{
+				requireExpired: true,
+				countSQL: `SELECT COUNT(*) AS count
+FROM billing_ledger_entries AS ledger
+LEFT JOIN billing_usage_records AS usage ON usage.id = ledger.usage_record_id
+WHERE ledger.type = 'debit'
+  AND (ledger.usage_record_id = '' OR usage.id IS NULL OR usage.status = 'settled')
+  AND COALESCE(usage.period_start, ledger.created_at) >= ?
+  AND COALESCE(usage.period_start, ledger.created_at) < ?
+  AND COALESCE(usage.period_start, ledger.created_at) <= (?::timestamptz - interval '24 hours')
+  AND NOT (
+      COALESCE(usage.resource_type, ledger.resource_type) = 'volume_transfer'
+      AND EXISTS (
+          SELECT 1 FROM volume_transfers AS vt
+          WHERE vt.id = COALESCE(usage.resource_id, ledger.resource_id)
+      )
+  )`,
+				deleteSQL: `WITH victims AS (
+    SELECT ledger.id
+    FROM billing_ledger_entries AS ledger
+    LEFT JOIN billing_usage_records AS usage ON usage.id = ledger.usage_record_id
+    WHERE ledger.type = 'debit'
+      AND (ledger.usage_record_id = '' OR usage.id IS NULL OR usage.status = 'settled')
+      AND COALESCE(usage.period_start, ledger.created_at) >= ?
+      AND COALESCE(usage.period_start, ledger.created_at) < ?
+      AND COALESCE(usage.period_start, ledger.created_at) <= (?::timestamptz - interval '24 hours')
+      AND NOT (
+          COALESCE(usage.resource_type, ledger.resource_type) = 'volume_transfer'
+          AND EXISTS (
+              SELECT 1 FROM volume_transfers AS vt
+              WHERE vt.id = COALESCE(usage.resource_id, ledger.resource_id)
+          )
+      )
+    ORDER BY ledger.created_at, ledger.id
+    LIMIT 1000
+)
+DELETE FROM billing_ledger_entries AS target
+USING victims
+WHERE target.id = victims.id`,
+			},
+			{
+				requireExpired: true,
+				countSQL: `SELECT COUNT(*) AS count
+FROM billing_usage_records AS usage
+WHERE usage.status = 'settled'
+  AND usage.period_start >= ? AND usage.period_start < ?
+  AND usage.period_start <= (?::timestamptz - interval '24 hours')
+  AND NOT EXISTS (
+      SELECT 1 FROM billing_ledger_entries AS l
+      WHERE l.usage_record_id = usage.id AND l.type <> 'debit'
+  )
+  AND NOT (
+      usage.resource_type = 'volume_transfer'
+      AND EXISTS (
+          SELECT 1 FROM volume_transfers AS vt
+          WHERE vt.id = usage.resource_id
+      )
+  )`,
+				deleteSQL: `WITH victims AS (
+    SELECT usage.id
+    FROM billing_usage_records AS usage
+    WHERE usage.status = 'settled'
+      AND usage.period_start >= ? AND usage.period_start < ?
+      AND usage.period_start <= (?::timestamptz - interval '24 hours')
+      AND NOT EXISTS (
+          SELECT 1 FROM billing_ledger_entries AS l
+          WHERE l.usage_record_id = usage.id
+      )
+      AND NOT (
+          usage.resource_type = 'volume_transfer'
+          AND EXISTS (
+              SELECT 1 FROM volume_transfers AS vt
+              WHERE vt.id = usage.resource_id
+          )
+      )
+    ORDER BY usage.period_start, usage.id
+    LIMIT 1000
+)
+DELETE FROM billing_usage_records AS target
+USING victims
+WHERE target.id = victims.id`,
+			},
+		},
+	},
 }
