@@ -310,7 +310,7 @@ const appTemplatesPage = {
       description: '开源无代码数据库界面，适合小型内部工具和数据应用。',
     },
     'wiki-js': {
-      description: '现代自托管 Wiki，适合团队文档和知识库。',
+      description: '现代自托管 Wiki，适合团队文档和知识库，需要连接已有 PostgreSQL 数据库。',
     },
     'wordpress': {
       description: '常用自托管 CMS 和博客平台，需要连接已有 MySQL 兼容数据库。',

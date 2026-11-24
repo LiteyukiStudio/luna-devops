@@ -310,7 +310,7 @@ const appTemplatesPage = {
       description: 'Open-source no-code database interface for small internal tools and data apps.',
     },
     'wiki-js': {
-      description: 'Modern self-hosted wiki for team documentation and knowledge bases.',
+      description: 'Modern self-hosted wiki for team documentation and knowledge bases; connect it to an existing PostgreSQL database.',
     },
     'wordpress': {
       description: 'Popular self-hosted CMS and blog platform; connect it to an existing MySQL-compatible database.',

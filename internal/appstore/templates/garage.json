@@ -8,8 +8,8 @@
   "officialWebsite": "https://garagehq.deuxfleurs.fr/",
   "officialRepository": "https://git.deuxfleurs.fr/Deuxfleurs/garage",
   "popularityWeight": 58,
-  "image": "dxflrs/garage:v1.1.0",
-  "version": "v1.1.0",
+  "image": "dxflrs/garage:v2.5.0",
+  "version": "v2.5.0",
   "servicePort": 3900,
   "defaultReplicas": 1,
   "defaultCPU": "1",
@@ -24,7 +24,7 @@
   "secretFiles": [
     {
       "path": "/etc/garage.toml",
-      "content": "metadata_dir = \"/var/lib/garage/meta\"\ndata_dir = \"/var/lib/garage/data\"\ndb_engine = \"sqlite\"\nreplication_mode = \"none\"\nrpc_bind_addr = \"[::]:3901\"\nrpc_secret = \"{{rpcSecret}}\"\n\n[s3_api]\ns3_region = \"garage\"\napi_bind_addr = \"[::]:3900\"\nroot_domain = \".s3.garage.local\"\n\n[admin]\napi_bind_addr = \"[::]:3903\"\nadmin_token = \"{{adminToken}}\"\nmetrics_token = \"{{metricsToken}}\"\n"
+      "content": "metadata_dir = \"/var/lib/garage/meta\"\ndata_dir = \"/var/lib/garage/data\"\ndb_engine = \"sqlite\"\nreplication_factor = 1\nrpc_bind_addr = \"[::]:3901\"\nrpc_public_addr = \"127.0.0.1:3901\"\nrpc_secret = \"{{rpcSecret}}\"\n\n[s3_api]\ns3_region = \"garage\"\napi_bind_addr = \"[::]:3900\"\nroot_domain = \".s3.garage.local\"\n\n[admin]\napi_bind_addr = \"[::]:3903\"\nadmin_token = \"{{adminToken}}\"\nmetrics_token = \"{{metricsToken}}\"\n"
     }
   ],
   "values": [

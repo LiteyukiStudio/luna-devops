@@ -388,3 +388,40 @@ func TestValidatePlatformTemplateAndRoundTripSpec(t *testing.T) {
 		}
 	}
 }
+
+func TestAllBuiltinApplicationTemplatesPassPlatformValidationAndRenderCleanly(t *testing.T) {
+	templates, err := Catalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tpl := range templates {
+		if tpl.Kind == "system_component" {
+			continue
+		}
+		bundle := BundleFromTemplate(tpl, true)
+		bundle.Slug = "check-" + tpl.Slug
+		if _, err := ValidatePlatformTemplate(bundle.ToTemplate("ptpl_" + tpl.ID)); err != nil {
+			t.Fatalf("builtin template %s failed platform validation: %v", tpl.ID, err)
+		}
+		inputs := map[string]string{}
+		for _, val := range tpl.Values {
+			if val.Required && strings.TrimSpace(val.Default) == "" && !val.AutoGenerate {
+				inputs[val.Key] = "test-required-value-12345"
+			}
+		}
+		resolved, err := ResolveValues(tpl, inputs)
+		if err != nil {
+			t.Fatalf("builtin template %s failed ResolveValues: %v", tpl.ID, err)
+		}
+		if !tpl.IsMultiComponent() {
+			_ = RenderWorkload(tpl.Workload, resolved)
+		} else {
+			for _, comp := range tpl.Components {
+				resolved[ComponentHostValueKey(comp.Key)] = "svc-" + comp.Key
+			}
+			for _, comp := range tpl.Components {
+				_ = RenderWorkload(comp.Workload, resolved)
+			}
+		}
+	}
+}

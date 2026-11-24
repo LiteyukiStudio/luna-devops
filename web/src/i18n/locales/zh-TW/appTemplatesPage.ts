@@ -310,7 +310,7 @@ const appTemplatesPage = {
       description: '開源無程式碼資料庫介面，適合小型內部工具和資料應用。',
     },
     'wiki-js': {
-      description: '現代自託管 Wiki，適合團隊文件和知識庫。',
+      description: '現代自託管 Wiki，適合團隊文件和知識庫，需要連線已有 PostgreSQL 資料庫。',
     },
     'wordpress': {
       description: '常用自託管 CMS 和部落格平臺，需要連線已有 MySQL 相容資料庫。',

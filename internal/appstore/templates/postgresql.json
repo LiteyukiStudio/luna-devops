@@ -9,8 +9,8 @@
   "officialRepository": "https://github.com/postgres/postgres",
   "popularityWeight": 100,
   "featured": true,
-  "image": "postgres:16-alpine",
-  "version": "16-alpine",
+  "image": "postgres:19-alpine",
+  "version": "19-alpine",
   "servicePort": 5432,
   "defaultReplicas": 1,
   "defaultCPU": "1",
@@ -19,7 +19,7 @@
     {
       "logicalName": "data",
       "sourceType": "projectVolume",
-      "mountPath": "/var/lib/postgresql/data"
+      "mountPath": "/var/lib/postgresql"
     }
   ],
   "env": {

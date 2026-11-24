@@ -2,28 +2,65 @@
   "id": "wiki-js",
   "slug": "wiki-js",
   "name": "Wiki.js",
-  "description": "Modern self-hosted wiki for team documentation and knowledge bases.",
+  "description": "Modern self-hosted wiki for team documentation and knowledge bases; connect it to an existing PostgreSQL database.",
   "category": "collaboration",
   "icon": "/app-templates/icons/fallback.svg",
   "officialWebsite": "https://js.wiki/",
   "officialRepository": "https://github.com/requarks/wiki",
   "popularityWeight": 69,
-  "image": "requarks/wiki:2",
-  "version": "2",
+  "image": "requarks/wiki:3",
+  "version": "3",
   "servicePort": 3000,
   "defaultReplicas": 1,
   "defaultCPU": "500m",
   "defaultMemory": "512Mi",
+  "fsGroup": "1000",
   "dataVolumes": [
     {
-      "logicalName": "data",
+      "logicalName": "repo",
       "sourceType": "projectVolume",
-      "mountPath": "/wiki/data"
+      "mountPath": "/wiki/data/repo"
+    },
+    {
+      "logicalName": "content",
+      "sourceType": "emptyDir",
+      "mountPath": "/wiki/data/content"
     }
   ],
   "env": {
-    "DB_TYPE": "sqlite",
-    "DB_FILEPATH": "/wiki/data/wiki.db"
+    "DB_HOST": "{{dbHost}}",
+    "DB_PORT": "5432",
+    "DB_NAME": "{{database}}",
+    "DB_USER": "{{username}}",
+    "DB_SSL": "false"
   },
-  "values": []
+  "secretEnv": {
+    "DB_PASS": "{{password}}"
+  },
+  "values": [
+    {
+      "key": "dbHost",
+      "label": "Database host",
+      "default": "postgres",
+      "required": true
+    },
+    {
+      "key": "database",
+      "label": "Database",
+      "default": "wiki",
+      "required": true
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "default": "wiki",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "secret": true,
+      "required": true
+    }
+  ]
 }

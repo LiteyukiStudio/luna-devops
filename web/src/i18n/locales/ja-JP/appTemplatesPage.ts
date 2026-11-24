@@ -310,7 +310,7 @@ const appTemplatesPage = {
       description: 'オープンソースノーコードデータベースインターフェース。小規模内部ツールとデータアプリに適しています。',
     },
     'wiki-js': {
-      description: 'モダンなセルフホスト Wiki。チームドキュメントとナレッジベースに適しています。',
+      description: 'モダンなセルフホスト Wiki。チームドキュメントとナレッジベースに適しており、既存の PostgreSQL データベースへの接続が必要です。',
     },
     'wordpress': {
       description: '一般的なセルフホスト CMS とブログプラットフォーム。既存の MySQL 互換データベースへの接続が必要です。',

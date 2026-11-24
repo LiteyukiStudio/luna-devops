@@ -8,12 +8,13 @@
   "officialWebsite": "https://grafana.com/",
   "officialRepository": "https://github.com/grafana/grafana",
   "popularityWeight": 84,
-  "image": "grafana/grafana:latest",
-  "version": "latest",
+  "image": "grafana/grafana:13.3.1",
+  "version": "13.3.1",
   "servicePort": 3000,
   "defaultReplicas": 1,
   "defaultCPU": "500m",
   "defaultMemory": "512Mi",
+  "fsGroup": "472",
   "dataVolumes": [
     {
       "logicalName": "data",

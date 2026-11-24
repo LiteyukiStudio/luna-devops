@@ -113,7 +113,7 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 			body, err := json.Marshal(applicationapi.AppTemplateInstallInput{
 				ApplicationName: "Redis", ApplicationIdentifier: "redis-pending-volume",
 				DeploymentName: "default", Stage: "prod", ClusterID: "clu_template",
-				ImageRef: "redis:7-alpine", Replicas: 1, CPURequest: "500m", MemoryRequest: "512Mi",
+				ImageRef: "redis:8-alpine", Replicas: 1, CPURequest: "500m", MemoryRequest: "512Mi",
 				ProjectVolumeID: observation.projectVolume.ID, InstallNow: &installNow, Values: map[string]string{"password": test.password},
 			})
 			if err != nil {

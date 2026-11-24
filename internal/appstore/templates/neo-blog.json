@@ -61,7 +61,7 @@
     {
       "key": "postgres",
       "name": "PostgreSQL",
-      "image": "postgres:16-alpine",
+      "image": "postgres:19-alpine",
       "servicePort": 5432,
       "defaultReplicas": 1,
       "defaultCPU": "500m",
@@ -70,13 +70,12 @@
         {
           "logicalName": "data",
           "sourceType": "projectVolume",
-          "mountPath": "/var/lib/postgresql/data"
+          "mountPath": "/var/lib/postgresql"
         }
       ],
       "env": {
         "POSTGRES_USER": "neoblog",
-        "POSTGRES_DB": "neoblog",
-        "PGDATA": "/var/lib/postgresql/data/pgdata"
+        "POSTGRES_DB": "neoblog"
       },
       "secretEnv": {
         "POSTGRES_PASSWORD": "{{databasePassword}}"
@@ -85,7 +84,7 @@
     {
       "key": "redis",
       "name": "Redis",
-      "image": "redis:7-alpine",
+      "image": "redis:8-alpine",
       "servicePort": 6379,
       "defaultReplicas": 1,
       "defaultCPU": "250m",

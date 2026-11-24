@@ -310,7 +310,7 @@ const appTemplatesPage = {
       description: '오픈 소스 노코드 데이터베이스 인터페이스. 소규모 남부 도구와 데이터 앱에 적합합니다.',
     },
     'wiki-js': {
-      description: '모던한 셀프 호스트 Wiki. 팀 문서와 지식 베이스에 적합합니다.',
+      description: '모던한 셀프 호스트 Wiki. 팀 문서와 지식 베이스에 적합하며 기존 PostgreSQL 데이터베이스 연결이 필요합니다.',
     },
     'wordpress': {
       description: '일반적인 셀프 호스트 CMS와 블로그 플랫폼. 기존 MySQL 호환 데이터베이스 연결이 필요합니다.',
