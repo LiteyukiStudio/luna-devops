@@ -60,6 +60,7 @@ interface AIRunStreamCallbacks {
   onEvent: (event: AIEvent) => AIRunStreamEventResult | void
   onMalformedEvent?: (subscription: AIRunStreamSubscription) => Promise<void> | void
   onSequenceGap?: (subscription: AIRunStreamSubscription, event: AIEvent) => Promise<AIRunStreamRecovery | undefined>
+  onStreamCompleted?: (subscription: AIRunStreamSubscription) => Promise<void> | void
   onStatesChange?: (states: AIRunStreamState[]) => void
   onSubscriptionsChange?: (subscriptions: AIRunStreamSubscription[]) => void
 }
@@ -208,7 +209,20 @@ export class AIRunStreamManager {
         if (event.runId !== subscription.runId || event.conversationId !== subscription.conversationId)
           throw new Error('ai_stream_subscription_mismatch')
         if (event.type === 'run.stream.completed') {
+          const completedSubscription = this.subscriptionFromState(stream.state)
+          this.recoveringRuns.add(subscription.runId)
           this.finish(subscription.runId)
+          void Promise.resolve()
+            .then(() => this.callbacks.onStreamCompleted?.(completedSubscription))
+            .catch(() => {
+              if (!this.streams.has(subscription.runId))
+                this.states.delete(subscription.runId)
+            })
+            .finally(() => {
+              this.recoveringRuns.delete(subscription.runId)
+              if (this.enabled)
+                this.notify()
+            })
           return
         }
         const receivedAt = this.now()
@@ -443,6 +457,7 @@ export function useAIRunStreamManager(options: UseAIRunStreamManagerOptions) {
         onCapabilitiesChanged: () => callbacksRef.current.onCapabilitiesChanged?.(),
         onMalformedEvent: subscription => callbacksRef.current.onMalformedEvent?.(subscription),
         onSequenceGap: async (subscription, event) => callbacksRef.current.onSequenceGap?.(subscription, event),
+        onStreamCompleted: subscription => callbacksRef.current.onStreamCompleted?.(subscription),
         onStatesChange: setStreamStates,
         onSubscriptionsChange: setSubscriptions,
       },

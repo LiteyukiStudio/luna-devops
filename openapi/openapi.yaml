@@ -966,7 +966,7 @@ paths:
       operationId: listDataRetentionCatalog
       tags: [DataRetention]
       summary: List supported data-retention datasets
-      description: Returns the fixed cleanup catalog. Audit logs, billing data, and build, release, or Hook metadata are intentionally excluded.
+      description: Returns the fixed cleanup catalog. Audit logs, wallet balances, recharge or adjustment ledger entries, historical AI conversations and messages, and build, release, or Hook metadata are intentionally excluded.
       x-luna-cli:
         command: retention.catalog
         classification: business-command
@@ -15532,7 +15532,7 @@ components:
       properties:
         key:
           type: string
-          enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data, runtime_observations, billing_records]
+          enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data, runtime_observations, billing_records, ai_run_events]
         configKey: { type: string }
         defaultDays: { type: integer, minimum: 0, maximum: 3650 }
       required: [key, configKey, defaultDays]
@@ -15552,7 +15552,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data, runtime_observations, billing_records]
+            enum: [platform_events, notification_deliveries, build_logs, release_logs, hook_run_logs, expired_auth_data, runtime_observations, billing_records, ai_run_events]
         startAt: { type: string, format: date-time }
         endAt: { type: string, format: date-time }
       required: [datasets, startAt, endAt]

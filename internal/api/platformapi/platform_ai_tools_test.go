@@ -146,7 +146,7 @@ func TestPlatformAIToolsValidationAndSandboxGuards(t *testing.T) {
 	parentCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	parentCtx.Request = httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", nil)
 
-	// 1. admin_preview_data_retention catalog mode returns all 8 datasets
+	// 1. admin_preview_data_retention catalog mode returns all 9 datasets
 	previewTool, _ := reg.Get("admin_preview_data_retention")
 	tcAdmin := aitool.NewToolContext(parentCtx, db, admin, "ses_1", "conv_1", "", "run_1", "call_1", "", "model", nil)
 	catOut, err := previewTool.Execute(tcAdmin, json.RawMessage(`{}`))
@@ -154,7 +154,7 @@ func TestPlatformAIToolsValidationAndSandboxGuards(t *testing.T) {
 		t.Fatalf("admin_preview_data_retention catalog failed: %v", err)
 	}
 	catMap := catOut.(map[string]any)
-	if catMap["mode"] != "catalog" || len(catMap["catalog"].([]retention.Dataset)) != 8 {
+	if catMap["mode"] != "catalog" || len(catMap["catalog"].([]retention.Dataset)) != 9 {
 		t.Fatalf("unexpected catalog output: %#v", catMap)
 	}
 

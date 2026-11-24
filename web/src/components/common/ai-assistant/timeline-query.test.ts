@@ -429,19 +429,25 @@ describe('timeline query cache', () => {
       .toEqual({ after: 4, terminal: false })
   })
 
-  it('coalesces concurrent snapshot recovery for the same conversation', async () => {
-    const recoveries = new Set<string>()
-    let resolve: (() => void) | undefined
-    const recover = vi.fn(() => new Promise<void>((done) => {
-      resolve = done
+  it('coalesces concurrent snapshot recovery for the same conversation and shares the settled result', async () => {
+    const recoveries = new Map<string, Promise<string>>()
+    let resolve: ((value: string) => void) | undefined
+    let settled = false
+    const recover = vi.fn(() => new Promise<string>((done) => {
+      resolve = (value) => {
+        settled = true
+        done(value)
+      }
     }))
 
     const first = recoverTimelineOnce(recoveries, 'conversation-1', recover)
     const duplicate = recoverTimelineOnce(recoveries, 'conversation-1', recover)
     expect(recover).toHaveBeenCalledOnce()
+    expect(duplicate).toBe(first)
+    expect(settled).toBe(false)
 
-    resolve?.()
-    await Promise.all([first, duplicate])
+    resolve?.('recovered-snapshot')
+    await expect(Promise.all([first, duplicate])).resolves.toEqual(['recovered-snapshot', 'recovered-snapshot'])
     expect(recoveries.size).toBe(0)
   })
 })

@@ -447,4 +447,42 @@ describe('run stream manager', () => {
     manager.closeAll()
     vi.useRealTimers()
   })
+
+  it('reconciles via onStreamCompleted without reconnect loops when run_events were pruned before run.stream.completed', async () => {
+    const sources: MockEventSource[] = []
+    const factory = vi.fn(() => {
+      const source = new MockEventSource()
+      sources.push(source)
+      return source as unknown as EventSource
+    })
+    let resolveReconcile: (() => void) | undefined
+    const onStreamCompleted = vi.fn(() => new Promise<void>((resolve) => {
+      resolveReconcile = resolve
+    }))
+    const manager = new AIRunStreamManager(factory, { onEvent: vi.fn(), onStreamCompleted })
+    const subscription = { conversationId: 'conversation-1', eventsUrl: '/events/run-1', runId: 'run-1', after: 5 }
+
+    manager.connect(subscription)
+    expect(sources).toHaveLength(1)
+
+    // Simulate reconnect to a terminal run whose historical ai.run_events were deleted by retention:
+    // server emits only run.stream.completed with no preceding run.completed event.
+    sources[0]!.emit('run.stream.completed', { ...runEvent('run.stream.completed'), eventSequence: 5 })
+    expect(sources[0]!.close).toHaveBeenCalledOnce()
+    await vi.waitFor(() => {
+      expect(onStreamCompleted).toHaveBeenCalledWith(subscription)
+    })
+    expect(manager.streamStates()).toEqual([expect.objectContaining({ runId: 'run-1', status: 'terminal' })])
+
+    // While timeline recovery is still in flight, syncConversation must NOT open a duplicate EventSource.
+    manager.syncConversation('conversation-1', [subscription])
+    expect(factory).toHaveBeenCalledTimes(1)
+
+    resolveReconcile?.()
+    await vi.waitFor(() => {
+      manager.syncConversation('conversation-1', [])
+      expect(manager.streamStates()).toEqual([expect.objectContaining({ runId: 'run-1', status: 'terminal' })])
+    })
+    expect(factory).toHaveBeenCalledTimes(1)
+  })
 })

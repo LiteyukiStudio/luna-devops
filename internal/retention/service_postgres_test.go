@@ -298,6 +298,193 @@ CREATE TABLE billing_ledger_entries (
 	}
 }
 
+func TestAIRunEventsCleanupPreservesActiveRunsAndConversationHistoryInPostgres(t *testing.T) {
+	db := testdb.OpenDatabase(t, testdb.Options{SchemaPrefix: "retention_ai_test"})
+	if err := db.Exec(`
+CREATE TABLE app_configs (key text PRIMARY KEY, value text NOT NULL);
+CREATE SCHEMA ai;
+CREATE TABLE ai.runs (
+    id text PRIMARY KEY,
+    conversation_id text NOT NULL,
+    status text NOT NULL,
+    created_at timestamptz NOT NULL,
+    completed_at timestamptz
+);
+CREATE TABLE ai.run_events (
+    id text PRIMARY KEY,
+    run_id text NOT NULL REFERENCES ai.runs(id) ON DELETE CASCADE,
+    event_sequence bigint NOT NULL,
+    type text NOT NULL,
+    data jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL
+);
+CREATE TABLE ai.items (
+    id text PRIMARY KEY,
+    conversation_id text NOT NULL,
+    run_id text,
+    kind text NOT NULL,
+    content jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL
+);
+CREATE TABLE ai.conversation_summaries (
+    id text PRIMARY KEY,
+    conversation_id text NOT NULL,
+    summary_text text NOT NULL,
+    created_at timestamptz NOT NULL
+);
+`).Error; err != nil {
+		t.Fatalf("create AI retention tables: %v", err)
+	}
+	for _, dataset := range catalog {
+		value := "0"
+		if dataset.Key == DatasetAIRunEvents {
+			value = "14"
+		}
+		if err := db.Exec("INSERT INTO app_configs(key, value) VALUES (?, ?)", dataset.ConfigKey, value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	expired := now.AddDate(0, 0, -20)
+	withinRetention := now.AddDate(0, 0, -5)
+	justCompleted := now.Add(-10 * time.Minute)
+
+	runs := []struct {
+		id          string
+		status      string
+		createdAt   time.Time
+		completedAt any
+	}{
+		// All 5 terminal statuses: old events must be deleted, even if completed_at is NULL.
+		{"run_completed_old", "completed", expired, expired},
+		{"run_failed_old", "failed", expired, expired},
+		{"run_canceled_old", "canceled", expired, expired},
+		{"run_expired_old", "expired", expired, expired},
+		{"run_interrupted_old", "interrupted", expired, nil},
+		// Terminal run within 14-day retention window: events must be preserved.
+		{"run_completed_recent", "completed", withinRetention, withinRetention},
+		// Long-waiting run started 20d ago and just completed 10m ago: old events must NOT be torn/deleted.
+		{"run_resumed_just_completed", "completed", expired, justCompleted},
+		// All 5 non-terminal statuses: old events must NEVER be deleted.
+		{"run_queued_old", "queued", expired, nil},
+		{"run_running_old", "running", expired, nil},
+		{"run_waiting_approval_old", "waiting_approval", expired, nil},
+		{"run_waiting_input_old", "waiting_input", expired, nil},
+		{"run_waiting_external_old", "waiting_external", expired, nil},
+	}
+	for _, run := range runs {
+		if err := db.Exec(
+			"INSERT INTO ai.runs(id, conversation_id, status, created_at, completed_at) VALUES (?, 'conv_1', ?, ?, ?)",
+			run.id, run.status, run.createdAt, run.completedAt,
+		).Error; err != nil {
+			t.Fatalf("insert run %s: %v", run.id, err)
+		}
+	}
+
+	// Seed 1,001 events on run_completed_old plus 1 event each on the other 4 terminal old runs
+	// (= 1,005 eligible events across >1 batch of CleanupBatchSize=1000).
+	if err := db.Exec(`
+		INSERT INTO ai.run_events(id, run_id, event_sequence, type, created_at)
+		SELECT 'evt_batch_' || seq::text, 'run_completed_old', seq, 'item.delta', ?
+		FROM generate_series(1, 1001) AS seq
+	`, expired).Error; err != nil {
+		t.Fatalf("seed batched terminal events: %v", err)
+	}
+	extraEvents := []struct {
+		id        string
+		runID     string
+		seq       int64
+		createdAt time.Time
+	}{
+		{"evt_failed_old", "run_failed_old", 1, expired},
+		{"evt_canceled_old", "run_canceled_old", 1, expired},
+		{"evt_expired_old", "run_expired_old", 1, expired},
+		{"evt_interrupted_old", "run_interrupted_old", 1, expired},
+		{"evt_recent_preserved", "run_completed_recent", 1, withinRetention},
+		{"evt_resumed_early_preserved", "run_resumed_just_completed", 1, expired},
+		{"evt_resumed_final_preserved", "run_resumed_just_completed", 2, justCompleted},
+		// Non-terminal runs with old events: all 5 must be preserved.
+		{"evt_queued_preserved", "run_queued_old", 1, expired},
+		{"evt_running_preserved", "run_running_old", 1, expired},
+		{"evt_waiting_approval_preserved", "run_waiting_approval_old", 1, expired},
+		{"evt_waiting_input_preserved", "run_waiting_input_old", 1, expired},
+		{"evt_waiting_external_preserved", "run_waiting_external_old", 1, expired},
+	}
+	for _, evt := range extraEvents {
+		if err := db.Exec(
+			"INSERT INTO ai.run_events(id, run_id, event_sequence, type, created_at) VALUES (?, ?, ?, 'run.started', ?)",
+			evt.id, evt.runID, evt.seq, evt.createdAt,
+		).Error; err != nil {
+			t.Fatalf("insert event %s: %v", evt.id, err)
+		}
+	}
+
+	// Seed conversation items and summary on the expired completed run to prove conversation history remains intact.
+	if err := db.Exec(`
+		INSERT INTO ai.items(id, conversation_id, run_id, kind, created_at) VALUES
+			('item_user_old', 'conv_1', NULL, 'user_message', ?),
+			('item_assistant_old', 'conv_1', 'run_completed_old', 'assistant_message', ?)
+	`, expired, expired).Error; err != nil {
+		t.Fatalf("seed items: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO ai.conversation_summaries(id, conversation_id, summary_text, created_at) VALUES
+			('sum_conv_1', 'conv_1', 'Preserved conversation summary', ?)
+	`, expired).Error; err != nil {
+		t.Fatalf("seed conversation summary: %v", err)
+	}
+
+	service := NewService(db)
+	cutoff := now.AddDate(0, 0, -14)
+	preview, err := service.Preview(t.Context(), []string{DatasetAIRunEvents}, time.Time{}, cutoff, now)
+	if err != nil {
+		t.Fatalf("preview ai_run_events: %v", err)
+	}
+	if len(preview) != 1 || preview[0].Matched != 1005 || preview[0].Deleted != 0 {
+		t.Fatalf("preview = %#v, want 1005 matched / 0 deleted", preview)
+	}
+
+	results, err := service.RunAutomatic(t.Context(), now)
+	if err != nil {
+		t.Fatalf("run automatic ai_run_events cleanup: %v", err)
+	}
+	if len(results) != 1 || results[0].Dataset != DatasetAIRunEvents || results[0].Matched != 1005 || results[0].Deleted != 1005 {
+		t.Fatalf("automatic results = %#v, want ai_run_events 1005/1005", results)
+	}
+
+	// Manual cleanup with end = now + 1h must still protect runs completed within the 1-hour grace window,
+	// while cleaning runs completed 5 days ago.
+	manualResults, err := service.Cleanup(t.Context(), []string{DatasetAIRunEvents}, now.AddDate(0, 0, -30), now.Add(time.Hour), now)
+	if err != nil {
+		t.Fatalf("manual ai_run_events cleanup: %v", err)
+	}
+	if len(manualResults) != 1 || manualResults[0].Matched != 1 || manualResults[0].Deleted != 1 {
+		t.Fatalf("manual cleanup results = %#v, want 1/1 (only run_completed_recent)", manualResults)
+	}
+
+	// Remaining events: 2 events on run_resumed_just_completed (within 1h grace) + 5 old non-terminal events = 7.
+	assertRowCount(t, db, "ai.run_events", 7)
+	for _, preservedID := range []string{
+		"evt_resumed_early_preserved",
+		"evt_resumed_final_preserved",
+		"evt_queued_preserved",
+		"evt_running_preserved",
+		"evt_waiting_approval_preserved",
+		"evt_waiting_input_preserved",
+		"evt_waiting_external_preserved",
+	} {
+		assertIDExists(t, db, "ai.run_events", preservedID)
+	}
+	// All runs, items, and conversation summaries are untouched.
+	assertRowCount(t, db, "ai.runs", int64(len(runs)))
+	assertRowCount(t, db, "ai.items", 2)
+	assertIDExists(t, db, "ai.items", "item_user_old")
+	assertIDExists(t, db, "ai.items", "item_assistant_old")
+	assertRowCount(t, db, "ai.conversation_summaries", 1)
+	assertIDExists(t, db, "ai.conversation_summaries", "sum_conv_1")
+}
+
 func openRetentionTestDB(t *testing.T) *gorm.DB {
 	return testdb.Open(t, testdb.Options{SchemaPrefix: "retention_test"})
 }

@@ -13,8 +13,9 @@ func TestCatalogDefaults(t *testing.T) {
 		{Key: DatasetReleaseLogs, ConfigKey: "retention.releaseLogsDays", DefaultDays: 90},
 		{Key: DatasetHookRunLogs, ConfigKey: "retention.hookRunLogsDays", DefaultDays: 90},
 		{Key: DatasetExpiredAuthData, ConfigKey: "retention.expiredAuthDataDays", DefaultDays: 30},
-		{Key: DatasetRuntimeObservations, ConfigKey: "retention.runtimeObservationsDays", DefaultDays: 7},
+		{Key: DatasetRuntimeObservations, ConfigKey: "retention.runtimeObservationsDays", DefaultDays: 3},
 		{Key: DatasetBillingRecords, ConfigKey: "retention.billingRecordsDays", DefaultDays: 90},
+		{Key: DatasetAIRunEvents, ConfigKey: "retention.aiRunEventsDays", DefaultDays: 14},
 	}
 
 	service := NewService(nil)

@@ -102,7 +102,7 @@ export function AIAssistantRuntimeProvider({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const actionSessionGenerationRef = useRef(0)
   const pageTransitionPendingRef = useRef(false)
-  const timelineRecoveriesRef = useRef(new Set<string>())
+  const timelineRecoveriesRef = useRef(new Map<string, Promise<AITimelineQueryData>>())
   const [open, setOpen] = useState(initiallyOpen && enabled)
   const surfaceVisible = (enabled && open) || assistantRoute
   const enabledRef = useRef(enabled)
@@ -306,6 +306,16 @@ export function AIAssistantRuntimeProvider({
     onSequenceGap: async (subscription) => {
       const recovered = await recoverTimeline(subscription.conversationId)
       return runStreamRecoveryFromTimeline(recovered, subscription)
+    },
+    onStreamCompleted: async (subscription) => {
+      const current = timelineQueryDataFromInfinite(
+        queryClient.getQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(subscription.conversationId)),
+      )
+      const currentStatus = current?.state.runStatuses[subscription.runId]
+      if (!currentStatus || !['completed', 'failed', 'canceled', 'interrupted'].includes(currentStatus)) {
+        await recoverTimeline(subscription.conversationId)
+        void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
+      }
     },
   })
 

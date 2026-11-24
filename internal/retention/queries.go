@@ -310,4 +310,30 @@ WHERE target.id = victims.id`,
 			},
 		},
 	},
+	DatasetAIRunEvents: {
+		dataset: catalog[8],
+		queries: []querySpec{{
+			requireExpired: true,
+			countSQL: `SELECT COUNT(*) AS count
+FROM ai.run_events AS events
+JOIN ai.runs AS parent ON parent.id = events.run_id
+WHERE parent.status IN ('completed', 'failed', 'canceled', 'expired', 'interrupted')
+  AND COALESCE(parent.completed_at, parent.created_at) >= ?
+  AND COALESCE(parent.completed_at, parent.created_at) < ?
+  AND COALESCE(parent.completed_at, parent.created_at) <= (?::timestamptz - interval '1 hour')`,
+			deleteSQL: `WITH victims AS (
+    SELECT events.id
+    FROM ai.run_events AS events
+    JOIN ai.runs AS parent ON parent.id = events.run_id
+    WHERE parent.status IN ('completed', 'failed', 'canceled', 'expired', 'interrupted')
+      AND COALESCE(parent.completed_at, parent.created_at) >= ?
+      AND COALESCE(parent.completed_at, parent.created_at) < ?
+      AND COALESCE(parent.completed_at, parent.created_at) <= (?::timestamptz - interval '1 hour')
+    ORDER BY COALESCE(parent.completed_at, parent.created_at), parent.id, events.event_sequence
+    LIMIT 1000
+)
+DELETE FROM ai.run_events
+WHERE id IN (SELECT id FROM victims)`,
+		}},
+	},
 }

@@ -62,6 +62,16 @@ func TestStandardQueriesContainTerminalGuardsAndHalfOpenRange(t *testing.T) {
 		DatasetBuildLogs:              {"parent.status IN ('succeeded', 'failed', 'canceled', 'timeout')", "parent.id = logs.build_run_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
 		DatasetReleaseLogs:            {"parent.status IN ('succeeded', 'failed', 'canceled')", "parent.id = logs.release_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
 		DatasetHookRunLogs:            {"parent.status IN ('succeeded', 'failed')", "parent.id = logs.hook_run_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
+		DatasetAIRunEvents: {
+			"parent.status IN ('completed', 'failed', 'canceled', 'expired', 'interrupted')",
+			"parent.id = events.run_id",
+			"COALESCE(parent.completed_at, parent.created_at) >= ?",
+			"COALESCE(parent.completed_at, parent.created_at) < ?",
+			"COALESCE(parent.completed_at, parent.created_at) <= (?::timestamptz - interval '1 hour')",
+		},
+	}
+	if !plans[DatasetAIRunEvents].queries[0].requireExpired {
+		t.Fatal("ai_run_events query must set requireExpired to protect post-completion SSE convergence")
 	}
 	for dataset, fragments := range tests {
 		t.Run(dataset, func(t *testing.T) {

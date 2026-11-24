@@ -17,7 +17,7 @@ import (
 )
 
 type adminGetSystemConfigsInput struct {
-	Keys []string `json:"keys,omitempty" desc:"可选指定要查询的系统配置键名列表；省略时返回平台全部 47 项全局配置的元数据定义与当前生效值（5 项密钥仅回显 secretSet 布尔状态）"`
+	Keys []string `json:"keys,omitempty" desc:"可选指定要查询的系统配置键名列表；省略时返回平台全部 50 项全局配置的元数据定义与当前生效值（5 项密钥仅回显 secretSet 布尔状态）"`
 }
 
 type systemConfigSecretAction struct {
@@ -27,7 +27,7 @@ type systemConfigSecretAction struct {
 }
 
 type adminUpdateSystemConfigsInput struct {
-	SetConfigs      map[string]string          `json:"setConfigs,omitempty" desc:"增量设置非敏感配置项（仅允许 42 项非 secret 配置键的非空字符串值；清空可空字符串请用 clearConfigKeys；密钥请用 secretActions）"`
+	SetConfigs      map[string]string          `json:"setConfigs,omitempty" desc:"增量设置非敏感配置项（仅允许 45 项非 secret 配置键的非空字符串值；清空可空字符串请用 clearConfigKeys；密钥请用 secretActions）"`
 	ClearConfigKeys []string                   `json:"clearConfigKeys,omitempty" desc:"显式清空允许置空的非敏感字符串或多行文本配置键（如 site.logoUrl、security.egress.* 等）"`
 	SecretActions   []systemConfigSecretAction `json:"secretActions,omitempty" desc:"对 5 项平台加密密钥配置执行增量设置（set）或清除（clear）"`
 }
@@ -55,7 +55,7 @@ func (h *Handlers) registerConfigAITools(reg *aitool.Registry) {
 		Name:           "admin_get_system_configs",
 		Domain:         aitool.DomainAdmin,
 		Title:          "查看平台全局系统配置",
-		Summary:        "查看平台全部 47 项全局系统配置（42 项非敏感配置与 5 项加密密钥配置）的元数据定义与当前生效值，绝不回显明文密钥",
+		Summary:        "查看平台全部 50 项全局系统配置（45 项非敏感配置与 5 项加密密钥配置）的元数据定义与当前生效值，绝不回显明文密钥",
 		AliasesZH:      []string{"系统配置", "全局设置", "站点设置", "出站白名单配置", "计费阈值配置"},
 		AliasesEN:      []string{"get system configs", "platform settings", "global configs"},
 		AdminOnly:      true,
@@ -69,7 +69,7 @@ func (h *Handlers) registerConfigAITools(reg *aitool.Registry) {
 		Name:           "admin_update_system_configs",
 		Domain:         aitool.DomainAdmin,
 		Title:          "增量修改平台全局系统配置",
-		Summary:        "纯增量更新平台全局配置项，严格物理隔离 42 项非敏感配置与 5 项加密密钥配置，具备启用态联动防断连保护",
+		Summary:        "纯增量更新平台全局配置项，严格物理隔离 45 项非敏感配置与 5 项加密密钥配置，具备启用态联动防断连保护",
 		AliasesZH:      []string{"修改系统配置", "更新全局设置", "配置 AI Provider", "更新站点设置"},
 		AliasesEN:      []string{"update system configs", "save platform settings"},
 		AdminOnly:      true,

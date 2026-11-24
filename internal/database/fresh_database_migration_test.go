@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 143
+	latestMigrationVersion   = 144
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -108,6 +108,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000142_add_runtime_ai_self_healing.down.sql":                false,
 		"000143_add_oauth_dynamic_client_registration.up.sql":        false,
 		"000143_add_oauth_dynamic_client_registration.down.sql":      false,
+		"000144_cleanup_expired_ai_run_events.up.sql":                false,
+		"000144_cleanup_expired_ai_run_events.down.sql":              false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -314,7 +316,127 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 139, "ai.conversations", "approval_mode")
 	assertLegacyBaselineReconciliationMigration(t, testDB, runner)
 	assertOAuthDynamicClientRegistrationMigration(t, testDB, runner)
+	assertAIRunEventsCleanupMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
+}
+
+func assertAIRunEventsCleanupMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	if err := runner.Migrate(143); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("roll back to 143 before AI run_events cleanup migration test: %v", err)
+	}
+	var retentionIndexDef string
+	if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = 'ai' AND indexname = 'idx_ai_runs_retention_terminal'`).Scan(&retentionIndexDef).Error; err != nil {
+		t.Fatalf("inspect ai.idx_ai_runs_retention_terminal at version 143: %v", err)
+	}
+	if retentionIndexDef != "" {
+		t.Fatalf("expected 000144.down.sql to drop ai.idx_ai_runs_retention_terminal, got %q", retentionIndexDef)
+	}
+	for _, relName := range []string{"ai.run_events", "public.runtime_observations"} {
+		var reloptions *string
+		if err := db.Raw(`SELECT array_to_string(reloptions, ',') FROM pg_class WHERE oid = ?::regclass`, relName).Scan(&reloptions).Error; err != nil {
+			t.Fatalf("inspect reloptions for %s at version 143: %v", relName, err)
+		}
+		if reloptions != nil && *reloptions != "" {
+			t.Fatalf("expected 000144.down.sql to reset reloptions on %s, got %q", relName, *reloptions)
+		}
+	}
+
+	seedStatements := []string{
+		`INSERT INTO public.users (id, email, name, role) VALUES ('usr_mig_144', 'mig144@example.com', 'Mig 144', 'user') ON CONFLICT (id) DO NOTHING`,
+		`INSERT INTO ai.conversations (id, owner_user_id, title) VALUES ('conv_mig_144', 'usr_mig_144', 'Migration 144 Conversation')`,
+		`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id, created_at) VALUES
+			('turn_mig_144_old', 'conv_mig_144', 0, 'completed', 'old prompt', 'run_mig_144_completed_old', now() - interval '20 days'),
+			('turn_mig_144_active', 'conv_mig_144', 1, 'running', 'active prompt', 'run_mig_144_running_old', now() - interval '20 days'),
+			('turn_mig_144_recent', 'conv_mig_144', 2, 'completed', 'recent prompt', 'run_mig_144_completed_recent', now() - interval '3 days')`,
+		`INSERT INTO ai.runs (
+			id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id, created_at, completed_at
+		) VALUES
+			('run_mig_144_completed_old', 'usr_mig_144', 'conv_mig_144', 'turn_mig_144_old', 0, 'completed', 'v1', 'dig', 'ses_mig_144', now() - interval '20 days', now() - interval '20 days'),
+			('run_mig_144_interrupted_old', 'usr_mig_144', 'conv_mig_144', 'turn_mig_144_old', 1, 'interrupted', 'v1', 'dig', 'ses_mig_144', now() - interval '20 days', NULL),
+			('run_mig_144_running_old', 'usr_mig_144', 'conv_mig_144', 'turn_mig_144_active', 0, 'running', 'v1', 'dig', 'ses_mig_144', now() - interval '20 days', NULL),
+			('run_mig_144_waiting_old', 'usr_mig_144', 'conv_mig_144', 'turn_mig_144_active', 1, 'waiting_approval', 'v1', 'dig', 'ses_mig_144', now() - interval '20 days', NULL),
+			('run_mig_144_resumed_recent', 'usr_mig_144', 'conv_mig_144', 'turn_mig_144_recent', 1, 'completed', 'v1', 'dig', 'ses_mig_144', now() - interval '20 days', now() - interval '3 days'),
+			('run_mig_144_completed_recent', 'usr_mig_144', 'conv_mig_144', 'turn_mig_144_recent', 0, 'completed', 'v1', 'dig', 'ses_mig_144', now() - interval '3 days', now() - interval '3 days')`,
+		`INSERT INTO ai.run_events (id, run_id, event_sequence, type, data, created_at) VALUES
+			('evt_mig_144_completed_old', 'run_mig_144_completed_old', 1, 'item.delta', '{}'::jsonb, now() - interval '20 days'),
+			('evt_mig_144_interrupted_old', 'run_mig_144_interrupted_old', 1, 'run.interrupted', '{}'::jsonb, now() - interval '20 days'),
+			('evt_mig_144_running_old', 'run_mig_144_running_old', 1, 'run.started', '{}'::jsonb, now() - interval '20 days'),
+			('evt_mig_144_waiting_old', 'run_mig_144_waiting_old', 1, 'approval.requested', '{}'::jsonb, now() - interval '20 days'),
+			('evt_mig_144_resumed_early', 'run_mig_144_resumed_recent', 1, 'run.started', '{}'::jsonb, now() - interval '20 days'),
+			('evt_mig_144_completed_recent', 'run_mig_144_completed_recent', 1, 'run.completed', '{}'::jsonb, now() - interval '3 days')`,
+		`INSERT INTO ai.items (id, run_id, turn_id, timeline_index, type, status, content, created_at) VALUES
+			('item_mig_144_old', 'run_mig_144_completed_old', 'turn_mig_144_old', 0, 'assistant_message', 'completed', '{"text":"preserved answer"}'::jsonb, now() - interval '20 days')`,
+		`INSERT INTO ai.conversation_summaries (conversation_id, covered_through_turn_index, compression_version, source_turn_count, content, created_at) VALUES
+			('conv_mig_144', 0, 1, 1, '{"summary":"preserved"}'::jsonb, now() - interval '20 days')`,
+	}
+	for _, stmt := range seedStatements {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("seed AI history at version 143: %v\nSQL: %s", err, stmt)
+		}
+	}
+
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("upgrade migration 143 -> 144: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+
+	if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = 'ai' AND indexname = 'idx_ai_runs_retention_terminal'`).Scan(&retentionIndexDef).Error; err != nil {
+		t.Fatalf("inspect ai.idx_ai_runs_retention_terminal after upgrade: %v", err)
+	}
+	if !strings.Contains(retentionIndexDef, "COALESCE(completed_at, created_at)") || !strings.Contains(retentionIndexDef, "WHERE (status = ANY") {
+		t.Fatalf("unexpected ai.idx_ai_runs_retention_terminal definition: %q", retentionIndexDef)
+	}
+	for _, relName := range []string{"ai.run_events", "public.runtime_observations"} {
+		var reloptions string
+		if err := db.Raw(`SELECT COALESCE(array_to_string(reloptions, ','), '') FROM pg_class WHERE oid = ?::regclass`, relName).Scan(&reloptions).Error; err != nil {
+			t.Fatalf("inspect reloptions for %s after upgrade: %v", relName, err)
+		}
+		for _, wantOpt := range []string{"autovacuum_vacuum_scale_factor=0.05", "autovacuum_analyze_scale_factor=0.02"} {
+			if !strings.Contains(reloptions, wantOpt) {
+				t.Fatalf("reloptions for %s = %q, missing %q", relName, reloptions, wantOpt)
+			}
+		}
+	}
+
+	var remainingEventIDs []string
+	if err := db.Raw(`SELECT id FROM ai.run_events WHERE id LIKE 'evt_mig_144_%' ORDER BY id`).Scan(&remainingEventIDs).Error; err != nil {
+		t.Fatalf("query remaining ai.run_events after migration 144: %v", err)
+	}
+	wantEvents := []string{"evt_mig_144_completed_recent", "evt_mig_144_resumed_early", "evt_mig_144_running_old", "evt_mig_144_waiting_old"}
+	if strings.Join(remainingEventIDs, ",") != strings.Join(wantEvents, ",") {
+		t.Fatalf("remaining ai.run_events = %v, want %v", remainingEventIDs, wantEvents)
+	}
+
+	var preservedCounts struct {
+		Runs      int64
+		Items     int64
+		Summaries int64
+	}
+	if err := db.Raw(`SELECT
+		(SELECT count(*) FROM ai.runs WHERE conversation_id = 'conv_mig_144') AS runs,
+		(SELECT count(*) FROM ai.items WHERE id = 'item_mig_144_old') AS items,
+		(SELECT count(*) FROM ai.conversation_summaries WHERE conversation_id = 'conv_mig_144') AS summaries`).Scan(&preservedCounts).Error; err != nil {
+		t.Fatalf("inspect preserved AI conversation records: %v", err)
+	}
+	if preservedCounts.Runs != 6 || preservedCounts.Items != 1 || preservedCounts.Summaries != 1 {
+		t.Fatalf("preserved AI conversation records = %+v, want runs=6 items=1 summaries=1", preservedCounts)
+	}
+
+	cleanupStatements := []string{
+		`DELETE FROM ai.conversation_summaries WHERE conversation_id = 'conv_mig_144'`,
+		`DELETE FROM ai.items WHERE id = 'item_mig_144_old'`,
+		`DELETE FROM ai.run_events WHERE id LIKE 'evt_mig_144_%'`,
+		`DELETE FROM ai.runs WHERE conversation_id = 'conv_mig_144'`,
+		`DELETE FROM ai.turns WHERE conversation_id = 'conv_mig_144'`,
+		`DELETE FROM ai.conversations WHERE id = 'conv_mig_144'`,
+		`DELETE FROM public.users WHERE id = 'usr_mig_144'`,
+	}
+	for _, stmt := range cleanupStatements {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("clean mig 144 test rows: %v", err)
+		}
+	}
 }
 
 func assertOAuthDynamicClientRegistrationMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
@@ -882,6 +1004,13 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 				t.Fatalf("index %s is missing %q: %q", expected.name, fragment, definition)
 			}
 		}
+	}
+	var aiRunsRetentionIndex string
+	if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = 'ai' AND indexname = 'idx_ai_runs_retention_terminal'`).Scan(&aiRunsRetentionIndex).Error; err != nil {
+		t.Fatalf("read index ai.idx_ai_runs_retention_terminal: %v", err)
+	}
+	if aiRunsRetentionIndex == "" || !strings.Contains(aiRunsRetentionIndex, "WHERE (status = ANY") {
+		t.Fatalf("fresh database has invalid ai.idx_ai_runs_retention_terminal: %q", aiRunsRetentionIndex)
 	}
 }
 

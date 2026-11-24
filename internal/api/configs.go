@@ -192,13 +192,19 @@ var configDefinitions = []configDefinition{
 		Key:     "retention.runtimeObservationsDays",
 		Type:    "number",
 		Public:  false,
-		Default: "7",
+		Default: "3",
 	},
 	{
 		Key:     "retention.billingRecordsDays",
 		Type:    "number",
 		Public:  false,
 		Default: "90",
+	},
+	{
+		Key:     "retention.aiRunEventsDays",
+		Type:    "number",
+		Public:  false,
+		Default: "14",
 	},
 	{
 		Key:     "billing.creditsDisplayName",

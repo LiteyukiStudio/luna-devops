@@ -345,18 +345,18 @@ export function runStreamRecoveryFromTimeline(
   }
 }
 
-export async function recoverTimelineOnce<Result>(
-  recoveries: Set<string>,
+export function recoverTimelineOnce<Result>(
+  recoveries: Map<string, Promise<Result>>,
   conversationId: string,
   recover: () => Promise<Result>,
-): Promise<Result | undefined> {
-  if (recoveries.has(conversationId))
-    return
-  recoveries.add(conversationId)
-  try {
-    return await recover()
-  }
-  finally {
-    recoveries.delete(conversationId)
-  }
+): Promise<Result> {
+  const existing = recoveries.get(conversationId)
+  if (existing)
+    return existing
+  const pending = (async () => recover())().finally(() => {
+    if (recoveries.get(conversationId) === pending)
+      recoveries.delete(conversationId)
+  })
+  recoveries.set(conversationId, pending)
+  return pending
 }

@@ -47,13 +47,13 @@ type opsListEventsInput struct {
 }
 
 type adminPreviewDataRetentionInput struct {
-	Datasets []string `json:"datasets,omitempty" enum:"platform_events|notification_deliveries|build_logs|release_logs|hook_run_logs|expired_auth_data|runtime_observations|billing_records" desc:"待预览清理条数的数据集列表；省略时仅返回 8 类可清理数据集定义目录"`
+	Datasets []string `json:"datasets,omitempty" enum:"platform_events|notification_deliveries|build_logs|release_logs|hook_run_logs|expired_auth_data|runtime_observations|billing_records|ai_run_events" desc:"待预览清理条数的数据集列表；省略时仅返回 9 类可清理数据集定义目录"`
 	StartAt  *string  `json:"startAt,omitempty" desc:"RFC3339 起始时间（传 datasets 时必填）"`
 	EndAt    *string  `json:"endAt,omitempty" desc:"RFC3339 结束时间（传 datasets 时必填，须晚于 startAt）"`
 }
 
 type adminExecuteDataRetentionCleanupInput struct {
-	Datasets []string `json:"datasets" required:"true" min:"1" enum:"platform_events|notification_deliveries|build_logs|release_logs|hook_run_logs|expired_auth_data|runtime_observations|billing_records" desc:"待执行不可逆历史清理的数据集列表"`
+	Datasets []string `json:"datasets" required:"true" min:"1" enum:"platform_events|notification_deliveries|build_logs|release_logs|hook_run_logs|expired_auth_data|runtime_observations|billing_records|ai_run_events" desc:"待执行不可逆历史清理的数据集列表"`
 	StartAt  string   `json:"startAt" required:"true" desc:"RFC3339 起始时间"`
 	EndAt    string   `json:"endAt" required:"true" desc:"RFC3339 结束时间（须晚于 startAt）"`
 }
@@ -95,7 +95,7 @@ func (h *Handler) RegisterAITools(reg *aitool.Registry) {
 		Name:           "admin_preview_data_retention",
 		Domain:         aitool.DomainAdmin,
 		Title:          "预览历史数据保留与清理范围",
-		Summary:        "查看平台 8 类可清理历史数据集定义目录，或零副作用预览指定时间区间将匹配的记录条数",
+		Summary:        "查看平台 9 类可清理历史数据集定义目录，或零副作用预览指定时间区间将匹配的记录条数",
 		AliasesZH:      []string{"数据保留", "数据保留策略", "查看数据保留策略", "清理预览", "历史清理目录"},
 		AliasesEN:      []string{"data retention preview", "retention catalog"},
 		AdminOnly:      true,

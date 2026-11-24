@@ -560,8 +560,9 @@ func TestRetentionConfigDefinitionsAndBounds(t *testing.T) {
 		"retention.releaseLogsDays":            "90",
 		"retention.hookRunLogsDays":            "90",
 		"retention.expiredAuthDataDays":        "30",
-		"retention.runtimeObservationsDays":    "7",
+		"retention.runtimeObservationsDays":    "3",
 		"retention.billingRecordsDays":         "90",
+		"retention.aiRunEventsDays":            "14",
 	}
 	for key, expectedDefault := range expectedDefaults {
 		definition := configDefinitionByKey(key)

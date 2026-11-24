@@ -62,7 +62,7 @@ func TestSystemConfigAIToolsRegisterMaskSecretsAndEnforceLinkageGuards(t *testin
 	admin := model.User{ID: "usr_admin", Role: authz.PlatformRoleAdmin}
 	tc := aitool.NewToolContext(parentCtx, nil, admin, "ses_1", "conv_1", "", "run_1", "call_1", "", "model", nil)
 
-	// 1. admin_get_system_configs returns all 49 definitions and never leaks secret ciphertext/plaintext
+	// 1. admin_get_system_configs returns all 50 definitions and never leaks secret ciphertext/plaintext
 	out, err := getTool.Execute(tc, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("admin_get_system_configs failed: %v", err)
@@ -75,8 +75,8 @@ func TestSystemConfigAIToolsRegisterMaskSecretsAndEnforceLinkageGuards(t *testin
 		t.Fatalf("secret reference leaked in admin_get_system_configs output: %s", string(encoded))
 	}
 	outMap := out.(map[string]any)
-	if outMap["total"] != 49 {
-		t.Fatalf("total configs = %v, want 49", outMap["total"])
+	if outMap["total"] != 50 {
+		t.Fatalf("total configs = %v, want 50", outMap["total"])
 	}
 	secretStatus := outMap["secretStatus"].(map[string]bool)
 	if !secretStatus["ai.provider.api_key"] || secretStatus["ai.web.proxy_pool"] {
