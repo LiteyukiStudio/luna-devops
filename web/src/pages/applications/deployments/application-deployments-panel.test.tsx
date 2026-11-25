@@ -297,8 +297,48 @@ describe('application deployments panel', () => {
     expect(screen.getByRole('dialog', { name: 'Web' })).toBeInTheDocument()
   })
 
+  it('opens Runtime logs first when clicking View logs from the deployment row menu', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.listDeploymentTargetRuntimePods).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 100,
+      sortBy: 'restartCount',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
+      status: 'ready',
+      observationCode: 'deployment_target.runtime_pods_ready',
+      observedAt: '2026-09-06T01:00:00Z',
+    })
+    vi.mocked(api.getReleaseRuntimeLogs).mockResolvedValue({
+      container: 'app',
+      content: 'runtime log line 1',
+      pod: 'web-pod-1',
+      previous: false,
+    })
+
+    renderPanel()
+
+    await openRowMenu(user, 'Web')
+    await user.click(await screen.findByRole('menuitem', { name: 'View logs' }))
+
+    const logsDialog = await screen.findByRole('dialog', { name: 'Release logs' })
+    const tabs = within(logsDialog).getAllByRole('tab')
+    expect(tabs.map(tab => tab.textContent)).toEqual(['Runtime logs', 'Deploy logs'])
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    expect(await within(logsDialog).findByText('runtime log line 1')).toBeInTheDocument()
+    expect(api.getReleaseLogs).not.toHaveBeenCalled()
+  })
+
   it('keeps the underlying detail drawer open when dismissing a #releaseId deep-linked logs drawer', async () => {
     const user = userEvent.setup()
+    vi.mocked(api.getReleaseRuntimeLogs).mockResolvedValue({
+      container: 'app',
+      content: '2026-09-06T01:00:00Z runtime live\n',
+      pod: 'web-pod-1',
+      previous: false,
+    })
     vi.mocked(api.getReleaseLogs).mockResolvedValue({
       content: '2026-09-06T01:00:00Z release succeeded\n',
       createdAt: '2026-09-06T01:00:00Z',

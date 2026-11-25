@@ -1,6 +1,6 @@
 import type { Release } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '@/api'
@@ -58,12 +58,17 @@ const release: Release = {
   createdAt: '2026-09-06T00:00:00Z',
 }
 
-function renderPanel(onClose = vi.fn()) {
+function renderPanel(onClose = vi.fn(), initialView?: 'deployment' | 'runtime') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <ApplicationReleaseLogsPanel projectId="prj_123" release={release} onClose={onClose} />
+        <ApplicationReleaseLogsPanel
+          initialView={initialView}
+          projectId="prj_123"
+          release={release}
+          onClose={onClose}
+        />
       </TooltipProvider>
     </QueryClientProvider>,
   )
@@ -90,29 +95,32 @@ describe('application release logs panel', () => {
     vi.clearAllMocks()
   })
 
-  it('loads deployment logs by default without starting the runtime stream', async () => {
+  it('orders Runtime logs before Deploy logs and loads runtime logs by default without fetching deployment logs', async () => {
     renderPanel()
 
-    expect(await screen.findByText('deployment complete')).toBeInTheDocument()
-    expect(getReleaseRuntimeLogs).not.toHaveBeenCalled()
-  })
-
-  it('loads live runtime logs only after selecting the runtime tab', async () => {
-    const user = userEvent.setup()
-    renderPanel()
-
-    await user.click(screen.getByRole('tab', { name: 'Runtime logs' }))
-
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map(tab => tab.textContent)).toEqual(['Runtime logs', 'Deploy logs'])
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText('server ready')).toBeInTheDocument()
     expect(screen.getByText('Pod app-abc / container app')).toBeInTheDocument()
     expect(getReleaseRuntimeLogs).toHaveBeenCalledWith('prj_123', release.id, { tailLines: 500 }, expect.any(AbortSignal))
+    expect(getReleaseLogs).not.toHaveBeenCalled()
+  })
+
+  it('loads deployment logs only after selecting the Deploy logs tab', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(screen.getByRole('tab', { name: 'Deploy logs' }))
+
+    expect(await screen.findByText('deployment complete')).toBeInTheDocument()
+    expect(getReleaseLogs).toHaveBeenCalledWith('prj_123', release.id, expect.any(AbortSignal))
   })
 
   it('reloads runtime logs from the replica the user selects', async () => {
     const user = userEvent.setup()
     renderPanel()
 
-    await user.click(screen.getByRole('tab', { name: 'Runtime logs' }))
     expect(await screen.findByText('server ready')).toBeInTheDocument()
 
     getReleaseRuntimeLogs.mockResolvedValue({ pod: 'app-def', container: 'app', content: 'panic: config missing' })
@@ -128,7 +136,6 @@ describe('application release logs panel', () => {
     const user = userEvent.setup()
     renderPanel()
 
-    await user.click(screen.getByRole('tab', { name: 'Runtime logs' }))
     await user.click(await screen.findByRole('button', { name: 'Replica' }))
     getReleaseRuntimeLogs.mockRejectedValue(new ApiError('runtime pod not found', { code: 'runtime.pod_not_found', path: '/runtime-logs', status: 404 }))
     listDeploymentTargetRuntimePods.mockResolvedValue({ ...runtimePodPage, items: [runtimePodPage.items[0]], total: 1 })
@@ -139,10 +146,23 @@ describe('application release logs panel', () => {
   })
 
   it('shows unavailable instead of stale-looking log content when loading fails', async () => {
-    getReleaseLogs.mockRejectedValue(new Error('upstream unavailable'))
-    renderPanel()
+    getReleaseRuntimeLogs.mockRejectedValue(new ApiError('upstream unavailable', { code: 'runtime.unavailable', path: '/runtime-logs', status: 422 }))
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TooltipProvider>
+          <ApplicationReleaseLogsPanel projectId="prj_123" release={release} onClose={vi.fn()} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    )
 
-    expect(await screen.findByText('Unavailable')).toBeInTheDocument()
+    expect((await screen.findAllByText('Unavailable')).length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText('server ready')).not.toBeInTheDocument()
+    unmount()
+
+    getReleaseLogs.mockRejectedValue(new Error('upstream unavailable'))
+    renderPanel(vi.fn(), 'deployment')
+
+    expect((await screen.findAllByText('Unavailable')).length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText('deployment complete')).not.toBeInTheDocument()
   })
 
@@ -150,7 +170,6 @@ describe('application release logs panel', () => {
     vi.useFakeTimers()
     renderPanel()
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Runtime logs' }), { button: 0, ctrlKey: false })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
@@ -166,7 +185,6 @@ describe('application release logs panel', () => {
     const user = userEvent.setup()
     renderPanel()
 
-    await user.click(screen.getByRole('tab', { name: 'Runtime logs' }))
     expect(await screen.findByText('server ready')).toBeInTheDocument()
 
     getReleaseRuntimeLogs.mockResolvedValueOnce({ pod: 'app-def', container: 'app', content: 'fatal error: out of memory', previous: true })

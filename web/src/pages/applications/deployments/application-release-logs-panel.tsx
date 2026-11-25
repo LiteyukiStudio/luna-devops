@@ -24,7 +24,7 @@ export function ApplicationReleaseLogsPanel({
   initialContainer = '',
   initialPod = '',
   initialPrevious = false,
-  initialView = 'deployment',
+  initialView = 'runtime',
   projectId,
   release,
   onClose,
@@ -124,24 +124,11 @@ export function ApplicationReleaseLogsPanel({
       <Tabs className="min-h-0 flex-1 gap-0" value={logView} onValueChange={value => setLogView(value as 'deployment' | 'runtime')}>
         <div className="shrink-0 border-b border-border px-4">
           <TabsList className="border-b-0">
-            {(['deployment', 'runtime'] as const).map(view => (
+            {(['runtime', 'deployment'] as const).map(view => (
               <TabsTrigger key={view} value={view}>{t(`deploymentsPage.logViews.${view}`)}</TabsTrigger>
             ))}
           </TabsList>
         </div>
-        <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="deployment">
-          <LogViewer
-            className="flex-1"
-            content={releaseLogs.data?.content}
-            downloadName={`release-${release.id}.log`}
-            emptyLabel={t('deploymentsPage.emptyLogs')}
-            live={deploymentLive}
-            meta={deploymentLive ? liveDot : undefined}
-            resetKey={`${release.id}:deployment`}
-            state={releaseLogs.isError ? 'error' : releaseLogs.isLoading ? 'loading' : 'ready'}
-            onRetry={() => void releaseLogs.refetch()}
-          />
-        </TabsContent>
         <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="runtime">
           {hasCrashHistory && !previous && activePodSnapshot && (
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-warning/10 px-4 py-2 text-xs">
@@ -244,6 +231,19 @@ export function ApplicationReleaseLogsPanel({
             resetKey={`${release.id}:runtime:${pod}:${container}:${previous}:${timestamps}:${tailLines}`}
             state={runtimeLogs.isError ? 'error' : runtimeLogs.isLoading ? 'loading' : 'ready'}
             onRetry={() => void runtimeLogs.refetch()}
+          />
+        </TabsContent>
+        <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="deployment">
+          <LogViewer
+            className="flex-1"
+            content={releaseLogs.data?.content}
+            downloadName={`release-${release.id}.log`}
+            emptyLabel={t('deploymentsPage.emptyLogs')}
+            live={deploymentLive}
+            meta={deploymentLive ? liveDot : undefined}
+            resetKey={`${release.id}:deployment`}
+            state={releaseLogs.isError ? 'error' : releaseLogs.isLoading ? 'loading' : 'ready'}
+            onRetry={() => void releaseLogs.refetch()}
           />
         </TabsContent>
       </Tabs>

@@ -304,7 +304,7 @@ export function ApplicationDeploymentsPanel({
   const hashRelease = hashReleaseMatched && currentReleaseToken && readyReleaseToken === currentReleaseToken && dismissedReleaseToken !== currentReleaseToken
     ? hashReleaseMatched
     : null
-  const activeLogTarget: LogTarget | null = logTarget ?? (hashRelease ? { release: hashRelease, view: 'deployment' } : null)
+  const activeLogTarget: LogTarget | null = logTarget ?? (hashRelease ? { release: hashRelease, view: 'runtime' } : null)
   const logRelease = activeLogTarget ? releases.find(release => release.id === activeLogTarget.release.id) ?? activeLogTarget.release : null
   // 关闭 #releaseId 触发的二级日志抽屉时保持 key 稳定，避免重挂载列表导致底层详情抽屉一并丢失。
   const initialDetailTargetId = hashTargetId || (hashReleaseMatched?.deploymentTargetId ?? '')
@@ -346,7 +346,7 @@ export function ApplicationDeploymentsPanel({
             pod: options?.pod,
             previous: options?.previous,
             release,
-            view: options?.view ?? 'deployment',
+            view: options?.view ?? 'runtime',
           })
         }}
       />
