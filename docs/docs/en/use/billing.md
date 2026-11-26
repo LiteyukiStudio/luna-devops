@@ -4,7 +4,7 @@ The billing page shows account balance, spending trends, and the projects, appli
 
 Project costs are charged to the project's **billing owner**. After ownership changes, new costs are charged to the new owner; historical charges are not transferred. Verify the project and requester before accepting a billing ownership transfer.
 
-Users can only view their own bills. Administrators can view all users or a selected user. Filter by time, user, and project. Use billing transactions for auditing and cost analysis to find the largest sources of spending.
+On the global **Billing** page in the account menu, users can view their own wallet bills, while administrators can view all users or a selected user. Inside any project space, the **Billing** sidebar section is readable by all project members: it shows spending trends, cost breakdowns by application and stage (`dev`, `test`, `staging`, `prod`), and project usage entries—with the option to switch across all accessible project spaces—without exposing the billing owner's personal wallet balance or personal AI usage.
 
 When an administrator selects **All users**, the balance card shows **Platform wallet total**: the sum of every user wallet. It is not an account balance, so no balance status or low-balance warning is shown. Select a specific user to see that account's balance status.
 

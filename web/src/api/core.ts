@@ -92,10 +92,16 @@ export function runtimeClusterResourceListQuery(params: RuntimeClusterResourceLi
 
 export function billingQuery(params: BillingListParams) {
   const search = new URLSearchParams(paginationQuery(params))
+  if (params.scopeMode)
+    search.set('scopeMode', params.scopeMode)
   for (const projectId of params.projectIds ?? []) {
     if (projectId)
       search.append('projectIds', projectId)
   }
+  if (params.applicationId)
+    search.set('applicationId', params.applicationId)
+  if (params.stage)
+    search.set('stage', params.stage)
   if (params.type)
     search.set('type', params.type)
   if (params.category)
@@ -113,6 +119,8 @@ export function billingQuery(params: BillingListParams) {
 
 export function billingSummaryQuery(projectIds?: string[], period?: BillingPeriodParams) {
   const search = new URLSearchParams()
+  if (period?.scopeMode)
+    search.set('scopeMode', period.scopeMode)
   for (const projectId of projectIds ?? []) {
     if (projectId)
       search.append('projectIds', projectId)
@@ -133,6 +141,8 @@ export function billingSummaryQuery(projectIds?: string[], period?: BillingPerio
 
 export function billingSpendTimeseriesQuery(projectIds?: string[], params?: BillingSpendTimeseriesParams) {
   const search = new URLSearchParams()
+  if (params?.scopeMode)
+    search.set('scopeMode', params.scopeMode)
   for (const projectId of projectIds ?? []) {
     if (projectId)
       search.append('projectIds', projectId)

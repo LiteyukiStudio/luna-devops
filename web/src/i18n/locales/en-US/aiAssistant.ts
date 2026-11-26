@@ -51,6 +51,7 @@ const aiAssistant = {
         topology: 'Service bindings',
         notifications: 'Notifications',
         aiDiagnosis: 'AI diagnosis',
+        billing: 'Billing',
       },
     },
     emptyTitle: 'What would you like to do?',

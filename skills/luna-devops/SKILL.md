@@ -72,7 +72,7 @@ description: 通过 Luna DevOps MCP Server（/api/v1/mcp）管理项目空间、
 ### 3.3 纯增量 Patch、合并发版与计费冻结门禁
 - 平台所有配置类写工具均为**纯增量补丁**（未传字段保持原值，绝不全量覆盖已有配置）。严禁为了改一个变量去拼凑重传整套存量配置。
 - 当连续执行多项期望配置变更（如修改环境变量、挂载数据卷、保存 `ServiceBinding`）均返回 `requiresRelease: true` 时，必须等所有期望配置修改落库后**合并触发一次 `delivery_deploy_target`**（注意 `delivery_restart_target` 仅原地重建现有 Pod，**不会**下发未发布的配置草稿）。
-- 若构建、发布、扩容或数据卷操作返回 `billing.insufficient_balance`，属于计费主体余额门禁拦截而非集群故障，**禁止重试**，直接引导核查 `ops_get_billing_summary` 或项目计费主体。
+- 若构建、发布、扩容或数据卷操作返回 `billing.insufficient_balance`，属于计费主体余额门禁拦截而非集群故障，**禁止重试**，直接引导核查项目计费主体或调用 `ops_get_billing_summary`（注意：查本人个人钱包余额须省略 `project`，显式传 `project` 仅返回项目资源消费且脱敏钱包余额）。
 
 ### 3.4 实时观测诚实性
 - 副本健康度、Pod 状态、监控指标与证书状态均在请求时实时读取外部集群。若返回 `status: unavailable` 与稳定 `observationCode`，必须如实说明集群或监控上游暂不可达，**严禁伪装成“0 副本”或“运行正常”**。

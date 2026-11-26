@@ -36,6 +36,7 @@ const overviewRowLinkClassName = '-mx-2 flex min-w-0 items-center justify-betwee
 const overviewValueLinkClassName = 'rounded-sm hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPage').then(module => ({ default: module.ApplicationsPage })))
+const BillingPage = lazy(() => import('@/pages/billing/BillingPage').then(module => ({ default: module.BillingPage })))
 const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/ProjectMembersPage').then(module => ({ default: module.ProjectMembersPage })))
 const ProjectNetworkPolicyCard = lazy(() => import('@/pages/projects/topology/project-network-policy-card').then(module => ({ default: module.ProjectNetworkPolicyCard })))
 const ProjectNetworkSharesCard = lazy(() => import('@/pages/projects/topology/project-network-shares-card').then(module => ({ default: module.ProjectNetworkSharesCard })))
@@ -172,6 +173,8 @@ export function ProjectWorkspacePage() {
             />
           </Suspense>
         )
+      case 'billing':
+        return <BillingPage key={`billing-${projectId}`} projectId={projectId} />
       default:
         return (
           <ProjectOverviewDashboard

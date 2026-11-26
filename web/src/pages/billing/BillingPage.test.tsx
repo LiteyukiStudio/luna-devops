@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getBillingSpendTimeseries: vi.fn(),
   getBillingSummary: vi.fn(),
   getGatewayTrafficStatus: vi.fn(),
+  listApplications: vi.fn(),
   listBillingDeploymentSpend: vi.fn(),
   listBillingLedgerEntries: vi.fn(),
   listBillingRateRules: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('@/api', async (importOriginal) => {
       getBillingSpendTimeseries: mocks.getBillingSpendTimeseries,
       getBillingSummary: mocks.getBillingSummary,
       getGatewayTrafficStatus: mocks.getGatewayTrafficStatus,
+      listApplications: mocks.listApplications,
       listBillingDeploymentSpend: mocks.listBillingDeploymentSpend,
       listBillingLedgerEntries: mocks.listBillingLedgerEntries,
       listBillingRateRules: mocks.listBillingRateRules,
@@ -109,6 +111,7 @@ describe('billing page spend chart integration', () => {
     window.sessionStorage.clear()
     await i18next.changeLanguage('en-US')
     mocks.listProjectsPage.mockResolvedValue({ ...emptyPage(), items: [] })
+    mocks.listApplications.mockResolvedValue([])
     mocks.listUsers.mockResolvedValue({ ...emptyPage(), items: [] })
     mocks.listBillingRateRules.mockResolvedValue([])
     mocks.getBillingSummary.mockResolvedValue(summaryFixture())
@@ -277,5 +280,182 @@ describe('billing page spend chart integration', () => {
       )
     })
     expect((await screen.findAllByText('1.5 1M tokens')).length).toBeGreaterThan(0)
+  })
+
+  it('supports project workspace mode with stage and application filters, all-project toggle, and wallet privacy', async () => {
+    const user = userEvent.setup()
+    mocks.listProjectsPage.mockResolvedValue({
+      ...emptyPage(),
+      items: [
+        { billingOwnerUserId: 'usr_owner', description: '', id: 'prj_demo', identifier: 'demo', maxConcurrentBuilds: 2, name: 'Demo Space', webConsoleEnabled: true },
+        { billingOwnerUserId: 'usr_other', description: '', id: 'prj_two', identifier: 'two', maxConcurrentBuilds: 2, name: 'Second Space', webConsoleEnabled: true },
+      ],
+      total: 2,
+      totalPages: 1,
+    })
+    mocks.listApplications.mockResolvedValue([
+      { createdAt: '', description: '', id: 'app_blog', identifier: 'blog', name: 'Blog Frontend', projectId: 'prj_demo', updatedAt: '' },
+      { createdAt: '', description: '', id: 'app_api', identifier: 'api', name: 'Blog API', projectId: 'prj_demo', updatedAt: '' },
+    ])
+    mocks.getBillingSummary.mockResolvedValue({
+      ...summaryFixture(),
+      availableCredits: '0',
+      balanceCredits: '0',
+      balanceScope: 'project',
+      balanceStatus: undefined,
+      lowBalanceLimit: '0',
+      monthSpend: '42',
+    })
+    mocks.listBillingDeploymentSpend.mockResolvedValue({
+      ...emptyPage(),
+      items: [
+        {
+          amountCredits: '12',
+          applicationId: 'app_blog',
+          applicationIdentifier: 'blog',
+          applicationName: 'Blog Frontend',
+          buildCredits: '2',
+          deploymentTargetId: 'dplt_prod',
+          deploymentTargetName: 'prod-web',
+          deploymentTargetStage: 'prod',
+          gatewayCredits: '1',
+          otherCredits: '0',
+          projectId: 'prj_demo',
+          projectIdentifier: 'demo',
+          projectName: 'Demo Space',
+          runtimeCredits: '9',
+          spendGroup: 'deployment_target',
+          storageCredits: '0',
+        },
+      ],
+      total: 1,
+      totalPages: 1,
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/projects/prj_demo?tab=billing']}>
+          <BillingPage projectId="prj_demo" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('This month spend')).toBeVisible()
+    expect(screen.queryByText('Balance')).toBeNull()
+    expect((await screen.findAllByText('Production · prod')).length).toBeGreaterThan(0)
+
+    expect(mocks.getBillingSummary).toHaveBeenCalledTimes(1)
+    expect(mocks.getBillingSummary).toHaveBeenCalledWith(
+      ['prj_demo'],
+      expect.objectContaining({ scopeMode: 'project' }),
+    )
+
+    // Filter by application and stage
+    await user.click(screen.getByRole('combobox', { name: 'Filter by application' }))
+    await user.click(await screen.findByRole('option', { name: 'Blog Frontend' }))
+    await user.click(screen.getByRole('combobox', { name: 'Filter by stage' }))
+    await user.click(await screen.findByRole('option', { name: 'Production' }))
+
+    await waitFor(() => {
+      expect(mocks.listBillingDeploymentSpend).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          applicationId: 'app_blog',
+          projectIds: ['prj_demo'],
+          scopeMode: 'project',
+          stage: 'prod',
+        }),
+      )
+    })
+
+    // Switch to all accessible project spaces and reset back to current project
+    await user.click(screen.getByRole('button', { name: 'View all project spaces' }))
+    await waitFor(() => {
+      expect(mocks.getBillingSummary).toHaveBeenLastCalledWith(
+        undefined,
+        expect.objectContaining({ scopeMode: 'project' }),
+      )
+    })
+    expect(screen.getByRole('button', { name: 'Select project spaces' })).toHaveTextContent('All project spaces')
+    expect(window.sessionStorage.getItem('luna.billing.projectScope')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Current project space only' }))
+    await waitFor(() => {
+      expect(mocks.getBillingSummary).toHaveBeenLastCalledWith(
+        ['prj_demo'],
+        expect.objectContaining({ scopeMode: 'project' }),
+      )
+    })
+
+    // Ledger tab omits private wallet Balance after column and type filter, and supports application filter
+    await user.click(screen.getByRole('tab', { name: 'Billing ledger' }))
+    expect(screen.queryByText('Balance after')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Filter by entry type' })).toBeNull()
+    await user.click(screen.getByRole('combobox', { name: 'Filter by application' }))
+    await user.click(await screen.findByRole('option', { name: 'Blog API' }))
+    await waitFor(() => {
+      expect(mocks.listBillingLedgerEntries).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          applicationId: 'app_api',
+          projectIds: ['prj_demo'],
+          scopeMode: 'project',
+        }),
+      )
+    })
+  })
+
+  it('prunes non-owned cached project IDs in wallet mode and preserves chart when scoped summary fails', async () => {
+    window.sessionStorage.setItem('luna.billing.projectScope', JSON.stringify(['prj_not_owned', 'prj_owned']))
+    mocks.listProjectsPage.mockResolvedValue({
+      ...emptyPage(),
+      items: [
+        { billingOwnerUserId: 'usr_1', description: '', id: 'prj_owned', identifier: 'owned', maxConcurrentBuilds: 2, name: 'Owned Space', webConsoleEnabled: true },
+        { billingOwnerUserId: 'usr_other', description: '', id: 'prj_not_owned', identifier: 'other', maxConcurrentBuilds: 2, name: 'Team Space', webConsoleEnabled: true },
+      ],
+      total: 2,
+      totalPages: 1,
+    })
+    mocks.getBillingSummary.mockImplementation((projectIds) => {
+      if (projectIds)
+        return Promise.reject(new Error('Summary unavailable'))
+      return Promise.resolve(summaryFixture())
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <BillingPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    // Non-owned cached project ID is gated before initial requests fire, persisted pruned in sessionStorage, and chart stays visible despite scoped summary failure
+    await waitFor(() => {
+      expect(mocks.getBillingSpendTimeseries).toHaveBeenCalledWith(
+        ['prj_owned'],
+        expect.any(Object),
+        expect.any(AbortSignal),
+      )
+    })
+    expect(mocks.getBillingSpendTimeseries).not.toHaveBeenCalledWith(
+      expect.arrayContaining(['prj_not_owned']),
+      expect.anything(),
+      expect.anything(),
+    )
+    expect(mocks.getBillingSummary).not.toHaveBeenCalledWith(
+      expect.arrayContaining(['prj_not_owned']),
+      expect.anything(),
+    )
+    expect(window.sessionStorage.getItem('luna.billing.projectScope')).toBe(JSON.stringify(['prj_owned']))
+    expect(await screen.findByRole('group', { name: 'Spend over time chart' })).toBeVisible()
+    expect(screen.getByText('Summary unavailable')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
   })
 })

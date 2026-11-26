@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   legacyProjectWorkspaceSearch,
   normalizeProjectAIDiagnosisTab,
+  normalizeProjectBillingTab,
   normalizeProjectSharedConfigTab,
   normalizeProjectWorkspaceSection,
   projectWorkspaceSectionPath,
@@ -9,16 +10,18 @@ import {
 } from './project-workspace-sections'
 
 describe('project workspace sections', () => {
-  it('starts with the overview as the default landing section, followed by applications, and includes AI diagnosis in the sidebar', () => {
-    expect(projectWorkspaceSections.map(section => section.value)).toEqual(['overview', 'apps', 'shared-config', 'volumes', 'members', 'topology', 'notifications', 'ai-diagnosis'])
+  it('starts with the overview as the default landing section, followed by applications, and includes AI diagnosis and billing in the sidebar', () => {
+    expect(projectWorkspaceSections.map(section => section.value)).toEqual(['overview', 'apps', 'shared-config', 'volumes', 'members', 'topology', 'notifications', 'ai-diagnosis', 'billing'])
     expect(normalizeProjectWorkspaceSection(null)).toBe('overview')
     expect(normalizeProjectWorkspaceSection('unknown')).toBe('overview')
     expect(normalizeProjectWorkspaceSection('notifications')).toBe('notifications')
     expect(normalizeProjectWorkspaceSection('ai-diagnosis')).toBe('ai-diagnosis')
+    expect(normalizeProjectWorkspaceSection('billing')).toBe('billing')
     expect(projectWorkspaceSectionPath('prj 1', 'overview')).toBe('/projects/prj%201')
     expect(projectWorkspaceSectionPath('prj_1', 'apps')).toBe('/projects/prj_1?tab=apps')
     expect(projectWorkspaceSectionPath('prj_1', 'notifications')).toBe('/projects/prj_1?tab=notifications')
     expect(projectWorkspaceSectionPath('prj_1', 'ai-diagnosis')).toBe('/projects/prj_1?tab=ai-diagnosis')
+    expect(projectWorkspaceSectionPath('prj_1', 'billing')).toBe('/projects/prj_1?tab=billing')
   })
 
   it('maps legacy shared-config and notification AI automation URLs to their dedicated sections', () => {
@@ -38,5 +41,9 @@ describe('project workspace sections', () => {
     expect(normalizeProjectAIDiagnosisTab(null)).toBe('history')
     expect(normalizeProjectAIDiagnosisTab('unknown')).toBe('history')
     expect(normalizeProjectAIDiagnosisTab('settings')).toBe('settings')
+    expect(normalizeProjectBillingTab(null)).toBe('deployment-spend')
+    expect(normalizeProjectBillingTab('unknown')).toBe('deployment-spend')
+    expect(normalizeProjectBillingTab('ledger')).toBe('ledger')
+    expect(normalizeProjectBillingTab('prices')).toBe('prices')
   })
 })

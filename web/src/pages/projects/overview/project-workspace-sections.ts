@@ -1,11 +1,12 @@
 import type { LucideIcon } from 'lucide-react'
-import { Bell, Boxes, HardDrive, LayoutDashboard, Network, SlidersHorizontal, Sparkles, Users } from 'lucide-react'
+import { Bell, Boxes, CreditCard, HardDrive, LayoutDashboard, Network, SlidersHorizontal, Sparkles, Users } from 'lucide-react'
 
-export type ProjectWorkspaceSection = 'overview' | 'apps' | 'shared-config' | 'volumes' | 'members' | 'topology' | 'notifications' | 'ai-diagnosis'
+export type ProjectWorkspaceSection = 'overview' | 'apps' | 'shared-config' | 'volumes' | 'members' | 'topology' | 'notifications' | 'ai-diagnosis' | 'billing'
 
 /** “共享配置”分区内的 Tab；值沿用原独立分区的 `?tab=`，旧链接可一一映射。 */
 export type ProjectSharedConfigTab = 'build-variables' | 'runtime-configs' | 'hooks'
 export type ProjectAIDiagnosisTab = 'history' | 'settings'
+export type ProjectBillingTab = 'deployment-spend' | 'ledger' | 'prices'
 
 /**
  * 项目空间工作区的分区。侧栏导航、命令面板和工作区页面共用这一份定义；分区由 URL `?tab=` 表达，缺省为概览。
@@ -19,18 +20,23 @@ export const projectWorkspaceSections: { icon: LucideIcon, labelKey: string, val
   { icon: Network, labelKey: 'nav.projectSections.topology', value: 'topology' },
   { icon: Bell, labelKey: 'nav.projectSections.notifications', value: 'notifications' },
   { icon: Sparkles, labelKey: 'nav.projectSections.aiDiagnosis', value: 'ai-diagnosis' },
+  { icon: CreditCard, labelKey: 'nav.projectSections.billing', value: 'billing' },
 ]
 
 export const projectSharedConfigTabs: readonly ProjectSharedConfigTab[] = ['build-variables', 'runtime-configs', 'hooks']
 export const projectAIDiagnosisTabs: readonly ProjectAIDiagnosisTab[] = ['history', 'settings']
+export const projectBillingTabs: readonly ProjectBillingTab[] = ['deployment-spend', 'ledger', 'prices']
 
 export const defaultProjectWorkspaceSection: ProjectWorkspaceSection = 'overview'
 const defaultProjectSharedConfigTab: ProjectSharedConfigTab = 'build-variables'
 const defaultProjectAIDiagnosisTab: ProjectAIDiagnosisTab = 'history'
+const defaultProjectBillingTab: ProjectBillingTab = 'deployment-spend'
 /** 共享配置分区内 Tab 的 URL 参数名。 */
 export const projectSharedConfigTabParam = 'config'
 /** AI 诊断分区内 Tab 的 URL 参数名。 */
 export const projectAIDiagnosisTabParam = 'view'
+/** 账单分区内 Tab 的 URL 参数名。 */
+export const projectBillingTabParam = 'view'
 
 function sharedConfigTabOf(value: string | null) {
   return projectSharedConfigTabs.find(tab => tab === value)
@@ -48,6 +54,10 @@ export function normalizeProjectSharedConfigTab(value: string | null): ProjectSh
 
 export function normalizeProjectAIDiagnosisTab(value: string | null): ProjectAIDiagnosisTab {
   return projectAIDiagnosisTabs.find(tab => tab === value) ?? defaultProjectAIDiagnosisTab
+}
+
+export function normalizeProjectBillingTab(value: string | null): ProjectBillingTab {
+  return projectBillingTabs.find(tab => tab === value) ?? defaultProjectBillingTab
 }
 
 /**

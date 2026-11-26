@@ -24,6 +24,7 @@ func TestProjectPolicyRoleMatrix(t *testing.T) {
 		denied  []string
 	}{
 		{ActionDeploymentRead, []string{ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer}, nil},
+		{ActionBillingRead, []string{ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer}, nil},
 		{ActionDeploymentUpdate, []string{ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper}, []string{ProjectRoleViewer}},
 		{ActionDeploymentDelete, []string{ProjectRoleOwner, ProjectRoleAdmin}, []string{ProjectRoleDeveloper, ProjectRoleViewer}},
 		{ActionGatewayDelete, []string{ProjectRoleOwner, ProjectRoleAdmin}, []string{ProjectRoleDeveloper, ProjectRoleViewer}},

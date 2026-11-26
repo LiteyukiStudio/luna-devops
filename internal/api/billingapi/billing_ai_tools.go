@@ -20,7 +20,7 @@ const billingUsageMeterEnum = "build.cpu_vcpu_minute|build.memory_gib_minute|bui
 const billingRateRuleMeterEnum = "build.cpu_vcpu_minute|build.memory_gib_minute|runtime.cpu_vcpu_hour|runtime.memory_gib_hour|storage.gib_day|storage.transfer_gib|gateway.egress_gib|gateway.requests_1000"
 
 type opsGetBillingSummaryInput struct {
-	Project                *string `json:"project,omitempty" desc:"可选限定查看本人作为 billingOwner 的项目费用归属（查个人总余额或 ai.* 费用请省略）"`
+	Project                *string `json:"project,omitempty" desc:"显式指定已加入项目空间的 ID 或 identifier 查看该项目资源费用汇总与应用/环境排行（不会从会话自动注入；项目成员可读且不返回私人钱包余额；查本人钱包余额或 ai.* 费用必须省略）"`
 	PeriodStart            *string `json:"periodStart,omitempty" desc:"RFC3339 起始时间（与 periodEnd 成对传入，半开区间 [periodStart, periodEnd)）"`
 	PeriodEnd              *string `json:"periodEnd,omitempty" desc:"RFC3339 结束时间（须晚于 periodStart）"`
 	TimeZone               *string `json:"timeZone,omitempty" default:"UTC" desc:"IANA 时区名（如 Asia/Shanghai，默认 UTC），决定今日/本月边界"`
@@ -29,8 +29,8 @@ type opsGetBillingSummaryInput struct {
 }
 
 type opsListBillingRecordsInput struct {
-	RecordType  string  `json:"recordType" required:"true" enum:"ledger|usage" desc:"查询记录类型：ledger（钱包流水）或 usage（资源计量明细）"`
-	Project     *string `json:"project,omitempty" desc:"限定本人作为 billingOwner 的项目 ID 或 identifier（ai.* 费用不归属项目，查 ai.* 时请勿传入）"`
+	RecordType  string  `json:"recordType" required:"true" enum:"ledger|usage" desc:"查询记录类型：ledger（钱包或项目扣费流水）或 usage（资源计量明细）"`
+	Project     *string `json:"project,omitempty" desc:"显式指定已加入项目空间的 ID 或 identifier 查看该项目扣费流水或用量（不会从会话自动注入；项目成员可读、仅支持 debit 且脱敏私人钱包余额；查个人充值/调账或 ai.* 费用必须省略）"`
 	Meter       *string `json:"meter,omitempty" enum:"build.cpu_vcpu_minute|build.memory_gib_minute|build.job|runtime.cpu_vcpu_hour|runtime.memory_gib_hour|storage.gib_day|storage.transfer_gib|gateway.egress_gib|gateway.requests_1000|ai.prompt_tokens_1m|ai.completion_tokens_1m|ai.cached_prompt_tokens_1m|ai.cache_write_prompt_tokens_1m" desc:"recordType=usage 时按计量项枚举过滤"`
 	LedgerType  *string `json:"ledgerType,omitempty" enum:"debit|credit|adjustment" desc:"recordType=ledger 时按流水类型过滤"`
 	PeriodStart *string `json:"periodStart,omitempty" desc:"RFC3339 起始时间（与 periodEnd 成对传入）"`
@@ -91,10 +91,12 @@ func (h *Handler) RegisterAITools(reg *aitool.Registry) {
 	aitool.Register(reg, aitool.Spec[opsGetBillingSummaryInput, map[string]any]{
 		Name:                     "ops_get_billing_summary",
 		Domain:                   aitool.DomainOps,
-		Title:                    "查看本人账单与消费汇总",
-		Summary:                  "查询当前登录用户本人的钱包余额、今日/本月消费汇总、应用/环境消费排行、网关流量探针鲜活度及可选计费单价表",
-		AliasesZH:                []string{"个人账单", "钱包余额", "消费汇总", "费用排行", "计费单价"},
-		AliasesEN:                []string{"my billing summary", "wallet balance", "spend summary"},
+		Title:                    "查看个人钱包或项目空间费用汇总",
+		Summary:                  "省略 project 查询当前用户本人钱包余额、AI 消费与个人账单汇总；显式传入 project 查询该已加入项目空间的资源消费汇总与应用/环境排行（所有项目成员可读，脱敏计费归属人私人钱包余额）",
+		Purpose:                  aitool.Text("查询本人个人钱包余额与消费（省略 project），或显式传入 project 查询已加入项目空间的资源消费汇总及应用/环境排行（project 不会自动注入；传入 project 时不返回钱包余额）。", "Read the caller's personal wallet balance and spend (omit project), or pass project explicitly to read a member project's resource spend and stage breakdown (wallet balances are omitted in project scope)."),
+		SuccessEvidence:          aitool.Text("省略 project 时返回本人钱包余额与消费汇总；传入 project 时返回 balanceScope=project 的项目消费汇总与应用/环境排行（不含私人钱包余额）。", "Returns wallet balance and spend summary when project is omitted, or project-scoped spend breakdown (walletBalanceRedacted=true) when project is provided."),
+		AliasesZH:                []string{"个人账单", "项目账单", "钱包余额", "消费汇总", "费用排行", "计费单价"},
+		AliasesEN:                []string{"my billing summary", "project billing summary", "wallet balance", "spend summary"},
 		AllowPersonalProjectOmit: true,
 		ApprovalTier:             aitool.ApprovalTierL0,
 		Effect:                   aitool.EffectRead,
@@ -105,10 +107,11 @@ func (h *Handler) RegisterAITools(reg *aitool.Registry) {
 	aitool.Register(reg, aitool.Spec[opsListBillingRecordsInput, map[string]any]{
 		Name:                     "ops_list_billing_records",
 		Domain:                   aitool.DomainOps,
-		Title:                    "查询本人账单流水与计量明细",
-		Summary:                  "分页查询当前登录用户本人的钱包流水（ledger）或资源用量明细（usage）",
-		AliasesZH:                []string{"账单流水", "扣费明细", "用量记录", "消费记录"},
-		AliasesEN:                []string{"my billing records", "wallet ledger", "usage records"},
+		Title:                    "查询个人钱包或项目空间账单明细",
+		Summary:                  "省略 project 分页查询当前用户本人的钱包流水（ledger）或资源用量明细（usage）；显式传入 project 查询已加入项目空间的扣费流水或用量明细（所有项目成员可读，脱敏私人钱包变动后余额）",
+		Purpose:                  aitool.Text("分页查询本人钱包流水/用量（省略 project），或显式传入 project 查询已加入项目空间的扣费流水与资源计量明细（project 不会自动注入；项目模式下仅返回 debit 扣费并脱敏钱包余额）。", "List the caller's personal wallet ledger/usage records (omit project), or pass project explicitly to list a member project's usage debits and metering records with private wallet balances redacted."),
+		AliasesZH:                []string{"账单流水", "项目扣费明细", "扣费明细", "用量记录", "消费记录"},
+		AliasesEN:                []string{"my billing records", "project billing records", "wallet ledger", "usage records"},
 		AllowPersonalProjectOmit: true,
 		ApprovalTier:             aitool.ApprovalTierL0,
 		Effect:                   aitool.EffectRead,
@@ -185,13 +188,17 @@ func (h *Handler) executeOpsGetBillingSummary(tc *aitool.ToolContext, in opsGetB
 
 	var projectIDs []string
 	resolvedProjectID := ""
+	projectScoped := false
+	userIDs := []string{tc.User.ID}
 	if projRef := strings.TrimSpace(derefBillingStr(in.Project)); projRef != "" {
-		proj, err := h.resolvePersonalBillingProject(tc, projRef)
+		proj, err := h.resolveAccessibleBillingProject(tc, projRef)
 		if err != nil {
 			return nil, err
 		}
 		resolvedProjectID = proj.ID
 		projectIDs = []string{proj.ID}
+		projectScoped = true
+		userIDs = nil
 	}
 
 	period, err := parseBillingToolPeriod(in.PeriodStart, in.PeriodEnd)
@@ -204,13 +211,14 @@ func (h *Handler) executeOpsGetBillingSummary(tc *aitool.ToolContext, in opsGetB
 	}
 
 	summary, err := (billing.Service{DB: tc.DB}).Summary(billing.SummaryInput{
-		UserIDs:         []string{tc.User.ID},
+		UserIDs:         userIDs,
 		ProjectIDs:      projectIDs,
 		Now:             time.Now().In(loc),
 		LowBalanceLimit: h.configuredLowBalanceLimit(),
 		PeriodStart:     period.Start,
 		PeriodEnd:       period.End,
 		PlatformTotal:   false,
+		ProjectScoped:   projectScoped,
 	})
 	if err != nil {
 		return nil, aitool.NewError(http.StatusInternalServerError, "billing.summary_failed", err.Error())
@@ -229,7 +237,7 @@ func (h *Handler) executeOpsGetBillingSummary(tc *aitool.ToolContext, in opsGetB
 
 	includeSpend := in.IncludeDeploymentSpend == nil || *in.IncludeDeploymentSpend
 	if includeSpend {
-		spendItems, _, spendErr := queryDeploymentSpend(tc.DB, []string{tc.User.ID}, projectIDs, len(projectIDs) > 0, period, 1, 50)
+		spendItems, _, spendErr := queryDeploymentSpend(tc.DB, userIDs, projectIDs, projectScoped, period, 1, 50)
 		if spendErr != nil {
 			return nil, spendErr
 		}
@@ -277,6 +285,14 @@ func (h *Handler) executeOpsListBillingRecords(tc *aitool.ToolContext, in opsLis
 			"Omit the project parameter when querying ai.* meters.",
 		)
 	}
+	if projRef != "" && recordType == "ledger" && ledgerType != "" && ledgerType != "debit" {
+		return nil, aitool.NewErrorWithHint(
+			http.StatusBadRequest,
+			"billing.argument_invalid",
+			"project-scoped ledger queries only expose usage debits",
+			"Omit the project parameter when inspecting personal wallet credits or adjustments.",
+		)
+	}
 
 	period, err := parseBillingToolPeriod(in.PeriodStart, in.PeriodEnd)
 	if err != nil {
@@ -289,33 +305,53 @@ func (h *Handler) executeOpsListBillingRecords(tc *aitool.ToolContext, in opsLis
 
 	var projectIDs []string
 	resolvedProjectID := ""
+	projectScoped := false
+	userIDs := []string{tc.User.ID}
 	if projRef != "" {
-		proj, projErr := h.resolvePersonalBillingProject(tc, projRef)
+		proj, projErr := h.resolveAccessibleBillingProject(tc, projRef)
 		if projErr != nil {
 			return nil, projErr
 		}
 		resolvedProjectID = proj.ID
 		projectIDs = []string{proj.ID}
+		projectScoped = true
+		userIDs = nil
 	}
 
 	page, pageSize := aitool.NormalizePagination(in.Page, in.PageSize, 20, 50)
 
 	if recordType == "ledger" {
-		entries, total, qErr := queryBillingLedger(tc.DB, []string{tc.User.ID}, projectIDs, len(projectIDs) > 0, "", ledgerType, period, page, pageSize)
+		effectiveLedgerType := ledgerType
+		if projectScoped {
+			effectiveLedgerType = "debit"
+		}
+		entries, total, qErr := queryBillingLedger(tc.DB, userIDs, projectIDs, projectScoped, false, "", effectiveLedgerType, period, page, pageSize)
 		if qErr != nil {
 			return nil, qErr
+		}
+		if projectScoped {
+			for index := range entries {
+				entries[index].UserID = ""
+				entries[index].BalanceAfterCredits = decimal.Zero
+			}
 		}
 		env := aitool.PageEnvelope(entries, page, pageSize, "createdAt", "desc", total)
 		env["recordType"] = "ledger"
 		if resolvedProjectID != "" {
 			env["projectId"] = resolvedProjectID
+			env["walletBalanceRedacted"] = true
 		}
 		return env, nil
 	}
 
-	records, total, qErr := queryBillingUsage(tc.DB, []string{tc.User.ID}, projectIDs, len(projectIDs) > 0, meter, period, page, pageSize)
+	records, total, qErr := queryBillingUsage(tc.DB, userIDs, projectIDs, projectScoped, false, meter, period, page, pageSize)
 	if qErr != nil {
 		return nil, qErr
+	}
+	if projectScoped {
+		for index := range records {
+			records[index].BilledUserID = ""
+		}
 	}
 	env := aitool.PageEnvelope(records, page, pageSize, "createdAt", "desc", total)
 	env["recordType"] = "usage"
@@ -485,7 +521,7 @@ func (h *Handler) executeAdminInspectBilling(tc *aitool.ToolContext, in adminIns
 		if targetUser != nil {
 			userIDs = []string{targetUser.ID}
 		}
-		entries, total, qErr := queryBillingLedger(tc.DB, userIDs, projectIDs, len(projectIDs) > 0, ledgerEntryID, ledgerType, period, page, pageSize)
+		entries, total, qErr := queryBillingLedger(tc.DB, userIDs, projectIDs, len(projectIDs) > 0, targetUser == nil && len(projectIDs) == 0, ledgerEntryID, ledgerType, period, page, pageSize)
 		if qErr != nil {
 			return nil, qErr
 		}
@@ -507,7 +543,7 @@ func (h *Handler) executeAdminInspectBilling(tc *aitool.ToolContext, in adminIns
 		if targetUser != nil {
 			userIDs = []string{targetUser.ID}
 		}
-		records, total, qErr := queryBillingUsage(tc.DB, userIDs, projectIDs, len(projectIDs) > 0, meter, period, page, pageSize)
+		records, total, qErr := queryBillingUsage(tc.DB, userIDs, projectIDs, len(projectIDs) > 0, targetUser == nil && len(projectIDs) == 0, meter, period, page, pageSize)
 		if qErr != nil {
 			return nil, qErr
 		}
@@ -828,7 +864,7 @@ func validateWalletAdjustParams(in adminAdjustUserWalletInput) (string, decimal.
 	return txType, amount, desc, nil
 }
 
-func (h *Handler) resolvePersonalBillingProject(tc *aitool.ToolContext, projRef string) (model.Project, error) {
+func (h *Handler) resolveAccessibleBillingProject(tc *aitool.ToolContext, projRef string) (model.Project, error) {
 	proj, err := aitool.ResolveProject(tc.DB, projRef)
 	if err != nil {
 		return model.Project{}, err
@@ -838,14 +874,19 @@ func (h *Handler) resolvePersonalBillingProject(tc *aitool.ToolContext, projRef 
 		mismatch.Hint = "Switch to an unbound global conversation when inspecting another project."
 		return model.Project{}, mismatch
 	}
-	if strings.TrimSpace(proj.BillingOwnerUserID) != tc.User.ID {
-		forbidden := aitool.Forbidden("billing.project_forbidden", "current user is not the billingOwner of the requested project")
-		if authz.IsPlatformAdmin(tc.User.Role) {
-			forbidden.Hint = "Use admin_inspect_billing to inspect billing for projects owned by another user."
-		}
-		return model.Project{}, forbidden
+	if authz.IsPlatformAdmin(tc.User.Role) {
+		return proj, nil
 	}
-	return proj, nil
+	accessibleIDs, err := accessibleBillingProjectIDs(tc.DB, tc.User.ID)
+	if err != nil {
+		return model.Project{}, aitool.NewError(http.StatusInternalServerError, "database.query_failed", err.Error())
+	}
+	for _, id := range accessibleIDs {
+		if id == proj.ID {
+			return proj, nil
+		}
+	}
+	return model.Project{}, aitool.Forbidden("billing.project_forbidden", "current user cannot access the requested project billing")
 }
 
 func (h *Handler) buildGatewayTrafficSummary(tc *aitool.ToolContext) (gatewayTrafficSummaryView, error) {
@@ -998,11 +1039,15 @@ func queryBillingLedger(
 	userIDs []string,
 	projectIDs []string,
 	filterProjects bool,
+	platformWide bool,
 	ledgerEntryID string,
 	ledgerType string,
 	period billingPeriodQuery,
 	page, pageSize int,
 ) ([]billingLedgerEntryItem, int64, error) {
+	if (filterProjects && len(projectIDs) == 0) || (!filterProjects && !platformWide && len(userIDs) == 0) {
+		return []billingLedgerEntryItem{}, 0, nil
+	}
 	query := db.Table("billing_ledger_entries as ledger").
 		Joins("LEFT JOIN billing_usage_records AS usage ON usage.id = ledger.usage_record_id")
 	if len(userIDs) > 0 {
@@ -1065,10 +1110,14 @@ func queryBillingUsage(
 	userIDs []string,
 	projectIDs []string,
 	filterProjects bool,
+	platformWide bool,
 	meter string,
 	period billingPeriodQuery,
 	page, pageSize int,
 ) ([]billingUsageRecordItem, int64, error) {
+	if (filterProjects && len(projectIDs) == 0) || (!filterProjects && !platformWide && len(userIDs) == 0) {
+		return []billingUsageRecordItem{}, 0, nil
+	}
 	query := db.Table("billing_usage_records as usage")
 	if len(userIDs) > 0 {
 		query = query.Where("usage.billed_user_id in ?", userIDs)
@@ -1129,7 +1178,7 @@ func queryDeploymentSpend(
 	period billingPeriodQuery,
 	page, pageSize int,
 ) ([]billingDeploymentSpendItem, int64, error) {
-	if len(userIDs) == 0 {
+	if (!filterProjects && len(userIDs) == 0) || (filterProjects && len(projectIDs) == 0) {
 		return []billingDeploymentSpendItem{}, 0, nil
 	}
 
@@ -1137,14 +1186,18 @@ func queryDeploymentSpend(
 	spendGroupSQL := billingSpendGroupSQL()
 	grouped := db.Table("billing_usage_records as usage").
 		Select("usage.project_id, usage.application_id, "+deploymentTargetIDSQL+" AS deployment_target_id, "+spendGroupSQL+" AS spend_group").
+		Joins("JOIN projects ON projects.id = usage.project_id").
 		Joins("LEFT JOIN build_runs ON build_runs.id = usage.resource_id AND usage.resource_type = ?", billing.ResourceTypeBuildRun).
 		Joins("LEFT JOIN gateway_routes ON gateway_routes.id = split_part(usage.resource_id, ':', 1) AND usage.resource_type = ?", billing.ResourceTypeGateway).
-		Where("usage.billed_user_id in ? AND usage.status = ?", userIDs, "settled").
-		Group("usage.project_id, usage.application_id, " + deploymentTargetIDSQL + ", " + spendGroupSQL)
+		Where("usage.status = ?", "settled")
+	if len(userIDs) > 0 {
+		grouped = grouped.Where("usage.billed_user_id in ?", userIDs)
+	}
 	if filterProjects {
 		grouped = grouped.Where("usage.project_id in ?", projectIDs)
 	}
-	grouped = applyBillingOccurredPeriod(grouped, "usage.period_start", period)
+	grouped = applyBillingOccurredPeriod(grouped, "usage.period_start", period).
+		Group("usage.project_id, usage.application_id, " + deploymentTargetIDSQL + ", " + spendGroupSQL)
 
 	var total int64
 	if err := db.Table("(?) as grouped", grouped).Count(&total).Error; err != nil {
@@ -1176,11 +1229,14 @@ func queryDeploymentSpend(
 		Joins("LEFT JOIN build_runs ON build_runs.id = usage.resource_id AND usage.resource_type = ?", billing.ResourceTypeBuildRun).
 		Joins("LEFT JOIN gateway_routes ON gateway_routes.id = split_part(usage.resource_id, ':', 1) AND usage.resource_type = ?", billing.ResourceTypeGateway).
 		Joins("LEFT JOIN deployment_targets ON deployment_targets.id = "+deploymentTargetIDSQL).
-		Where("usage.billed_user_id in ? AND usage.status = ?", userIDs, "settled").
-		Group("usage.project_id, projects.name, projects.identifier, usage.application_id, applications.name, applications.identifier, " + deploymentTargetIDSQL + ", " + spendGroupSQL + ", deployment_targets.name, deployment_targets.stage")
+		Where("usage.status = ?", "settled")
+	if len(userIDs) > 0 {
+		query = query.Where("usage.billed_user_id in ?", userIDs)
+	}
 	if filterProjects {
 		query = query.Where("usage.project_id in ?", projectIDs)
 	}
+	query = query.Group("usage.project_id, projects.name, projects.identifier, usage.application_id, applications.name, applications.identifier, " + deploymentTargetIDSQL + ", " + spendGroupSQL + ", deployment_targets.name, deployment_targets.stage")
 	query = applyBillingOccurredPeriod(query, "usage.period_start", period)
 	if err := query.Order("amount_credits desc").Limit(pageSize).Offset((page - 1) * pageSize).Find(&items).Error; err != nil {
 		return nil, 0, aitool.NewError(http.StatusInternalServerError, "database.query_failed", err.Error())
@@ -1202,16 +1258,20 @@ func summaryToMap(s billing.ProjectBillingSummary) map[string]any {
 	}
 	out := map[string]any{
 		"balanceScope":      s.BalanceScope,
-		"balanceCredits":    s.BalanceCredits,
 		"todaySpend":        s.TodaySpend,
 		"monthSpend":        s.MonthSpend,
 		"periodSpend":       s.PeriodSpend,
 		"pendingSpend":      s.PendingSpend,
-		"availableCredits":  s.AvailableCredits,
-		"lowBalanceLimit":   s.LowBalanceLimit,
 		"monthlyCategories": monthly,
 		"periodCategories":  period,
 	}
+	if s.BalanceScope == billing.BalanceScopeProject {
+		out["walletBalanceRedacted"] = true
+		return out
+	}
+	out["balanceCredits"] = s.BalanceCredits
+	out["availableCredits"] = s.AvailableCredits
+	out["lowBalanceLimit"] = s.LowBalanceLimit
 	if s.BalanceStatus != "" {
 		out["balanceStatus"] = s.BalanceStatus
 	}

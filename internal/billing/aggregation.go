@@ -14,6 +14,9 @@ const (
 	// BalanceScopePlatformTotal means balanceCredits sums every wallet in the
 	// platform; no single account balance status exists for that total.
 	BalanceScopePlatformTotal = "platform_total"
+	// BalanceScopeProject means spend is aggregated across project spaces
+	// without exposing any billing owner's private wallet balance.
+	BalanceScopeProject = "project"
 )
 
 // OccurredAtSQL is the billing occurrence time of a ledger entry joined as
@@ -52,6 +55,9 @@ type SummaryInput struct {
 	PeriodEnd       *time.Time
 	// PlatformTotal sums every wallet in UserIDs without an account status.
 	PlatformTotal bool
+	// ProjectScoped aggregates resource spend strictly by ProjectIDs across all
+	// historical billing owners and omits private wallet balances.
+	ProjectScoped bool
 }
 
 type spendPeriod struct {
@@ -68,7 +74,51 @@ func DayAndMonthStart(now time.Time) (time.Time, time.Time) {
 }
 
 func (s Service) Summary(input SummaryInput) (ProjectBillingSummary, error) {
-	summary := ProjectBillingSummary{BalanceScope: BalanceScopeAccount, LowBalanceLimit: input.LowBalanceLimit}
+	if input.ProjectScoped {
+		summary := ProjectBillingSummary{
+			BalanceScope:      BalanceScopeProject,
+			LowBalanceLimit:   decimal.Zero,
+			MonthlyCategories: []BillingSpendCategory{},
+			PeriodCategories:  []BillingSpendCategory{},
+		}
+		if len(input.ProjectIDs) == 0 {
+			return summary, nil
+		}
+		dayStart, monthStart := DayAndMonthStart(input.Now)
+		var err error
+		if summary.TodaySpend, err = s.spendScoped(true, nil, input.ProjectIDs, spendPeriod{start: &dayStart}); err != nil {
+			return summary, err
+		}
+		if summary.MonthSpend, err = s.spendScoped(true, nil, input.ProjectIDs, spendPeriod{start: &monthStart}); err != nil {
+			return summary, err
+		}
+		if summary.PendingSpend, err = s.pendingSpendScoped(true, nil, input.ProjectIDs); err != nil {
+			return summary, err
+		}
+		if summary.MonthlyCategories, err = s.spendCategoriesScoped(true, nil, input.ProjectIDs, spendPeriod{start: &monthStart}); err != nil {
+			return summary, err
+		}
+		if input.PeriodStart != nil && input.PeriodEnd != nil {
+			period := spendPeriod{start: input.PeriodStart, end: input.PeriodEnd}
+			if summary.PeriodSpend, err = s.spendScoped(true, nil, input.ProjectIDs, period); err != nil {
+				return summary, err
+			}
+			if summary.PeriodCategories, err = s.spendCategoriesScoped(true, nil, input.ProjectIDs, period); err != nil {
+				return summary, err
+			}
+		} else {
+			summary.PeriodSpend = summary.MonthSpend
+			summary.PeriodCategories = summary.MonthlyCategories
+		}
+		return summary, nil
+	}
+
+	summary := ProjectBillingSummary{
+		BalanceScope:      BalanceScopeAccount,
+		LowBalanceLimit:   input.LowBalanceLimit,
+		MonthlyCategories: []BillingSpendCategory{},
+		PeriodCategories:  []BillingSpendCategory{},
+	}
 	if input.PlatformTotal {
 		summary.BalanceScope = BalanceScopePlatformTotal
 	}
@@ -84,28 +134,28 @@ func (s Service) Summary(input SummaryInput) (ProjectBillingSummary, error) {
 	}
 	summary.BalanceCredits = balance
 	dayStart, monthStart := DayAndMonthStart(input.Now)
-	if summary.TodaySpend, err = s.spend(input.UserIDs, input.ProjectIDs, spendPeriod{start: &dayStart}); err != nil {
+	if summary.TodaySpend, err = s.spendScoped(false, input.UserIDs, input.ProjectIDs, spendPeriod{start: &dayStart}); err != nil {
 		return summary, err
 	}
-	if summary.MonthSpend, err = s.spend(input.UserIDs, input.ProjectIDs, spendPeriod{start: &monthStart}); err != nil {
+	if summary.MonthSpend, err = s.spendScoped(false, input.UserIDs, input.ProjectIDs, spendPeriod{start: &monthStart}); err != nil {
 		return summary, err
 	}
-	if summary.PendingSpend, err = s.pendingSpend(input.UserIDs, input.ProjectIDs); err != nil {
+	if summary.PendingSpend, err = s.pendingSpendScoped(false, input.UserIDs, input.ProjectIDs); err != nil {
 		return summary, err
 	}
 	summary.AvailableCredits = summary.BalanceCredits.Sub(summary.PendingSpend)
 	if !input.PlatformTotal {
 		summary.BalanceStatus = balanceStatus(summary.AvailableCredits, input.LowBalanceLimit)
 	}
-	if summary.MonthlyCategories, err = s.spendCategories(input.UserIDs, input.ProjectIDs, spendPeriod{start: &monthStart}); err != nil {
+	if summary.MonthlyCategories, err = s.spendCategoriesScoped(false, input.UserIDs, input.ProjectIDs, spendPeriod{start: &monthStart}); err != nil {
 		return summary, err
 	}
 	if input.PeriodStart != nil && input.PeriodEnd != nil {
 		period := spendPeriod{start: input.PeriodStart, end: input.PeriodEnd}
-		if summary.PeriodSpend, err = s.spend(input.UserIDs, input.ProjectIDs, period); err != nil {
+		if summary.PeriodSpend, err = s.spendScoped(false, input.UserIDs, input.ProjectIDs, period); err != nil {
 			return summary, err
 		}
-		if summary.PeriodCategories, err = s.spendCategories(input.UserIDs, input.ProjectIDs, period); err != nil {
+		if summary.PeriodCategories, err = s.spendCategoriesScoped(false, input.UserIDs, input.ProjectIDs, period); err != nil {
 			return summary, err
 		}
 	} else {
@@ -128,12 +178,17 @@ func (s Service) balance(userIDs []string, platformTotal bool) (decimal.Decimal,
 	return total, err
 }
 
-func (s Service) debitLedger(userIDs []string, projectIDs []string, period spendPeriod) *gorm.DB {
+func (s Service) debitLedgerScoped(projectScoped bool, userIDs []string, projectIDs []string, period spendPeriod) *gorm.DB {
 	query := s.DB.Table("billing_ledger_entries AS ledger").
 		Joins("LEFT JOIN billing_usage_records AS usage ON usage.id = ledger.usage_record_id").
-		Where("ledger.user_id IN ? AND ledger.type = ?", userIDs, "debit")
-	if len(projectIDs) > 0 {
+		Where("ledger.type = ?", "debit")
+	if projectScoped {
 		query = query.Where("ledger.project_id IN ?", projectIDs)
+	} else {
+		query = query.Where("ledger.user_id IN ?", userIDs)
+		if len(projectIDs) > 0 {
+			query = query.Where("ledger.project_id IN ?", projectIDs)
+		}
 	}
 	if period.start != nil {
 		query = query.Where(OccurredAtSQL+" >= ?", *period.start)
@@ -144,14 +199,24 @@ func (s Service) debitLedger(userIDs []string, projectIDs []string, period spend
 	return query
 }
 
-func (s Service) spend(userIDs []string, projectIDs []string, period spendPeriod) (decimal.Decimal, error) {
+func (s Service) spendScoped(projectScoped bool, userIDs []string, projectIDs []string, period spendPeriod) (decimal.Decimal, error) {
 	var total decimal.Decimal
-	err := s.debitLedger(userIDs, projectIDs, period).
+	err := s.debitLedgerScoped(projectScoped, userIDs, projectIDs, period).
 		Select("COALESCE(SUM(ABS(ledger.amount_credits)), 0)").Scan(&total).Error
 	return total, err
 }
 
-func (s Service) pendingSpend(userIDs []string, projectIDs []string) (decimal.Decimal, error) {
+func (s Service) pendingSpendScoped(projectScoped bool, userIDs []string, projectIDs []string) (decimal.Decimal, error) {
+	if projectScoped {
+		if len(projectIDs) == 0 {
+			return decimal.Zero, nil
+		}
+		var total decimal.Decimal
+		err := s.DB.Table("billing_usage_records").
+			Where("project_id IN ? AND status = ?", projectIDs, "pending").
+			Select("COALESCE(SUM(amount_credits), 0)").Scan(&total).Error
+		return total, err
+	}
 	if len(userIDs) == 0 {
 		return decimal.Zero, nil
 	}
@@ -173,13 +238,13 @@ func (s Service) pendingSpend(userIDs []string, projectIDs []string) (decimal.De
 	return total, nil
 }
 
-func (s Service) spendCategories(userIDs []string, projectIDs []string, period spendPeriod) ([]BillingSpendCategory, error) {
+func (s Service) spendCategoriesScoped(projectScoped bool, userIDs []string, projectIDs []string, period spendPeriod) ([]BillingSpendCategory, error) {
 	var rows []struct {
 		Reason        string
 		Meter         string
 		AmountCredits decimal.Decimal
 	}
-	if err := s.debitLedger(userIDs, projectIDs, period).
+	if err := s.debitLedgerScoped(projectScoped, userIDs, projectIDs, period).
 		Select("ledger.reason, ledger.meter, COALESCE(SUM(ABS(ledger.amount_credits)), 0) AS amount_credits").
 		Group("ledger.reason, ledger.meter").Scan(&rows).Error; err != nil {
 		return nil, err

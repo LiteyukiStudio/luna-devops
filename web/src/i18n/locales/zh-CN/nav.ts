@@ -19,6 +19,7 @@ const nav = {
     members: '成员',
     notifications: '通知',
     aiDiagnosis: 'AI 诊断',
+    billing: '账单',
     topology: '服务关系',
   },
   commandPalette: {

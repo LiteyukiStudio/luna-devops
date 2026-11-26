@@ -12,8 +12,11 @@ export function BillingScopeToolbar({
   billingPeriod,
   billingUserScopeId,
   canManageBilling,
+  currentProjectId,
+  projectMode = false,
   projectsError = false,
   projectsLoading,
+  projectsRetrying = false,
   selectedProjectIds,
   userItems,
   usersError = false,
@@ -24,13 +27,18 @@ export function BillingScopeToolbar({
   onCreateTransaction,
   onPeriodChange,
   onProjectFilterChange,
+  onResetToCurrentProject,
+  onRetryProjects,
   onRetryUsers,
 }: {
   billingPeriod: BillingPeriodSelection
   billingUserScopeId: string
   canManageBilling: boolean
+  currentProjectId?: string
+  projectMode?: boolean
   projectsError?: boolean
   projectsLoading: boolean
+  projectsRetrying?: boolean
   selectedProjectIds: string[]
   userItems: User[]
   usersError?: boolean
@@ -41,14 +49,21 @@ export function BillingScopeToolbar({
   onCreateTransaction: () => void
   onPeriodChange: (period: BillingPeriodSelection) => void
   onProjectFilterChange: (projectIds: string[]) => void
+  onResetToCurrentProject?: () => void
+  onRetryProjects?: () => void
   onRetryUsers?: () => void
 }) {
   const { t } = useTranslation()
+  const showResetToCurrentProject = Boolean(
+    projectMode
+    && currentProjectId
+    && (selectedProjectIds.length !== 1 || selectedProjectIds[0] !== currentProjectId),
+  )
 
   return (
     <div className="flex min-w-0 flex-col gap-2 @4xl/workspace:flex-row @4xl/workspace:flex-wrap @4xl/workspace:items-center">
       <BillingPeriodPicker period={billingPeriod} onChange={onPeriodChange} />
-      {canManageBilling && (
+      {!projectMode && canManageBilling && (
         <div className="flex w-full items-center gap-2 @4xl/workspace:w-auto">
           <UserSelect
             allLabel={t('billingPage.allUsers')}
@@ -78,22 +93,43 @@ export function BillingScopeToolbar({
           )}
         </div>
       )}
-      <div className="w-full @4xl/workspace:w-64">
+      <div className="flex w-full items-center gap-2 @4xl/workspace:w-auto">
         <ProjectSpaceMultiSelect
+          className="min-w-0 flex-1 @4xl/workspace:w-64"
           error={projectsError}
           loading={projectsLoading}
+          placeholder={projectMode ? t('nav.allProjectSpaces') : undefined}
           projects={visibleProjectItems}
+          pruneUnknownValues={!projectMode && !canManageBilling}
           value={selectedProjectIds}
           onChange={onProjectFilterChange}
         />
+        {!projectsLoading && projectsError && onRetryProjects && (
+          <Button
+            className="shrink-0"
+            disabled={projectsRetrying}
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={onRetryProjects}
+          >
+            <RotateCw className={projectsRetrying ? 'size-4 motion-safe:animate-spin' : 'size-4'} />
+            {t('common.retry')}
+          </Button>
+        )}
       </div>
       {selectedProjectIds.length > 0 && (
         <Button className="shrink-0 self-start @4xl/workspace:self-auto" type="button" variant="ghost" onClick={() => onProjectFilterChange([])}>
-          <X />
-          {t('billingPage.clearProjectFilter')}
+          {!projectMode && <X />}
+          {projectMode ? t('billingPage.viewAllProjects') : t('billingPage.clearProjectFilter')}
         </Button>
       )}
-      {canManageBilling && (
+      {showResetToCurrentProject && onResetToCurrentProject && (
+        <Button className="shrink-0 self-start @4xl/workspace:self-auto" type="button" variant="outline" onClick={onResetToCurrentProject}>
+          {t('billingPage.resetToCurrentProject')}
+        </Button>
+      )}
+      {!projectMode && canManageBilling && (
         <PageChromeTools>
           <Button
             disabled={usersLoading || (userItems.length === 0 && !usersError)}

@@ -54,6 +54,15 @@ describe('workspace context display formatter', () => {
       kind: 'project',
       label: '项目：Demo / 数据卷',
     })
+
+    expect(formatWorkspaceContextDisplay(
+      { pathname: '/projects/prj_demo', search: '?tab=billing' },
+      i18next.t,
+      { projectName: 'Demo' },
+    )).toEqual({
+      kind: 'project',
+      label: '项目：Demo / 账单',
+    })
   })
 
   it('resolves static console pages cleanly without raw path prefixes', () => {

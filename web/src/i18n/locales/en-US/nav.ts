@@ -19,6 +19,7 @@ const nav = {
     members: 'Members',
     notifications: 'Notifications',
     aiDiagnosis: 'AI diagnosis',
+    billing: 'Billing',
     topology: 'Service relations',
   },
   commandPalette: {

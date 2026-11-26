@@ -7,7 +7,7 @@ import type {
   BillingSummary as BillingSummaryData,
   GatewayTrafficStatus,
 } from '@/api'
-import { AlertTriangle, AreaChart, BarChart3, Coins, CreditCard, ExternalLink, TrendingDown, WalletCards, X } from 'lucide-react'
+import { AlertTriangle, AreaChart, BarChart3, CalendarDays, Coins, CreditCard, ExternalLink, TrendingDown, WalletCards, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
@@ -52,6 +52,7 @@ function granularityTranslatedLabel(granularity: BillingSpendGranularity, t: (ke
 
 export function BillingSummary({
   accountError = false,
+  accountErrorMessage,
   accountLoading,
   accountRetrying = false,
   accountSummary,
@@ -66,7 +67,9 @@ export function BillingSummary({
   gatewayTrafficStatusLoading = false,
   granularity = 'day',
   locale = 'zh-CN',
+  projectMode = false,
   scopedError = false,
+  scopedErrorMessage,
   scopedFetching,
   scopedLoading,
   scopedRetrying = false,
@@ -88,6 +91,7 @@ export function BillingSummary({
   onSelectBucket,
 }: {
   accountError?: boolean
+  accountErrorMessage?: string
   accountLoading: boolean
   accountRetrying?: boolean
   accountSummary?: BillingSummaryData
@@ -102,7 +106,9 @@ export function BillingSummary({
   gatewayTrafficStatusLoading?: boolean
   granularity?: BillingSpendGranularity
   locale?: string
+  projectMode?: boolean
   scopedError?: boolean
+  scopedErrorMessage?: string
   scopedFetching: boolean
   scopedLoading: boolean
   scopedRetrying?: boolean
@@ -151,16 +157,18 @@ export function BillingSummary({
     }
   }
 
-  const distributionError = scopedError || timeseriesError
-  const distributionLoading = scopedLoading
-    || timeseriesLoading
-    || (scopedFetching && !scopedSummary && !scopedError)
+  const distributionError = timeseriesError || (!timeseries && scopedError)
+  const distributionLoading = timeseriesLoading
     || (timeseriesFetching && !timeseries && !timeseriesError)
+    || (!timeseries && !timeseriesError && (scopedLoading || (scopedFetching && !scopedSummary && !scopedError)))
     || (!distributionError && rawCategories.length === 0 && gatewayTrafficStatusLoading)
 
-  if (accountError && scopedError) {
+  const isProjectScope = projectMode || scopedSummary?.balanceScope === 'project'
+
+  if (!isProjectScope && accountError && scopedError) {
     return (
       <ErrorState
+        description={scopedErrorMessage ?? accountErrorMessage}
         retrying={accountRetrying || scopedRetrying}
         title={t('errors.request.failed')}
         onRetry={() => {
@@ -173,30 +181,72 @@ export function BillingSummary({
     )
   }
 
+  if (isProjectScope && scopedError && timeseriesError) {
+    return (
+      <ErrorState
+        description={scopedErrorMessage ?? timeseriesErrorMessage}
+        retrying={scopedRetrying || timeseriesRetrying}
+        title={t('errors.request.failed')}
+        onRetry={() => {
+          onRetryScoped?.()
+          onRetryTimeseries?.()
+        }}
+      />
+    )
+  }
+
   return (
     <>
-      {accountError && (
+      {!isProjectScope && accountError && (
         <ErrorState
+          description={accountErrorMessage}
           retrying={accountRetrying}
           title={t('errors.request.failed')}
           onRetry={onRetryAccount}
         />
       )}
-      <MetricGroup className="@xl/metric-group:grid-cols-4">
-        <MetricItem
-          icon={<Coins className="size-4" />}
-          label={platformTotal ? t('billingPage.platformWalletTotal') : t('billingPage.balance')}
-          meta={accountLoading
-            ? (canManageBilling ? <Skeleton className="h-4 w-16" /> : undefined)
-            : !accountError && accountSummary && canManageBilling
-                ? billingDisplay.formatFiatAmount(accountSummary.balanceCredits)
-                : undefined}
-          value={accountLoading
-            ? <Skeleton className="h-7 w-24" />
-            : accountError || !accountSummary
-              ? t('common.unavailable')
-              : billingDisplay.formatAmountWithUnit(accountSummary.balanceCredits)}
+      {scopedError && (
+        <ErrorState
+          description={scopedErrorMessage}
+          retrying={scopedRetrying}
+          title={t('errors.request.failed')}
+          onRetry={onRetryScoped}
         />
+      )}
+      <MetricGroup className="@xl/metric-group:grid-cols-4">
+        {isProjectScope
+          ? (
+              <MetricItem
+                icon={<CalendarDays className="size-4" />}
+                label={t('billingPage.monthSpend')}
+                meta={scopedLoading
+                  ? (canManageBilling ? <Skeleton className="h-4 w-16" /> : undefined)
+                  : !scopedError && scopedSummary && canManageBilling
+                      ? billingDisplay.formatFiatAmount(scopedSummary.monthSpend)
+                      : undefined}
+                value={scopedLoading
+                  ? <Skeleton className="h-7 w-24" />
+                  : scopedError || !scopedSummary
+                    ? t('common.unavailable')
+                    : billingDisplay.formatAmountWithUnit(scopedSummary.monthSpend)}
+              />
+            )
+          : (
+              <MetricItem
+                icon={<Coins className="size-4" />}
+                label={platformTotal ? t('billingPage.platformWalletTotal') : t('billingPage.balance')}
+                meta={accountLoading
+                  ? (canManageBilling ? <Skeleton className="h-4 w-16" /> : undefined)
+                  : !accountError && accountSummary && canManageBilling
+                      ? billingDisplay.formatFiatAmount(accountSummary.balanceCredits)
+                      : undefined}
+                value={accountLoading
+                  ? <Skeleton className="h-7 w-24" />
+                  : accountError || !accountSummary
+                    ? t('common.unavailable')
+                    : billingDisplay.formatAmountWithUnit(accountSummary.balanceCredits)}
+              />
+            )}
         <MetricItem
           icon={<TrendingDown className="size-4" />}
           label={t('billingPage.periodSpend')}
@@ -268,7 +318,7 @@ export function BillingSummary({
         title={t('billingPage.spendDistributionTitle')}
         tools={(
           <div className="flex flex-wrap items-center gap-2">
-            {!accountLoading && !accountError && accountSummary && !platformTotal && (
+            {!isProjectScope && !accountLoading && !accountError && accountSummary && !platformTotal && (
               <StatusBadge tone={balanceStatusTone(balanceStatus)}>
                 {t(`billingPage.balanceStatuses.${balanceStatus}`)}
               </StatusBadge>
@@ -357,7 +407,7 @@ export function BillingSummary({
           : distributionError
             ? (
                 <ErrorState
-                  description={timeseriesError ? timeseriesErrorMessage : undefined}
+                  description={timeseriesError ? timeseriesErrorMessage : scopedErrorMessage}
                   retrying={scopedRetrying || timeseriesRetrying}
                   title={t('errors.request.failed')}
                   onRetry={() => {

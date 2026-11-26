@@ -21,8 +21,8 @@ func (h *Handler) GetBillingSummary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	platformTotal := user.Role == authz.PlatformRoleAdmin && scope.SelectedUserID == ""
-	if strings.TrimSpace(ctx.Query("accountScope")) == "current" {
+	platformTotal := !scope.ProjectScoped && user.Role == authz.PlatformRoleAdmin && scope.SelectedUserID == ""
+	if !scope.ProjectScoped && strings.TrimSpace(ctx.Query("accountScope")) == "current" {
 		platformTotal = false
 		accountUserID := user.ID
 		if user.Role == authz.PlatformRoleAdmin && scope.SelectedUserID != "" {
@@ -46,7 +46,8 @@ func (h *Handler) GetBillingSummary(ctx *gin.Context) {
 	}
 	summary, err := (billing.Service{DB: h.dbFor(ctx)}).Summary(billing.SummaryInput{
 		UserIDs: scope.UserIDs, ProjectIDs: scope.ProjectIDs, Now: time.Now().In(location),
-		LowBalanceLimit: lowBalanceLimit, PeriodStart: period.Start, PeriodEnd: period.End, PlatformTotal: platformTotal,
+		LowBalanceLimit: lowBalanceLimit, PeriodStart: period.Start, PeriodEnd: period.End,
+		PlatformTotal: platformTotal, ProjectScoped: scope.ProjectScoped,
 	})
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -81,12 +82,13 @@ func (h *Handler) GetBillingSpendTimeseries(ctx *gin.Context) {
 		return
 	}
 	series, err := (billing.Service{DB: h.dbFor(ctx)}).SpendTimeseries(billing.SpendTimeseriesInput{
-		UserIDs:     scope.UserIDs,
-		ProjectIDs:  scope.ProjectIDs,
-		Now:         time.Now().In(location),
-		PeriodStart: period.Start,
-		PeriodEnd:   period.End,
-		Granularity: granularity,
+		UserIDs:       scope.UserIDs,
+		ProjectIDs:    scope.ProjectIDs,
+		Now:           time.Now().In(location),
+		PeriodStart:   period.Start,
+		PeriodEnd:     period.End,
+		Granularity:   granularity,
+		ProjectScoped: scope.ProjectScoped,
 	})
 	if err != nil {
 		if errors.Is(err, billing.ErrPeriodTooWideForGranularity) {

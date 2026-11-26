@@ -165,6 +165,10 @@ const errors = {
     granularity_invalid: '時間粒度只能是按小時、按日或按月。',
     period_too_wide_for_granularity: '所選時間範圍對當前粒度過長，請縮小週期範圍或切換為按日 / 按月。',
     category_invalid: '請選擇有效的費用分類。',
+    scope_mode_invalid: '賬單查詢範圍模式無效。',
+    argument_invalid: '賬單篩選引數不正確。',
+    project_not_found: '所選專案空間不存在或已被刪除。',
+    user_not_found: '所選賬單使用者不存在。',
   },
   build: {
     image_repository_claimed: '目標映象倉庫已被其他專案空間使用。請修改部署配置的目標映象倉庫後重試。',

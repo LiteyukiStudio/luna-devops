@@ -10590,11 +10590,19 @@ paths:
         aliases:
           zh: [查看平台账单概览, 平台账单, 费用概览]
           en: [platform billing overview, billing summary]
-        purpose: { zh: 读取指定账号范围和期间的平台账单概览。, en: Read a billing summary for an account scope and period. }
+        purpose: { zh: 读取指定账户范围或项目空间范围在指定期间的账单概览。, en: Read a billing summary for an account or project scope and period. }
         avoidWhen: { zh: 查询单条账单流水或执行余额调整时不要使用。, en: Do not use for individual ledger entries or balance adjustments. }
         preconditions: { zh: [当前用户具有对应账单范围读取权限], en: [The current user can read the requested billing scope] }
         successEvidence: { zh: 返回账单汇总、用量和余额概览。, en: Returns billing totals, usage, and balance overview. }
       parameters:
+        - name: scopeMode
+          in: query
+          required: false
+          description: "`wallet` (default) reads personal or admin wallet billing; `project` aggregates resource spend across accessible project spaces without exposing private wallet balances."
+          schema:
+            type: string
+            enum: [wallet, project]
+            default: wallet
         - name: accountScope
           in: query
           required: false
@@ -10607,7 +10615,7 @@ paths:
           required: false
           schema:
             type: string
-        - name: projectId
+        - name: projectIds
           in: query
           required: false
           style: form
@@ -10657,6 +10665,13 @@ paths:
         - Billing
       summary: Get Billing Spend Timeseries
       parameters:
+        - name: scopeMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [wallet, project]
+            default: wallet
         - name: userId
           in: query
           required: false
@@ -10722,12 +10737,19 @@ paths:
         - Billing
       summary: List Billing Deployment Spend
       parameters:
+        - name: scopeMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [wallet, project]
+            default: wallet
         - name: userId
           in: query
           required: false
           schema:
             type: string
-        - name: projectId
+        - name: projectIds
           in: query
           required: false
           style: form
@@ -10736,6 +10758,16 @@ paths:
             type: array
             items:
               type: string
+        - name: applicationId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: stage
+          in: query
+          required: false
+          schema:
+            type: string
         - name: periodStart
           in: query
           required: false
@@ -10786,12 +10818,19 @@ paths:
         - Billing
       summary: List Billing Ledger Entries
       parameters:
+        - name: scopeMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [wallet, project]
+            default: wallet
         - name: userId
           in: query
           required: false
           schema:
             type: string
-        - name: projectId
+        - name: projectIds
           in: query
           required: false
           style: form
@@ -10800,6 +10839,11 @@ paths:
             type: array
             items:
               type: string
+        - name: applicationId
+          in: query
+          required: false
+          schema:
+            type: string
         - name: type
           in: query
           required: false
@@ -10862,12 +10906,19 @@ paths:
         - Billing
       summary: List Billing Usage Records
       parameters:
+        - name: scopeMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [wallet, project]
+            default: wallet
         - name: userId
           in: query
           required: false
           schema:
             type: string
-        - name: projectId
+        - name: projectIds
           in: query
           required: false
           style: form
@@ -17730,15 +17781,15 @@ components:
       properties:
         balanceScope:
           type: string
-          enum: [account, platform_total]
-          description: "`platform_total` sums every wallet for an administrator without a selected user; it has no balanceStatus."
-        balanceCredits: { type: string, description: Decimal credits. }
+          enum: [account, platform_total, project]
+          description: "`platform_total` sums every wallet for an administrator without a selected user; `project` aggregates project spend without wallet balances; neither carries balanceStatus."
+        balanceCredits: { type: string, description: "Decimal credits (`0` and redacted when balanceScope is `project`)." }
         todaySpend: { type: string, description: Debits occurring since local midnight in the requested timeZone. }
         monthSpend: { type: string, description: Debits occurring since the first day of the month in the requested timeZone. }
         periodSpend: { type: string, description: "Debits occurring in [periodStart, periodEnd); equals monthSpend without a period." }
         pendingSpend: { type: string }
-        availableCredits: { type: string }
-        lowBalanceLimit: { type: string }
+        availableCredits: { type: string, description: "Decimal credits (`0` and redacted when balanceScope is `project`)." }
+        lowBalanceLimit: { type: string, description: "Decimal credits (`0` and redacted when balanceScope is `project`)." }
         balanceStatus: { type: string, enum: [ok, low, insufficient], description: Present only for balanceScope account. }
         monthlyCategories:
           type: array

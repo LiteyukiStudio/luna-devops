@@ -60,10 +60,11 @@ export function ApplicationCell({ item, unassignedLabel }: { item: BillingApplic
   )
 }
 
-export function DeploymentTargetCell({ item, projectStorageHint, projectStorageLabel, unassignedLabel }: {
+export function DeploymentTargetCell({ item, projectStorageHint, projectStorageLabel, stageLabel, unassignedLabel }: {
   item: Pick<BillingDeploymentSpend, 'deploymentTargetId' | 'deploymentTargetName' | 'deploymentTargetStage' | 'spendGroup'>
   projectStorageHint: string
   projectStorageLabel: string
+  stageLabel?: string
   unassignedLabel: string
 }) {
   if (item.spendGroup === 'project_storage') {
@@ -74,10 +75,15 @@ export function DeploymentTargetCell({ item, projectStorageHint, projectStorageL
       </span>
     )
   }
+  const resolvedStageText = item.deploymentTargetStage
+    ? (stageLabel && stageLabel !== item.deploymentTargetStage
+        ? `${stageLabel} · ${item.deploymentTargetStage}`
+        : item.deploymentTargetStage)
+    : (item.deploymentTargetId || '-')
   return (
     <span className="block min-w-0">
       <span className="block truncate font-medium">{item.deploymentTargetName || unassignedLabel}</span>
-      <span className="block truncate text-xs text-muted-foreground">{item.deploymentTargetStage || item.deploymentTargetId || '-'}</span>
+      <span className="block truncate text-xs text-muted-foreground">{resolvedStageText}</span>
     </span>
   )
 }

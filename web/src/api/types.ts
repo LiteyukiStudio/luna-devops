@@ -2483,9 +2483,11 @@ export interface OAuthAuthorizationDecisionResponse {
   redirectUrl: string
 }
 
+export type BillingScopeMode = 'wallet' | 'project'
+
 export interface BillingSummary {
-  /** platform_total sums every wallet and carries no balanceStatus. */
-  balanceScope: 'account' | 'platform_total'
+  /** platform_total sums every wallet; project aggregates project spend without wallet balances. */
+  balanceScope: 'account' | 'platform_total' | 'project'
   balanceCredits: string
   todaySpend: string
   monthSpend: string
@@ -2642,7 +2644,10 @@ export interface BuildRunListParams extends PaginationParams {
 }
 
 export interface BillingListParams extends PaginationParams {
+  scopeMode?: BillingScopeMode
   projectIds?: string[]
+  applicationId?: string
+  stage?: string
   type?: string
   category?: string
   meter?: string
@@ -2652,6 +2657,7 @@ export interface BillingListParams extends PaginationParams {
 }
 
 export interface BillingPeriodParams {
+  scopeMode?: BillingScopeMode
   periodStart?: string
   periodEnd?: string
   accountScope?: 'current'
@@ -2661,6 +2667,7 @@ export interface BillingPeriodParams {
 }
 
 export interface BillingSpendTimeseriesParams {
+  scopeMode?: BillingScopeMode
   periodStart?: string
   periodEnd?: string
   granularity?: BillingSpendGranularity

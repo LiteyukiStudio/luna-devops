@@ -9,6 +9,7 @@ type ProjectOption = Pick<Project, 'id' | 'name' | 'identifier' | 'description'>
 interface ProjectSpaceControlProps {
   'aria-describedby'?: string
   'aria-invalid'?: boolean | 'true' | 'false'
+  'ariaLabel'?: string
   'className'?: string
   'disabled'?: boolean
   'error'?: boolean
@@ -21,6 +22,7 @@ interface ProjectSpaceControlProps {
 export function ProjectSpaceSelect({
   'aria-describedby': ariaDescribedBy,
   'aria-invalid': ariaInvalid,
+  ariaLabel,
   className,
   disabled,
   error,
@@ -40,6 +42,7 @@ export function ProjectSpaceSelect({
     <SearchSelect
       aria-describedby={ariaDescribedBy}
       aria-invalid={ariaInvalid}
+      ariaLabel={ariaLabel ?? (id ? undefined : t('projectSpaces.selectProject'))}
       className={className}
       disabled={disabled}
       emptyLabel={t('projectSpaces.emptyTitle')}
@@ -60,17 +63,20 @@ export function ProjectSpaceSelect({
 export function ProjectSpaceMultiSelect({
   'aria-describedby': ariaDescribedBy,
   'aria-invalid': ariaInvalid,
+  ariaLabel,
   className,
   disabled,
   error,
   id,
   loading,
+  placeholder,
   projects,
   pruneUnknownValues,
   size,
   value,
   onChange,
 }: ProjectSpaceControlProps & {
+  placeholder?: string
   pruneUnknownValues?: boolean
   value: string[]
   onChange: (value: string[]) => void
@@ -81,6 +87,7 @@ export function ProjectSpaceMultiSelect({
     <SearchMultiSelect
       aria-describedby={ariaDescribedBy}
       aria-invalid={ariaInvalid}
+      ariaLabel={ariaLabel ?? (id ? undefined : t('projectSpaces.selectProjects'))}
       className={className}
       disabled={disabled}
       emptyLabel={t('projectSpaces.emptyTitle')}
@@ -88,7 +95,7 @@ export function ProjectSpaceMultiSelect({
       id={id}
       loading={loading}
       options={options}
-      placeholder={t('projectSpaces.selectProjects')}
+      placeholder={placeholder ?? t('projectSpaces.selectProjects')}
       pruneUnknownValues={pruneUnknownValues}
       searchPlaceholder={t('projectSpaces.searchProjects')}
       selectedLabel={selected => selected.map(project => project.label).join(', ')}

@@ -165,6 +165,10 @@ const errors = {
     granularity_invalid: '時間粒度は時間別・日別・月別のいずれかである必要があります。',
     period_too_wide_for_granularity: '選択した期間がこの粒度に対して長すぎます。期間を狭めるか、日別または月別に切り替えてください。',
     category_invalid: '有効な費用カテゴリを選択してください。',
+    scope_mode_invalid: '請求スコープモードが無効です。',
+    argument_invalid: '請求フィルターパラメータが正しくありません。',
+    project_not_found: '選択したプロジェクトスペースが見つかりません。',
+    user_not_found: '選択した請求ユーザーが見つかりません。',
   },
   build: {
     image_repository_claimed: 'ターゲットイメージリポジトリは別のプロジェクトスペースで使用されています。デプロイ設定のターゲットイメージリポジトリを変更してから再試行してください。',

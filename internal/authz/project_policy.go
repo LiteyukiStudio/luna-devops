@@ -45,7 +45,7 @@ var projectPolicies = map[Action]ProjectPolicy{
 	ActionClusterUse:    policy(ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper),
 	ActionClusterManage: policy(ProjectRoleOwner, ProjectRoleAdmin),
 
-	ActionBillingRead:   policy(ProjectRoleOwner, ProjectRoleAdmin),
+	ActionBillingRead:   policy(ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer),
 	ActionBillingAdjust: policy(ProjectRoleOwner),
 
 	ActionNotificationRead:   policy(ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper),

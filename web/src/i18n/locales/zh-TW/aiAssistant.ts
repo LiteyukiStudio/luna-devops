@@ -51,6 +51,7 @@ const aiAssistant = {
         topology: '服務關係',
         notifications: '通知',
         aiDiagnosis: 'AI 診斷',
+        billing: '賬單',
       },
     },
     emptyTitle: '今天想處理什麼？',

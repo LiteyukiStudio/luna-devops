@@ -165,6 +165,10 @@ const errors = {
     granularity_invalid: '시간 단위는 시간별, 일별 또는 월별이어야 합니다.',
     period_too_wide_for_granularity: '선택한 기간이 현재 시간 단위에 비해 너무 깁니다. 기간을 좁히거나 일별/월별로 전환하세요.',
     category_invalid: '유효한 비용 분류를 선택하세요.',
+    scope_mode_invalid: '청구 범위 모드가 올바르지 않습니다.',
+    argument_invalid: '청구 필터 파라미터가 올바르지 않습니다.',
+    project_not_found: '선택한 프로젝트 스페이스를 찾을 수 없습니다.',
+    user_not_found: '선택한 청구 사용자를 찾을 수 없습니다.',
   },
   build: {
     image_repository_claimed: '대상 이미지 저장소를 다른 프로젝트 스페이스에서 사용 중입니다. 배포 구성의 대상 이미지 저장소를 변경한 후 다시 시도하세요.',

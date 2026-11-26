@@ -10,26 +10,31 @@ import { BillingDeploymentSpendList } from './records/billing-deployment-spend-l
 import { BillingLedgerList } from './records/billing-ledger-list'
 import { BillingWalletTransactionDialog } from './wallet/billing-wallet-transaction-dialog'
 
-export function BillingPage() {
+export function BillingPage({ projectId }: { projectId?: string } = {}) {
   const { i18n, t } = useTranslation()
   const billingDisplay = useBillingDisplay(i18n.language)
-  const billing = useBillingPage()
+  const billing = useBillingPage({ projectId })
   const accountSummary = billing.accountSummaryQuery.data
 
   return (
     <div className="grid min-w-0 gap-5">
-      <BillingBalanceWarning accountSummary={accountSummary} billingDisplay={billingDisplay} />
+      {!billing.isProjectMode && (
+        <BillingBalanceWarning accountSummary={accountSummary} billingDisplay={billingDisplay} />
+      )}
 
       <BillingScopeToolbar
         billingPeriod={billing.billingPeriod}
         billingUserScopeId={billing.billingUserScopeId}
         canManageBilling={billing.canManageBilling}
+        currentProjectId={projectId}
+        projectMode={billing.isProjectMode}
         projectsError={billing.projectsQuery.isError}
         projectsLoading={billing.projectsQuery.isPending}
+        projectsRetrying={billing.projectsQuery.isFetching}
         selectedProjectIds={billing.selectedProjectIds}
         userItems={billing.userItems}
-        usersError={billing.canManageBilling && billing.usersQuery.isError}
-        usersLoading={billing.canManageBilling && billing.usersQuery.isPending}
+        usersError={!billing.isProjectMode && billing.canManageBilling && billing.usersQuery.isError}
+        usersLoading={!billing.isProjectMode && billing.canManageBilling && billing.usersQuery.isPending}
         usersRetrying={billing.usersQuery.isFetching}
         visibleProjectItems={billing.visibleProjectItems}
         onBillingUserChange={billing.handleBillingUserChange}
@@ -39,11 +44,14 @@ export function BillingPage() {
         }}
         onPeriodChange={billing.handlePeriodChange}
         onProjectFilterChange={billing.handleProjectFilterChange}
+        onResetToCurrentProject={billing.handleResetToCurrentProject}
+        onRetryProjects={() => void billing.projectsQuery.refetch()}
         onRetryUsers={() => void billing.usersQuery.refetch()}
       />
 
       <BillingSummary
         accountError={billing.accountSummaryQuery.isError}
+        accountErrorMessage={billing.accountSummaryQuery.error instanceof Error ? billing.accountSummaryQuery.error.message : undefined}
         accountLoading={billing.accountSummaryQuery.isPending}
         accountRetrying={billing.accountSummaryQuery.isFetching}
         accountSummary={accountSummary}
@@ -58,7 +66,9 @@ export function BillingPage() {
         gatewayTrafficStatusLoading={billing.gatewayTrafficStatusQuery.isLoading}
         granularity={billing.effectiveGranularity}
         locale={i18n.language}
+        projectMode={billing.isProjectMode}
         scopedError={billing.scopedSummaryQuery.isError}
+        scopedErrorMessage={billing.scopedSummaryQuery.error instanceof Error ? billing.scopedSummaryQuery.error.message : undefined}
         scopedFetching={billing.scopedSummaryQuery.isFetching}
         scopedLoading={billing.scopedSummaryQuery.isPending}
         scopedRetrying={billing.scopedSummaryQuery.isFetching}
@@ -81,6 +91,7 @@ export function BillingPage() {
       />
 
       <ContentTabs
+        hashRouting={!billing.isProjectMode}
         tabs={[
           { label: t('billingPage.deploymentSpendTitle'), value: 'deployment-spend' },
           { label: t('billingPage.ledgerTitle'), value: 'ledger' },
@@ -91,10 +102,16 @@ export function BillingPage() {
       >
         <TabsContent value="deployment-spend">
           <BillingDeploymentSpendList
+            applicationFilter={billing.applicationFilter}
+            applications={billing.applicationItems}
+            applicationsError={Boolean(billing.singleSelectedProjectId) && billing.applicationsQuery.isError}
+            applicationsLoading={Boolean(billing.singleSelectedProjectId) && billing.applicationsQuery.isPending}
+            applicationsRetrying={billing.applicationsQuery.isFetching}
             billingDisplay={billingDisplay}
             data={billing.deploymentSpendQuery.data}
             error={billing.deploymentSpendQuery.isError
               ? {
+                  description: billing.deploymentSpendQuery.error instanceof Error ? billing.deploymentSpendQuery.error.message : undefined,
                   onRetry: () => void billing.deploymentSpendQuery.refetch(),
                   retrying: billing.deploymentSpendQuery.isFetching,
                   title: t('errors.request.failed'),
@@ -103,17 +120,30 @@ export function BillingPage() {
             loading={billing.deploymentSpendQuery.isPending}
             page={billing.deploymentSpendPage}
             projectMap={billing.projectMap}
+            projectsError={billing.projectsQuery.isError}
             projectsLoading={billing.projectsQuery.isPending}
+            singleProjectSelected={Boolean(billing.singleSelectedProjectId)}
+            stageFilter={billing.stageFilter}
+            onApplicationFilterChange={billing.handleApplicationFilterChange}
+            onClearFilters={billing.handleClearDeploymentSpendFilters}
             onPageChange={billing.setDeploymentSpendPage}
+            onRetryApplications={() => void billing.applicationsQuery.refetch()}
+            onStageFilterChange={billing.handleStageFilterChange}
           />
         </TabsContent>
         <TabsContent value="ledger">
           <BillingLedgerList
+            applicationFilter={billing.applicationFilter}
+            applications={billing.applicationItems}
+            applicationsError={Boolean(billing.singleSelectedProjectId) && billing.applicationsQuery.isError}
+            applicationsLoading={Boolean(billing.singleSelectedProjectId) && billing.applicationsQuery.isPending}
+            applicationsRetrying={billing.applicationsQuery.isFetching}
             billingDisplay={billingDisplay}
             categoryFilter={billing.ledgerCategoryFilter}
             data={billing.ledgerQuery.data}
             error={billing.ledgerQuery.isError
               ? {
+                  description: billing.ledgerQuery.error instanceof Error ? billing.ledgerQuery.error.message : undefined,
                   onRetry: () => void billing.ledgerQuery.refetch(),
                   retrying: billing.ledgerQuery.isFetching,
                   title: t('errors.request.failed'),
@@ -123,11 +153,16 @@ export function BillingPage() {
             locale={i18n.language}
             page={billing.ledgerPage}
             projectMap={billing.projectMap}
+            projectMode={billing.isProjectMode}
+            projectsError={billing.projectsQuery.isError}
             projectsLoading={billing.projectsQuery.isPending}
+            singleProjectSelected={Boolean(billing.singleSelectedProjectId)}
             typeFilter={billing.ledgerTypeFilter}
+            onApplicationFilterChange={billing.handleApplicationFilterChange}
             onCategoryFilterChange={billing.handleLedgerCategoryFilterChange}
             onClearFilters={billing.handleClearLedgerFilters}
             onPageChange={billing.setLedgerPage}
+            onRetryApplications={() => void billing.applicationsQuery.refetch()}
             onTypeFilterChange={billing.handleLedgerTypeFilterChange}
           />
         </TabsContent>
@@ -136,26 +171,28 @@ export function BillingPage() {
         </TabsContent>
       </ContentTabs>
 
-      <BillingWalletTransactionDialog
-        amount={billing.transactionAmount}
-        billingDisplay={billingDisplay}
-        description={billing.transactionDescription}
-        isPending={billing.createTransaction.isPending}
-        open={billing.transactionOpen}
-        type={billing.transactionType}
-        userId={billing.transactionUserId}
-        userItems={billing.userItems}
-        usersError={billing.canManageBilling && billing.usersQuery.isError}
-        usersLoading={billing.canManageBilling && billing.usersQuery.isPending}
-        usersRetrying={billing.usersQuery.isFetching}
-        onAmountChange={billing.setTransactionAmount}
-        onConfirm={() => billing.createTransaction.mutate()}
-        onDescriptionChange={billing.setTransactionDescription}
-        onOpenChange={billing.setTransactionOpen}
-        onRetryUsers={() => void billing.usersQuery.refetch()}
-        onTypeChange={billing.setTransactionType}
-        onUserIdChange={billing.setTransactionUserId}
-      />
+      {!billing.isProjectMode && (
+        <BillingWalletTransactionDialog
+          amount={billing.transactionAmount}
+          billingDisplay={billingDisplay}
+          description={billing.transactionDescription}
+          isPending={billing.createTransaction.isPending}
+          open={billing.transactionOpen}
+          type={billing.transactionType}
+          userId={billing.transactionUserId}
+          userItems={billing.userItems}
+          usersError={billing.canManageBilling && billing.usersQuery.isError}
+          usersLoading={billing.canManageBilling && billing.usersQuery.isPending}
+          usersRetrying={billing.usersQuery.isFetching}
+          onAmountChange={billing.setTransactionAmount}
+          onConfirm={() => billing.createTransaction.mutate()}
+          onDescriptionChange={billing.setTransactionDescription}
+          onOpenChange={billing.setTransactionOpen}
+          onRetryUsers={() => void billing.usersQuery.refetch()}
+          onTypeChange={billing.setTransactionType}
+          onUserIdChange={billing.setTransactionUserId}
+        />
+      )}
     </div>
   )
 }

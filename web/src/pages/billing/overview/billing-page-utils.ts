@@ -41,6 +41,9 @@ export interface BillingFocusedBucket {
 export type BalanceStatus = 'ok' | 'low' | 'insufficient'
 
 export const BILLING_CATEGORY_ORDER = ['runtime', 'ai', 'build', 'storage', 'gateway', 'adjustment', 'other'] as const
+export const BILLING_PROJECT_CATEGORY_ORDER = ['runtime', 'build', 'storage', 'gateway', 'other'] as const
+export const BILLING_DEPLOYMENT_STAGE_OPTIONS = ['dev', 'test', 'staging', 'prod'] as const
+export type BillingDeploymentStageFilter = 'all' | (typeof BILLING_DEPLOYMENT_STAGE_OPTIONS)[number]
 
 export const BILLING_CATEGORY_COLOR_VARS: Record<string, { fallback: string, variable: string }> = {
   adjustment: { fallback: '#e5484d', variable: '--status-danger-solid' },
@@ -75,6 +78,21 @@ export function categoryTranslatedLabel(category: string, t: (key: string, optio
       return t('billingPage.categories.other')
     default:
       return category
+  }
+}
+
+export function deploymentStageTranslatedLabel(stage: string, t: (key: string) => string) {
+  switch (stage) {
+    case 'dev':
+      return t('deploymentsPage.stageLabels.dev')
+    case 'test':
+      return t('deploymentsPage.stageLabels.test')
+    case 'staging':
+      return t('deploymentsPage.stageLabels.staging')
+    case 'prod':
+      return t('deploymentsPage.stageLabels.prod')
+    default:
+      return stage
   }
 }
 

@@ -165,6 +165,10 @@ const errors = {
     granularity_invalid: '时间粒度只能是按小时、按日或按月。',
     period_too_wide_for_granularity: '所选时间范围对当前粒度过长，请缩小周期范围或切换为按日 / 按月。',
     category_invalid: '请选择有效的费用分类。',
+    scope_mode_invalid: '账单查询范围模式无效。',
+    argument_invalid: '账单筛选参数不正确。',
+    project_not_found: '所选项目空间不存在或已被删除。',
+    user_not_found: '所选账单用户不存在。',
   },
   build: {
     image_repository_claimed: '目标镜像仓库已被其它项目空间使用。请修改部署配置的目标镜像仓库后重试。',

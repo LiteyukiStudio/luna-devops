@@ -141,6 +141,8 @@ function resolveProjectSectionLabel(
       return t('aiAssistant.contextSummary.projectSections.notifications')
     case 'ai-diagnosis':
       return t('aiAssistant.contextSummary.projectSections.aiDiagnosis')
+    case 'billing':
+      return t('aiAssistant.contextSummary.projectSections.billing')
   }
 }
 

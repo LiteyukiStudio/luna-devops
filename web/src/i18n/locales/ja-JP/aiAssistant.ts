@@ -51,6 +51,7 @@ const aiAssistant = {
         topology: 'サービス関係',
         notifications: '通知',
         aiDiagnosis: 'AI 診断',
+        billing: '請求',
       },
     },
     emptyTitle: '今日は何を処理しますか？',

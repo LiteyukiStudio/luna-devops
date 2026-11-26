@@ -9,8 +9,10 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -153,6 +155,31 @@ func TestBillingAIToolsPokaYokeValidations(t *testing.T) {
 		t.Fatal("expected project + ai.* meter to fail")
 	} else if te, ok := aitool.AsToolError(err); !ok || te.Code != "billing.ai_meter_not_project_scoped" || te.Hint == "" {
 		t.Fatalf("unexpected error: %#v", err)
+	}
+
+	// 1b. ops_list_billing_records rejects project + non-debit ledgerType with self-repair hint
+	if _, err := recordsTool.Execute(tc, json.RawMessage(`{
+		"recordType": "ledger",
+		"project": "prj_demo",
+		"ledgerType": "credit"
+	}`)); err == nil {
+		t.Fatal("expected project + ledgerType=credit to fail")
+	} else if te, ok := aitool.AsToolError(err); !ok || te.Code != "billing.argument_invalid" || te.Hint == "" {
+		t.Fatalf("unexpected error: %#v", err)
+	}
+
+	// 1c. summaryToMap omits misleading 0 wallet balances when balanceScope=project
+	projMap := summaryToMap(billing.ProjectBillingSummary{
+		BalanceScope: billing.BalanceScopeProject,
+		PeriodSpend:  decimal.NewFromInt(12),
+	})
+	if projMap["walletBalanceRedacted"] != true {
+		t.Fatalf("expected walletBalanceRedacted=true, got %#v", projMap)
+	}
+	for _, redactedKey := range []string{"balanceCredits", "availableCredits", "lowBalanceLimit", "balanceStatus"} {
+		if _, exists := projMap[redactedKey]; exists {
+			t.Fatalf("expected %s to be omitted in project scope, got %#v", redactedKey, projMap)
+		}
 	}
 
 	// 2. admin_adjust_user_wallet rejects negative amount when type=credit with self-repair hint

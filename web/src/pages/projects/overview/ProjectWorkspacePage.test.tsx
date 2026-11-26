@@ -8,16 +8,23 @@ import i18next from '@/i18n'
 import { ProjectWorkspacePage } from './ProjectWorkspacePage'
 
 const mocks = vi.hoisted(() => ({
+  getBillingSpendTimeseries: vi.fn(),
+  getBillingSummary: vi.fn(),
+  getGatewayTrafficStatus: vi.fn(),
   getProject: vi.fn(),
   getProjectOverview: vi.fn(),
   getProjectTopology: vi.fn(),
   listApplications: vi.fn(),
+  listBillingDeploymentSpend: vi.fn(),
+  listBillingLedgerEntries: vi.fn(),
+  listBillingRateRules: vi.fn(),
   listBuildRunsPage: vi.fn(),
   listBuildVariableSets: vi.fn(),
   listGatewayRoutes: vi.fn(),
   listPlatformEvents: vi.fn(),
   listProjectMembers: vi.fn(),
   listProjectRuntimeConfigSets: vi.fn(),
+  listProjectsPage: vi.fn(),
   listReleases: vi.fn(),
 }))
 const hookPageMocks = vi.hoisted(() => ({ openCreateDialog: vi.fn() }))
@@ -234,6 +241,62 @@ describe('project workspace overview', () => {
     await waitFor(() => expect(screen.getAllByText(i18next.t('common.unavailable')).length).toBeGreaterThanOrEqual(4))
     expect(screen.queryByText(i18next.t('projectSpaces.variableSetCount', { count: 0 }))).not.toBeInTheDocument()
     expect(screen.queryByText(i18next.t('projectSpaces.memberRoleMeta', { members: 0, owners: 0 }))).not.toBeInTheDocument()
+  })
+
+  it('mounts project-scoped billing on ?tab=billing and syncs billing subtabs via view query param', async () => {
+    const user = userEvent.setup()
+    mocks.getGatewayTrafficStatus.mockResolvedValue({
+      available: true,
+      componentId: 'gateway-traffic-probe',
+      installableTemplateId: '',
+      installed: true,
+      lastError: '',
+      observationCode: 'ok',
+      status: 'ready',
+    })
+    mocks.listBillingRateRules.mockResolvedValue([])
+    mocks.getBillingSpendTimeseries.mockResolvedValue({
+      buckets: [],
+      categories: [{ amountCredits: '42', category: 'build' }],
+      granularity: 'day',
+      periodEnd: '2026-11-26T00:00:00Z',
+      periodStart: '2026-11-01T00:00:00Z',
+      timeZone: 'UTC',
+      totalCredits: '42',
+    })
+    mocks.getBillingSummary.mockResolvedValue({
+      availableCredits: '0',
+      balanceCredits: '0',
+      balanceScope: 'project',
+      lowBalanceLimit: '0',
+      monthSpend: '42',
+      monthlyCategories: [{ amountCredits: '42', category: 'build' }],
+      pendingSpend: '0',
+      periodCategories: [{ amountCredits: '42', category: 'build' }],
+      periodSpend: '42',
+      todaySpend: '5',
+    })
+    mocks.listBillingDeploymentSpend.mockResolvedValue(emptyPage)
+    mocks.listBillingLedgerEntries.mockResolvedValue(emptyPage)
+    mocks.listProjectsPage.mockResolvedValue({
+      ...emptyPage,
+      items: [{ description: '', id: 'prj_1', identifier: 'project', maxConcurrentBuilds: 2, name: 'Project', webConsoleEnabled: true }],
+      total: 1,
+      totalPages: 1,
+    })
+
+    renderPage('/projects/prj_1?tab=billing')
+
+    expect(await screen.findByText('This month spend', {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getAllByText(/42/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Balance')).not.toBeInTheDocument()
+    expect(mocks.getBillingSummary).toHaveBeenCalledWith(
+      ['prj_1'],
+      expect.objectContaining({ scopeMode: 'project' }),
+    )
+
+    await user.click(screen.getByRole('tab', { name: 'Billing ledger' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('/projects/prj_1?tab=billing&view=ledger')
   })
 })
 

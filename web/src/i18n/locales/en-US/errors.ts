@@ -165,6 +165,10 @@ const errors = {
     granularity_invalid: 'Time granularity must be hourly, daily, or monthly.',
     period_too_wide_for_granularity: 'The selected period is too wide for this granularity. Narrow the date range or switch to daily or monthly.',
     category_invalid: 'Select a valid billing category.',
+    scope_mode_invalid: 'The billing scope mode is invalid.',
+    argument_invalid: 'The billing filter parameters are invalid.',
+    project_not_found: 'The selected project space was not found.',
+    user_not_found: 'The selected billing user was not found.',
   },
   build: {
     image_repository_claimed: 'The target image repository is already used by another project space. Change the target image repository of the deployment target, then retry.',

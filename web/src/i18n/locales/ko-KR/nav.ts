@@ -19,6 +19,7 @@ const nav = {
     members: '멤버',
     notifications: '알림',
     aiDiagnosis: 'AI 진단',
+    billing: '청구',
     topology: '서비스 관계',
   },
   commandPalette: {

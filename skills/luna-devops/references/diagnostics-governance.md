@@ -54,7 +54,7 @@ description: 提供跨领域生产故障排障决策树（502/504、CrashLoopBac
 
 1. **计费归属铁律与个人账单查询**：
    - **AI 调用费用（`ai.*`）永久只归属发起用户个人钱包**（账单流水 `project_id` 为空）；构建、运行计算、PVC 存储与网关流量费用归属项目计费主体。
-   - 查询当前用户余额与消费明细调用 `ops_get_billing_summary` 与 `ops_list_billing_records`（若需了解具体计费周期与单价公式，先调 `search_docs` + `read_doc`）。
+   - 查询账单消费调用 `ops_get_billing_summary` 与 `ops_list_billing_records`：`project` 参数不会从会话自动注入——查当前用户个人钱包余额、充值/调账或 `ai.*` 费用时**必须省略 `project`**；查某个已加入项目空间的资源费用与应用/环境排行时**显式传入 `project`**（所有项目成员可读，返回结果不暴露计费归属人私人钱包余额；若需了解具体计费周期与单价公式，先调 `search_docs` + `read_doc`）。
 2. **站内信审批待办**：
    - 处理计费转移确认或系统通知待办时，先调 `ops_list_inbox` 核实详情，经用户明确表态后调 `ops_decide_inbox_action`（已读/归档分别用 `ops_mark_inbox_read` / `ops_archive_inbox_message`）。
 3. **个人与项目通知排障及解绑边界**：

@@ -24,12 +24,13 @@ var (
 )
 
 type SpendTimeseriesInput struct {
-	UserIDs     []string
-	ProjectIDs  []string
-	Now         time.Time
-	PeriodStart *time.Time
-	PeriodEnd   *time.Time
-	Granularity string
+	UserIDs       []string
+	ProjectIDs    []string
+	Now           time.Time
+	PeriodStart   *time.Time
+	PeriodEnd     *time.Time
+	Granularity   string
+	ProjectScoped bool
 }
 
 type SpendTimeseries struct {
@@ -93,7 +94,7 @@ func (s Service) SpendTimeseries(input SpendTimeseriesInput) (SpendTimeseries, e
 		Categories:   []BillingSpendCategory{},
 		Buckets:      buckets,
 	}
-	if len(input.UserIDs) == 0 || len(buckets) == 0 {
+	if len(buckets) == 0 || (input.ProjectScoped && len(input.ProjectIDs) == 0) || (!input.ProjectScoped && len(input.UserIDs) == 0) {
 		return result, nil
 	}
 
@@ -111,7 +112,7 @@ func (s Service) SpendTimeseries(input SpendTimeseriesInput) (SpendTimeseries, e
 	}
 	truncExpr := "date_trunc(?, " + OccurredAtSQL + ", ?)"
 	period := spendPeriod{start: &periodStart, end: &periodEnd}
-	if err := s.debitLedger(input.UserIDs, input.ProjectIDs, period).
+	if err := s.debitLedgerScoped(input.ProjectScoped, input.UserIDs, input.ProjectIDs, period).
 		Select(truncExpr+" AS bucket_start, ledger.reason, ledger.meter, COALESCE(SUM(ABS(ledger.amount_credits)), 0) AS amount_credits", input.Granularity, tzName).
 		Group("1, ledger.reason, ledger.meter").
 		Scan(&rows).Error; err != nil {
